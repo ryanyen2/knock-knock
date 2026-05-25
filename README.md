@@ -96,19 +96,46 @@ Alice registers Bob's bot; Bob registers Alice's bot. The server picks this up i
 
 ## 8. Launch each agent
 
-`/knock-knock:room setup` prints your launch command. It looks like:
+`/knock-knock:room setup` prints your launch command. Use the bundled launcher —
+it's one short line, so your terminal can't split it:
 
 ```
-claude --channels plugin:knock-knock \
+bash <path-to-knock-knock>/scripts/launch-room.sh <channelId>
+```
+
+On first launch, approve the one-time dev-channel confirmation prompt. When the bot
+connects you'll see `knock-knock: gateway connected as <bot>#1234` in stderr.
+
+<details>
+<summary>What the launcher runs (and why not <code>--channels</code>)</summary>
+
+`knock-knock` is a **custom channel** you run locally, so it loads via
+`--dangerously-load-development-channels`, not `--channels`. `--channels` is the
+**allowlist-only** flag for official channels and requires a
+`plugin:<name>@<marketplace>` tag — a dev/local plugin has no marketplace, so
+`--channels plugin:knock-knock` fails with *"--channels entries must be tagged"*.
+The valid entry forms are `plugin:<name>@<marketplace>` and `server:<name>`; for
+local dev we use `server:knock-knock` (a [bare MCP server](https://code.claude.com/docs/en/channels-reference#test-during-the-research-preview)).
+
+The raw command the script execs (the `\` keep it one logical line — don't drop them):
+
+```bash
+claude --dangerously-load-development-channels server:knock-knock \
+  --mcp-config '{"mcpServers":{"knock-knock":{"command":"bun","args":["run","--cwd","<path-to-knock-knock>","--shell=bun","--silent","start"]}}}' \
   --settings ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
 ```
 
-> **Research-preview flag:** Custom (non-official) channels currently launch behind a
-> development flag. If `--channels plugin:knock-knock` alone doesn't connect, run
-> `claude --help` and look for the channels options — the dev-load flag is likely
-> `--dangerously-load-development-channels`. See
-> [code.claude.com/docs/en/channels](https://code.claude.com/docs/en/channels) for the
-> current exact syntax. When the bot connects you'll see `knock-knock: gateway connected as <bot>#1234` in stderr.
+The inline `--mcp-config` is required because the plugin's `.mcp.json` uses
+`${CLAUDE_PLUGIN_ROOT}`, which is only defined when knock-knock is loaded as a
+plugin — not on the `server:` path. `scripts/launch-room.sh` self-locates the
+checkout, so you don't hand-edit that path.
+
+**Requires** Claude Code v2.1.80+ and claude.ai / Console API-key auth (channels
+aren't available on Bedrock, Vertex, or Foundry). Once published to a marketplace,
+the entry becomes `plugin:knock-knock@<marketplace>` but still needs the dev flag
+until it's on Anthropic's official allowlist. See
+[code.claude.com/docs/en/channels](https://code.claude.com/docs/en/channels).
+</details>
 
 When both agents are launched and connected, you're ready to test.
 

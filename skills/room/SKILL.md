@@ -7,6 +7,7 @@ allowed-tools:
   - Write
   - Bash(ls *)
   - Bash(mkdir *)
+  - Bash(echo *)
 ---
 
 # /knock-knock:room — Room Setup
@@ -33,7 +34,8 @@ Arguments passed: `$ARGUMENTS`
 ### No args — status
 
 Show current `self` identity and registered rooms with participant counts.
-Print the launch command for the current primary room if configured.
+Print the launch command (see [Launch command](#launch-command)) for the current
+primary room if configured.
 
 ### `setup` — interactive configuration
 
@@ -138,6 +140,25 @@ Always include the deny-floor regardless of other rules:
 
 ## Launch command
 
+`knock-knock` is a **custom channel** you run locally, so it launches via
+`--dangerously-load-development-channels server:knock-knock` — **not** `--channels`.
+Why: `--channels` is the allowlist-only flag for official channels and requires a
+`plugin:<name>@<marketplace>` tag; a dev/local plugin has no marketplace, so
+`plugin:knock-knock` is rejected with *"--channels entries must be tagged"*. The
+two valid entry forms are `plugin:<name>@<marketplace>` and `server:<name>` (a bare
+MCP server) — we use the latter.
+
+The full invocation also needs an inline `--mcp-config` (the plugin's own
+`.mcp.json` uses `${CLAUDE_PLUGIN_ROOT}`, which is undefined on the `server:` path)
+plus the room's `--settings`. That's too long to paste reliably — terminal
+line-wraps split it into two commands (the telltale
+`option '--settings' argument missing` + `permission denied: …settings.json` pair).
+So the repo ships a self-locating launcher: **`scripts/launch-room.sh`**.
+
+Resolve the knock-knock checkout path: run `echo "$CLAUDE_PLUGIN_ROOT"`. If it's
+empty, ask the user for the absolute path to their knock-knock checkout. Call the
+result `<pluginDir>`.
+
 After writing files, print:
 
 ```
@@ -146,14 +167,23 @@ Room channel:    <channelId>
 Settings file:   ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
 Owner Discord:   <ownerUserId>
 
-Launch command:
-  claude --channels plugin:knock-knock --settings ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
+Launch command (one line — don't let your terminal split it):
+  bash <pluginDir>/scripts/launch-room.sh <channelId>
 
-Note: If knock-knock isn't on the official plugin marketplace yet, you may need to
-install it as a local plugin first:
-  /plugin install <absolute-path-to-knock-knock-directory>
-Then re-run the launch command above.
+On first launch, approve the one-time dev-channel confirmation prompt. When the
+bot connects you'll see `knock-knock: gateway connected as <bot>#1234` in stderr.
+
+Prefer the raw command? It is exactly (the `\` line-continuations keep it one
+logical command — keep them if you paste it):
+  claude --dangerously-load-development-channels server:knock-knock \
+    --mcp-config '{"mcpServers":{"knock-knock":{"command":"bun","args":["run","--cwd","<pluginDir>","--shell=bun","--silent","start"]}}}' \
+    --settings ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
 ```
+
+> Once knock-knock is published to a plugin marketplace, the channel entry becomes
+> `plugin:knock-knock@<marketplace>` — but custom channels stay behind
+> `--dangerously-load-development-channels` until they're on Anthropic's official
+> allowlist, so `scripts/launch-room.sh` keeps working unchanged.
 
 ---
 

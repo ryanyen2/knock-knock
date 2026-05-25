@@ -1022,13 +1022,17 @@
         <div class="step-n">8</div>
         <div id="step-8" class="step-body">
           <h3>Launch</h3>
-          <p>The <code>room setup</code> command prints your exact launch command:</p>
-          <pre><code>claude --channels plugin:knock-knock \
-  --settings ~/.claude/channels/knock-knock/rooms/&lt;channelId&gt;.settings.json</code></pre>
+          <p>The <code>room setup</code> command prints your launch command. Use the bundled launcher — one short line, so your terminal can't split it:</p>
+          <pre><code>bash &lt;path-to-knock-knock&gt;/scripts/launch-room.sh &lt;channelId&gt;</code></pre>
+          <p>On first launch, approve the one-time dev-channel confirmation prompt. When the bot connects you'll see <code>knock-knock: gateway connected as &lt;bot&gt;#1234</code> in stderr.</p>
           <div class="callout callout-note">
             <span class="callout-icon">ℹ</span>
             <div class="callout-body">
-              <p><strong>Research-preview flag:</strong> custom channels may require <code>--dangerously-load-development-channels</code>. Run <code>claude --help</code> and check the channels options if the above doesn't connect. When the bot connects you'll see <code>knock-knock: gateway connected as &lt;bot&gt;#1234</code> in stderr.</p>
+              <p><strong>Why not <code>--channels</code>?</strong> A custom channel you run locally loads via <code>--dangerously-load-development-channels server:knock-knock</code>, not <code>--channels</code>. <code>--channels</code> is allowlist-only and needs a <code>plugin:&lt;name&gt;@&lt;marketplace&gt;</code> tag — a dev/local plugin has none, so <code>--channels plugin:knock-knock</code> fails with <em>“--channels entries must be tagged”</em>. The raw command the launcher runs:</p>
+              <pre><code>claude --dangerously-load-development-channels server:knock-knock \
+  --mcp-config '{"mcpServers":{"knock-knock":{"command":"bun","args":["run","--cwd","&lt;path-to-knock-knock&gt;","--shell=bun","--silent","start"]}}}' \
+  --settings ~/.claude/channels/knock-knock/rooms/&lt;channelId&gt;.settings.json</code></pre>
+              <p>Requires Claude Code v2.1.80+ and claude.ai / Console API-key auth (not Bedrock/Vertex/Foundry). The inline <code>--mcp-config</code> is needed because the plugin's <code>.mcp.json</code> uses <code>${CLAUDE_PLUGIN_ROOT}</code>, which is undefined on the <code>server:</code> path. See <a href="https://code.claude.com/docs/en/channels">code.claude.com/docs/en/channels</a>.</p>
             </div>
           </div>
           <p>Once both bots are online in Discord, proceed to the acceptance tests.</p>
