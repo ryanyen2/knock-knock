@@ -2,9 +2,29 @@
 
 **Agent Channels for Claude Code** — lets your agents collaborate with other people's agents through shared Discord rooms.
 
-Your agent and a collaborator's agent each run on your own machines, connected to the same Discord channel. They can ask each other questions, hand off files, and request work — while every action that touches your machine still goes through *your own* Claude Code permission rules. Nobody hands anyone else control of their machine.
+Your agent and a collaborator's agent each run on your own machines, connected to the same Discord channel. They can ask each other questions, hand off files, and request work — while every action that touches your machine still goes through *your own* permission rules. Nobody hands anyone else control of their machine.
 
 **The channel is the permission boundary.**
+
+---
+
+## Two ways to run
+
+### Relay mode (new — `replace-channels` branch)
+
+The **relay** is a standalone host process that connects to Discord and drives the Claude Code agent via the **Claude Agent SDK**, with no `--channels` flag anywhere. Run it with:
+
+```
+KNOCK_KNOCK_WORKSPACE=/absolute/path/to/your/workspace bun relay.ts
+```
+
+This is the mode described in the acceptance tests below. It does **not** require Claude Code's experimental Channels capability.
+
+> **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
+
+### Channel mode (legacy — `main` branch)
+
+The original MCP-subprocess architecture: Claude Code is the host process; knock-knock is an MCP server it spawns, using `--dangerously-load-development-channels`. See [§ Channel-mode launch](#channel-mode-launch) below.
 
 ---
 
@@ -13,29 +33,29 @@ Your agent and a collaborator's agent each run on your own machines, connected t
 - Each person runs **one Discord bot per agent** (their agent's identity in the room).
 - Agents address each other by `@mention` in the shared channel.
 - **Routine reads flow automatically** — if answering only needs tools in the agent's `allow` list, the agent just answers.
-- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the channel*, `@mention`ing the owner. The owner clicks **Allow/Deny** or reacts ✅/❌.
+- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the channel*, `@mention`ing the owner. The owner clicks **Allow / Deny** or reacts ✅/❌.
 - **The `deny` list is a hard floor** — it can't be bypassed even by an approved request.
 
 **Two layers of enforcement:**
 | Layer | Enforces | Configured by |
 |-------|----------|---------------|
-| Claude Code permissions (`settings.json` allow/ask/deny) | what runs *on your machine* | `/knock-knock:room setup` generates it |
-| knock-knock server (`sendableRoots`) | what files *cross the wire* to peers | `access.json` per room |
+| Permission profile (`allow` / `ask` / `deny`) | what runs *on your machine* | `/knock-knock:room setup` generates it |
+| knock-knock (`sendableRoots`) | what files *cross the wire* to peers | `access.json` per room |
 
 ---
 
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed (`curl -fsSL https://bun.sh/install | bash`)
-- Claude Code with the **Channels** capability (research preview — see [docs](https://code.claude.com/docs/en/channels))
 - A Discord server (guild) that **both collaborators are members of**, with one channel to use as the room
 - **Discord Developer Mode on** (User Settings → Advanced → Developer Mode) so you can copy IDs
+- **Relay mode only:** `ANTHROPIC_API_KEY` set, or an existing `claude` login (`claude login`)
 
 ---
 
 # Production setup — two collaborators
 
-This walkthrough uses two people, **Alice** and **Bob**, collaborating in a channel called `#project-x`. **Both** people do steps 1–7 on their own machines. Where it says "your", it means each person's own values.
+This walkthrough uses two people, **Alice** and **Bob**, collaborating in a channel called `#project-x`. **Both** people do steps 1–7 on their own machines.
 
 ## 1. Create your Discord bot
 
@@ -50,12 +70,12 @@ At [discord.com/developers/applications](https://discord.com/developers/applicat
 
 1. **OAuth2 → URL Generator**.
 2. Scopes: check **`bot`**.
-3. Bot Permissions: **View Channels**, **Send Messages**, **Read Message History**, **Attach Files**, **Add Reactions**. *(Add **Send Messages in Threads** if you plan to use threads.)*
-4. Copy the generated URL, open it, and add the bot to the **shared** server (`#project-x`'s server).
+3. Bot Permissions: **View Channels**, **Send Messages**, **Read Message History**, **Attach Files**, **Add Reactions**.
+4. Copy the generated URL, open it, and add the bot to the shared server.
 
 ## 3. Note your bot's User ID
 
-In Discord (Developer Mode on): find your bot in the member list → right-click → **Copy User ID**. You'll give this to your collaborator in step 6.
+In Discord (Developer Mode on): find your bot in the member list → right-click → **Copy User ID**.
 
 ## 4. Install the plugin and save your token
 
@@ -73,52 +93,67 @@ You need the **channel ID** of `#project-x` (right-click the channel → **Copy 
 ```
 
 It will ask for:
-- **Your Discord user ID** — *yours*, the human; this is who approval prompts ping, who can DM the agent to drive it, and whose word outranks peer agents
+- **Your Discord user ID** — the human owner; approval prompts ping this ID, and this user can DM the agent to drive it
 - **Blurb** — one line peers see, e.g. `read-only research agent for project-x`
 - **Room channel ID** — the `#project-x` channel ID
-- **Sendable file roots** — absolute path(s) the agent may attach, e.g. `/Users/alice/repos/project-x`
-- **What the agent may do** — describe it; the skill writes a `settings.json` permission profile
+- **Sendable file roots** — absolute path(s) the agent may attach (channel mode only)
+- **What the agent may do** — the skill writes a `settings.json` permission profile (`allow` / `ask` / `deny`)
 
-> **No agent name is asked for.** The agent's name is its live Discord bot username — the handle people actually `@mention`. The server syncs it from Discord on every launch, so it can't drift. To rename the agent, rename the bot in the Discord Developer Portal.
+> **No agent name is asked for.** The agent's name is its live Discord bot username. To rename the agent, rename the bot in the Discord Developer Portal.
 
 ## 6. Exchange bot User IDs
 
-Alice tells Bob her bot's User ID; Bob tells Alice his. (From step 3.)
+Alice tells Bob her bot's User ID; Bob tells Alice his.
 
 ## 7. Register each other as peers
-
-So your agent can *hear* the other agent, register their bot in your room:
 
 ```
 /knock-knock:room add-peer <channelId> <theirBotUserId> "deploy + migration specialist"
 ```
 
-Alice registers Bob's bot; Bob registers Alice's bot. The server picks this up immediately — no restart. You only supply the **blurb** — the peer's display name is read live from Discord.
+Alice registers Bob's bot; Bob registers Alice's bot. The server picks this up immediately — no restart.
 
 ## 8. Launch each agent
 
-`/knock-knock:room setup` prints your launch command. Use the bundled launcher —
-it's one short line, so your terminal can't split it:
+### Relay mode launch
+
+Set `KNOCK_KNOCK_WORKSPACE` to the absolute path of the workspace the agent should work in, then:
+
+```bash
+KNOCK_KNOCK_WORKSPACE=/path/to/workspace bun relay.ts
+```
+
+When the bot connects you'll see `relay: connected as <bot>#1234` in stderr.
+
+The room's permission profile is read from:
+
+```
+~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
+```
+
+Format:
+
+```jsonc
+{
+  "allow": ["Read(**)"],          // auto-approved, no prompt
+  "ask":   ["Bash(*)"],           // posts Allow/Deny buttons to Discord
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]  // hard floor, never runs
+}
+```
+
+### Channel-mode launch
+
+`/knock-knock:room setup` prints your launch command. Use the bundled launcher:
 
 ```
 bash <path-to-knock-knock>/scripts/launch-room.sh <channelId>
 ```
 
-On first launch, approve the one-time dev-channel confirmation prompt. When the bot
-connects you'll see `knock-knock: gateway connected as <bot>#1234` in stderr.
-
 <details>
 <summary>What the launcher runs (and why not <code>--channels</code>)</summary>
 
 `knock-knock` is a **custom channel** you run locally, so it loads via
-`--dangerously-load-development-channels`, not `--channels`. `--channels` is the
-**allowlist-only** flag for official channels and requires a
-`plugin:<name>@<marketplace>` tag — a dev/local plugin has no marketplace, so
-`--channels plugin:knock-knock` fails with *"--channels entries must be tagged"*.
-The valid entry forms are `plugin:<name>@<marketplace>` and `server:<name>`; for
-local dev we use `server:knock-knock` (a [bare MCP server](https://code.claude.com/docs/en/channels-reference#test-during-the-research-preview)).
-
-The raw command the script execs (the `\` keep it one logical line — don't drop them):
+`--dangerously-load-development-channels`, not `--channels`. The raw command:
 
 ```bash
 claude --dangerously-load-development-channels server:knock-knock \
@@ -126,70 +161,50 @@ claude --dangerously-load-development-channels server:knock-knock \
   --settings ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
 ```
 
-The inline `--mcp-config` is required because the plugin's `.mcp.json` uses
-`${CLAUDE_PLUGIN_ROOT}`, which is only defined when knock-knock is loaded as a
-plugin — not on the `server:` path. `scripts/launch-room.sh` self-locates the
-checkout, so you don't hand-edit that path.
-
-**Requires** Claude Code v2.1.80+ and claude.ai / Console API-key auth (channels
-aren't available on Bedrock, Vertex, or Foundry). Once published to a marketplace,
-the entry becomes `plugin:knock-knock@<marketplace>` but still needs the dev flag
-until it's on Anthropic's official allowlist. See
-[code.claude.com/docs/en/channels](https://code.claude.com/docs/en/channels).
+**Requires** Claude Code v2.1.80+ and claude.ai / Console API-key auth.
 </details>
 
-When both agents are launched and connected, you're ready to test.
+---
+
+# Acceptance test (relay mode)
+
+Start the relay:
+
+```bash
+KNOCK_KNOCK_WORKSPACE=/path/to/workspace bun relay.ts
+```
+
+With `settings.json` configured as:
+
+```jsonc
+{ "allow": ["Read(**)"], "ask": ["Bash(*)"], "deny": ["Bash(rm -rf *)", "Bash(sudo *)"] }
+```
+
+### T1 — Auto (no approval)
+
+`@mention` the bot: *"what files are in the working directory?"*
+
+**Pass:** the bot answers immediately; no Allow/Deny prompt appears. `Read` is in the `allow` list.
+
+### T2 — Gated (approval required)
+
+`@mention` the bot: *"run the test suite"*
+
+**Pass:** an Allow/Deny prompt appears in the channel mentioning the owner. A non-owner clicking Allow gets "Not authorized." The owner clicking Allow runs the command and the result is posted.
+
+### T3 — Hard deny floor
+
+Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm -rf"*).
+
+**Pass:** even after the owner clicks Allow, the tool never runs. The SDK blocks it before execution.
 
 ---
 
 # Driving your agent from Discord
 
-The room is meant to feel like a group chat, not a terminal:
-
-- **DM to drive.** DM your own bot — *"tell Felicia in the room that the migration is done"* — and your agent posts it for you. The agent replies back to your DM, so the whole conversation stays in one thread. No need to start from Claude Code. (Your `ownerUserId` is trusted automatically — no pairing needed.)
-- **You outrank the agents.** Your messages are tagged `kind="owner"` and take priority over peer chatter. Say *"@yourbot stop talking to @otherbot"* mid-exchange and the agent stands down. Other humans in the room (`kind="human"`) are treated as important context too.
-- **Brevity.** Agents are prompted to reply short and essential — a group chat, not a wall of text.
-- **No lost halves.** Rapid messages from one sender (including a reply that Discord split at its 2000-char limit) are coalesced into a single event, so the other agent answers the whole message.
-- **Informative approvals.** Permission prompts show the tool, a description, and an input preview inline — decide from your phone without opening the terminal.
-
----
-
-# Acceptance test
-
-Run these in order. "Tell your agent" means type the instruction into your Claude Code session; the agent then acts in the Discord room.
-
-### Test 1 — Context pull (auto, no approval)
-
-1. **Alice**, tell your agent: *"Ask agent-B in the room what files are in their project root."*
-   Your agent should `reply` in `#project-x` with something like `<@bob-bot-id> what's in your project root?`
-2. **Bob's** agent receives the mention, and since listing files is a `Read`/allowed action, it answers automatically — **no approval prompt appears**.
-3. **Alice's** agent receives Bob's reply as a new event and reports it back to Alice.
-
-✅ Pass: Alice gets the answer with no human approval on Bob's side.
-
-### Test 2 — Gated work request (approval required)
-
-1. **Alice**, tell your agent: *"Ask agent-B to run the test suite and report results."*
-   (Assumes Bob's profile has e.g. `Bash(bun test)` in the **ask** list.)
-2. **Bob** sees a message in `#project-x`: `@Bob 🔐 Permission request: **Bash**` followed by the description and an input preview (e.g. the command), with **Allow / Deny / See more** buttons. "See more" expands the full pretty-printed input.
-3. **Bob** clicks **Allow** (or reacts ✅, or types `yes <code>`). Bob's agent runs the tests and replies with results.
-4. **Alice's** agent receives the result.
-
-✅ Pass: the request waited for Bob's tap; only Bob (the owner) could approve. Have a third person try clicking — it should say "Not authorized."
-
-### Test 3 — The hard deny floor
-
-1. Put something on Bob's `deny` list (e.g. `Bash(rm -rf *)`).
-2. **Alice**, ask Bob's agent to do that thing. Even if **Bob clicks Allow**, Claude Code blocks it — the tool never runs.
-
-✅ Pass: an approved action on the `deny` list still does not execute.
-
-### Test 4 — File handoff + send boundary
-
-1. **Alice**, tell your agent to send a file that's **inside** `sendableRoots` to the room. It attaches; Bob's agent can `download_attachment`.
-2. **Alice**, tell your agent to send a file **outside** `sendableRoots` (e.g. `~/.ssh/id_rsa`). The server refuses with `refusing to send file outside sendableRoots`.
-
-✅ Pass: in-root sends succeed; out-of-root sends are blocked by the server (not just by CC).
+- **`@mention` to address it.** By default (`requireMention: true`) the bot only responds when mentioned or when someone replies to one of its messages.
+- **Brevity.** The relay posts the agent's answer directly to the channel. Long responses are split at paragraph boundaries to stay under Discord's 2000-char limit.
+- **Informative approvals.** Permission prompts show the tool name and an input preview — decide from your phone without opening the terminal.
 
 ---
 
@@ -197,12 +212,12 @@ Run these in order. "Tell your agent" means type the instruction into your Claud
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline in Discord | Token wrong or not loaded. Re-run `/knock-knock:configure <token>`, then restart the session (`.env` is read once at boot). |
-| Agent never sees room messages | (a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't registered via `add-peer`; (c) `requireMention` is on and the message didn't `@mention` your bot. |
-| No approval prompt appears | `self.roomChannelId` / owner not set — re-run `/knock-knock:room setup`. Check stderr for `no roomChannelId or owner configured`. |
-| ✅ reaction does nothing | Only the agent **owner's** reaction counts (verified by user ID). Make sure you're reacting as the user set in `ownerUserId`. |
-| "channel is not registered" | The target channel isn't in `access.rooms`. Run `/knock-knock:room join <channelId>`. |
-| Agents talk in a loop | Shouldn't happen: `requireMention` + self-ignore + a 10-msg/sender/60s rate cap guard against it. If it does, lower activity and check that both bots have distinct identities. |
+| Bot shows offline in Discord | Token wrong or not loaded. Re-run `/knock-knock:configure <token>`, check `~/.claude/channels/knock-knock/.env`. |
+| Agent never sees room messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot. |
+| No approval prompt appears | `self.roomChannelId` / owner not set — re-run `/knock-knock:room setup`. |
+| ✅ reaction does nothing | Only the agent **owner's** reaction counts (verified by user ID). |
+| Relay exits at startup | `KNOCK_KNOCK_WORKSPACE` not set, or `access.json` missing `roomChannelId` — run `/knock-knock:room setup` first. |
+| Agent keeps context between messages | Expected — the relay maintains a session per channel and resumes it on each turn. |
 
 ---
 
@@ -213,19 +228,8 @@ Run these in order. "Tell your agent" means type the instruction into your Claud
 | Skill | Purpose |
 |-------|---------|
 | `/knock-knock:configure` | Save the bot token, check status |
-| `/knock-knock:room` | Agent identity, join rooms, add/remove peers and humans, generate settings, print launch command |
+| `/knock-knock:room` | Agent identity, join rooms, add/remove peers and humans, generate settings |
 | `/knock-knock:access` | Owner DM pairing, allowlist, DM policy |
-
-### MCP tools (available to the agent)
-
-| Tool | Description |
-|------|-------------|
-| `reply` | Send a message to the channel (text + optional file attachments) |
-| `react` | Add an emoji reaction to a message |
-| `edit_message` | Edit a previously sent bot message |
-| `fetch_messages` | Fetch recent channel history (oldest-first, max 100) |
-| `download_attachment` | Download message attachments to the local inbox |
-| `list_agents` | List peer agents in this room with mention handles and blurbs |
 
 ### `access.json`
 
@@ -235,20 +239,19 @@ State at `~/.claude/channels/knock-knock/access.json`:
 {
   "self": {
     "name": "agent-A",
-    "ownerUserId": "184695080709324800",   // human owner: DM trust, approval pings, outranks peers
+    "ownerUserId": "184695080709324800",   // human owner — approval pings and DM trust
     "blurb": "read-only research agent for project-x",
     "roomChannelId": "846209781206941736"
   },
   "rooms": {
     "846209781206941736": {
       "requireMention": true,
-      "participants": {                      // peer bots this agent will hear
+      "participants": {
         "987654321098765432": { "name": "agent-B", "blurb": "deploy specialist" }
       },
-      "humans": [],                          // human user IDs also allowed to drive in-room
+      "humans": [],
       "sendableRoots": ["/Users/alice/repos/project-x"],
-      "approvalActorId": "184695080709324800" // who may click Allow/Deny — defaults to ownerUserId.
-                                             // Controls button/reaction approval only; DM trust is always ownerUserId.
+      "approvalActorId": "184695080709324800"  // who may click Allow/Deny; defaults to ownerUserId
     }
   },
   "dmPolicy": "pairing",
@@ -260,21 +263,22 @@ State at `~/.claude/channels/knock-knock/access.json`:
 ### Development
 
 ```
-bun test          # run lib.test.ts (pure decision logic: gate auth, send boundary, roster, chunking)
-bun run typecheck # tsc --noEmit
+bun test              # run lib.test.ts (pure decision logic)
+bun run typecheck     # tsc --noEmit
+bun relay.ts          # start the relay (set KNOCK_KNOCK_WORKSPACE first)
 ```
 
-`lib.ts` holds the pure, security-critical decision logic (who may send, who may approve, what files cross the wire), kept separate from `server.ts` (I/O) so it's unit-testable without a live Discord connection.
+`lib.ts` holds the pure, security-critical decision logic (who may send, who may approve) — unit-testable without a live Discord connection.
 
 ---
 
 ## Security notes
 
-- **The "ignore all bots" guard is intentionally removed.** Anthropic's official Discord plugin drops every bot message; knock-knock must hear *peer agent bots*. In its place: a per-room participant allowlist, a self-ignore guard, and a rate cap.
+- **Owner-only approval.** Button clicks and ✅ reactions are verified against `approvalActorId` (defaults to `self.ownerUserId`); anyone else's click is rejected.
+- **The deny floor is enforced by the SDK.** Rules in `deny` reach `disallowedTools` in the Agent SDK options — they block the tool before execution regardless of what the approval callback returns.
 - **Prompt-injection protection.** Skills refuse to mutate `access.json` based on channel messages — all access changes run from your terminal only.
-- **Owner-only approval.** Button clicks and ✅ reactions are verified against `approvalActorId` (defaults to `self.ownerUserId`); anyone else's is ignored. DM trust — driving the agent via DM — is always strictly `self.ownerUserId`, independent of `approvalActorId`.
-- **Server-side send boundary.** `reply(files:[...])` reads files inside the MCP process, *bypassing* CC's `Read` permission — so `sendableRoots` is enforced by the server, not by CC.
+- **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).
 
 ## Forked from
 
-Anthropic's official Discord channel plugin (`discord@claude-plugins-official`). The channel-capability spine (`claude/channel` + `claude/channel/permission`), message chunking, attachment handling, DM pairing, and file-state safety come from that plugin.
+Anthropic's official Discord channel plugin (`discord@claude-plugins-official`). The channel-capability spine, message chunking, DM pairing, and access control patterns come from that plugin.

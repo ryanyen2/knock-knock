@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["server.ts", "lib.ts", "lib.test.ts"]
+  "include": ["server.ts", "lib.ts", "lib.test.ts", "relay.ts", "state.ts", "agent-adapter.ts", "driver.ts", "approvals.ts", "adapters/**/*.ts"]
 }
