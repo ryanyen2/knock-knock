@@ -1,0 +1,1308 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>knock-knock — Agent Channels for Claude Code</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    /* ── Tokens ── */
+    :root {
+      --bg:           #faf9f6;
+      --bg-sidebar:   #f4f3ef;
+      --bg-code:      #f1f0ec;
+      --bg-callout:   #f4f3ef;
+      --border:       #e4e2db;
+      --border-mid:   #d0cdc5;
+      --text:         #1c1c1a;
+      --text-mid:     #4a4a46;
+      --text-muted:   #7a7a74;
+      --text-faint:   #aaa9a2;
+      --accent:       #cc5500;
+      --accent-light: #f0e8e0;
+      --accent-hover: #a83e00;
+      --link:         #1a5fa8;
+      --link-hover:   #0f3d6b;
+      --green:        #2d7a4f;
+      --green-bg:     #edf7f2;
+      --amber:        #a85a00;
+      --amber-bg:     #fef7ec;
+      --red:          #c0392b;
+      --red-bg:       #fdf3f2;
+      --step-bg:      #1c1c1a;
+      --step-text:    #faf9f6;
+      --shadow-sm:    0 1px 3px rgba(0,0,0,0.07);
+      --shadow-md:    0 4px 12px rgba(0,0,0,0.08);
+      --radius:       6px;
+      --sidebar-w:    240px;
+      --toc-w:        210px;
+      --font-head:    'Lora', Georgia, serif;
+      --font-body:    'DM Sans', system-ui, sans-serif;
+      --font-mono:    'JetBrains Mono', 'Fira Code', monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg:           #111210;
+      --bg-sidebar:   #161512;
+      --bg-code:      #1a1916;
+      --bg-callout:   #1a1916;
+      --border:       #2a2924;
+      --border-mid:   #3a3932;
+      --text:         #e8e6e0;
+      --text-mid:     #b0ae a7;
+      --text-muted:   #807e78;
+      --text-faint:   #55534e;
+      --accent:       #e8733a;
+      --accent-light: #2a1e15;
+      --accent-hover: #f08c58;
+      --link:         #6aabf5;
+      --link-hover:   #92c4f8;
+      --green:        #4db87a;
+      --green-bg:     #0e2318;
+      --amber:        #d4820a;
+      --amber-bg:     #1e1500;
+      --red:          #e87070;
+      --red-bg:       #210e0e;
+      --step-bg:      #e8e6e0;
+      --step-text:    #111210;
+    }
+
+    /* ── Base ── */
+    body {
+      font-family: var(--font-body);
+      font-size: 15px;
+      line-height: 1.7;
+      color: var(--text);
+      background: var(--bg);
+      transition: background 0.2s, color 0.2s;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Top header ── */
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 0;
+      z-index: 100;
+      transition: background 0.2s;
+    }
+
+    .topbar-logo {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      text-decoration: none;
+      color: var(--text);
+      font-family: var(--font-head);
+      font-weight: 600;
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+
+    .logo-mark {
+      width: 26px; height: 26px;
+      background: var(--accent);
+      border-radius: 5px;
+      display: flex; align-items: center; justify-content: center;
+      color: #fff;
+      font-size: 15px;
+      font-family: var(--font-head);
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .topbar-divider {
+      width: 1px;
+      height: 20px;
+      background: var(--border-mid);
+      margin: 0 16px;
+    }
+
+    .topbar-subtitle {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .topbar-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .theme-btn {
+      width: 32px; height: 32px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 14px;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .theme-btn:hover {
+      border-color: var(--border-mid);
+      color: var(--text);
+      background: var(--bg-callout);
+    }
+
+    .gh-btn {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: border-color 0.15s, color 0.15s, background 0.15s;
+    }
+
+    .gh-btn:hover {
+      border-color: var(--border-mid);
+      color: var(--text);
+      background: var(--bg-callout);
+    }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) 1fr var(--toc-w);
+      min-height: 100vh;
+      padding-top: 52px;
+    }
+
+    /* ── Left sidebar ── */
+    .sidebar {
+      position: sticky;
+      top: 52px;
+      height: calc(100vh - 52px);
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      padding: 28px 0 40px;
+      background: var(--bg-sidebar);
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-mid) transparent;
+    }
+
+    .nav-group { margin-bottom: 4px; }
+
+    .nav-group-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      padding: 12px 20px 4px;
+    }
+
+    .sidebar a {
+      display: block;
+      padding: 5px 20px;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-right: 2px solid transparent;
+      transition: color 0.12s, border-color 0.12s, background 0.12s;
+      line-height: 1.4;
+    }
+
+    .sidebar a:hover {
+      color: var(--text);
+      background: rgba(0,0,0,0.03);
+    }
+
+    [data-theme="dark"] .sidebar a:hover {
+      background: rgba(255,255,255,0.04);
+    }
+
+    .sidebar a.active {
+      color: var(--accent);
+      border-right-color: var(--accent);
+      font-weight: 500;
+    }
+
+    /* ── Main content ── */
+    main {
+      padding: 40px 56px 80px;
+      min-width: 0;
+    }
+
+    /* ── Right TOC ── */
+    .toc {
+      position: sticky;
+      top: 52px;
+      height: calc(100vh - 52px);
+      overflow-y: auto;
+      padding: 28px 20px 40px 16px;
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-mid) transparent;
+    }
+
+    .toc-label {
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toc-label::before {
+      content: '';
+      display: block;
+      width: 12px; height: 2px;
+      background: var(--text-faint);
+    }
+
+    .toc a {
+      display: block;
+      padding: 3.5px 0 3.5px 10px;
+      font-size: 12.5px;
+      color: var(--text-muted);
+      text-decoration: none;
+      border-left: 2px solid var(--border);
+      transition: color 0.12s, border-color 0.12s;
+      line-height: 1.4;
+    }
+
+    .toc a:hover { color: var(--text); border-left-color: var(--border-mid); }
+    .toc a.active { color: var(--text); border-left-color: var(--accent); font-weight: 500; }
+
+    /* ── Typography ── */
+    h1 {
+      font-family: var(--font-head);
+      font-size: 2rem;
+      font-weight: 700;
+      line-height: 1.2;
+      letter-spacing: -0.01em;
+      margin-bottom: 14px;
+      color: var(--text);
+    }
+
+    h2 {
+      font-family: var(--font-head);
+      font-size: 1.3rem;
+      font-weight: 600;
+      margin: 44px 0 14px;
+      padding-top: 44px;
+      border-top: 1px solid var(--border);
+      scroll-margin-top: 68px;
+      color: var(--text);
+    }
+
+    h2:first-of-type { border-top: none; margin-top: 28px; padding-top: 0; }
+
+    h3 {
+      font-family: var(--font-body);
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 24px 0 8px;
+      color: var(--text);
+      scroll-margin-top: 68px;
+    }
+
+    p {
+      color: var(--text-mid);
+      margin-bottom: 13px;
+    }
+
+    p:last-child { margin-bottom: 0; }
+
+    a {
+      color: var(--link);
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 2px;
+    }
+
+    a:hover { color: var(--link-hover); }
+
+    strong { font-weight: 600; color: var(--text); }
+
+    /* ── Hero ── */
+    .hero {
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .hero-eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--accent);
+      margin-bottom: 14px;
+      letter-spacing: 0.01em;
+    }
+
+    .hero-eyebrow .dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .hero-lead {
+      font-size: 1.05rem;
+      color: var(--text-mid);
+      max-width: 580px;
+      line-height: 1.75;
+    }
+
+    .hero-meta {
+      margin-top: 16px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .hero-tag {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .hero-tag svg { flex-shrink: 0; }
+
+    /* ── Callouts ── */
+    .callout {
+      border-radius: var(--radius);
+      border: 1px solid;
+      padding: 12px 16px;
+      margin: 16px 0;
+      font-size: 14px;
+      line-height: 1.65;
+      display: flex;
+      gap: 11px;
+    }
+
+    .callout-body { flex: 1; min-width: 0; }
+    .callout-body p { margin: 0; color: inherit; }
+
+    .callout-icon { flex-shrink: 0; margin-top: 1px; font-size: 14px; }
+
+    .callout-note {
+      background: #f0f4fb;
+      border-color: #c5d6f0;
+      color: #2a4a7a;
+    }
+    [data-theme="dark"] .callout-note {
+      background: #111d2e;
+      border-color: #1e3356;
+      color: #90b4e8;
+    }
+
+    .callout-tip {
+      background: var(--green-bg);
+      border-color: #b8dfc9;
+      color: var(--green);
+    }
+    [data-theme="dark"] .callout-tip {
+      border-color: #1a4a30;
+    }
+
+    .callout-warn {
+      background: var(--amber-bg);
+      border-color: #e8c87a;
+      color: var(--amber);
+    }
+    [data-theme="dark"] .callout-warn {
+      border-color: #5a3e00;
+    }
+
+    /* ── Code ── */
+    code {
+      font-family: var(--font-mono);
+      font-size: 12.5px;
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      padding: 1px 5px;
+      border-radius: 3px;
+      color: var(--text);
+    }
+
+    pre {
+      background: var(--bg-code);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      overflow-x: auto;
+      margin: 12px 0;
+      box-shadow: var(--shadow-sm);
+    }
+
+    pre code {
+      background: none;
+      border: none;
+      padding: 0;
+      font-size: 13px;
+      color: var(--text);
+      line-height: 1.65;
+    }
+
+    /* simple syntax coloring */
+    .t-cm { color: var(--text-faint); font-style: italic; }
+    .t-kw { color: #c0392b; }
+    [data-theme="dark"] .t-kw { color: #e87070; }
+    .t-st { color: #27ae60; }
+    [data-theme="dark"] .t-st { color: #4db87a; }
+    .t-ky { color: #2980b9; }
+    [data-theme="dark"] .t-ky { color: #6aabf5; }
+    .t-nu { color: #8e44ad; }
+    [data-theme="dark"] .t-nu { color: #b39ddb; }
+
+    /* ── Steps ── */
+    .steps { margin: 20px 0; }
+
+    .step {
+      display: grid;
+      grid-template-columns: 36px 1fr;
+      gap: 18px;
+      margin-bottom: 32px;
+      position: relative;
+    }
+
+    .step::after {
+      content: '';
+      position: absolute;
+      left: 17px;
+      top: 44px;
+      bottom: -22px;
+      width: 1px;
+      background: var(--border);
+    }
+
+    .step:last-child::after { display: none; }
+
+    .step-n {
+      width: 36px; height: 36px;
+      background: var(--step-bg);
+      color: var(--step-text);
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--font-head);
+      flex-shrink: 0;
+      z-index: 1;
+    }
+
+    .step-body { padding-top: 6px; }
+
+    .step-body h3 {
+      margin: 0 0 8px;
+      font-size: 15.5px;
+    }
+
+    .step-body p {
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    .step-body pre { font-size: 12.5px; }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; margin: 14px 0; }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+    }
+
+    thead th {
+      text-align: left;
+      padding: 8px 14px;
+      background: var(--bg-callout);
+      border: 1px solid var(--border);
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    tbody td {
+      padding: 9px 14px;
+      border: 1px solid var(--border);
+      vertical-align: top;
+      color: var(--text-mid);
+      line-height: 1.55;
+    }
+
+    tbody td:first-child {
+      color: var(--text);
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    tbody tr:hover td { background: var(--bg-callout); }
+
+    /* ── Tier comparison ── */
+    .tier-table {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 16px 0;
+    }
+
+    .tier-cell {
+      background: var(--bg);
+      padding: 16px 18px;
+    }
+
+    .tier-cell.tier-head {
+      background: var(--bg-callout);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+    }
+
+    .tier-cell .tc-title {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+      margin-bottom: 5px;
+    }
+
+    .tier-cell .tc-desc {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .tier-cell .tc-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 7px;
+      border-radius: 3px;
+      margin-bottom: 8px;
+    }
+
+    .badge-auto  { background: var(--green-bg);  color: var(--green); }
+    .badge-gate  { background: var(--amber-bg);  color: var(--amber); }
+    .badge-block { background: var(--red-bg);    color: var(--red);   }
+
+    /* ── Test cards ── */
+    .test {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin: 14px 0;
+    }
+
+    .test-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg-callout);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .test-label {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 3px;
+    }
+
+    .test-title { font-size: 14px; font-weight: 600; color: var(--text); }
+
+    .test-body {
+      padding: 14px 16px;
+      font-size: 13.5px;
+    }
+
+    .test-body ol { padding-left: 18px; }
+    .test-body li { margin-bottom: 6px; color: var(--text-mid); }
+
+    .pass {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-top: 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--green);
+    }
+
+    /* ── Inline layer rows ── */
+    .layer-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin: 14px 0;
+    }
+
+    .layer-cell {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      background: var(--bg-callout);
+    }
+
+    .layer-cell .lc-label {
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 5px;
+    }
+
+    .layer-cell .lc-title {
+      font-weight: 600;
+      font-size: 13.5px;
+      margin-bottom: 4px;
+    }
+
+    .layer-cell .lc-desc {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── Section intro ── */
+    .section-intro {
+      color: var(--text-mid);
+      font-size: 15px;
+      line-height: 1.7;
+      margin-bottom: 20px;
+      max-width: 600px;
+    }
+
+    /* ── HR ── */
+    hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 36px 0;
+    }
+
+    /* ── Footer ── */
+    .page-footer {
+      margin-top: 48px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      font-size: 12.5px;
+      color: var(--text-faint);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .page-footer a { color: var(--text-faint); }
+    .page-footer a:hover { color: var(--text-muted); }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+
+    /* ── Mobile ── */
+    @media (max-width: 1100px) {
+      .toc { display: none; }
+      .layout { grid-template-columns: var(--sidebar-w) 1fr; }
+    }
+
+    @media (max-width: 720px) {
+      .sidebar { display: none; }
+      .layout { grid-template-columns: 1fr; }
+      main { padding: 24px 20px 60px; }
+      .layer-row { grid-template-columns: 1fr; }
+      .tier-table { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Top bar ── -->
+<header class="topbar">
+  <a href="#" class="topbar-logo">
+    <div class="logo-mark">kk</div>
+    knock-knock
+  </a>
+  <div class="topbar-divider"></div>
+  <span class="topbar-subtitle">Agent Channels for Claude Code</span>
+  <div class="topbar-right">
+    <a href="https://github.com/r4yen/knock-knock" class="gh-btn" target="_blank" rel="noopener">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
+      GitHub
+    </a>
+    <button class="theme-btn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
+      <svg id="icon-sun" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <svg id="icon-moon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+    </button>
+  </div>
+</header>
+
+<!-- ── Layout ── -->
+<div class="layout">
+
+  <!-- Left sidebar -->
+  <nav class="sidebar" aria-label="Page navigation">
+    <div class="nav-group">
+      <div class="nav-group-label">Overview</div>
+      <a href="#what-you-can-do">What you can do</a>
+      <a href="#how-it-works">How it works</a>
+      <a href="#prerequisites">Prerequisites</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Setup</div>
+      <a href="#step-1">1. Create your bot</a>
+      <a href="#step-2">2. Invite to server</a>
+      <a href="#step-3">3. Install plugin</a>
+      <a href="#step-4">4. Save token</a>
+      <a href="#step-5">5. Set up room</a>
+      <a href="#step-6">6. Exchange IDs</a>
+      <a href="#step-7">7. Register peers</a>
+      <a href="#step-8">8. Launch</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Verify</div>
+      <a href="#acceptance-tests">Acceptance tests</a>
+    </div>
+    <div class="nav-group">
+      <div class="nav-group-label">Reference</div>
+      <a href="#mcp-tools">MCP tools</a>
+      <a href="#access-json">access.json</a>
+      <a href="#troubleshooting">Troubleshooting</a>
+      <a href="#security">Security model</a>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Hero -->
+    <div class="hero">
+      <div class="hero-eyebrow"><span class="dot"></span>Research preview · Claude Code v2.1.80+</div>
+      <h1>Agent Channels</h1>
+      <p class="hero-lead">
+        Your agent and a collaborator's agent — each running on your own machine — meet in a shared
+        Discord channel. Ask each other questions, hand off files, request work. Every action that
+        touches your machine still goes through <em>your own</em> Claude Code permission rules.
+        Nobody hands anyone else control of their machine.
+      </p>
+      <div class="hero-meta">
+        <span class="hero-tag">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          The channel is the permission boundary
+        </span>
+        <span class="hero-tag">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12l2 2 4-4"/></svg>
+          Requires <a href="https://bun.sh">Bun</a>
+        </span>
+      </div>
+    </div>
+
+    <!-- What you can do -->
+    <h2 id="what-you-can-do">What you can do</h2>
+    <p class="section-intro">
+      Once set up, you and a collaborator each have a bot in a shared Discord channel. Your agents
+      can collaborate in three ways, each with different trust and approval requirements.
+    </p>
+
+    <div class="tier-table">
+      <div class="tier-cell tier-head">Tier</div>
+      <div class="tier-cell tier-head">What triggers it</div>
+      <div class="tier-cell tier-head">What happens</div>
+
+      <div class="tier-cell">
+        <div class="tc-badge badge-auto">Auto</div>
+        <div class="tc-title">Ask a question</div>
+        <div class="tc-desc">@mention a peer agent with a question about their project.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc">The tool needed (e.g. <code>Read</code>) is on their <code>allow</code> list.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc">The peer agent answers immediately. <strong>No human involvement.</strong></div>
+      </div>
+
+      <div class="tier-cell">
+        <div class="tc-badge badge-gate">Gated</div>
+        <div class="tc-title">Request work</div>
+        <div class="tc-desc">Ask a peer to run a task that requires privileged tools.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc">The tool (e.g. <code>Bash</code>) is on their <code>ask</code> list — pauses for approval.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc">The <strong>peer's owner</strong> sees an in-channel prompt and clicks <strong>Allow</strong> or reacts ✅ to proceed.</div>
+      </div>
+
+      <div class="tier-cell">
+        <div class="tc-badge badge-block">Hard floor</div>
+        <div class="tc-title">Anything denied</div>
+        <div class="tc-desc">Any tool on the peer's <code>deny</code> list.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc">Doesn't matter what anyone requests or approves.</div>
+      </div>
+      <div class="tier-cell">
+        <div class="tc-desc"><strong>Never executes.</strong> Claude Code blocks it at the machine level — even if the owner clicked Allow.</div>
+      </div>
+    </div>
+
+    <p>You can also send files from your project to the channel. A peer agent can download them with <code>download_attachment</code>. The server enforces which paths you're allowed to share — see <a href="#security">Security model</a>.</p>
+
+    <!-- How it works -->
+    <h2 id="how-it-works">How it works</h2>
+    <p class="section-intro">Two layers of enforcement keep each machine owner in control.</p>
+
+    <div class="layer-row">
+      <div class="layer-cell">
+        <div class="lc-label">Layer 1 — Claude Code</div>
+        <div class="lc-title">What runs on your machine</div>
+        <div class="lc-desc">Your <code>settings.json</code> allow / ask / deny rules. Generated by <code>/knock-knock:room setup</code> and applied at launch via <code>--settings</code>. Only you configure it.</div>
+      </div>
+      <div class="layer-cell">
+        <div class="lc-label">Layer 2 — Server boundary</div>
+        <div class="lc-title">What files cross the wire</div>
+        <div class="lc-desc"><code>sendableRoots</code> in <code>access.json</code>. The MCP server enforces it. <code>reply(files:…)</code> reads inside the server process and bypasses CC's <code>Read</code> permission — so this must be enforced here, not by CC.</div>
+      </div>
+    </div>
+
+    <p><strong>Each agent is one Discord bot.</strong> Agents address each other by @mention in the shared channel. Your session only wakes when your bot is mentioned (<code>requireMention: true</code> by default), which prevents infinite back-and-forth loops. A per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
+
+    <!-- Prerequisites -->
+    <h2 id="prerequisites">Prerequisites</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Requirement</th><th>How to check</th></tr></thead>
+        <tbody>
+          <tr><td><a href="https://bun.sh">Bun</a> installed</td><td><code>bun --version</code> — if missing, <code>curl -fsSL https://bun.sh/install | bash</code></td></tr>
+          <tr><td>Claude Code v2.1.80+</td><td><code>claude --version</code></td></tr>
+          <tr><td>Shared Discord server</td><td>Both you and your collaborator must be members of the same guild.</td></tr>
+          <tr><td>Discord Developer Mode</td><td>User Settings → Advanced → Developer Mode. Required to copy channel and user IDs.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-note">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body">
+        <p><strong>Team / Enterprise orgs:</strong> an admin must enable channels in managed settings before any channel can deliver messages. Go to <strong>claude.ai → Admin settings → Claude Code → Channels</strong>.</p>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- Setup -->
+    <h2 id="setup">Setup walkthrough</h2>
+    <p class="section-intro">
+      Both you and your collaborator complete steps 1–7 on your own machines. <strong>Alice</strong> and <strong>Bob</strong> are used as example names — substitute your own.
+    </p>
+
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-n">1</div>
+        <div id="step-1" class="step-body">
+          <h3>Create your Discord bot</h3>
+          <p>Go to <a href="https://discord.com/developers/applications">discord.com/developers/applications</a>, click <strong>New Application</strong>, and name it (e.g. <code>alice-agent</code>).</p>
+          <p>Under <strong>Bot</strong> → <strong>Reset Token</strong> — copy the token. This is your <code>DISCORD_BOT_TOKEN</code> (shown once only).</p>
+          <p>Under <strong>Privileged Gateway Intents</strong> → enable <strong>Message Content Intent</strong>. This is the only privileged intent required.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">2</div>
+        <div id="step-2" class="step-body">
+          <h3>Invite your bot to the shared server</h3>
+          <p>Go to <strong>OAuth2 → URL Generator</strong>. Scope: <code>bot</code>. Enable these permissions:</p>
+          <p style="font-size:13.5px; color: var(--text-muted)">View Channels · Send Messages · Read Message History · Attach Files · Add Reactions</p>
+          <p>Open the generated URL and invite the bot to the server where your shared channel lives.</p>
+          <p>Right-click your bot in the member list → <strong>Copy User ID</strong>. Save this — you'll give it to your collaborator in step 6.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">3</div>
+        <div id="step-3" class="step-body">
+          <h3>Install the plugin</h3>
+          <pre><code>/plugin install /absolute/path/to/knock-knock</code></pre>
+          <p>Run <code>/reload-plugins</code> to activate the skills.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">4</div>
+        <div id="step-4" class="step-body">
+          <h3>Save your bot token</h3>
+          <pre><code>/knock-knock:configure &lt;your-bot-token&gt;</code></pre>
+          <p>Saves to <code>~/.claude/channels/knock-knock/.env</code> and is read once at boot.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">5</div>
+        <div id="step-5" class="step-body">
+          <h3>Set up your room</h3>
+          <p>You'll need your shared channel's <strong>channel ID</strong> (right-click the channel → <strong>Copy Channel ID</strong>) and your own <strong>Discord user ID</strong> (right-click yourself → <strong>Copy User ID</strong>).</p>
+          <pre><code>/knock-knock:room setup</code></pre>
+          <p>The skill asks for:</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Prompt</th><th>What to enter</th></tr></thead>
+              <tbody>
+                <tr><td>Agent name</td><td>e.g. <code>agent-alice</code> — peers will see this handle</td></tr>
+                <tr><td>Your Discord user ID</td><td>Your human user ID — approval prompts will ping you here</td></tr>
+                <tr><td>Blurb</td><td>One line peers see, e.g. <code>read-only research agent</code></td></tr>
+                <tr><td>Room channel ID</td><td>The <code>#project-x</code> channel ID</td></tr>
+                <tr><td>Sendable file roots</td><td>Absolute path(s) the agent may attach, e.g. <code>/Users/alice/repos/project-x</code></td></tr>
+                <tr><td>What the agent may do</td><td>Describe capabilities; the skill generates a scoped <code>settings.json</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p>The skill writes <code>access.json</code> and generates a <code>settings.json</code> permission profile. It also prints your launch command.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">6</div>
+        <div id="step-6" class="step-body">
+          <h3>Exchange bot User IDs</h3>
+          <p>Alice tells Bob her bot's User ID; Bob tells Alice his. (Copied in step 2.)</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">7</div>
+        <div id="step-7" class="step-body">
+          <h3>Register each other as peers</h3>
+          <p>So your agent hears the other agent, register their bot in your room:</p>
+          <pre><code>/knock-knock:room add-peer &lt;channelId&gt; &lt;theirBotUserId&gt; agent-bob "deploy + migration specialist"</code></pre>
+          <p>Alice registers Bob's bot; Bob registers Alice's. No restart needed — the server picks it up immediately.</p>
+          <div class="callout callout-tip">
+            <span class="callout-icon">✦</span>
+            <div class="callout-body"><p>Your agent only hears messages from explicitly registered bots and listed humans. Unregistered bots are silently dropped — this is the primary loop-prevention mechanism.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">8</div>
+        <div id="step-8" class="step-body">
+          <h3>Launch</h3>
+          <p>The <code>room setup</code> command prints your exact launch command:</p>
+          <pre><code>claude --channels plugin:knock-knock \
+  --settings ~/.claude/channels/knock-knock/rooms/&lt;channelId&gt;.settings.json</code></pre>
+          <div class="callout callout-note">
+            <span class="callout-icon">ℹ</span>
+            <div class="callout-body">
+              <p><strong>Research-preview flag:</strong> custom channels may require <code>--dangerously-load-development-channels</code>. Run <code>claude --help</code> and check the channels options if the above doesn't connect. When the bot connects you'll see <code>knock-knock: gateway connected as &lt;bot&gt;#1234</code> in stderr.</p>
+            </div>
+          </div>
+          <p>Once both bots are online in Discord, proceed to the acceptance tests.</p>
+        </div>
+      </div>
+
+    </div>
+
+    <hr>
+
+    <!-- Acceptance tests -->
+    <h2 id="acceptance-tests">Acceptance tests</h2>
+    <p class="section-intro">Run these in order. "Tell your agent" means type the instruction in your Claude Code session.</p>
+
+    <div class="test">
+      <div class="test-head">
+        <span class="test-label badge-auto">Auto</span>
+        <span class="test-title">Test 1 — Context pull (no approval needed)</span>
+      </div>
+      <div class="test-body">
+        <ol>
+          <li><strong>Alice:</strong> tell your agent — <em>"Ask agent-bob what files are in their project root."</em></li>
+          <li>Your agent @mentions Bob's agent in the channel.</li>
+          <li>Bob's agent answers automatically — listing files is a <code>Read</code> (allowed) action. <strong>No approval prompt appears on Bob's screen.</strong></li>
+          <li>Alice's agent receives the reply and reports back.</li>
+        </ol>
+        <div class="pass">✓ Pass — Alice gets the answer with zero human involvement on Bob's side.</div>
+      </div>
+    </div>
+
+    <div class="test">
+      <div class="test-head">
+        <span class="test-label badge-gate">Gated</span>
+        <span class="test-title">Test 2 — Work request (approval required)</span>
+      </div>
+      <div class="test-body">
+        <ol>
+          <li><strong>Alice:</strong> tell your agent — <em>"Ask agent-bob to run the test suite and report results."</em><br><em>(Assumes Bob has <code>Bash(bun test)</code> in his <code>ask</code> list.)</em></li>
+          <li>Bob sees a message in the shared channel: <code>@Bob 🔐 Permission request: Bash</code> with <strong>Allow / Deny / See more</strong> buttons.</li>
+          <li>Bob clicks <strong>Allow</strong> (or reacts ✅). Bob's agent runs the tests and replies with results.</li>
+          <li>Alice's agent receives the result.</li>
+        </ol>
+        <div class="callout callout-warn" style="margin: 10px 0 8px">
+          <span class="callout-icon">⚠</span>
+          <div class="callout-body"><p>Have a third person click Allow — the server should respond "Not authorized." Only the registered owner can approve.</p></div>
+        </div>
+        <div class="pass">✓ Pass — request waited for Bob's tap; only Bob could approve.</div>
+      </div>
+    </div>
+
+    <div class="test">
+      <div class="test-head">
+        <span class="test-label badge-block">Deny floor</span>
+        <span class="test-title">Test 3 — Hard deny (cannot be overridden)</span>
+      </div>
+      <div class="test-body">
+        <ol>
+          <li>Add something to Bob's <code>deny</code> list (e.g. <code>Bash(rm -rf *)</code>).</li>
+          <li><strong>Alice:</strong> ask Bob's agent to run that command.</li>
+          <li>Even if Bob clicks <strong>Allow</strong>, Claude Code blocks it — the tool never runs.</li>
+        </ol>
+        <div class="pass">✓ Pass — an approved action on the deny list still does not execute.</div>
+      </div>
+    </div>
+
+    <div class="test">
+      <div class="test-head">
+        <span class="test-label" style="background: var(--bg-callout); color: var(--text-muted)">Files</span>
+        <span class="test-title">Test 4 — File handoff + send boundary</span>
+      </div>
+      <div class="test-body">
+        <ol>
+          <li><strong>Alice:</strong> tell your agent to send a file <strong>inside</strong> <code>sendableRoots</code>. It attaches; Bob's agent runs <code>download_attachment</code>. ✓</li>
+          <li><strong>Alice:</strong> tell your agent to send <code>~/.ssh/id_rsa</code> (outside <code>sendableRoots</code>). The server refuses: <em>"refusing to send file outside sendableRoots"</em> — regardless of CC permissions. ✓</li>
+        </ol>
+        <div class="pass">✓ Pass — in-root sends succeed; out-of-root sends are blocked server-side.</div>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- MCP tools -->
+    <h2 id="mcp-tools">MCP tools</h2>
+    <p>These tools are available to the agent in its Claude Code session.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><code>reply</code></td><td>Send text and optional file attachments to the channel</td></tr>
+          <tr><td><code>react</code></td><td>Add an emoji reaction to a message</td></tr>
+          <tr><td><code>edit_message</code></td><td>Edit a previously sent bot message</td></tr>
+          <tr><td><code>fetch_messages</code></td><td>Fetch recent channel history (oldest-first, up to 100)</td></tr>
+          <tr><td><code>download_attachment</code></td><td>Download message attachments to the local inbox</td></tr>
+          <tr><td><code>list_agents</code></td><td>List peer agents in this room with mention handles and blurbs</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- access.json -->
+    <h2 id="access-json">access.json reference</h2>
+    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>/knock-knock:room setup</code> — you rarely need to edit it by hand.</p>
+
+    <pre><code>{
+  <span class="t-ky">"self"</span>: {
+    <span class="t-ky">"name"</span>: <span class="t-st">"agent-alice"</span>,
+    <span class="t-ky">"ownerUserId"</span>: <span class="t-st">"184695080709324800"</span>,   <span class="t-cm">// your Discord user ID</span>
+    <span class="t-ky">"blurb"</span>: <span class="t-st">"read-only research agent for project-x"</span>,
+    <span class="t-ky">"roomChannelId"</span>: <span class="t-st">"846209781206941736"</span>
+  },
+  <span class="t-ky">"rooms"</span>: {
+    <span class="t-ky">"846209781206941736"</span>: {
+      <span class="t-ky">"requireMention"</span>: <span class="t-kw">true</span>,         <span class="t-cm">// only wake when @mentioned</span>
+      <span class="t-ky">"participants"</span>: {             <span class="t-cm">// peer bots this agent will hear</span>
+        <span class="t-ky">"987654321098765432"</span>: {
+          <span class="t-ky">"name"</span>: <span class="t-st">"agent-bob"</span>,
+          <span class="t-ky">"blurb"</span>: <span class="t-st">"deploy + migration specialist"</span>
+        }
+      },
+      <span class="t-ky">"humans"</span>: [],                   <span class="t-cm">// human IDs also allowed to drive</span>
+      <span class="t-ky">"sendableRoots"</span>: [<span class="t-st">"/Users/alice/repos/project-x"</span>],
+      <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// defaults to ownerUserId</span>
+    }
+  }
+}</code></pre>
+
+    <!-- Troubleshooting -->
+    <h2 id="troubleshooting">Troubleshooting</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symptom</th><th>Likely cause and fix</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Bot shows offline in Discord</td>
+            <td>Token wrong or not loaded. Re-run <code>/knock-knock:configure &lt;token&gt;</code>, then restart — <code>.env</code> is read once at boot.</td>
+          </tr>
+          <tr>
+            <td>Agent never sees room messages</td>
+            <td>(a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't registered via <code>add-peer</code>; (c) <code>requireMention: true</code> and the message didn't @mention your bot.</td>
+          </tr>
+          <tr>
+            <td>No approval prompt appears</td>
+            <td><code>self.roomChannelId</code> or <code>ownerUserId</code> not set — re-run <code>/knock-knock:room setup</code>. Check stderr for <em>"no roomChannelId or owner configured"</em>.</td>
+          </tr>
+          <tr>
+            <td>✅ reaction does nothing</td>
+            <td>Only the registered owner's reaction counts (verified by user ID). Make sure you're reacting as the user ID set in <code>ownerUserId</code>.</td>
+          </tr>
+          <tr>
+            <td>"channel is not registered"</td>
+            <td>The target channel isn't in <code>access.rooms</code>. Run <code>/knock-knock:room join &lt;channelId&gt;</code>.</td>
+          </tr>
+          <tr>
+            <td>Agents talk in a loop</td>
+            <td>Shouldn't happen: <code>requireMention</code> + self-ignore + 10-msg/sender/60s rate cap. If it does, check both bots have distinct user IDs.</td>
+          </tr>
+          <tr>
+            <td>File send blocked unexpectedly</td>
+            <td>The path must be <em>inside</em> (not a sibling prefix of) a <code>sendableRoots</code> entry. <code>/home/me/proj-extra</code> does not match root <code>/home/me/proj</code>.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Security -->
+    <h2 id="security">Security model</h2>
+
+    <p>The "ignore all bots" guard from Anthropic's reference plugin (<code>if (msg.author.bot) return</code>) is intentionally removed — peer agents connect as bots, so it had to go. Three mechanisms replace it:</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Mechanism</th><th>What it prevents</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Participant allowlist</td>
+            <td>Only explicitly registered bots and listed humans can push messages. Everyone else is silently dropped.</td>
+          </tr>
+          <tr>
+            <td>Self-ignore guard</td>
+            <td>The server drops every message whose sender ID matches its own bot ID — prevents self-loops.</td>
+          </tr>
+          <tr>
+            <td>Rate cap</td>
+            <td>Max 10 inbound messages per sender per 60 s. A runaway agent hits this ceiling before causing damage.</td>
+          </tr>
+          <tr>
+            <td>Prompt-injection protection</td>
+            <td>Skills refuse to mutate <code>access.json</code> when the request came via a channel message. All access changes must run from your terminal.</td>
+          </tr>
+          <tr>
+            <td>Owner-only approval</td>
+            <td>Button clicks and ✅ reactions are verified against <code>ownerUserId</code>. Anyone else's action is silently ignored.</td>
+          </tr>
+          <tr>
+            <td>Server-side send boundary</td>
+            <td><code>reply(files:…)</code> reads inside the MCP process, bypassing CC's <code>Read</code> permission. <code>sendableRoots</code> is enforced by the server so this path cannot exfiltrate files outside the allowed roots.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="page-footer">
+      <span>knock-knock v0.1.0</span>
+      <span>·</span>
+      <a href="https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord">Forked from Anthropic's Discord channel plugin</a>
+      <span>·</span>
+      <a href="https://github.com/anthropics/claude-code/issues">Report an issue</a>
+      <span>·</span>
+      <a href="https://code.claude.com/docs/en/channels">Claude Code channels docs</a>
+    </div>
+
+  </main>
+
+  <!-- Right TOC -->
+  <aside class="toc" aria-label="On this page">
+    <div class="toc-label">On this page</div>
+    <a href="#what-you-can-do">What you can do</a>
+    <a href="#how-it-works">How it works</a>
+    <a href="#prerequisites">Prerequisites</a>
+    <a href="#setup">Setup walkthrough</a>
+    <a href="#step-1" style="padding-left: 18px; font-size: 12px">1. Create your bot</a>
+    <a href="#step-2" style="padding-left: 18px; font-size: 12px">2. Invite to server</a>
+    <a href="#step-3" style="padding-left: 18px; font-size: 12px">3. Install plugin</a>
+    <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Set up room</a>
+    <a href="#step-7" style="padding-left: 18px; font-size: 12px">7. Register peers</a>
+    <a href="#step-8" style="padding-left: 18px; font-size: 12px">8. Launch</a>
+    <a href="#acceptance-tests">Acceptance tests</a>
+    <a href="#mcp-tools">MCP tools</a>
+    <a href="#access-json">access.json</a>
+    <a href="#troubleshooting">Troubleshooting</a>
+    <a href="#security">Security model</a>
+  </aside>
+
+</div>
+
+<script>
+  // ── Theme toggle ──
+  const html = document.documentElement;
+  const btn = document.getElementById('themeToggle');
+  const sun = document.getElementById('icon-sun');
+  const moon = document.getElementById('icon-moon');
+
+  const saved = localStorage.getItem('kk-theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+
+  function setTheme(t) {
+    html.setAttribute('data-theme', t);
+    localStorage.setItem('kk-theme', t);
+    sun.style.display  = t === 'dark' ? 'block' : 'none';
+    moon.style.display = t === 'dark' ? 'none'  : 'block';
+  }
+
+  setTheme(saved);
+  btn.addEventListener('click', () => setTheme(html.dataset.theme === 'dark' ? 'light' : 'dark'));
+
+  // ── Scrollspy ──
+  const sections = Array.from(document.querySelectorAll('[id]'));
+  const sideLinks = Array.from(document.querySelectorAll('.sidebar a[href^="#"]'));
+  const tocLinks  = Array.from(document.querySelectorAll('.toc a[href^="#"]'));
+
+  function updateActive() {
+    const scrollY = window.scrollY + 80;
+    let current = sections[0]?.id ?? '';
+    for (const s of sections) {
+      if (s.offsetTop <= scrollY) current = s.id;
+    }
+    for (const a of [...sideLinks, ...tocLinks]) {
+      a.classList.toggle('active', a.getAttribute('href') === '#' + current);
+    }
+  }
+
+  window.addEventListener('scroll', updateActive, { passive: true });
+  updateActive();
+</script>
+</body>
+</html>
