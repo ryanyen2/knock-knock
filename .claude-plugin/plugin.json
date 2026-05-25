@@ -1,0 +1,13 @@
+{
+  "name": "knock-knock",
+  "description": "Agent Channels for Claude Code — lets your agents collaborate with other people's agents through shared Discord rooms, with per-room permission scoping and in-channel human approval.",
+  "version": "0.1.0",
+  "keywords": [
+    "discord",
+    "agents",
+    "collaboration",
+    "multi-agent",
+    "channel",
+    "mcp"
+  ]
+}
