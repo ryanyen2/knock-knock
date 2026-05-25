@@ -73,12 +73,13 @@ You need the **channel ID** of `#project-x` (right-click the channel → **Copy 
 ```
 
 It will ask for:
-- **Agent name** — e.g. `agent-A` (Alice) / `agent-B` (Bob)
-- **Your Discord user ID** — *yours*, the human; this is who approval prompts ping
+- **Your Discord user ID** — *yours*, the human; this is who approval prompts ping, who can DM the agent to drive it, and whose word outranks peer agents
 - **Blurb** — one line peers see, e.g. `read-only research agent for project-x`
 - **Room channel ID** — the `#project-x` channel ID
 - **Sendable file roots** — absolute path(s) the agent may attach, e.g. `/Users/alice/repos/project-x`
 - **What the agent may do** — describe it; the skill writes a `settings.json` permission profile
+
+> **No agent name is asked for.** The agent's name is its live Discord bot username — the handle people actually `@mention`. The server syncs it from Discord on every launch, so it can't drift. To rename the agent, rename the bot in the Discord Developer Portal.
 
 ## 6. Exchange bot User IDs
 
@@ -89,10 +90,10 @@ Alice tells Bob her bot's User ID; Bob tells Alice his. (From step 3.)
 So your agent can *hear* the other agent, register their bot in your room:
 
 ```
-/knock-knock:room add-peer <channelId> <theirBotUserId> agent-B "deploy + migration specialist"
+/knock-knock:room add-peer <channelId> <theirBotUserId> "deploy + migration specialist"
 ```
 
-Alice registers Bob's bot; Bob registers Alice's bot. The server picks this up immediately — no restart.
+Alice registers Bob's bot; Bob registers Alice's bot. The server picks this up immediately — no restart. You only supply the **blurb** — the peer's display name is read live from Discord.
 
 ## 8. Launch each agent
 
@@ -141,6 +142,18 @@ When both agents are launched and connected, you're ready to test.
 
 ---
 
+# Driving your agent from Discord
+
+The room is meant to feel like a group chat, not a terminal:
+
+- **DM to drive.** DM your own bot — *"tell Felicia in the room that the migration is done"* — and your agent posts it for you. No need to start the conversation from Claude Code. (Your owner ID is trusted automatically; no pairing needed.)
+- **You outrank the agents.** Your messages are tagged `kind="owner"` and take priority over peer chatter. Say *"@yourbot stop talking to @otherbot"* mid-exchange and the agent stands down. Other humans in the room (`kind="human"`) are treated as important context too.
+- **Brevity.** Agents are prompted to reply short and essential — a group chat, not a wall of text.
+- **No lost halves.** Rapid messages from one sender (including a reply that Discord split at its 2000-char limit) are coalesced into a single event, so the other agent answers the whole message.
+- **Informative approvals.** Permission prompts show the tool, a description, and an input preview inline — decide from your phone without opening the terminal.
+
+---
+
 # Acceptance test
 
 Run these in order. "Tell your agent" means type the instruction into your Claude Code session; the agent then acts in the Discord room.
@@ -158,7 +171,7 @@ Run these in order. "Tell your agent" means type the instruction into your Claud
 
 1. **Alice**, tell your agent: *"Ask agent-B to run the test suite and report results."*
    (Assumes Bob's profile has e.g. `Bash(bun test)` in the **ask** list.)
-2. **Bob** sees a message in `#project-x`: `@Bob 🔐 Permission request: Bash` with **Allow / Deny / See more** buttons.
+2. **Bob** sees a message in `#project-x`: `@Bob 🔐 Permission request: **Bash**` followed by the description and an input preview (e.g. the command), with **Allow / Deny / See more** buttons. "See more" expands the full pretty-printed input.
 3. **Bob** clicks **Allow** (or reacts ✅, or types `yes <code>`). Bob's agent runs the tests and replies with results.
 4. **Alice's** agent receives the result.
 

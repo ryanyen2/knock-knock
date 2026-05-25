@@ -17,7 +17,7 @@ export type PendingEntry = {
 
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
-  name: string // display name, e.g. "agent-C"
+  name?: string // optional friendly label; the live Discord username is preferred
   blurb: string // one-line capability description
 }
 
@@ -32,7 +32,7 @@ export type RoomConfig = {
 
 /** This agent's own identity, written by /knock-knock:room setup. */
 export type Self = {
-  name: string
+  name?: string // the live Discord bot username; server refreshes it on connect
   ownerUserId: string // Discord user ID of the human who owns this agent
   blurb: string
   roomChannelId: string // primary room where approval prompts are posted
@@ -82,16 +82,36 @@ export function approverFor(access: Access): string | undefined {
 }
 
 /**
- * Whether a guild-channel sender may drive this agent: a registered peer bot or
- * a listed human, and never the agent itself (self-loop guard).
+ * Whether a guild-channel sender may drive this agent: the agent's own owner, a
+ * registered peer bot, or a listed human — and never the agent itself (loop
+ * guard). The owner is always allowed in their own room even if not in `humans`,
+ * so the operator can speak to their agent without extra setup.
  */
 export function guildSenderAllowed(
   room: RoomConfig,
   senderId: string,
   selfUserId: string | undefined,
+  ownerId?: string,
 ): boolean {
   if (senderId === selfUserId) return false
+  if (ownerId && senderId === ownerId) return true
   return senderId in room.participants || room.humans.includes(senderId)
+}
+
+/**
+ * Classify a room sender for priority/labelling. `owner` is the human operating
+ * this agent (their word overrides peer chatter); `human` is another person in
+ * the room; `agent` is a registered peer bot.
+ */
+export function senderKind(
+  room: RoomConfig,
+  senderId: string,
+  ownerId?: string,
+): 'owner' | 'human' | 'agent' | 'unknown' {
+  if (ownerId && senderId === ownerId) return 'owner'
+  if (room.humans.includes(senderId)) return 'human'
+  if (senderId in room.participants) return 'agent'
+  return 'unknown'
 }
 
 /** Whether a resolved path is one of, or nested under, the resolved roots. */
@@ -106,7 +126,7 @@ export function buildRosterLines(access: Access): string {
   const room = access.rooms[self.roomChannelId]
   if (!room?.participants || Object.keys(room.participants).length === 0) return ''
   return Object.entries(room.participants)
-    .map(([botId, p]) => `  • ${p.name} (<@${botId}>): ${p.blurb}`)
+    .map(([botId, p]) => `  • ${p.name ? `${p.name} ` : ''}(<@${botId}>): ${p.blurb}`)
     .join('\n')
 }
 
@@ -124,7 +144,15 @@ export function chunk(text: string, limit: number, mode: 'length' | 'newline'): 
       const para = rest.lastIndexOf('\n\n', limit)
       const line = rest.lastIndexOf('\n', limit)
       const space = rest.lastIndexOf(' ', limit)
-      cut = para > limit / 2 ? para : line > limit / 2 ? line : space > 0 ? space : limit
+      if (para > limit / 2) {
+        cut = para
+      } else if (line > limit / 2) {
+        cut = line
+      } else if (space > 0) {
+        cut = space
+      } else {
+        cut = limit
+      }
     }
     out.push(rest.slice(0, cut))
     rest = rest.slice(cut).replace(/^\n+/, '')

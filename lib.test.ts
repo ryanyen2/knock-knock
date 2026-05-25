@@ -2,6 +2,7 @@ import { test, expect } from 'bun:test'
 import {
   approverFor,
   guildSenderAllowed,
+  senderKind,
   isWithinRoots,
   buildRosterLines,
   pruneExpired,
@@ -66,6 +67,27 @@ test('guildSenderAllowed rejects an unknown sender', () => {
 test('guildSenderAllowed rejects self even if listed (loop guard)', () => {
   const r = room({ participants: { selfBot: { name: 'me', blurb: '' } } })
   expect(guildSenderAllowed(r, 'selfBot', 'selfBot')).toBe(false)
+})
+
+test('guildSenderAllowed allows the owner even when not a participant or listed human', () => {
+  expect(guildSenderAllowed(room(), 'owner1', 'selfBot', 'owner1')).toBe(true)
+})
+
+test('guildSenderAllowed still blocks self when self happens to be the owner', () => {
+  expect(guildSenderAllowed(room(), 'selfBot', 'selfBot', 'selfBot')).toBe(false)
+})
+
+// ─── senderKind: priority classification ─────────────────────────────────────
+
+test('senderKind labels the owner, humans, peers, and strangers', () => {
+  const r = room({
+    participants: { peerBot: { name: 'C', blurb: '' } },
+    humans: ['human1'],
+  })
+  expect(senderKind(r, 'owner1', 'owner1')).toBe('owner')
+  expect(senderKind(r, 'human1', 'owner1')).toBe('human')
+  expect(senderKind(r, 'peerBot', 'owner1')).toBe('agent')
+  expect(senderKind(r, 'stranger', 'owner1')).toBe('unknown')
 })
 
 // ─── isWithinRoots: the send-path security boundary ──────────────────────────

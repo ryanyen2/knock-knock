@@ -41,18 +41,23 @@ primary room if configured.
 
 Walk the user through:
 
-1. **Agent name** — ask: "What name should this agent go by? (e.g. agent-A, research-bot)"
-2. **Owner Discord user ID** — ask: "Your Discord user ID (snowflake). In Discord: Settings → Advanced → enable Developer Mode, then right-click your username → Copy User ID."
-3. **Blurb** — ask: "One-line description of what this agent does. Peers see this. (e.g. 'read-only research agent for project-x')"
-4. **Room channel ID** — ask: "The Discord channel ID of the room to join. In Discord (Developer Mode): right-click the channel → Copy Channel ID."
-5. **Sendable file roots** — ask: "Absolute path(s) the agent may send as file attachments (comma-separated). Leave blank to allow any non-state file." Parse as `[]` if blank.
-6. **Allow/deny rules** — ask: "What should this agent be allowed to do? Describe in plain terms or as CC permission rules." Then generate a CC settings JSON from the answer (see below).
+1. **Owner Discord user ID** — ask: "Your Discord user ID (snowflake). In Discord: Settings → Advanced → enable Developer Mode, then right-click your username → Copy User ID." This is who owns the agent: their DMs drive it and their word outranks peer chatter.
+2. **Blurb** — ask: "One-line description of what this agent does. Peers see this. (e.g. 'read-only research agent for project-x')"
+3. **Room channel ID** — ask: "The Discord channel ID of the room to join. In Discord (Developer Mode): right-click the channel → Copy Channel ID."
+4. **Sendable file roots** — ask: "Absolute path(s) the agent may send as file attachments (comma-separated). Leave blank to allow any non-state file." Parse as `[]` if blank.
+5. **Allow/deny rules** — ask: "What should this agent be allowed to do? Describe in plain terms or as CC permission rules." Then generate a CC settings JSON from the answer (see below).
+
+> Do **not** ask for an agent name. The agent's name *is* its live Discord bot
+> username — that's the handle people actually `@mention`. The server reads it
+> from Discord on connect and writes it into `self.name`, so a typed alias can
+> never drift from the real handle. (If you want to rename the agent, rename the
+> bot in the Discord Developer Portal; it re-syncs next launch.)
 
 After collecting answers:
 1. `mkdir -p ~/.claude/channels/knock-knock/rooms`
 2. Read existing access.json (or start from default).
-3. Write `self` block with `{ name, ownerUserId, blurb, roomChannelId }`.
-4. Write `rooms[channelId]` with `{ requireMention: true, participants: {}, humans: [], sendableRoots, approvalActorId: ownerUserId }`.
+3. Write `self` block with `{ ownerUserId, blurb, roomChannelId }` — **omit `name`**; the server fills it from Discord on connect.
+4. Write `rooms[channelId]` with `{ requireMention: true, participants: {}, humans: [], sendableRoots, approvalActorId: ownerUserId }`. The owner is auto-allowed in their own room, so you don't add them to `humans`.
 5. Save access.json.
 6. Write the CC settings file (see format below).
 7. Print the launch command.
@@ -62,12 +67,12 @@ After collecting answers:
 Prompts only for room-specific fields (sendableRoots, approvalActorId if different from self owner).
 Adds the room to `access.rooms`. Updates access.json. Regenerates settings for that room.
 
-### `add-peer <channelId> <peerBotUserId> <name> <blurb>`
+### `add-peer <channelId> <peerBotUserId> <blurb>`
 
 Adds a peer agent to the room's `participants` map. The server re-reads access.json immediately.
-Example: `/knock-knock:room add-peer 846209781206941736 123456789 agent-C "schema specialist — auth schema, DB migrations"`
+Example: `/knock-knock:room add-peer 846209781206941736 123456789 "schema specialist — auth schema, DB migrations"`
 
-Parse: channelId, peerBotUserId, name (next token), blurb (rest of string after name).
+Parse: channelId, peerBotUserId, blurb (rest of string). Write `participants[peerBotUserId] = { blurb }` — **no name**; the server resolves the peer's display name live from Discord (so it tracks renames). The blurb is the one thing Discord can't tell us, so it's the only field you store.
 
 ### `remove-peer <channelId> <peerBotUserId>`
 

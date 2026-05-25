@@ -983,8 +983,7 @@
             <table>
               <thead><tr><th>Prompt</th><th>What to enter</th></tr></thead>
               <tbody>
-                <tr><td>Agent name</td><td>e.g. <code>agent-alice</code> — peers will see this handle</td></tr>
-                <tr><td>Your Discord user ID</td><td>Your human user ID — approval prompts will ping you here</td></tr>
+                <tr><td>Your Discord user ID</td><td>Your human user ID — approval prompts ping you here, your DMs drive the agent, and your word outranks peer agents</td></tr>
                 <tr><td>Blurb</td><td>One line peers see, e.g. <code>read-only research agent</code></td></tr>
                 <tr><td>Room channel ID</td><td>The <code>#project-x</code> channel ID</td></tr>
                 <tr><td>Sendable file roots</td><td>Absolute path(s) the agent may attach, e.g. <code>/Users/alice/repos/project-x</code></td></tr>
@@ -992,7 +991,7 @@
               </tbody>
             </table>
           </div>
-          <p>The skill writes <code>access.json</code> and generates a <code>settings.json</code> permission profile. It also prints your launch command.</p>
+          <p><strong>No agent name is asked for</strong> — the agent's handle is its live Discord bot username, synced from Discord on every launch (rename the bot to rename the agent). The skill writes <code>access.json</code>, generates a <code>settings.json</code> permission profile, and prints your launch command.</p>
         </div>
       </div>
 
