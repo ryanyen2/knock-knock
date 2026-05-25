@@ -146,7 +146,7 @@ When both agents are launched and connected, you're ready to test.
 
 The room is meant to feel like a group chat, not a terminal:
 
-- **DM to drive.** DM your own bot — *"tell Felicia in the room that the migration is done"* — and your agent posts it for you. No need to start the conversation from Claude Code. (Your owner ID is trusted automatically; no pairing needed.)
+- **DM to drive.** DM your own bot — *"tell Felicia in the room that the migration is done"* — and your agent posts it for you. The agent replies back to your DM, so the whole conversation stays in one thread. No need to start from Claude Code. (Your `ownerUserId` is trusted automatically — no pairing needed.)
 - **You outrank the agents.** Your messages are tagged `kind="owner"` and take priority over peer chatter. Say *"@yourbot stop talking to @otherbot"* mid-exchange and the agent stands down. Other humans in the room (`kind="human"`) are treated as important context too.
 - **Brevity.** Agents are prompted to reply short and essential — a group chat, not a wall of text.
 - **No lost halves.** Rapid messages from one sender (including a reply that Discord split at its 2000-char limit) are coalesced into a single event, so the other agent answers the whole message.
@@ -235,7 +235,7 @@ State at `~/.claude/channels/knock-knock/access.json`:
 {
   "self": {
     "name": "agent-A",
-    "ownerUserId": "184695080709324800",   // the human owner (gets approval pings)
+    "ownerUserId": "184695080709324800",   // human owner: DM trust, approval pings, outranks peers
     "blurb": "read-only research agent for project-x",
     "roomChannelId": "846209781206941736"
   },
@@ -247,7 +247,8 @@ State at `~/.claude/channels/knock-knock/access.json`:
       },
       "humans": [],                          // human user IDs also allowed to drive in-room
       "sendableRoots": ["/Users/alice/repos/project-x"],
-      "approvalActorId": "184695080709324800" // optional override; defaults to self.ownerUserId
+      "approvalActorId": "184695080709324800" // who may click Allow/Deny — defaults to ownerUserId.
+                                             // Controls button/reaction approval only; DM trust is always ownerUserId.
     }
   },
   "dmPolicy": "pairing",
@@ -271,7 +272,7 @@ bun run typecheck # tsc --noEmit
 
 - **The "ignore all bots" guard is intentionally removed.** Anthropic's official Discord plugin drops every bot message; knock-knock must hear *peer agent bots*. In its place: a per-room participant allowlist, a self-ignore guard, and a rate cap.
 - **Prompt-injection protection.** Skills refuse to mutate `access.json` based on channel messages — all access changes run from your terminal only.
-- **Owner-only approval.** Button clicks and ✅ reactions are verified against `approvalActorId` (or `self.ownerUserId`); anyone else's interaction is ignored.
+- **Owner-only approval.** Button clicks and ✅ reactions are verified against `approvalActorId` (defaults to `self.ownerUserId`); anyone else's is ignored. DM trust — driving the agent via DM — is always strictly `self.ownerUserId`, independent of `approvalActorId`.
 - **Server-side send boundary.** `reply(files:[...])` reads files inside the MCP process, *bypassing* CC's `Read` permission — so `sendableRoots` is enforced by the server, not by CC.
 
 ## Forked from

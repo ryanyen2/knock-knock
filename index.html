@@ -1008,7 +1008,7 @@
         <div id="step-7" class="step-body">
           <h3>Register each other as peers</h3>
           <p>So your agent hears the other agent, register their bot in your room:</p>
-          <pre><code>/knock-knock:room add-peer &lt;channelId&gt; &lt;theirBotUserId&gt; agent-bob "deploy + migration specialist"</code></pre>
+          <pre><code>/knock-knock:room add-peer &lt;channelId&gt; &lt;theirBotUserId&gt; "deploy + migration specialist"</code></pre>
           <p>Alice registers Bob's bot; Bob registers Alice's. No restart needed — the server picks it up immediately.</p>
           <div class="callout callout-tip">
             <span class="callout-icon">✦</span>
@@ -1153,7 +1153,7 @@
       },
       <span class="t-ky">"humans"</span>: [],                   <span class="t-cm">// human IDs also allowed to drive</span>
       <span class="t-ky">"sendableRoots"</span>: [<span class="t-st">"/Users/alice/repos/project-x"</span>],
-      <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// defaults to ownerUserId</span>
+      <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// button/reaction approval only; DM trust is always ownerUserId</span>
     }
   }
 }</code></pre>
@@ -1224,7 +1224,7 @@
           </tr>
           <tr>
             <td>Owner-only approval</td>
-            <td>Button clicks and ✅ reactions are verified against <code>ownerUserId</code>. Anyone else's action is silently ignored.</td>
+            <td>Button clicks and ✅ reactions are verified against the configured approver (<code>approvalActorId</code>, defaulting to <code>ownerUserId</code>). DM trust — driving the agent via DM — is always strictly <code>ownerUserId</code>, regardless of any delegate. Anyone else's action is silently ignored.</td>
           </tr>
           <tr>
             <td>Server-side send boundary</td>
