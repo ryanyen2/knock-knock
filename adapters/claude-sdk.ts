@@ -7,6 +7,43 @@ import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKSystemMessage, SDKResultSuccess, SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentAdapter, PermissionProfile, Verdict } from '../agent-adapter.ts'
 
+const DEBUG = process.env.KNOCK_KNOCK_DEBUG === '1'
+
+function preview(v: unknown, n = 120): string {
+  const s = typeof v === 'string' ? v : JSON.stringify(v)
+  return s.length > n ? s.slice(0, n) + '…' : s
+}
+
+/** Log one SDK stream message to stderr. Proves the reply came from a real
+ *  Claude turn: you'll see model + session id + tool calls + token usage. */
+function logSdkMessage(m: any): void {
+  if (!DEBUG) return
+  switch (m?.type) {
+    case 'system':
+      if (m.subtype === 'init') {
+        process.stderr.write(
+          `[sdk] init · model=${m.model} · session=${m.session_id} · cwd=${m.cwd} · tools=${m.tools?.length ?? '?'}\n`,
+        )
+      }
+      break
+    case 'assistant':
+      for (const block of m.message?.content ?? []) {
+        if (block.type === 'text') process.stderr.write(`[sdk] assistant: ${preview(block.text)}\n`)
+        else if (block.type === 'tool_use') process.stderr.write(`[sdk] tool_use: ${block.name}(${preview(block.input)})\n`)
+      }
+      break
+    case 'user':
+      process.stderr.write(`[sdk] tool result received\n`)
+      break
+    case 'result':
+      process.stderr.write(
+        `[sdk] result · ${m.subtype} · turns=${m.num_turns} · ` +
+          `tokens(in/out)=${m.usage?.input_tokens ?? '?'}/${m.usage?.output_tokens ?? '?'} · cost_usd=${m.total_cost_usd ?? '?'}\n`,
+      )
+      break
+  }
+}
+
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
@@ -54,6 +91,7 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     })
 
     for await (const msg of result) {
+      logSdkMessage(msg)
       if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
         sessionId = msg.session_id
       } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
