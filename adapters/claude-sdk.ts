@@ -35,6 +35,10 @@ export class ClaudeSdkAdapter implements AgentAdapter {
         allowedTools: this.profile.allow,
         // deny is the hard floor — must reach the SDK here, not via canUseTool alone
         disallowedTools: this.profile.deny,
+        // Isolation mode: prevent the SDK from loading .mcp.json, CLAUDE.md, or
+        // any project/local settings from the workspace cwd. The relay passes all
+        // policy programmatically; stray disk config is the bug this guards against.
+        settingSources: [],
         ...(input.sessionId ? { resume: input.sessionId } : {}),
         canUseTool: async (toolName, toolInput) => {
           const handler = this.permHandler
