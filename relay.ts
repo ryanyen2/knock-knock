@@ -24,7 +24,7 @@ import {
 import { STATE_DIR, readAccessFile, readRoomSettings } from './state.ts'
 import { guildSenderAllowed, senderKind } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
-import { ClaudeSdkAdapter } from './adapters/claude-sdk.ts'
+import { makeAdapter } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 
 // ─── Load .env from state dir (same as server.ts) ────────────────────────────
@@ -190,7 +190,7 @@ async function handleInbound(msg: Message): Promise<void> {
   let driver = drivers.get(sessionKey)
   if (!driver) {
     const profile = readRoomSettings(channelId)
-    const adapter = new ClaudeSdkAdapter(WORKSPACE!)
+    const adapter = makeAdapter(process.env.KNOCK_KNOCK_AGENT ?? 'claude-sdk', { workspace: WORKSPACE! })
     driver = new Driver(adapter, sessionKey, profile, req =>
       approvals.request({ sessionKey, channelId, toolName: req.toolName, input: req.input }),
     )
