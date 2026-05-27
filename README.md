@@ -20,9 +20,8 @@ bun relay.ts                  # start the relay
 ```
 
 `bun setup.ts` walks you through everything with arrow-key menus and inline
-validation (first run = a guided wizard; after that = an action menu). Power
-users can jump straight to a step — `bun setup.ts agent add`, `room add`,
-`peer add`, `human add`, `configure`, or `status`.
+validation (first run = a guided wizard; after that = an action menu). Re-run
+it any time to add agents, rooms, peers, humans, or bot tokens.
 
 This is the mode described in the acceptance tests below. It does **not** require Claude Code or its experimental Channels capability — `bun setup.ts` works for any agent.
 
@@ -47,7 +46,7 @@ The original MCP-subprocess architecture: Claude Code is the host process; knock
 **Two layers of enforcement:**
 | Layer | Enforces | Configured by |
 |-------|----------|---------------|
-| Permission profile (`allow` / `ask` / `deny`) | what runs *on your machine* | `bun setup.ts room add` or `/knock-knock:room setup` generates it |
+| Permission profile (`allow` / `ask` / `deny`) | what runs *on your machine* | `bun setup.ts` or `/knock-knock:room setup` generates it |
 | knock-knock (`sendableRoots`) | what files *cross the wire* to peers | `access.json` per room |
 
 ---
@@ -97,8 +96,8 @@ bun setup.ts                  # guided wizard: identity → room → token
 
 The wizard asks for your owner ID, blurb, runtime (arrow-key pick), workspace,
 the `#project-x` channel ID + sendable roots, and your bot token (masked input).
-You can also run each step on its own: `bun setup.ts agent add`, `room add`,
-`configure`.
+After the first run, re-run `bun setup.ts` to open the action menu for adding
+rooms, registering peers, allowing humans, or saving/updating a token.
 
 **Or, if you use Claude Code:**
 
@@ -124,7 +123,7 @@ Alice tells Bob her bot's User ID; Bob tells Alice his.
 ## 6. Register each other as peers
 
 ```bash
-bun setup.ts peer add         # agent key, channel ID, their bot's User ID, blurb
+bun setup.ts                  # choose "Register a peer bot"
 ```
 
 Or in Claude Code:
@@ -234,11 +233,11 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts configure`, check `~/.claude/channels/knock-knock/.env`. |
+| Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts`, choose "Save / update a bot token", and check `~/.claude/channels/knock-knock/.env`. |
 | Agent never sees room messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the channel isn't in the agent's `rooms`. |
-| No approval prompt appears | The room's `approvalActorId` / agent `ownerUserId` not set — re-run `bun setup.ts room add`. |
+| No approval prompt appears | The room's `approvalActorId` / agent `ownerUserId` not set — re-run `bun setup.ts` and reconfigure the room. |
 | ✅ reaction does nothing | Only the agent **owner's** reaction counts (verified by user ID). |
-| Agent skipped at startup (`agent "x" skipped`) | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts configure`) or its `workspace` is empty (run `bun setup.ts agent add`). |
+| Agent skipped at startup (`agent "x" skipped`) | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts` and choose "Save / update a bot token") or its `workspace` is empty (run `bun setup.ts` and re-add/fix the agent). |
 | Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns. An owner/human message resets it. |
 | Agent keeps context between messages | Expected — the relay maintains a session per channel and resumes it on each turn. |
 
@@ -248,14 +247,10 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 
 ### Setup CLI (`bun setup.ts`) — agent-agnostic, no Claude Code needed
 
-| Command | Purpose |
-|---------|---------|
-| `bun setup.ts status` | List agents, rooms, and which token env vars are set |
-| `bun setup.ts agent add` | Add a bot identity (owner, runtime, workspace, token env var) |
-| `bun setup.ts room add` | Register a channel + write its default permission profile |
-| `bun setup.ts peer add` | Register a peer bot in a room |
-| `bun setup.ts human add` | Allow a human to drive an agent in a room |
-| `bun setup.ts configure` | Save a Discord bot token to `.env` |
+| Flow | Purpose |
+|------|---------|
+| First run | Guided wizard: create an agent, add a room, save a token |
+| Later runs | Action menu: add agents, rooms, peers, humans, or update a bot token |
 
 ### Skills (Claude Code only — equivalent to the CLI for single-agent setups)
 

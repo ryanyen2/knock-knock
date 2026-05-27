@@ -45,9 +45,8 @@ bun relay.ts                  # start the relay — picks up everything from acc
 
 `bun setup.ts` with no arguments runs an interactive wizard (arrow-key runtime
 picker, masked token input, inline validation). After the first agent exists it
-opens an action menu instead. Each step is also a direct subcommand for
-scripting: `bun setup.ts agent add`, `room add`, `peer add`, `human add`,
-`configure`, `status`.
+opens an action menu instead; re-run it whenever you need to add agents, rooms,
+peers, humans, or bot tokens.
 
 **Option B — Claude Code skill (if you're already using Claude Code):**
 
@@ -195,10 +194,9 @@ own Discord bot token, runtime, workspace, and rooms. The bots can share a chann
 and @-mention each other.
 
 ```bash
-# Add a second agent (different bot token, different workspace)
-bun setup.ts agent add    # key: "agent-b", runtime: codex, workspace: /other/project
-bun setup.ts room add     # same channelId as agent-a, if they should collaborate
-bun setup.ts configure    # save DISCORD_BOT_TOKEN_AGENT_B to .env
+# Re-run setup to add a second agent (different bot token, different workspace),
+# add it to the same room, and save its token.
+bun setup.ts
 
 # One relay starts both
 bun relay.ts
