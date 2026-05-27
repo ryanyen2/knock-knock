@@ -31,12 +31,35 @@ opencode-http       OpenCode over HTTP+SSE       (legacy/experimental — see no
 All modes start the same way:
 
 ```bash
-KNOCK_KNOCK_AGENT=<agent> KNOCK_KNOCK_WORKSPACE=/abs/path/to/workspace bun relay.ts
+bun relay.ts
 ```
 
-Prerequisite for every mode: a room set up via `/knock-knock:room setup` in
-Claude Code (so `access.json` and the room `settings.json` exist), and
-`DISCORD_BOT_TOKEN` available. See the main [README](../README.md).
+### Prerequisite: set up an agent
+
+**Option A — standalone CLI (any coding agent, no Claude Code needed):**
+
+```bash
+bun setup.ts agent add        # configure agent identity (runtime, workspace, token env var)
+bun setup.ts room add         # register a Discord channel
+bun setup.ts configure        # save the Discord bot token to .env
+bun relay.ts                  # start the relay — picks up everything from access.json
+```
+
+**Option B — Claude Code skill (if you're already using Claude Code):**
+
+Run `/knock-knock:room setup` in Claude Code. It writes the same `access.json`
+and room settings files, then tells you to run `bun relay.ts`.
+
+**Legacy single-agent env-var path (still supported):**
+
+Set `KNOCK_KNOCK_AGENT`, `KNOCK_KNOCK_WORKSPACE`, and `DISCORD_BOT_TOKEN` in
+the environment. `readAccessFileV2()` migrates these to a one-entry `agents`
+map on startup. This path is retained for backwards compatibility; the CLI is
+the recommended path for new installs.
+
+```bash
+KNOCK_KNOCK_AGENT=<agent> KNOCK_KNOCK_WORKSPACE=/abs/path DISCORD_BOT_TOKEN=<token> bun relay.ts
+```
 
 ---
 
@@ -158,6 +181,40 @@ KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
 ```
 
 `gemini` also has a built-in preset (`KNOCK_KNOCK_AGENT=gemini`).
+
+---
+
+## Multi-agent collaboration
+
+One relay process can manage several bot identities simultaneously — each with its
+own Discord bot token, runtime, workspace, and rooms. The bots can share a channel
+and @-mention each other.
+
+```bash
+# Add a second agent (different bot token, different workspace)
+bun setup.ts agent add    # key: "agent-b", runtime: codex, workspace: /other/project
+bun setup.ts room add     # same channelId as agent-a, if they should collaborate
+bun setup.ts configure    # save DISCORD_BOT_TOKEN_AGENT_B to .env
+
+# One relay starts both
+bun relay.ts
+# relay [default]: connected as agent-a#1234
+# relay [agent-b]: connected as agent-b#5678
+```
+
+**Collaborative features baked in:**
+
+- **Identity preamble** — each bot knows its own name, blurb, and the owner/human/peer
+  priority (`owner > human > peer`). Injected into the first turn of each session.
+- **Peer roster** — the agent sees who else is in the room (peer name + blurb) so it
+  can address them by `<@botId>`.
+- **`<channel>` envelope** — every inbound message is wrapped with sender kind, user ID,
+  message ID, and timestamp so the agent has structured context.
+- **Loop guard** — prevents two bots from ping-ponging indefinitely: after 4 consecutive
+  agent-to-agent turns (configurable), the relay stops auto-responding until an
+  owner/human message resets the counter.
+- **Per-channel approvals** — each bot's tool-permission prompts go to *that bot's*
+  owner, not a shared approver.
 
 ---
 

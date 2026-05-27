@@ -16,8 +16,11 @@ Configures this agent's identity and room membership, generates a Claude Code se
 file (the permission profile), and prints the ready-to-run launch command.
 
 One source of truth → two generated artifacts:
-- `~/.claude/channels/knock-knock/access.json` (`self` block + room entry)
-- `~/.claude/channels/knock-knock/rooms/<channelId>.settings.json` (CC permission profile)
+- `~/.claude/channels/knock-knock/access.json` (v2 `agents` map with agent entry + room)
+- `~/.claude/channels/knock-knock/rooms/<agentKey>/<channelId>.settings.json` (flat permission profile)
+
+> **Multi-agent setup** (managing several bot identities): use `bun setup.ts` instead —
+> it is agent-agnostic and does not require Claude Code.
 
 Arguments passed: `$ARGUMENTS`
 
@@ -54,18 +57,36 @@ Walk the user through:
 > bot in the Discord Developer Portal; it re-syncs next launch.)
 
 After collecting answers:
-1. `mkdir -p ~/.claude/channels/knock-knock/rooms`
-2. Read existing access.json (or start from default).
-3. Write `self` block with `{ ownerUserId, blurb, roomChannelId }` — **omit `name`**; the server fills it from Discord on connect.
-4. Write `rooms[channelId]` with `{ requireMention: true, participants: {}, humans: [], sendableRoots, approvalActorId: ownerUserId }`. The owner is auto-allowed in their own room, so you don't add them to `humans`.
-5. Save access.json.
-6. Write the CC settings file (see format below).
-7. Print the launch command.
+1. `mkdir -p ~/.claude/channels/knock-knock/rooms/<agentKey>`
+2. Read existing access.json (or start from default v2 shape: `{ "version": 2, "agents": {} }`).
+3. Write `agents["default"]` (or chosen key) with:
+   ```json
+   {
+     "ownerUserId": "<ownerUserId>",
+     "blurb": "<blurb>",
+     "runtime": "claude-sdk",
+     "workspace": "<cwd from env>",
+     "tokenEnv": "DISCORD_BOT_TOKEN",
+     "rooms": {
+       "<channelId>": {
+         "requireMention": true,
+         "participants": {},
+         "humans": [],
+         "sendableRoots": ["<sendableRoots>"],
+         "approvalActorId": "<ownerUserId>"
+       }
+     }
+   }
+   ```
+   **Omit `name`** — the relay fills it from Discord on connect.
+4. Save access.json.
+5. Write the flat settings file (see format below).
+6. Print the launch command.
 
 ### `join <channelId>` — add a room entry without re-doing identity
 
 Prompts only for room-specific fields (sendableRoots, approvalActorId if different from self owner).
-Adds the room to `access.rooms`. Updates access.json. Regenerates settings for that room.
+Adds the room to `agents["default"].rooms`. Updates access.json. Regenerates settings for that room.
 
 ### `add-peer <channelId> <peerBotUserId> <blurb>`
 
@@ -89,39 +110,37 @@ Removes the human from the room's `humans` list.
 
 ---
 
-## CC settings file format
+## Settings file format
 
-Write to `~/.claude/channels/knock-knock/rooms/<channelId>.settings.json`:
+Write to `~/.claude/channels/knock-knock/rooms/<agentKey>/<channelId>.settings.json`.
+
+**Use flat top-level keys** — `readRoomSettings` parses these directly:
 
 ```json
 {
-  "permissions": {
-    "allow": ["<list of allowed tool patterns>"],
-    "ask": ["<list of patterns needing human approval>"],
-    "deny": ["<list of always-blocked patterns>"]
-  }
+  "allow": ["<list of allowed tool patterns>"],
+  "ask": ["<list of patterns needing human approval>"],
+  "deny": ["<list of always-blocked patterns>"]
 }
 ```
 
 **Default safe profile** (use if user doesn't specify, or as the deny-floor):
 ```json
 {
-  "permissions": {
-    "allow": [
-      "Read(**)"
-    ],
-    "ask": [
-      "Edit(**)",
-      "Write(**)",
-      "Bash(*)"
-    ],
-    "deny": [
-      "Bash(rm -rf *)",
-      "Bash(sudo *)",
-      "Write(~/.claude/**)",
-      "Write(~/.ssh/**)"
-    ]
-  }
+  "allow": [
+    "Read(**)"
+  ],
+  "ask": [
+    "Edit(**)",
+    "Write(**)",
+    "Bash(*)"
+  ],
+  "deny": [
+    "Bash(rm -rf *)",
+    "Bash(sudo *)",
+    "Write(~/.claude/**)",
+    "Write(~/.ssh/**)"
+  ]
 }
 ```
 
@@ -145,50 +164,32 @@ Always include the deny-floor regardless of other rules:
 
 ## Launch command
 
-`knock-knock` is a **custom channel** you run locally, so it launches via
-`--dangerously-load-development-channels server:knock-knock` — **not** `--channels`.
-Why: `--channels` is the allowlist-only flag for official channels and requires a
-`plugin:<name>@<marketplace>` tag; a dev/local plugin has no marketplace, so
-`plugin:knock-knock` is rejected with *"--channels entries must be tagged"*. The
-two valid entry forms are `plugin:<name>@<marketplace>` and `server:<name>` (a bare
-MCP server) — we use the latter.
-
-The full invocation also needs an inline `--mcp-config` (the plugin's own
-`.mcp.json` uses `${CLAUDE_PLUGIN_ROOT}`, which is undefined on the `server:` path)
-plus the room's `--settings`. That's too long to paste reliably — terminal
-line-wraps split it into two commands (the telltale
-`option '--settings' argument missing` + `permission denied: …settings.json` pair).
-So the repo ships a self-locating launcher: **`scripts/launch-room.sh`**.
-
-Resolve the knock-knock checkout path: run `echo "$CLAUDE_PLUGIN_ROOT"`. If it's
-empty, ask the user for the absolute path to their knock-knock checkout. Call the
-result `<pluginDir>`.
+knock-knock runs as a **standalone relay** — a Bun process you start once and
+leave running. It is **not** launched via `--dangerously-load-development-channels`
+(that was the legacy MCP/channel path; it's still in the repo as `server.ts` but
+not maintained).
 
 After writing files, print:
 
 ```
-Agent identity:  <name>  (<blurb>)
+Agent identity:  <agentKey>  (<blurb>)
 Room channel:    <channelId>
-Settings file:   ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
+Settings file:   ~/.claude/channels/knock-knock/rooms/<agentKey>/<channelId>.settings.json
 Owner Discord:   <ownerUserId>
 
-Launch command (one line — don't let your terminal split it):
-  bash <pluginDir>/scripts/launch-room.sh <channelId>
+Save your bot token first (if not already done):
+  bun setup.ts configure
 
-On first launch, approve the one-time dev-channel confirmation prompt. When the
-bot connects you'll see `knock-knock: gateway connected as <bot>#1234` in stderr.
+Then start the relay:
+  bun relay.ts
 
-Prefer the raw command? It is exactly (the `\` line-continuations keep it one
-logical command — keep them if you paste it):
-  claude --dangerously-load-development-channels server:knock-knock \
-    --mcp-config '{"mcpServers":{"knock-knock":{"command":"bun","args":["run","--cwd","<pluginDir>","--shell=bun","--silent","start"]}}}' \
-    --settings ~/.claude/channels/knock-knock/rooms/<channelId>.settings.json
+When the bot connects you'll see:
+  relay [<agentKey>]: connected as <bot>#1234
 ```
 
-> Once knock-knock is published to a plugin marketplace, the channel entry becomes
-> `plugin:knock-knock@<marketplace>` — but custom channels stay behind
-> `--dangerously-load-development-channels` until they're on Anthropic's official
-> allowlist, so `scripts/launch-room.sh` keeps working unchanged.
+The relay reads `.env` (for the token) and `access.json` on every inbound message,
+so room config changes take effect without a restart. Token changes require a
+relay restart.
 
 ---
 
@@ -198,6 +199,10 @@ logical command — keep them if you paste it):
 - Pretty-print JSON (2-space indent).
 - `sendableRoots` should be absolute paths. If the user gives a relative path,
   note they should use the absolute path and ask them to confirm.
-- The server re-reads access.json on every inbound message, so room changes take
-  effect without restart. Settings file changes require restarting the CC session.
+- The relay re-reads access.json on every inbound message — room/peer changes take
+  effect immediately without restarting the relay.
 - Don't generate a separate settings file per peer-add — only on `setup` or `join`.
+- Use agent key `"default"` for the first/only agent; the user can rename via
+  `bun setup.ts agent add` if they add more agents later.
+- Settings are written **flat** (`{allow, ask, deny}` at top level) — the nested
+  `{permissions:{…}}` format is no longer used.

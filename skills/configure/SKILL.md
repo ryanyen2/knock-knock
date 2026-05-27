@@ -23,23 +23,26 @@ Arguments passed: `$ARGUMENTS`
 
 ### No args — status and guidance
 
-1. **Token** — check `~/.claude/channels/knock-knock/.env` for `DISCORD_BOT_TOKEN`.
-   Show set/not-set; if set, show first 6 chars only (mask the rest).
+1. **Token(s)** — check `~/.claude/channels/knock-knock/.env`. For each agent in
+   `access.json`, check whether `agents[key].tokenEnv` is set in `.env`.
+   Show set/not-set; if set, show last 4 chars only (mask the rest).
 
 2. **Access** — read `~/.claude/channels/knock-knock/access.json` (missing = defaults).
    Show:
-   - Agent identity (`self.name`, `self.roomChannelId`)
+   - Each configured agent (key, blurb, token env var, rooms count)
    - DM policy and what it means
    - Allowed senders (count + list)
    - Pending pairings (codes + sender IDs + age)
-   - Rooms registered (count)
 
 3. **What next** — concrete next step based on state:
-   - No token → *"Run `/knock-knock:configure <token>` with your bot token from the
-     Developer Portal → Bot → Reset Token."*
-   - Token set, no rooms → *"Run `/knock-knock:room setup` to configure your agent
-     identity and join a room."*
-   - Token set, rooms configured → *"Ready. Launch with the command from `/knock-knock:room`."*
+   - No agents configured → *"Run `/knock-knock:room setup` to configure your first agent,
+     or `bun setup.ts agent add` if not using Claude Code."*
+   - Agent configured, token missing → *"Run `/knock-knock:configure <token>` or
+     `bun setup.ts configure` to save the Discord bot token."*
+   - Token set, rooms configured → *"Ready. Start the relay: `bun relay.ts`"*
+
+> For managing **multiple agents** (multiple bot identities), use `bun setup.ts`
+> rather than this skill — it supports all agent types without requiring Claude Code.
 
 ### `<token>` — save it
 
@@ -50,8 +53,7 @@ Arguments passed: `$ARGUMENTS`
 4. `chmod 600 ~/.claude/channels/knock-knock/.env` — credentials must be owner-only.
 5. Confirm, then show the no-args status.
 
-The server reads `.env` once at boot — token changes need a session restart or
-`/reload-plugins`.
+The relay reads `.env` at startup — token changes require restarting `bun relay.ts`.
 
 ### `clear` — remove the token
 

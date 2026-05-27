@@ -15,8 +15,8 @@ import {
   ButtonStyle,
   ActionRowBuilder,
 } from 'discord.js'
-import type { Access } from './lib.ts'
-import { approverFor } from './lib.ts'
+import type { AgentConfig } from './lib.ts'
+import { approverForAgent } from './lib.ts'
 import type { Verdict } from './agent-adapter.ts'
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000
@@ -35,7 +35,8 @@ export class Approvals {
 
   constructor(
     private readonly client: Client,
-    private readonly getAccess: () => Access,
+    /** Re-read on each resolution so owner changes take effect without restart. */
+    private readonly getAgent: () => AgentConfig,
   ) {}
 
   request(opts: {
@@ -77,8 +78,8 @@ export class Approvals {
         return
       }
 
-      const access = this.getAccess()
-      const ownerId = approverFor(access)
+      const agent = this.getAgent()
+      const ownerId = approverForAgent(agent, channelId)
 
       const preview = JSON.stringify(input, null, 2)
       const shortPreview = preview.length > 280 ? preview.slice(0, 280) + '…' : preview
@@ -124,16 +125,17 @@ export class Approvals {
 
     const [, behavior, correlationId] = m
 
-    const access = this.getAccess()
-    const ownerId = approverFor(access)
-    if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
-      return
-    }
-
+    // Fetch pending first so we have channelId for the per-channel owner check.
     const pending = this.pending.get(correlationId!)
     if (!pending) {
       await interaction.reply({ content: 'Request no longer pending.', ephemeral: true }).catch(() => {})
+      return
+    }
+
+    const agent = this.getAgent()
+    const ownerId = approverForAgent(agent, pending.channelId)
+    if (!ownerId || interaction.user.id !== ownerId) {
+      await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
       return
     }
 
@@ -158,12 +160,13 @@ export class Approvals {
     if (!correlationId) return
     if (emoji !== '✅' && emoji !== '❌') return
 
-    const access = this.getAccess()
-    const ownerId = approverFor(access)
-    if (!ownerId || userId !== ownerId) return
-
+    // Fetch pending before the owner check so we have channelId for approverForAgent.
     const pending = this.pending.get(correlationId)
     if (!pending) return
+
+    const agent = this.getAgent()
+    const ownerId = approverForAgent(agent, pending.channelId)
+    if (!ownerId || userId !== ownerId) return
 
     clearTimeout(pending.timer)
     this.pending.delete(correlationId)

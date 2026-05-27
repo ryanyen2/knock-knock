@@ -24,25 +24,30 @@ Arguments passed: `$ARGUMENTS`
 
 ---
 
-## State shape
+## State shape (v2)
 
 ```json
 {
-  "self": {
-    "name": "agent-A",
-    "ownerUserId": "<Discord snowflake>",
-    "blurb": "read-only research agent",
-    "roomChannelId": "<channelId>"
-  },
-  "rooms": {
-    "<channelId>": {
-      "requireMention": true,
-      "participants": {
-        "<peerBotUserId>": { "name": "agent-C", "blurb": "schema specialist" }
-      },
-      "humans": ["<humanUserId>"],
-      "sendableRoots": ["/abs/path/to/project"],
-      "approvalActorId": "<ownerUserId>"
+  "version": 2,
+  "agents": {
+    "<agentKey>": {
+      "name": "agent-A",
+      "ownerUserId": "<Discord snowflake>",
+      "blurb": "read-only research agent",
+      "runtime": "claude-sdk",
+      "workspace": "/abs/path/to/project",
+      "tokenEnv": "DISCORD_BOT_TOKEN",
+      "rooms": {
+        "<channelId>": {
+          "requireMention": true,
+          "participants": {
+            "<peerBotUserId>": { "name": "agent-C", "blurb": "schema specialist" }
+          },
+          "humans": ["<humanUserId>"],
+          "sendableRoots": ["/abs/path/to/project"],
+          "approvalActorId": "<ownerUserId>"
+        }
+      }
     }
   },
   "dmPolicy": "pairing",
@@ -56,7 +61,9 @@ Arguments passed: `$ARGUMENTS`
 }
 ```
 
-Missing file = `{ rooms:{}, dmPolicy:"pairing", allowFrom:[], pending:{} }`.
+Missing file = `{ "version": 2, "agents": {}, "dmPolicy": "pairing", "allowFrom": [], "pending": {} }`.
+
+Legacy installs (`self` + top-level `rooms`) are migrated to this shape on read.
 
 ---
 
@@ -64,8 +71,8 @@ Missing file = `{ rooms:{}, dmPolicy:"pairing", allowFrom:[], pending:{} }`.
 
 ### No args — status
 
-Read and show: `self` identity, DM policy, `allowFrom` list, pending pairings (code + age),
-rooms count and their participant counts.
+Read and show: each agent in `agents` (key, ownerUserId, blurb, rooms count, token env var),
+DM policy, `allowFrom` list, pending pairings (code + age).
 
 ### `pair <code>`
 
