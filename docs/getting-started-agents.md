@@ -20,7 +20,7 @@ any agent-specific code.
 KNOCK_KNOCK_AGENT   agent / transport
 ─────────────────   ──────────────────────────────────────────────
 claude-sdk          Claude Code, in-process SDK  (default; no install)
-claude-acp          Claude Code, via ACP         (npx @zed-industries/claude-code-acp)
+claude-acp          Claude Code, via ACP         (npx @agentclientprotocol/claude-agent-acp)
 opencode            OpenCode, via ACP            (opencode acp)
 codex               OpenAI Codex, via ACP        (npx @agentclientprotocol/codex-acp)
 gemini              Gemini CLI, via ACP          (gemini --experimental-acp)
@@ -86,8 +86,10 @@ KNOCK_KNOCK_AGENT=claude-acp \
 KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
 ```
 
-`npx` fetches `@zed-industries/claude-code-acp` on first run. Claude Code asks
-before non-allowlisted tools by default, so the floor holds.
+`npx` fetches `@agentclientprotocol/claude-agent-acp` on first run (binary
+`claude-agent-acp`, formerly `@zed-industries/claude-code-acp` which is now
+deprecated). Claude Code asks before non-allowlisted tools by default, so the
+floor holds.
 
 ---
 
@@ -121,9 +123,10 @@ an adapter needed — ACP is built into OpenCode.)
 ## OpenAI Codex
 
 1. Auth: `export OPENAI_API_KEY=sk-...` (the `codex-acp` server reads it).
-2. **Approval mode:** run Codex with an approval policy that asks before
-   commands (do **not** use a full-auto / `--dangerously-bypass` mode). The
-   default `codex-acp` behaviour surfaces tool calls as ACP permission requests.
+2. **Approval mode:** the default `codex-acp` behaviour surfaces tool calls as
+   ACP permission requests — no extra config needed. Do **not** launch it with
+   `--yolo`, `--full-auto`, or `--dangerously-bypass-approvals-and-sandbox`,
+   as those skip all permission requests and bypass the deny floor.
 3. Run:
 
    ```bash
@@ -131,8 +134,9 @@ an adapter needed — ACP is built into OpenCode.)
    KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
    ```
 
-`npx` fetches `@agentclientprotocol/codex-acp` on first run. If you have a
-locally built `codex-acp` binary instead, point at it directly:
+`npx` fetches `@agentclientprotocol/codex-acp` (v0.0.44+) on first run.
+`OPENAI_BASE_URL` is also read if you're routing through a proxy.
+If you have a locally built `codex-acp` binary instead, point at it directly:
 
 ```bash
 KNOCK_KNOCK_AGENT=acp \

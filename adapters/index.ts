@@ -23,7 +23,8 @@ import { AcpAdapter, type AcpLaunch } from './acp.ts'
  *  there's nothing to install globally beyond the underlying agent's auth. */
 const ACP_PRESETS: Record<string, AcpLaunch> = {
   // Claude Code over ACP (alternative to the in-process claude-sdk adapter).
-  'claude-acp': { command: 'npx', args: ['-y', '@zed-industries/claude-code-acp'] },
+  // Note: @zed-industries/claude-code-acp is deprecated; use the new package.
+  'claude-acp': { command: 'npx', args: ['-y', '@agentclientprotocol/claude-agent-acp'] },
   // OpenCode speaks ACP natively.
   opencode: { command: 'opencode', args: ['acp'] },
   // OpenAI Codex via the community ACP server.
