@@ -130,6 +130,106 @@ export function buildRosterLines(access: Access): string {
     .join('\n')
 }
 
+// ─── Policy classification for adapters without native pattern matching ───────
+//
+// The ClaudeSdkAdapter hands allow/ask/deny patterns straight to the SDK, which
+// does the matching. The ACP adapter can't: ACP surfaces one permission request
+// per tool call and the *client* must decide. classifyTool maps such a request
+// onto the room's allow/ask/deny profile using the same CC-style "Tool(arg)"
+// pattern syntax, so one settings.json drives every runtime.
+//
+// Precedence: deny wins, then ask, then allow. Anything unmatched defaults to
+// 'ask' — an unknown tool must never silently auto-run. The deny tier also does
+// a command-boundary literal check so a dangerous command stays blocked even
+// when chained (e.g. "cd /tmp && rm -rf x") — over-blocking is the safe failure.
+
+/** A tool-call permission request, normalized across runtimes. */
+export type ToolDescriptor = {
+  /** Explicit tool name if the runtime provides one (e.g. "Bash"). */
+  toolName?: string
+  /** ACP ToolKind: read | edit | delete | move | search | execute | fetch | … */
+  kind?: string
+  /** Human-readable title, e.g. "Run `rm -rf /tmp`". Matched if no subject. */
+  title?: string
+  /** Primary argument when extractable: shell command, file path, or URL. */
+  subject?: string
+}
+
+/** ACP ToolKind → the CC tool names a pattern might use for it. */
+const KIND_TO_TOOLS: Record<string, string[]> = {
+  read: ['Read', 'LS', 'Glob', 'NotebookRead'],
+  edit: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
+  search: ['Grep', 'Glob', 'Search'],
+  execute: ['Bash', 'Shell', 'Execute'],
+  fetch: ['WebFetch', 'WebSearch', 'Fetch'],
+  think: ['Think'],
+}
+
+function parsePattern(p: string): { tool: string; arg: string | null } {
+  const m = p.match(/^([A-Za-z_][\w-]*)(?:\((.*)\))?$/)
+  if (!m) return { tool: p, arg: null }
+  return { tool: m[1]!, arg: m[2] ?? null }
+}
+
+function toolNamesFor(d: ToolDescriptor): string[] {
+  const names: string[] = []
+  if (d.toolName) names.push(d.toolName)
+  if (d.kind) {
+    names.push(...(KIND_TO_TOOLS[d.kind.toLowerCase()] ?? []))
+    names.push(d.kind) // also let a pattern match the raw kind, e.g. "execute"
+  }
+  return names
+}
+
+function globToRegExp(glob: string): RegExp {
+  const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*+/g, '.*')
+  return new RegExp('^' + escaped + '$', 'i')
+}
+
+/** Does the deny literal appear at a command boundary (start or after a shell
+ *  separator)? Catches chained dangerous commands the anchored glob would miss,
+ *  without matching substrings inside unrelated words ("git" ≠ "digit"). */
+function denyLiteralHit(arg: string, subject: string): boolean {
+  const core = arg.replace(/\*+/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!core) return false
+  const esc = core.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+')
+  return new RegExp('(^|[\\s;&|()])' + esc, 'i').test(subject)
+}
+
+/**
+ * Classify a tool-call permission request against the room profile.
+ * Returns 'allow' (auto-approve, no prompt), 'ask' (route to the owner), or
+ * 'deny' (hard floor — auto-reject, the owner never sees it).
+ */
+export function classifyTool(
+  profile: { allow: string[]; ask: string[]; deny: string[] },
+  descriptor: ToolDescriptor,
+): 'allow' | 'ask' | 'deny' {
+  const subject = (descriptor.subject ?? descriptor.title ?? '').trim()
+  const tools = toolNamesFor(descriptor)
+
+  const tierMatch = (patterns: string[], deny: boolean): boolean => {
+    for (const p of patterns) {
+      const { tool, arg } = parsePattern(p)
+      // Deny is defense-in-depth: a concrete dangerous command literal is blocked
+      // no matter which ToolKind the agent labels it. Runtimes disagree on kinds
+      // (we saw the same `rm -rf` arrive as both `execute` and `other`), so the
+      // floor must not hinge on the label. Wildcard-only args ("*") have no
+      // literal and fall through to the tool-name check below.
+      if (deny && arg && denyLiteralHit(arg, subject)) return true
+      if (!tools.some(t => t.toLowerCase() === tool.toLowerCase())) continue
+      if (arg === null || arg === '' || arg === '*' || arg === '**') return true
+      if (globToRegExp(arg).test(subject)) return true
+    }
+    return false
+  }
+
+  if (tierMatch(profile.deny, true)) return 'deny'
+  if (tierMatch(profile.ask, false)) return 'ask'
+  if (tierMatch(profile.allow, false)) return 'allow'
+  return 'ask'
+}
+
 /**
  * Discord caps messages at 2000 chars. Split long replies, preferring paragraph
  * boundaries when mode is 'newline'.

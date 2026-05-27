@@ -20,6 +20,8 @@ KNOCK_KNOCK_WORKSPACE=/absolute/path/to/your/workspace bun relay.ts
 
 This is the mode described in the acceptance tests below. It does **not** require Claude Code's experimental Channels capability.
 
+The relay is **agent-agnostic**: set `KNOCK_KNOCK_AGENT` to drive Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent through the same seam (default `claude-sdk`). See **[Getting started with different agents](docs/getting-started-agents.md)** for per-agent setup and the deny-floor caveat.
+
 > **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
 
 ### Channel mode (legacy — `main` branch)
