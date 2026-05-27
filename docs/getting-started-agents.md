@@ -39,11 +39,15 @@ bun relay.ts
 **Option A — standalone CLI (any coding agent, no Claude Code needed):**
 
 ```bash
-bun setup.ts agent add        # configure agent identity (runtime, workspace, token env var)
-bun setup.ts room add         # register a Discord channel
-bun setup.ts configure        # save the Discord bot token to .env
+bun setup.ts                  # guided wizard: agent identity → room → token
 bun relay.ts                  # start the relay — picks up everything from access.json
 ```
+
+`bun setup.ts` with no arguments runs an interactive wizard (arrow-key runtime
+picker, masked token input, inline validation). After the first agent exists it
+opens an action menu instead. Each step is also a direct subcommand for
+scripting: `bun setup.ts agent add`, `room add`, `peer add`, `human add`,
+`configure`, `status`.
 
 **Option B — Claude Code skill (if you're already using Claude Code):**
 

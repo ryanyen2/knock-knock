@@ -1,19 +1,21 @@
 #!/usr/bin/env bun
 /**
- * setup.ts — standalone setup CLI for knock-knock.
+ * setup.ts — interactive setup for knock-knock.
  *
- * Writes the same files that relay.ts reads (via state.ts). Setup works for
- * any coding agent — codex, claude-sdk, opencode, gemini, etc. — without
- * requiring Claude Code or its skills.
+ * Writes the same files relay.ts reads (via state.ts). Works for any coding
+ * agent — codex, claude-sdk, opencode, gemini, etc. — without requiring Claude
+ * Code or its skills.
  *
- * Usage:
- *   bun setup.ts                   Show agent/room status
+ * Run with no arguments for a guided wizard:
+ *   bun setup.ts                   First run → wizard; otherwise → menu
+ *
+ * Or jump straight to one action (for scripting / power users):
  *   bun setup.ts status            Show agent/room status
- *   bun setup.ts configure         Save a Discord bot token
  *   bun setup.ts agent add         Add a new agent identity
  *   bun setup.ts room add          Add a room to an agent
  *   bun setup.ts peer add          Register a peer bot in a room
  *   bun setup.ts human add         Allow a human to drive an agent in a room
+ *   bun setup.ts configure         Save a Discord bot token
  *
  * Writes to:
  *   STATE_DIR/access.json                                   (agent identities/rooms)
@@ -21,38 +23,76 @@
  *   STATE_DIR/rooms/<agentKey>/<channelId>.settings.json    (allow/ask/deny profile)
  */
 
-import { readFileSync, writeFileSync, mkdirSync, chmodSync } from 'fs'
-import { join } from 'path'
-import * as readline from 'readline'
+import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'fs'
+import { isAbsolute, join } from 'path'
+import * as p from '@clack/prompts'
+import color from 'picocolors'
 import { STATE_DIR, readAccessFileV2, saveAccessV2 } from './state.ts'
-import type { AgentConfig, RoomConfig } from './lib.ts'
+import type { AccessV2, AgentConfig, RoomConfig } from './lib.ts'
 
-// ─── Readline helpers ─────────────────────────────────────────────────────────
+// ─── Constants ──────────────────────────────────────────────────────────────
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
+const ENV_FILE = join(STATE_DIR, '.env')
 
-function ask(question: string, defaultValue?: string): Promise<string> {
-  const prompt = defaultValue !== undefined ? `${question} [${defaultValue}]: ` : `${question}: `
-  return new Promise(resolve => {
-    rl.question(prompt, answer => resolve(answer.trim() || defaultValue || ''))
-  })
+/** Selectable runtimes — mirrors the adapter factory in adapters/index.ts. */
+const RUNTIMES: { value: string; label: string; hint: string }[] = [
+  { value: 'claude-sdk', label: 'Claude Code', hint: 'in-process SDK · no install · ANTHROPIC_API_KEY or `claude login`' },
+  { value: 'codex', label: 'OpenAI Codex', hint: 'via ACP (npx) · needs OPENAI_API_KEY' },
+  { value: 'opencode', label: 'OpenCode', hint: 'via ACP · needs `opencode` installed' },
+  { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · needs `gemini`' },
+  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) instead of in-process' },
+  { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
+]
+
+/** Safe-by-default allow/ask/deny profile, written flat so readRoomSettings
+ *  loads it correctly (matches state.ts:readRoomSettings flat-key format). */
+const DEFAULT_PROFILE = {
+  allow: ['Read(**)'],
+  ask: ['Edit(**)', 'Write(**)', 'Bash(*)'],
+  deny: ['Bash(rm -rf *)', 'Bash(sudo *)', 'Write(~/.claude/**)', 'Write(~/.ssh/**)'],
 }
 
-function close(): void {
-  rl.close()
+// ─── clack helpers ──────────────────────────────────────────────────────────
+
+/** Exit cleanly on Ctrl+C / Esc; otherwise narrow the value to its real type. */
+function orCancel<T>(value: T | symbol): T {
+  if (p.isCancel(value)) {
+    p.cancel('Setup cancelled — no further changes saved.')
+    process.exit(0)
+  }
+  return value as T
 }
 
-function print(msg: string): void {
-  process.stdout.write(msg + '\n')
+function banner(): string {
+  return `${color.bgCyan(color.black(' knock-knock '))} ${color.dim('setup')}`
 }
 
-function warn(msg: string): void {
-  process.stderr.write(`setup: ${msg}\n`)
+// ─── Validators ─────────────────────────────────────────────────────────────
+
+function required(value: string): string | undefined {
+  return value.trim() ? undefined : 'Required.'
+}
+
+function validateAgentKey(value: string): string | undefined {
+  if (!value.trim()) return 'Required.'
+  if (!/^[a-z0-9-]+$/.test(value)) return 'Lowercase letters, digits, and hyphens only.'
+  return undefined
+}
+
+function validateSnowflake(value: string): string | undefined {
+  if (!value.trim()) return 'Required.'
+  if (!/^\d{17,20}$/.test(value.trim()))
+    return 'Discord IDs are 17–20 digits. Enable Developer Mode, then right-click → Copy ID.'
+  return undefined
+}
+
+function validateAbsPath(value: string): string | undefined {
+  if (!value.trim()) return 'Required.'
+  if (!isAbsolute(value.trim())) return 'Use an absolute path (starting with /).'
+  return undefined
 }
 
 // ─── .env helpers ─────────────────────────────────────────────────────────────
-
-const ENV_FILE = join(STATE_DIR, '.env')
 
 function readEnvVars(): Map<string, string> {
   const vars = new Map<string, string>()
@@ -69,12 +109,13 @@ function writeEnvVars(vars: Map<string, string>): void {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
   const content = [...vars.entries()].map(([k, v]) => `${k}=${v}`).join('\n') + '\n'
   writeFileSync(ENV_FILE, content, { mode: 0o600 })
-  try { chmodSync(ENV_FILE, 0o600) } catch {}
+  try {
+    chmodSync(ENV_FILE, 0o600)
+  } catch {}
 }
 
 function isTokenSet(tokenEnv: string): boolean {
-  const vars = readEnvVars()
-  const v = vars.get(tokenEnv)
+  const v = readEnvVars().get(tokenEnv)
   return v !== undefined && v !== ''
 }
 
@@ -84,173 +125,145 @@ function setToken(tokenEnv: string, token: string): void {
   writeEnvVars(vars)
 }
 
-// ─── Default permission profile ───────────────────────────────────────────────
-
-/** Safe-by-default allow/ask/deny profile written flat so readRoomSettings
- *  loads it correctly (matches state.ts:readRoomSettings flat-key format). */
-const DEFAULT_PROFILE = {
-  allow: ['Read(**)'],
-  ask: ['Bash(*)'],
-  deny: ['Bash(rm -rf *)', 'Bash(sudo *)', 'Write(~/.claude/**)', 'Write(~/.ssh/**)'],
+/** The env-var name that holds an agent's token. "default" keeps the legacy
+ *  DISCORD_BOT_TOKEN; other agents get a suffixed, collision-free name. */
+function deriveTokenEnv(key: string): string {
+  return key === 'default'
+    ? 'DISCORD_BOT_TOKEN'
+    : `DISCORD_BOT_TOKEN_${key.toUpperCase().replace(/-/g, '_')}`
 }
 
-// ─── Subcommands ──────────────────────────────────────────────────────────────
+// ─── Pickers ──────────────────────────────────────────────────────────────────
 
-async function cmdStatus(): Promise<void> {
-  const access = readAccessFileV2()
-  const agents = Object.entries(access.agents)
-  if (agents.length === 0) {
-    print('No agents configured.')
-    print('  Add one with:  bun setup.ts agent add')
-    return
+/** Choose an agent key: auto-select if there's only one, prompt if several. */
+async function pickAgentKey(access: AccessV2): Promise<string | null> {
+  const keys = Object.keys(access.agents)
+  if (keys.length === 0) {
+    p.log.error('No agents configured yet — add one first.')
+    return null
   }
-  print(`\n${agents.length} agent(s) configured:\n`)
-  for (const [key, agent] of agents) {
-    const tokenMark = isTokenSet(agent.tokenEnv) ? '✅' : '❌ MISSING'
-    print(`  [${key}]  ${agent.name ?? '(not connected yet)'}  —  ${agent.blurb}`)
-    print(`           runtime:  ${agent.runtime}`)
-    print(`           workspace: ${agent.workspace || '⚠️  not set'}`)
-    print(`           token:    ${agent.tokenEnv}  ${tokenMark}`)
-    const rooms = Object.entries(agent.rooms)
-    if (rooms.length === 0) {
-      print(`           rooms:    (none) — add one with: bun setup.ts room add`)
-    } else {
-      for (const [channelId, room] of rooms) {
-        const peers = Object.keys(room.participants).length
-        const humans = room.humans.length
-        print(
-          `           room ${channelId}: ${peers} peer(s), ${humans} human(s)` +
-            `${room.requireMention ? '' : '  [no @mention required]'}`,
-        )
-      }
+  if (keys.length === 1) return keys[0]!
+  return orCancel(
+    await p.select({
+      message: 'Which agent?',
+      options: keys.map(k => ({ value: k, label: k, hint: access.agents[k]!.blurb })),
+    }),
+  )
+}
+
+/** Choose a room (channel ID) within an agent: auto-select if only one. */
+async function pickRoomId(agent: AgentConfig): Promise<string | null> {
+  const ids = Object.keys(agent.rooms)
+  if (ids.length === 0) {
+    p.log.error('No rooms for this agent — add one first (room add).')
+    return null
+  }
+  if (ids.length === 1) return ids[0]!
+  return orCancel(
+    await p.select({ message: 'Which room?', options: ids.map(id => ({ value: id, label: id })) }),
+  )
+}
+
+// ─── Collectors (one prompt-flow each; save as they go) ───────────────────────
+
+/** Prompt for and persist a new agent identity. Returns its key, or null. */
+async function collectAgent(access: AccessV2): Promise<string | null> {
+  const hasAgents = Object.keys(access.agents).length > 0
+
+  const key = orCancel(
+    await p.text({
+      message: 'Agent key (short slug peers never see)',
+      placeholder: 'research-bot',
+      initialValue: hasAgents ? '' : 'default',
+      validate: validateAgentKey,
+    }),
+  ).trim()
+
+  if (access.agents[key]) {
+    const overwrite = orCancel(
+      await p.confirm({ message: `Agent "${key}" already exists. Overwrite it?`, initialValue: false }),
+    )
+    if (!overwrite) {
+      p.log.info('Left existing agent unchanged.')
+      return null
     }
-    print('')
-  }
-  print(`State dir: ${STATE_DIR}`)
-}
-
-async function cmdConfigure(): Promise<void> {
-  print('\n── Configure Discord bot token ──')
-  print('You get this from: discord.com/developers/applications → your app → Bot → Reset Token')
-  print('')
-
-  const access = readAccessFileV2()
-  const agentKeys = Object.keys(access.agents)
-
-  let agentKey: string
-  if (agentKeys.length === 0) {
-    print('No agents configured yet. Token will be stored for the "default" key.')
-    print('Run `bun setup.ts agent add` to set up an agent.')
-    agentKey = 'default'
-  } else {
-    print(`Agents: ${agentKeys.join(', ')}`)
-    agentKey = await ask('Agent key to configure token for')
-    if (!agentKey) { warn('Agent key is required.'); return }
   }
 
-  const existingTokenEnv = access.agents[agentKey]?.tokenEnv
-  const defaultTokenEnv =
-    existingTokenEnv ??
-    (agentKey === 'default'
-      ? 'DISCORD_BOT_TOKEN'
-      : `DISCORD_BOT_TOKEN_${agentKey.toUpperCase().replace(/-/g, '_')}`)
+  const ownerUserId = orCancel(
+    await p.text({
+      message: 'Your Discord user ID (the human who owns this agent)',
+      placeholder: '184695080709324800',
+      validate: validateSnowflake,
+    }),
+  ).trim()
 
-  const tokenEnv = await ask('Env var name for this token', defaultTokenEnv)
-  const token = await ask('Bot token (input is visible — paste carefully)')
-  if (!token) { warn('Token is required.'); return }
+  const blurb = orCancel(
+    await p.text({
+      message: 'One-line description peers will see',
+      placeholder: 'read-only research agent for project-x',
+      validate: required,
+    }),
+  ).trim()
 
-  setToken(tokenEnv, token)
-  print(`\n✅  Token saved to ${ENV_FILE} as ${tokenEnv}=***${token.slice(-4)}`)
+  const runtime = orCancel(
+    await p.select({
+      message: 'Which coding agent runs this bot?',
+      options: RUNTIMES,
+      initialValue: 'claude-sdk',
+    }),
+  )
 
-  // Update tokenEnv in the agent config if the agent exists
-  if (access.agents[agentKey]) {
-    access.agents[agentKey]!.tokenEnv = tokenEnv
-    saveAccessV2(access)
-    print(`    Updated agent "${agentKey}" tokenEnv → ${tokenEnv}`)
-  }
-}
-
-async function cmdAgentAdd(): Promise<void> {
-  print('\n── Add a new agent ──')
-  print('Each agent = one Discord bot (one token, one bot identity in the room).')
-  print('')
-
-  const access = readAccessFileV2()
-
-  const agentKey = await ask('Agent key (short slug, e.g. "research-bot")')
-  if (!agentKey) { warn('Agent key is required.'); return }
-  if (!/^[a-z0-9-]+$/.test(agentKey)) {
-    warn('Agent key must be lowercase letters, digits, and hyphens only.')
-    return
-  }
-  if (access.agents[agentKey]) {
-    const overwrite = await ask(`Agent "${agentKey}" already exists. Overwrite?`, 'n')
-    if (!overwrite.toLowerCase().startsWith('y')) return
+  const workspace = orCancel(
+    await p.text({
+      message: 'Workspace path (absolute) the agent works in',
+      placeholder: process.cwd(),
+      initialValue: process.cwd(),
+      validate: validateAbsPath,
+    }),
+  ).trim()
+  if (!existsSync(workspace)) {
+    p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
   }
 
-  const ownerUserId = await ask('Your Discord user ID (right-click yourself → Copy User ID)')
-  if (!ownerUserId) { warn('Owner Discord user ID is required.'); return }
-
-  const blurb = await ask('One-line description peers will see (e.g. "read-only research agent")')
-  if (!blurb) { warn('Description is required.'); return }
-
-  const runtime = await ask('Agent runtime', 'claude-sdk')
-  const workspace = await ask('Workspace path (absolute, e.g. /Users/you/repos/project)')
-  if (!workspace) { warn('Workspace path is required.'); return }
-
-  const tokenEnvDefault = `DISCORD_BOT_TOKEN_${agentKey.toUpperCase().replace(/-/g, '_')}`
-  const tokenEnv = await ask('Env var name for this bot\'s Discord token', tokenEnvDefault)
-
-  const agent: AgentConfig = {
-    ownerUserId,
-    blurb,
-    runtime,
-    workspace,
-    tokenEnv,
-    rooms: {},
-  }
-  access.agents[agentKey] = agent
+  const tokenEnv = deriveTokenEnv(key)
+  access.agents[key] = { ownerUserId, blurb, runtime, workspace, tokenEnv, rooms: {} }
   saveAccessV2(access)
-
-  print(`\n✅  Agent "${agentKey}" added.`)
-  print(`    Next steps:`)
-  print(`      bun setup.ts configure         # save the Discord bot token`)
-  print(`      bun setup.ts room add          # add a room to this agent`)
+  p.log.success(`Saved agent ${color.cyan(key)} ${color.dim(`· token env: ${tokenEnv}`)}`)
+  return key
 }
 
-async function cmdRoomAdd(): Promise<void> {
-  print('\n── Add a room to an agent ──')
-  print('You need the Discord channel ID (right-click the channel → Copy Channel ID).')
-  print('')
+/** Prompt for and persist a room + its default permission profile. */
+async function collectRoom(access: AccessV2, agentKey?: string): Promise<void> {
+  const key = agentKey ?? (await pickAgentKey(access))
+  if (!key) return
+  const agent = access.agents[key]!
 
-  const access = readAccessFileV2()
-  const agentKeys = Object.keys(access.agents)
-  if (agentKeys.length === 0) {
-    print('No agents configured. Run `bun setup.ts agent add` first.')
-    return
-  }
+  const channelId = orCancel(
+    await p.text({
+      message: 'Room channel ID (right-click the channel → Copy Channel ID)',
+      placeholder: '846209781206941736',
+      validate: validateSnowflake,
+    }),
+  ).trim()
 
-  print(`Agents: ${agentKeys.join(', ')}`)
-  const agentKey = await ask('Agent key')
-  if (!agentKey || !access.agents[agentKey]) {
-    warn(`Agent "${agentKey}" not found.`)
-    return
-  }
-
-  const agent = access.agents[agentKey]!
-
-  const channelId = await ask('Room channel ID')
-  if (!channelId) { warn('Channel ID is required.'); return }
   if (agent.rooms[channelId]) {
-    const overwrite = await ask(`Room ${channelId} already configured. Overwrite?`, 'n')
-    if (!overwrite.toLowerCase().startsWith('y')) return
+    const overwrite = orCancel(
+      await p.confirm({ message: `Room ${channelId} is already configured. Overwrite?`, initialValue: false }),
+    )
+    if (!overwrite) return
   }
 
-  const requireMention = !(await ask('Only respond when @mentioned?', 'y')).toLowerCase().startsWith('n')
-  const approvalActorId = await ask('Approval actor Discord user ID', agent.ownerUserId)
+  const requireMention = orCancel(
+    await p.confirm({ message: 'Only respond when @mentioned?', initialValue: true }),
+  )
 
-  print('Sendable file roots: absolute paths this agent may attach as files to the channel.')
-  const sendableRaw = await ask('Sendable roots (comma-separated)', agent.workspace)
+  const sendableRaw = orCancel(
+    await p.text({
+      message: 'Sendable file roots (comma-separated absolute paths the agent may attach)',
+      placeholder: agent.workspace,
+      initialValue: agent.workspace,
+    }),
+  ).trim()
   const sendableRoots = sendableRaw
     .split(',')
     .map(s => s.trim())
@@ -261,134 +274,296 @@ async function cmdRoomAdd(): Promise<void> {
     participants: {},
     humans: [],
     sendableRoots,
-    approvalActorId: approvalActorId || agent.ownerUserId,
+    approvalActorId: agent.ownerUserId,
   }
   agent.rooms[channelId] = room
   saveAccessV2(access)
 
-  // Write the flat default permission profile
-  const settingsDir = join(STATE_DIR, 'rooms', agentKey)
-  mkdirSync(settingsDir, { recursive: true, mode: 0o700 })
-  const settingsPath = join(settingsDir, `${channelId}.settings.json`)
-  writeFileSync(settingsPath, JSON.stringify(DEFAULT_PROFILE, null, 2) + '\n', { mode: 0o600 })
-
-  print(`\n✅  Room ${channelId} added to agent "${agentKey}".`)
-  print(`    Default allow/ask/deny profile written to:`)
-  print(`      ${settingsPath}`)
-  print(`    Edit that file to customise the permission profile.`)
-  print(`    To register peers: bun setup.ts peer add`)
+  // Write the flat default profile — but never clobber a customised one.
+  const dir = join(STATE_DIR, 'rooms', key)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const profilePath = join(dir, `${channelId}.settings.json`)
+  if (existsSync(profilePath)) {
+    p.log.message(color.dim(`Kept existing permission profile: ${profilePath}`))
+  } else {
+    writeFileSync(profilePath, JSON.stringify(DEFAULT_PROFILE, null, 2) + '\n', { mode: 0o600 })
+    p.log.message(color.dim(`Permission profile: ${profilePath} (edit to customise)`))
+  }
+  p.log.success(`Room ${color.cyan(channelId)} added to ${color.cyan(key)}`)
 }
 
-async function cmdPeerAdd(): Promise<void> {
-  print('\n── Register a peer bot ──')
-  print('The peer\'s bot user ID lets this agent recognise messages from their bot.')
-  print('They do the same on their side (registering your bot\'s user ID).')
-  print('')
+/** Prompt for and persist a bot token in .env. */
+async function collectToken(access: AccessV2, agentKey?: string): Promise<void> {
+  const key = agentKey ?? (await pickAgentKey(access))
+  if (!key) return
+  const tokenEnv = access.agents[key]!.tokenEnv
 
-  const access = readAccessFileV2()
-  const agentKeys = Object.keys(access.agents)
-  if (agentKeys.length === 0) { print('No agents configured.'); return }
+  p.log.message(
+    color.dim('Get the token from: discord.com/developers/applications → your app → Bot → Reset Token'),
+  )
+  const token = orCancel(
+    await p.password({
+      message: `Paste the Discord bot token for ${color.cyan(key)}`,
+      validate: v => (v.trim() ? undefined : 'Required.'),
+    }),
+  ).trim()
 
-  print(`Agents: ${agentKeys.join(', ')}`)
-  const agentKey = await ask('Your agent key')
-  const agent = access.agents[agentKey]
-  if (!agent) { warn(`Agent "${agentKey}" not found.`); return }
+  setToken(tokenEnv, token)
+  p.log.success(`Token saved to .env as ${tokenEnv} ${color.dim(`· ***${token.slice(-4)}`)}`)
+}
 
-  const roomIds = Object.keys(agent.rooms)
-  if (roomIds.length === 0) {
-    warn('No rooms configured for this agent. Run `bun setup.ts room add` first.')
+/** Prompt for and persist a peer bot in a room's participants map. */
+async function collectPeer(access: AccessV2): Promise<void> {
+  const key = await pickAgentKey(access)
+  if (!key) return
+  const agent = access.agents[key]!
+  const channelId = await pickRoomId(agent)
+  if (!channelId) return
+  const room = agent.rooms[channelId]!
+
+  const peerBotId = orCancel(
+    await p.text({
+      message: "Peer bot's Discord user ID (right-click their bot → Copy User ID)",
+      placeholder: '987654321098765432',
+      validate: validateSnowflake,
+    }),
+  ).trim()
+
+  const peerName = orCancel(
+    await p.text({ message: 'Peer name (optional, e.g. "agent-b")', placeholder: 'agent-b' }),
+  ).trim()
+
+  const peerBlurb = orCancel(
+    await p.text({
+      message: 'Peer description',
+      placeholder: 'deploy + migration specialist',
+      validate: required,
+    }),
+  ).trim()
+
+  room.participants[peerBotId] = { ...(peerName ? { name: peerName } : {}), blurb: peerBlurb }
+  saveAccessV2(access)
+  p.log.success(
+    `Peer ${color.cyan(peerBotId)}${peerName ? ` (${peerName})` : ''} registered in room ${channelId}`,
+  )
+  p.log.message(color.dim('Make sure they register your bot on their side too.'))
+}
+
+/** Prompt for and persist a human allowed to drive an agent in a room. */
+async function collectHuman(access: AccessV2): Promise<void> {
+  const key = await pickAgentKey(access)
+  if (!key) return
+  const agent = access.agents[key]!
+  const channelId = await pickRoomId(agent)
+  if (!channelId) return
+  const room = agent.rooms[channelId]!
+
+  const userId = orCancel(
+    await p.text({
+      message: "Human's Discord user ID",
+      placeholder: '184695080709324800',
+      validate: validateSnowflake,
+    }),
+  ).trim()
+
+  if (room.humans.includes(userId)) {
+    p.log.info(`User ${userId} is already allowed here.`)
+    return
+  }
+  room.humans.push(userId)
+  saveAccessV2(access)
+  p.log.success(`User ${color.cyan(userId)} may now drive ${color.cyan(key)} in room ${channelId}`)
+}
+
+// ─── Status ─────────────────────────────────────────────────────────────────
+
+function statusReport(access: AccessV2): string {
+  const agents = Object.entries(access.agents)
+  if (agents.length === 0) return color.dim('No agents configured yet.')
+
+  const lines: string[] = []
+  for (const [key, agent] of agents) {
+    const tokenMark = isTokenSet(agent.tokenEnv) ? color.green('✓ set') : color.red('✗ missing')
+    lines.push(`${color.cyan(color.bold(key))}  ${agent.name ?? color.dim('(not connected yet)')}`)
+    lines.push(`  ${color.dim('blurb    ')} ${agent.blurb}`)
+    lines.push(`  ${color.dim('runtime  ')} ${agent.runtime}`)
+    lines.push(`  ${color.dim('workspace')} ${agent.workspace || color.yellow('not set')}`)
+    lines.push(`  ${color.dim('token    ')} ${agent.tokenEnv} ${tokenMark}`)
+    const rooms = Object.entries(agent.rooms)
+    if (rooms.length === 0) {
+      lines.push(`  ${color.dim('rooms    ')} ${color.dim('(none)')}`)
+    } else {
+      for (const [channelId, room] of rooms) {
+        const peers = Object.keys(room.participants).length
+        const mention = room.requireMention ? '' : color.dim(' · no @mention required')
+        lines.push(
+          `  ${color.dim('room     ')} ${channelId} ${color.dim(`· ${peers} peer(s), ${room.humans.length} human(s)`)}${mention}`,
+        )
+      }
+    }
+    lines.push('')
+  }
+  lines.push(color.dim(`State dir: ${STATE_DIR}`))
+  return lines.join('\n')
+}
+
+/** Closing note: flag anything still missing, then how to launch. */
+function finishWithNextSteps(access: AccessV2): void {
+  const tips: string[] = []
+  const noToken = Object.entries(access.agents)
+    .filter(([, a]) => !isTokenSet(a.tokenEnv))
+    .map(([k]) => k)
+  const noRoom = Object.entries(access.agents)
+    .filter(([, a]) => Object.keys(a.rooms).length === 0)
+    .map(([k]) => k)
+
+  if (noToken.length) tips.push(`${color.yellow('•')} Token missing for ${noToken.join(', ')} → ${color.cyan('bun setup.ts configure')}`)
+  if (noRoom.length) tips.push(`${color.yellow('•')} No room for ${noRoom.join(', ')} → ${color.cyan('bun setup.ts room add')}`)
+  tips.push(`${color.green('•')} Start the relay: ${color.cyan('bun relay.ts')}`)
+
+  p.note(tips.join('\n'), 'Next steps')
+  p.outro(color.green('Done.'))
+}
+
+// ─── Interactive entry (no args / `setup`) ────────────────────────────────────
+
+async function runInteractive(): Promise<void> {
+  p.intro(banner())
+  let access = readAccessFileV2()
+
+  // First run → guided wizard.
+  if (Object.keys(access.agents).length === 0) {
+    p.log.info("No agents yet — let's set up your first one.")
+    const key = await collectAgent(access)
+    if (key) {
+      const addRoom = orCancel(
+        await p.confirm({ message: 'Add a room (Discord channel) for this agent now?', initialValue: true }),
+      )
+      if (addRoom) await collectRoom(access, key)
+
+      const addToken = orCancel(
+        await p.confirm({ message: 'Save the Discord bot token now?', initialValue: true }),
+      )
+      if (addToken) await collectToken(access, key)
+    }
+    finishWithNextSteps(readAccessFileV2())
     return
   }
 
-  print(`Rooms: ${roomIds.join(', ')}`)
-  const channelId = await ask('Room channel ID')
-  const room = agent.rooms[channelId]
-  if (!room) { warn(`Room "${channelId}" not found.`); return }
-
-  const peerBotId = await ask('Peer bot\'s Discord user ID (right-click their bot → Copy User ID)')
-  if (!peerBotId) { warn('Peer bot user ID is required.'); return }
-
-  const peerName = await ask('Peer name (optional, e.g. "agent-b")')
-  const peerBlurb = await ask('Peer description (e.g. "deploy specialist")')
-  if (!peerBlurb) { warn('Peer description is required.'); return }
-
-  room.participants[peerBotId] = {
-    ...(peerName ? { name: peerName } : {}),
-    blurb: peerBlurb,
+  // Existing setup → status + action menu.
+  p.note(statusReport(access), 'Current setup')
+  let running = true
+  while (running) {
+    const action = orCancel(
+      await p.select({
+        message: 'What would you like to do?',
+        options: [
+          { value: 'agent', label: 'Add another agent', hint: 'a second bot identity' },
+          { value: 'room', label: 'Add a room', hint: 'register a Discord channel' },
+          { value: 'peer', label: 'Register a peer agent' },
+          { value: 'human', label: 'Allow a human to drive an agent' },
+          { value: 'token', label: 'Save / update a bot token' },
+          { value: 'status', label: 'Show full status' },
+          { value: 'done', label: 'Done' },
+        ],
+      }),
+    )
+    access = readAccessFileV2() // refresh in case files changed between actions
+    switch (action) {
+      case 'agent':
+        await collectAgent(access)
+        break
+      case 'room':
+        await collectRoom(access)
+        break
+      case 'peer':
+        await collectPeer(access)
+        break
+      case 'human':
+        await collectHuman(access)
+        break
+      case 'token':
+        await collectToken(access)
+        break
+      case 'status':
+        p.note(statusReport(readAccessFileV2()), 'Status')
+        break
+      case 'done':
+        running = false
+        break
+    }
   }
-  saveAccessV2(access)
-
-  print(`\n✅  Peer ${peerBotId}${peerName ? ` (${peerName})` : ''} registered in room ${channelId}.`)
-  print(`    Make sure they register your bot on their side too.`)
+  finishWithNextSteps(readAccessFileV2())
 }
 
-async function cmdHumanAdd(): Promise<void> {
-  print('\n── Allow a human to drive this agent ──')
-  print('Humans listed here may @mention the agent and receive responses.')
-  print('')
+// ─── Direct subcommands ───────────────────────────────────────────────────────
 
-  const access = readAccessFileV2()
-  const agentKeys = Object.keys(access.agents)
-  if (agentKeys.length === 0) { print('No agents configured.'); return }
+async function runStatus(): Promise<void> {
+  p.intro(banner())
+  p.note(statusReport(readAccessFileV2()), 'Status')
+  p.outro(color.dim('Run `bun setup.ts` for the interactive menu.'))
+}
 
-  print(`Agents: ${agentKeys.join(', ')}`)
-  const agentKey = await ask('Agent key')
-  const agent = access.agents[agentKey]
-  if (!agent) { warn(`Agent "${agentKey}" not found.`); return }
+async function runAgentAdd(): Promise<void> {
+  p.intro(banner())
+  await collectAgent(readAccessFileV2())
+  finishWithNextSteps(readAccessFileV2())
+}
 
-  const roomIds = Object.keys(agent.rooms)
-  if (roomIds.length === 0) { warn('No rooms configured.'); return }
+async function runRoomAdd(): Promise<void> {
+  p.intro(banner())
+  await collectRoom(readAccessFileV2())
+  p.outro(color.green('Done.'))
+}
 
-  print(`Rooms: ${roomIds.join(', ')}`)
-  const channelId = await ask('Room channel ID')
-  const room = agent.rooms[channelId]
-  if (!room) { warn(`Room "${channelId}" not found.`); return }
+async function runPeerAdd(): Promise<void> {
+  p.intro(banner())
+  await collectPeer(readAccessFileV2())
+  p.outro(color.green('Done.'))
+}
 
-  const userId = await ask('Human\'s Discord user ID')
-  if (!userId) { warn('User ID is required.'); return }
+async function runHumanAdd(): Promise<void> {
+  p.intro(banner())
+  await collectHuman(readAccessFileV2())
+  p.outro(color.green('Done.'))
+}
 
-  if (room.humans.includes(userId)) {
-    print(`User ${userId} is already listed.`)
-  } else {
-    room.humans.push(userId)
-    saveAccessV2(access)
-    print(`\n✅  User ${userId} may now drive agent "${agentKey}" in room ${channelId}.`)
-  }
+async function runConfigure(): Promise<void> {
+  p.intro(banner())
+  await collectToken(readAccessFileV2())
+  p.outro(color.green('Done.'))
+}
+
+function printHelp(): void {
+  process.stdout.write(
+    `${banner()}\n\n` +
+      'Usage:\n' +
+      `  bun setup.ts                   ${color.dim('Interactive wizard / menu')}\n` +
+      `  bun setup.ts status            ${color.dim('Show agent/room status')}\n` +
+      `  bun setup.ts agent add         ${color.dim('Add a new agent identity')}\n` +
+      `  bun setup.ts room add          ${color.dim('Add a room to an agent')}\n` +
+      `  bun setup.ts peer add          ${color.dim('Register a peer bot in a room')}\n` +
+      `  bun setup.ts human add         ${color.dim('Allow a human to drive an agent')}\n` +
+      `  bun setup.ts configure         ${color.dim('Save a Discord bot token')}\n`,
+  )
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const args = process.argv.slice(2)
-  const cmd = args[0] ?? 'status'
-  const sub = args[1]
+  const [cmd, sub] = process.argv.slice(2)
 
-  if (cmd === 'status' || cmd === '') {
-    await cmdStatus()
-  } else if (cmd === 'configure') {
-    await cmdConfigure()
-  } else if (cmd === 'agent' && sub === 'add') {
-    await cmdAgentAdd()
-  } else if (cmd === 'room' && sub === 'add') {
-    await cmdRoomAdd()
-  } else if (cmd === 'peer' && sub === 'add') {
-    await cmdPeerAdd()
-  } else if (cmd === 'human' && sub === 'add') {
-    await cmdHumanAdd()
-  } else {
-    print('knock-knock setup CLI\n')
-    print('Usage:')
-    print('  bun setup.ts                   Show agent/room status')
-    print('  bun setup.ts status            Show agent/room status')
-    print('  bun setup.ts configure         Save a Discord bot token')
-    print('  bun setup.ts agent add         Add a new agent identity')
-    print('  bun setup.ts room add          Add a room to an agent')
-    print('  bun setup.ts peer add          Register a peer bot in a room')
-    print('  bun setup.ts human add         Allow a human to drive an agent')
-  }
+  if (cmd === undefined || cmd === 'setup') return runInteractive()
+  if (cmd === 'status') return runStatus()
+  if (cmd === 'configure') return runConfigure()
+  if (cmd === 'agent' && sub === 'add') return runAgentAdd()
+  if (cmd === 'room' && sub === 'add') return runRoomAdd()
+  if (cmd === 'peer' && sub === 'add') return runPeerAdd()
+  if (cmd === 'human' && sub === 'add') return runHumanAdd()
+  printHelp()
 }
 
 main().catch(e => {
   process.stderr.write(`setup error: ${e}\n`)
   process.exit(1)
-}).finally(() => close())
+})

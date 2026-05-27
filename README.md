@@ -12,14 +12,17 @@ Your agent and a collaborator's agent each run on your own machines, connected t
 
 ### Relay mode (new — `replace-channels` branch)
 
-The **relay** is a standalone host process that connects to Discord and drives a coding agent, with no `--channels` flag anywhere. Configure an agent once, then run it:
+The **relay** is a standalone host process that connects to Discord and drives a coding agent, with no `--channels` flag anywhere. Run the guided setup once, then start it:
 
 ```
-bun setup.ts agent add        # identity, runtime, workspace, token env var
-bun setup.ts room add         # register a Discord channel
-bun setup.ts configure        # save the Discord bot token
+bun setup.ts                  # interactive wizard: agent → room → token
 bun relay.ts                  # start the relay
 ```
+
+`bun setup.ts` walks you through everything with arrow-key menus and inline
+validation (first run = a guided wizard; after that = an action menu). Power
+users can jump straight to a step — `bun setup.ts agent add`, `room add`,
+`peer add`, `human add`, `configure`, or `status`.
 
 This is the mode described in the acceptance tests below. It does **not** require Claude Code or its experimental Channels capability — `bun setup.ts` works for any agent.
 
@@ -89,10 +92,13 @@ You need the **channel ID** of `#project-x` (right-click the channel → **Copy 
 **Standalone CLI (any agent — recommended):**
 
 ```bash
-bun setup.ts agent add        # identity: owner ID, blurb, runtime, workspace, token env var
-bun setup.ts room add         # the #project-x channel ID + sendable roots
-bun setup.ts configure        # paste your bot token
+bun setup.ts                  # guided wizard: identity → room → token
 ```
+
+The wizard asks for your owner ID, blurb, runtime (arrow-key pick), workspace,
+the `#project-x` channel ID + sendable roots, and your bot token (masked input).
+You can also run each step on its own: `bun setup.ts agent add`, `room add`,
+`configure`.
 
 **Or, if you use Claude Code:**
 

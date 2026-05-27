@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 bun test              # run lib.test.ts (pure decision logic, no Discord/network)
 bun run typecheck     # tsc --noEmit
 bun relay.ts          # start the relay (reads agents from access.json)
-bun setup.ts          # standalone setup CLI (status | agent add | room add | peer add | human add | configure)
+bun setup.ts          # interactive setup wizard/menu (also: status | agent add | room add | peer add | human add | configure)
 bun test --test-name-pattern "T3"  # run a single test by name
 ```
 
@@ -72,7 +72,7 @@ All persistent config lives in `~/.claude/channels/knock-knock/` (overridable vi
 
 ### Setup (`setup.ts`)
 
-`bun setup.ts` is the standalone, agent-agnostic setup CLI (built-in `readline`, no Claude Code dependency). Subcommands: `status`, `configure` (token → `.env`), `agent add`, `room add`, `peer add`, `human add`. It writes the v2 `agents` shape and flat permission profiles via `readAccessFileV2`/`saveAccessV2`. The Claude Code skills (`skills/configure`, `skills/room`, `skills/access`) write the same files for single-agent setups.
+`bun setup.ts` is the standalone, agent-agnostic setup CLI, built on `@clack/prompts` (+ `picocolors`). With no args it runs an interactive flow: a guided wizard on first run (agent → room → token), then an action menu once agents exist. Each step is also a direct subcommand: `status`, `configure` (token → `.env`), `agent add`, `room add`, `peer add`, `human add`. It writes the v2 `agents` shape and flat permission profiles via `readAccessFileV2`/`saveAccessV2`; tokens are masked on input and stored in `.env` under each agent's derived `tokenEnv`. The Claude Code skills (`skills/configure`, `skills/room`, `skills/access`) write the same files for single-agent setups.
 
 ### The deny floor
 
