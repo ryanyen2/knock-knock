@@ -11,6 +11,7 @@ import { SqliteStore } from '../store-sqlite.ts'
 import { Ledger } from '../capture.ts'
 import { FoldEngine } from '../fold.ts'
 import { TurnRecorder } from '../turn-recorder.ts'
+import { admit } from '../admit.ts'
 import {
   LOOP_GUARD_FOLD,
   loopGuardFold,
@@ -38,6 +39,31 @@ const ctx = {
   approverUserId: 'owner1',
   channelId: 'chan-A',
   channelArtifactId: 'extp:discord/chan-A',
+}
+
+/** Phase 3 helper: mimics what Approvals.resolveInteraction does — admits
+ *  tool.approved/tool.denied caused_by the matched tool.requested hash. */
+async function admitVerdict(
+  store: SqliteStore,
+  recorder: TurnRecorder,
+  name: string,
+  input: unknown,
+  behavior: 'allow' | 'deny',
+): Promise<void> {
+  const parent = recorder.popPendingForVerdict(name, input)
+  await admit(store, {
+    actor: ctx.approverUserId,
+    role: 'owner',
+    channel: ctx.channelId,
+    target: { artifactId: `extp:tool/${parent}`, anchor: { kind: 'proxy', proxyId: parent } },
+    verb: behavior === 'allow' ? 'tool.approved' : 'tool.denied',
+    patch: {
+      kind: 'external',
+      intent: { channel: 'tool', op: 'verdict', args: { behavior } },
+    },
+    effect: 'external',
+    caused_by: [parent],
+  })
 }
 
 // ─── LoopGuard ─────────────────────────────────────────────────────────────
@@ -178,7 +204,7 @@ test('Approval concept: tool.requested → pending; tool.approved → allowed', 
   expect(pending).toHaveLength(1)
   expect(pending[0]!.toolName).toBe('Edit')
 
-  await r.onVerdict('Edit', { file_path: 'foo.ts' }, { behavior: 'allow' })
+  await admitVerdict(store, r, 'Edit', { file_path: 'foo.ts' }, 'allow')
 
   pending = pendingApprovals(engine.get<ApprovalFoldState>(APPROVAL_FOLD))
   expect(pending).toHaveLength(0)
@@ -198,7 +224,7 @@ test('Approval concept: tool.denied → denied status, resolverActor tracked', a
     text: 'rm -rf',
   })
   await r.onAdapterEvent({ type: 'tool_call', toolCallId: 't-1', name: 'Bash', input: { command: 'rm -rf' } })
-  await r.onVerdict('Bash', { command: 'rm -rf' }, { behavior: 'deny', message: 'nope' })
+  await admitVerdict(store, r, 'Bash', { command: 'rm -rf' }, 'deny')
   const state = [...engine.get<ApprovalFoldState>(APPROVAL_FOLD).values()]
   expect(state[0]!.status).toBe('denied')
   engine.close()
@@ -224,7 +250,7 @@ test('Folds: a fresh FoldEngine on a populated store reconstructs identical stat
     name: 'Edit',
     input: { file_path: 'foo.ts' },
   })
-  await r.onVerdict('Edit', { file_path: 'foo.ts' }, { behavior: 'allow' })
+  await admitVerdict(store, r, 'Edit', { file_path: 'foo.ts' }, 'allow')
   await r.onAdapterEvent({ type: 'tool_result', toolCallId: 't-1', status: 'completed' })
   await r.finishTurn('done')
 

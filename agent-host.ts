@@ -1,16 +1,20 @@
 /**
- * AgentHost — one Discord bot identity + one agent runtime. The supervisor
- * (relay.ts) instantiates one per configured agent in a single process. Each
- * host owns its own Discord client (gateway connection + token), its driver map
- * (one Driver per channel/session), its Approvals service, its DM courier, and
- * its rate-limit + recent-message state. It selects a runtime through
- * makeAdapter; it never imports an agent SDK directly.
+ * AgentHost — Phase 3: Discord ↔ ledger adapter.
  *
- * Phase 0 capture: every decision point that has historically been ephemeral
- * (an inbound message, a turn start, a tool call, an approval, a reply) is
- * journaled into the Ledger via TurnRecorder. The relay still executes the
- * action imperatively — the ledger is a side-effect-free observer until the
- * Phase 2 admission gate inverts that relationship.
+ * Inbound: handleInbound gates the message and admits a `channel.message`.
+ * That's it. The synchronizer chain (prompt-on-message → drive-turn →
+ * post-on-reply) does the rest.
+ *
+ * Outbound and adapter-side work: this host exposes callbacks that
+ * synchronizations call back into — getAgentForChannel, getDriveHandle,
+ * discordSend. The Session map (one Driver + adapter per channel) still
+ * lives here because adapter instances are per-process; everything else
+ * lives in the ledger.
+ *
+ * The AgentAdapter seam is byte-for-byte preserved — applyPolicy /
+ * onPermissionRequest / prompt / onEvent unchanged. The permission
+ * handler closure inside Driver now awaits a ledger verdict via
+ * `awaitVerdict` instead of an in-process Promise.
  */
 
 import {
@@ -34,48 +38,60 @@ import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 import { ConsoleUI } from './console-ui.ts'
-import { DmCourier, type TurnHandle } from './dm-courier.ts'
+import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
 import type { AgentEvent } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
+import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
+import { admit } from './ledger/admit.ts'
+import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
-import {
-  LOOP_GUARD_FOLD,
-  decideLoopGuard,
-  type LoopGuardFoldState,
-} from './ledger/concepts/loop-guard.ts'
+import type { ChannelId, Hash } from './ledger/interaction.ts'
+import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
-/** Per-session bookkeeping the host owns alongside each Driver. */
+/** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
   driver: Driver
-  /** Set by handleInbound before each turn; consumed by the adapter event handler. */
+  /** Per-channel mailbox of in-flight turn metadata for adapter event fanout. */
   activeTurn?: {
-    consoleAgentKey: string
-    dmHandle: TurnHandle
+    promptHash: Hash
     recorder: TurnRecorder
+    dmHandle: DmTurnHandle
   }
+}
+
+/** Side-table the host owns so synchronization callbacks can resolve
+ *  inbound-related Discord state (ack reactions, DmCourier headers). */
+type InboundSideTable = {
+  msg: Message
+  ackEmoji: string
+  senderLabel: string
+  channelLabel: string
+  userPrompt: string
 }
 
 export class AgentHost {
   private readonly client: Client
   private readonly approvals: Approvals
   private readonly courier: DmCourier
-  private readonly sessions = new Map<string, Session>()
+  private readonly sessions = new Map<ChannelId, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
-  // No more `loopState: Map` — per-channel loop-guard counters live in the
-  // LoopGuard fold over the ledger (rubric #1: replayable from interactions).
+  /** Inbound side-table keyed by the channel.message hash. Consumed by the
+   *  turn.prompted subscriber (DmCourier kickoff) and the turn.replied
+   *  subscriber (ack cleanup). */
+  private readonly inboundByHash = new Map<Hash, InboundSideTable>()
+  private storeUnsub?: () => void
 
   constructor(
     private readonly key: string,
     private readonly agent: AgentConfig,
     private readonly getAccess: () => Access,
     private readonly ui: ConsoleUI,
-    /** Capture: every decision point appends an Interaction here. */
     private readonly ledger: Ledger,
-    /** Concept folds — the only place per-channel/per-turn state lives. */
+    private readonly store: Store,
     private readonly engine: FoldEngine,
   ) {
     this.client = new Client({
@@ -92,13 +108,18 @@ export class AgentHost {
 
     const liveAgentGetter = () => getAccess().agents[this.key] ?? this.agent
 
-    this.approvals = new Approvals(this.client, liveAgentGetter, info => {
-      if (info.destination === 'channel' && info.reason) {
-        this.ui.note(this.key, `approval fell back to channel — ${info.reason}`)
-      } else {
-        this.ui.note(this.key, `approval prompt sent to ${info.destination}`)
-      }
-    })
+    this.approvals = new Approvals(
+      this.client,
+      liveAgentGetter,
+      this.store,
+      info => {
+        if (info.destination === 'channel' && info.reason) {
+          this.ui.note(this.key, `approval fell back to channel — ${info.reason}`)
+        } else {
+          this.ui.note(this.key, `approval prompt sent to ${info.destination}`)
+        }
+      },
+    )
 
     this.courier = new DmCourier(
       this.client,
@@ -137,6 +158,16 @@ export class AgentHost {
     this.client.on('error', err => {
       this.ui.error(this.key, `client error: ${err}`)
     })
+
+    // Side-effect subscribers: turn.prompted → start DmCourier; turn.replied
+    // → remove ack reaction. These are the UX touches that need Discord
+    // context the synchronizer chain doesn't have. The work itself is
+    // ledger-driven; only the Discord-side bookkeeping lives here.
+    this.storeUnsub = this.store.subscribe(i => {
+      if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
+      if (i.verb === 'turn.prompted') void this.onTurnPrompted(i.hash, i.caused_by[0])
+      else if (i.verb === 'turn.replied') void this.onTurnReplied(i)
+    })
   }
 
   async start(token: string): Promise<void> {
@@ -144,10 +175,298 @@ export class AgentHost {
   }
 
   async stop(): Promise<void> {
+    this.storeUnsub?.()
     await this.client.destroy()
   }
 
-  // ─── Private ────────────────────────────────────────────────────────────────
+  // ─── Synchronization callbacks (used by sync wiring in relay.ts) ──────────
+
+  /** prompt-on-message asks "who responds on this channel?" */
+  getAgentForChannel(channelId: ChannelId): { agentKey: string } | undefined {
+    const access = this.getAccess()
+    const agent = access.agents[this.key] ?? this.agent
+    return agent.rooms[channelId] ? { agentKey: this.key } : undefined
+  }
+
+  /** drive-turn asks "give me a handle to actually run the adapter here." */
+  getDriveHandle(channelId: ChannelId): DriveTurnHandle | undefined {
+    if (!this.getAgentForChannel(channelId)) return undefined
+    return {
+      run: async opts => this.runTurnForChannel(channelId, opts),
+    }
+  }
+
+  /** post-on-reply sends a chunk; we return the resulting Discord message id. */
+  async discordSend(channelId: ChannelId, text: string): Promise<string | undefined> {
+    const ch = await this.client.channels.fetch(channelId).catch(() => null)
+    if (!ch || !('send' in ch)) return undefined
+    const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
+    this.noteBotMsg(sent.id)
+    return sent.id
+  }
+
+  // ─── Inbound (skinny) ─────────────────────────────────────────────────────
+
+  private async handleInbound(msg: Message): Promise<void> {
+    const access = this.getAccess()
+    const liveAgent = access.agents[this.key] ?? this.agent
+
+    const channelId = msg.channel.isThread()
+      ? msg.channel.parentId ?? msg.channelId
+      : msg.channelId
+    const room = liveAgent.rooms[channelId]
+    if (!room) return
+
+    if (msg.author.id === this.client.user?.id) return
+
+    const ownerId = liveAgent.ownerUserId
+    if (!guildSenderAllowed(room, msg.author.id, this.client.user?.id, ownerId)) return
+
+    const now = Date.now()
+    const recent = (this.inboundRate.get(msg.author.id) ?? []).filter(t => now - t < 60_000)
+    if (recent.length >= 10) return
+    this.inboundRate.set(msg.author.id, [...recent, now])
+
+    const requireMention = room.requireMention ?? true
+    if (requireMention && !(await this.isMentioned(msg, access.mentionPatterns))) return
+
+    if ('sendTyping' in msg.channel) {
+      void (msg.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
+    }
+
+    const kind = senderKind(room, msg.author.id, ownerId)
+
+    // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
+    const channelArtifactId = `extp:discord/${channelId}`
+    const prior = await this.store.latestInChannel(channelId)
+    const inboundResult = await admit(this.store, {
+      actor: msg.author.id,
+      role: kind === 'unknown' ? 'agent' : kind,
+      channel: channelId,
+      target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
+      verb: 'channel.message',
+      patch: {
+        kind: 'external',
+        intent: {
+          channel: 'discord',
+          op: 'received',
+          args: { text: msg.content, messageId: msg.id },
+        },
+      },
+      effect: 'external',
+      caused_by: prior ? [prior.hash] : [],
+    })
+    if (inboundResult.kind !== 'admitted') return
+
+    // Side-table: stash Discord context so synchronization-driven UX can
+    // use the live Message object (ack reaction, DmCourier header).
+    const channelLabel = await this.describeChannel(msg).catch(() => `#${channelId}`)
+    const ackEmoji = access.ackReaction ?? '👀'
+    this.inboundByHash.set(inboundResult.interaction.hash, {
+      msg,
+      ackEmoji,
+      senderLabel: msg.author.username ?? msg.author.id,
+      channelLabel,
+      userPrompt: msg.content,
+    })
+
+    this.ui.turnStart(this.key, {
+      channel: { label: channelLabel },
+      sender: { label: msg.author.username ?? msg.author.id, kind },
+      text: msg.content,
+    })
+
+    // Ack reaction — removed by onTurnReplied below when the synchronizer
+    // chain finishes. If the loop-guard denies the turn, the ack stays
+    // until the side-table entry is cleaned by a TTL sweep (Phase 3.1).
+    void msg.react(ackEmoji).catch(() => {})
+  }
+
+  // ─── Ledger-driven side effects (subscribed in constructor) ───────────────
+
+  private async onTurnPrompted(promptHash: Hash, inboundHash: Hash | undefined): Promise<void> {
+    if (!inboundHash) return
+    const side = this.inboundByHash.get(inboundHash)
+    if (!side) return // not our channel.message, or already consumed
+    try {
+      const dmHandle = await this.courier.beginTurn({
+        senderLabel: side.senderLabel,
+        channelLabel: side.channelLabel,
+        userPrompt: side.userPrompt,
+        promptHash,
+      })
+      // Attach to the active turn so drive-turn can finalize the DM later.
+      const session = this.sessions.get(this.channelOfPrompt(promptHash, inboundHash))
+      if (session?.activeTurn?.promptHash === promptHash) {
+        session.activeTurn.dmHandle = dmHandle
+      }
+    } catch (err) {
+      this.ui.error(this.key, `dm courier begin: ${err}`)
+    }
+  }
+
+  private async onTurnReplied(replied: { hash: Hash; caused_by: Hash[]; channel: ChannelId }): Promise<void> {
+    // turn.replied.caused_by = [turn.prompted, ...tool.executeds]; the prompt
+    // is the first parent. The inbound is the prompt's first parent — we
+    // can resolve it via the store.
+    const promptHash = replied.caused_by[0]
+    if (!promptHash) return
+    const prompt = await this.store.getByHash(promptHash)
+    if (!prompt) return
+    const inboundHash = prompt.caused_by[0]
+    if (!inboundHash) return
+    const side = this.inboundByHash.get(inboundHash)
+    if (!side) return
+
+    void side.msg.reactions.cache
+      .get(side.ackEmoji)
+      ?.users.remove(this.client.user?.id ?? '')
+      .catch(() => {})
+
+    // Side-table cleanup — the turn has fully wound down.
+    this.inboundByHash.delete(inboundHash)
+  }
+
+  /** Looking up a session's channel from a promptHash; usually it's just
+   *  the prompted interaction's `channel` field, but we may not have that
+   *  in scope. Resolve via the store and fall back if needed. */
+  private channelOfPrompt(_promptHash: Hash, inboundHash: Hash): ChannelId {
+    // The inbound side-table is per-channel.message; we don't actually need
+    // a separate lookup — the session for the same channel is what holds
+    // the active turn. Resolve by scanning sessions for the matching hash.
+    for (const [chanId, sess] of this.sessions.entries()) {
+      if (sess.activeTurn?.promptHash === _promptHash) return chanId
+    }
+    // Fall back: any session whose recorder.inboundHash matches.
+    for (const [chanId, sess] of this.sessions.entries()) {
+      if (sess.activeTurn?.recorder.inboundHash === inboundHash) return chanId
+    }
+    return '' // No active turn yet — the DmCourier attach is a best-effort no-op.
+  }
+
+  // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
+
+  private async runTurnForChannel(
+    channelId: ChannelId,
+    opts: {
+      promptHash: Hash
+      inboundHash: Hash
+      promptText: string
+      senderId: string
+      senderKindKind: 'owner' | 'human' | 'agent'
+      messageId: string
+      ts: string
+    },
+  ): Promise<{ chunks: string[]; error?: string }> {
+    const access = this.getAccess()
+    const liveAgent = access.agents[this.key] ?? this.agent
+    const room = liveAgent.rooms[channelId]
+    if (!room) return { chunks: [], error: 'no room' }
+
+    const session = this.getOrCreateSession(channelId, liveAgent, room)
+    const approverUserId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    const recorder = TurnRecorder.restore(
+      this.ledger,
+      {
+        agentKey: this.key,
+        approverUserId,
+        channelId,
+        channelArtifactId: `extp:discord/${channelId}`,
+      },
+      opts.inboundHash,
+      opts.promptHash,
+    )
+    // No-op DM handle as a placeholder; replaced by onTurnPrompted's call.
+    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: noopDm() }
+
+    const meta: TurnMeta = {
+      senderId: opts.senderId,
+      kind: opts.senderKindKind,
+      messageId: opts.messageId,
+      ts: opts.ts,
+      channelId,
+    }
+
+    let chunks: string[] = []
+    let turnError: string | undefined
+    try {
+      chunks = await session.driver.runTurn(opts.promptText, meta)
+    } catch (e) {
+      turnError = e instanceof Error ? e.message : String(e)
+      this.ui.error(this.key, `turn failed: ${turnError}`)
+    }
+
+    const replyText = chunks.join('\n').trim() || undefined
+    await recorder
+      .finishTurn(replyText)
+      .catch(err => this.ui.error(this.key, `ledger finish turn: ${err}`))
+
+    // Finalize the DM transcript with any error; the reply text already
+    // landed in the Turn fold which the courier subscribes to.
+    void session.activeTurn?.dmHandle.finalize(turnError).catch(() => {})
+    session.activeTurn = undefined
+
+    return { chunks, error: turnError }
+  }
+
+  // ─── Session management ───────────────────────────────────────────────────
+
+  private getOrCreateSession(
+    channelId: ChannelId,
+    liveAgent: AgentConfig,
+    room: AgentConfig['rooms'][string],
+  ): Session {
+    const existing = this.sessions.get(channelId)
+    if (existing) return existing
+
+    const profile = readRoomSettings(this.key, channelId)
+    const adapter = makeAdapter(liveAgent.runtime, { workspace: liveAgent.workspace })
+    const ctx: PreambleContext = {
+      identity: {
+        name: liveAgent.name,
+        ownerUserId: liveAgent.ownerUserId,
+        blurb: liveAgent.blurb,
+      },
+      rosterLines: buildRosterLinesForRoom(room),
+    }
+    const created: Session = {
+      driver: new Driver(
+        adapter,
+        channelId,
+        profile,
+        async req => {
+          // Phase 3 permission handler: post Discord prompt; wait on the ledger.
+          const session = this.sessions.get(channelId)
+          const at = session?.activeTurn
+          if (!at) return { behavior: 'deny', message: 'no active turn for permission' }
+          const toolReqHash = at.recorder.popPendingForVerdict(req.toolName, req.input)
+          await this.approvals
+            .postDiscord({
+              channelId,
+              toolRequestedHash: toolReqHash,
+              toolName: req.toolName,
+              input: req.input,
+            })
+            .catch(err => this.ui.error(this.key, `approvals post: ${err}`))
+          return awaitVerdict(this.store, toolReqHash)
+        },
+        ctx,
+      ),
+    }
+    adapter.onEvent((event: AgentEvent) => {
+      this.ui.event(this.key, event)
+      const at = created.activeTurn
+      if (at) {
+        void at.recorder
+          .onAdapterEvent(event)
+          .catch(err => this.ui.error(this.key, `ledger adapter event: ${err}`))
+      }
+    })
+    this.sessions.set(channelId, created)
+    return created
+  }
+
+  // ─── Discord helpers ──────────────────────────────────────────────────────
 
   private noteBotMsg(id: string): void {
     this.recentBotMsgIds.add(id)
@@ -177,208 +496,6 @@ export class AgentHost {
     return false
   }
 
-  private async handleInbound(msg: Message): Promise<void> {
-    // Re-read the live access file on each message so room/peer config changes
-    // from the setup CLI take effect without restarting the relay.
-    const access = this.getAccess()
-    const liveAgent = access.agents[this.key] ?? this.agent
-
-    // Resolve the base channel id (threads → parent)
-    const channelId = msg.channel.isThread()
-      ? msg.channel.parentId ?? msg.channelId
-      : msg.channelId
-
-    // Only handle channels registered in this agent's rooms
-    const room = liveAgent.rooms[channelId]
-    if (!room) return
-
-    // Self-loop guard
-    if (msg.author.id === this.client.user?.id) return
-
-    // Sender gate + priority classification key off the agent's real owner. The
-    // approval actor (who may click Allow/Deny) is a separate role resolved by
-    // Approvals via approverForAgent, so a delegated approver never locks the
-    // owner out of driving their own agent.
-    const ownerId = liveAgent.ownerUserId
-    if (!guildSenderAllowed(room, msg.author.id, this.client.user?.id, ownerId)) return
-
-    // Rate cap: max 10 inbound per sender per 60s
-    const now = Date.now()
-    const recent = (this.inboundRate.get(msg.author.id) ?? []).filter(t => now - t < 60_000)
-    if (recent.length >= 10) return
-    this.inboundRate.set(msg.author.id, [...recent, now])
-
-    // Mention check (default: require @mention or reply-to-bot)
-    const requireMention = room.requireMention ?? true
-    if (requireMention && !(await this.isMentioned(msg, access.mentionPatterns))) return
-
-    // Typing indicator (best-effort)
-    if ('sendTyping' in msg.channel) {
-      void (msg.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
-    }
-
-    const kind = senderKind(room, msg.author.id, ownerId)
-    const meta: TurnMeta = {
-      senderId: msg.author.id,
-      kind,
-      messageId: msg.id,
-      ts: msg.createdAt.toISOString(),
-      channelId,
-    }
-
-    // ─── Agent↔agent loop guard (fold-driven) ────────────────────────────────
-    // Per-channel counters live in the LoopGuard fold over admitted
-    // channel.message interactions. The decision is a pure function of fold
-    // state + the inbound kind. When we admit (TurnRecorder.beginTurn below)
-    // the fold advances itself; when we deny, we just don't record.
-    const lgState = this.engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)
-    const lgDecision = decideLoopGuard(lgState, channelId, kind, now)
-    if (!lgDecision.allow) {
-      this.ui.note(this.key, `loop guard skipped a reply in ${channelId} (${lgDecision.reason})`)
-      return
-    }
-
-    // Session key is channelId within this host; globally unique via the per-host
-    // sessions map (agentKey is implicit — different hosts have separate maps).
-    const sessionKey = channelId
-
-    // ─── Begin ledger capture for this turn ──────────────────────────────────
-    // TurnRecorder owns channel.message + turn.prompted up front; the adapter
-    // event fanout below feeds it tool_call/tool_result; finishTurn closes
-    // with turn.replied. The recorder is the *only* place per-turn ledger
-    // state lives — AgentHost stays a Discord-to-recorder router.
-    const approverUserId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
-    const recorder = await TurnRecorder.beginTurn(
-      this.ledger,
-      {
-        agentKey: this.key,
-        approverUserId,
-        channelId,
-        channelArtifactId: `extp:discord/${channelId}`,
-      },
-      {
-        senderId: msg.author.id,
-        senderKind: kind,
-        messageId: msg.id,
-        text: msg.content,
-      },
-    )
-
-    // Find or create the session (driver + event fanout)
-    let session = this.sessions.get(sessionKey)
-    if (!session) {
-      const profile = readRoomSettings(this.key, channelId)
-      const adapter = makeAdapter(liveAgent.runtime, { workspace: liveAgent.workspace })
-      // Collaborative context: inject identity + roster into the first-turn preamble
-      // and wrap every message in a <channel kind=…> envelope. Roster is snapshotted
-      // at session creation; add a peer then restart to refresh the preamble.
-      const ctx: PreambleContext = {
-        identity: {
-          name: liveAgent.name,
-          ownerUserId: liveAgent.ownerUserId,
-          blurb: liveAgent.blurb,
-        },
-        rosterLines: buildRosterLinesForRoom(room),
-      }
-      const created: Session = {
-        driver: new Driver(
-          adapter,
-          sessionKey,
-          profile,
-          async req => {
-            const verdict = await this.approvals.request({
-              channelId,
-              toolName: req.toolName,
-              input: req.input,
-            })
-            const at = this.sessions.get(sessionKey)?.activeTurn
-            if (at) {
-              await at.recorder
-                .onVerdict(req.toolName, req.input, verdict)
-                .catch(err => this.ui.error(this.key, `ledger verdict: ${err}`))
-            }
-            return verdict
-          },
-          ctx,
-        ),
-      }
-      // Fan adapter events into the console renderer and into the ledger.
-      // The DM transcript no longer subscribes here — it subscribes to the
-      // Turn fold directly (pure projection, rubric #1).
-      adapter.onEvent((event: AgentEvent) => {
-        this.ui.event(this.key, event)
-        const at = created.activeTurn
-        if (at) {
-          void at.recorder
-            .onAdapterEvent(event)
-            .catch(err => this.ui.error(this.key, `ledger adapter event: ${err}`))
-        }
-      })
-      session = created
-      this.sessions.set(sessionKey, session)
-    }
-
-    // Build the operator-visible context for this turn.
-    const channelLabel = await this.describeChannel(msg).catch(() => `#${channelId}`)
-    const senderLabel = msg.author.username ?? msg.author.id
-    this.ui.turnStart(this.key, {
-      channel: { label: channelLabel },
-      sender: { label: senderLabel, kind },
-      text: msg.content,
-    })
-
-    const dmHandle = await this.courier.beginTurn({
-      senderLabel,
-      channelLabel,
-      userPrompt: msg.content,
-      promptHash: recorder.promptHash,
-    })
-    session.activeTurn = { consoleAgentKey: this.key, dmHandle, recorder }
-
-    // ─── Presence: 👀 while working ─────────────────────────────────────────
-    // React with ackReaction (default 👀) to signal "received and working."
-    // Never use ✅/❌ — they're reserved for the approval reaction listener.
-    const ackEmoji = access.ackReaction ?? '👀'
-    void msg.react(ackEmoji).catch(() => {})
-
-    let chunks: string[] = []
-    let turnError: string | undefined
-    try {
-      chunks = await session.driver.runTurn(msg.content, meta)
-    } catch (e) {
-      turnError = e instanceof Error ? e.message : String(e)
-      this.ui.error(this.key, `turn failed: ${turnError}`)
-    }
-
-    // Remove the ack reaction now that the response is ready.
-    void msg.reactions.cache
-      .get(ackEmoji)
-      ?.users.remove(this.client.user?.id ?? '')
-      .catch(() => {})
-
-    // ─── Close the turn in the ledger (turn.replied) ─────────────────────────
-    const replyText = chunks.join('\n').trim() || undefined
-    await recorder
-      .finishTurn(replyText)
-      .catch(err => this.ui.error(this.key, `ledger finish turn: ${err}`))
-
-    // Finalize the DM transcript — the reply text is already in the Turn fold,
-    // so finalize just needs to know about an error (if any) and stop subscribing.
-    void dmHandle.finalize(turnError).catch(() => {})
-    session.activeTurn = undefined
-
-    // Post each chunk to the originating channel / thread
-    if ('send' in msg.channel) {
-      for (const text of chunks) {
-        const sent = await (msg.channel as { send: (t: string) => Promise<{ id: string }> }).send(
-          text,
-        )
-        this.noteBotMsg(sent.id)
-      }
-    }
-  }
-
-  /** Best-effort human-friendly channel label for the operator console + DM. */
   private async describeChannel(msg: Message): Promise<string> {
     const ch = msg.channel as { name?: string; isThread?: () => boolean; parent?: { name?: string } }
     if (msg.channel.isThread?.() && ch.parent?.name) {
@@ -388,4 +505,8 @@ export class AgentHost {
     if (msg.channel.isDMBased?.()) return 'DM'
     return `#${msg.channelId}`
   }
+}
+
+function noopDm(): DmTurnHandle {
+  return { finalize: async () => {} }
 }

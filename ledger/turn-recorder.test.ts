@@ -10,6 +10,7 @@ import { test, expect } from 'bun:test'
 import { SqliteStore } from './store-sqlite.ts'
 import { Ledger } from './capture.ts'
 import { TurnRecorder } from './turn-recorder.ts'
+import { verifyHash } from './canonical.ts'
 import type { AgentEvent } from '../agent-adapter.ts'
 
 function setup() {
@@ -79,7 +80,10 @@ test('end-to-end: tool_call → tool_result are recorded and causally chained', 
   store.close()
 })
 
-test('end-to-end: an ask-tier verdict records tool.approved with the right parent', async () => {
+test('popPendingForVerdict returns the matching tool.requested hash for a name+input pair', async () => {
+  // Phase 3 replaces onVerdict (which RECORDED the verdict) with
+  // popPendingForVerdict (which returns the hash so a separate party —
+  // Approvals — can admit the verdict via the ledger).
   const { store, ledger, ctx } = setup()
   const r = await TurnRecorder.beginTurn(ledger, ctx, {
     senderId: 'owner1',
@@ -87,44 +91,31 @@ test('end-to-end: an ask-tier verdict records tool.approved with the right paren
     messageId: 'm-1',
     text: 'edit foo.ts',
   })
-  await r.onAdapterEvent({
+  const req = await r.onAdapterEvent({
     type: 'tool_call',
     toolCallId: 't-1',
     name: 'Edit',
     input: { file_path: 'foo.ts' },
   })
-
-  const verdict = await r.onVerdict('Edit', { file_path: 'foo.ts' }, { behavior: 'allow' })
-  expect(verdict.verb).toBe('tool.approved')
-  expect(verdict.actor).toBe('owner1')
-  expect(verdict.role).toBe('owner')
-
-  // The verdict should point at the tool.requested, NOT at the prompt.
-  const requested = (await store.listByVerb('tool.requested'))[0]!
-  expect(verdict.caused_by).toEqual([requested.hash])
+  const matched = r.popPendingForVerdict('Edit', { file_path: 'foo.ts' })
+  expect(matched).toBe(req!.hash)
+  // Popping consumed it — a second pop falls back to promptHash.
+  const fallback = r.popPendingForVerdict('Edit', { file_path: 'foo.ts' })
+  expect(fallback).toBe(r.promptHash)
   store.close()
 })
 
-test('end-to-end: a denied verdict produces tool.denied', async () => {
+test('popPendingForVerdict falls back to promptHash when no tool_call was seen', async () => {
+  // Race: the adapter may call canUseTool before emitting the tool_call event.
   const { store, ledger, ctx } = setup()
   const r = await TurnRecorder.beginTurn(ledger, ctx, {
     senderId: 'owner1',
     senderKind: 'owner',
     messageId: 'm-1',
-    text: 'rm -rf',
+    text: 'fast tool',
   })
-  await r.onAdapterEvent({
-    type: 'tool_call',
-    toolCallId: 't-1',
-    name: 'Bash',
-    input: { command: 'rm -rf' },
-  })
-  const v = await r.onVerdict(
-    'Bash',
-    { command: 'rm -rf' },
-    { behavior: 'deny', message: 'denied' },
-  )
-  expect(v.verb).toBe('tool.denied')
+  const matched = r.popPendingForVerdict('Mystery', { x: 1 })
+  expect(matched).toBe(r.promptHash)
   store.close()
 })
 
@@ -198,22 +189,6 @@ test('end-to-end: two sequential turns chain via channel.message caused_by lates
   store.close()
 })
 
-test('end-to-end: verdict without a matching tool_call falls back to promptHash parent', async () => {
-  // Handles the race where the adapter calls the permission handler before
-  // emitting the corresponding tool_call event. The verdict still gets a
-  // sensible caused_by (the prompt) rather than throwing.
-  const { store, ledger, ctx } = setup()
-  const r = await TurnRecorder.beginTurn(ledger, ctx, {
-    senderId: 'owner1',
-    senderKind: 'owner',
-    messageId: 'm-1',
-    text: 'fast tool',
-  })
-  const v = await r.onVerdict('Mystery', { x: 1 }, { behavior: 'allow' })
-  expect(v.caused_by).toEqual([r.promptHash])
-  store.close()
-})
-
 test('end-to-end: every recorded interaction verifies against its hash', async () => {
   const { store, ledger, ctx } = setup()
   const r = await TurnRecorder.beginTurn(ledger, ctx, {
@@ -227,7 +202,6 @@ test('end-to-end: every recorded interaction verifies against its hash', async (
   await r.finishTurn('ok')
 
   const all = await store.listByChannel(ctx.channelId)
-  const { verifyHash } = await import('./canonical.ts')
   for (const i of all) expect(verifyHash(i)).toBe(true)
   store.close()
 })

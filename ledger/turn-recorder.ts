@@ -7,7 +7,7 @@
  * Discord or adapter mocks: drive the methods directly from a unit test.
  */
 
-import type { AgentEvent, Verdict } from '../agent-adapter.ts'
+import type { AgentEvent } from '../agent-adapter.ts'
 import type { Ledger } from './capture.ts'
 import type { ChannelId, Hash, Interaction, Role } from './interaction.ts'
 
@@ -44,6 +44,12 @@ export class TurnRecorder {
   /**
    * Record the inbound message + the turn.prompted causal pin. Returns a
    * recorder ready to receive adapter events and verdicts.
+   *
+   * Phase 3 note: this path is now used only by tests and by legacy callers.
+   * In production, `channel.message` is admitted by AgentHost.handleInbound
+   * and `turn.prompted` by the prompt-on-message synchronization;
+   * drive-turn uses `restore()` below to wrap a recorder around the
+   * already-admitted hashes.
    */
   static async beginTurn(
     ledger: Ledger,
@@ -81,6 +87,21 @@ export class TurnRecorder {
     })
 
     return new TurnRecorder(ledger, ctx, inbound.hash, prompted.hash)
+  }
+
+  /**
+   * Construct a recorder around an already-admitted (channel.message,
+   * turn.prompted) pair. Used by drive-turn: prompt-on-message has already
+   * journaled the prompt; the recorder just needs to track tool.* during
+   * the adapter call and journal turn.replied at the end.
+   */
+  static restore(
+    ledger: Ledger,
+    ctx: TurnRecorderCtx,
+    inboundHash: Hash,
+    promptHash: Hash,
+  ): TurnRecorder {
+    return new TurnRecorder(ledger, ctx, inboundHash, promptHash)
   }
 
   async onAdapterEvent(event: AgentEvent): Promise<Interaction | undefined> {
@@ -140,41 +161,18 @@ export class TurnRecorder {
   }
 
   /**
-   * Record an owner verdict for an ask-tier tool. Pops the matching pending
-   * tool_call (oldest first) so the caused_by parent is the right
-   * tool.requested; falls back to promptHash when the event is missing.
+   * Pop the tool.requested hash matching a permission-handler call's
+   * (name, input) so the caller can use it as `caused_by` for the verdict
+   * it admits via Approvals (Phase 3 replaces in-process onVerdict —
+   * verdicts now come back through the ledger, not through this recorder).
+   * Falls back to promptHash when no tool_call event was seen yet (race).
    */
-  async onVerdict(
-    toolName: string,
-    input: unknown,
-    verdict: Verdict,
-  ): Promise<Interaction> {
+  popPendingForVerdict(toolName: string, input: unknown): Hash {
     const inputJson = stableJson(input)
     const idx = this.pendingToolCalls.findIndex(
       p => p.name === toolName && p.inputJson === inputJson,
     )
-    const parent =
-      idx >= 0 ? this.pendingToolCalls.splice(idx, 1)[0]!.hash : this.promptHash
-    return this.ledger.record({
-      actor: this.ctx.approverUserId,
-      role: 'owner',
-      channel: this.ctx.channelId,
-      target: {
-        artifactId: `extp:tool/${parent}`,
-        anchor: { kind: 'proxy', proxyId: parent },
-      },
-      verb: verdict.behavior === 'allow' ? 'tool.approved' : 'tool.denied',
-      patch: {
-        kind: 'external',
-        intent: {
-          channel: 'tool',
-          op: 'verdict',
-          args: { behavior: verdict.behavior },
-        },
-      },
-      effect: 'external',
-      caused_by: [parent],
-    })
+    return idx >= 0 ? this.pendingToolCalls.splice(idx, 1)[0]!.hash : this.promptHash
   }
 
   /**

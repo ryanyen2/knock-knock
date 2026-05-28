@@ -5,6 +5,14 @@
  * Reads the access file and spawns one AgentHost per configured agent. Each
  * AgentHost owns its own Discord bot identity, token, runtime, and rooms.
  * Configure agents with `bun setup.ts`, then start with `bun relay.ts`.
+ *
+ * Phase 3 architecture: the ledger drives the flow.
+ *   Discord inbound → AgentHost gate → admit(channel.message)
+ *   → prompt-on-message → admit(turn.prompted)
+ *   → drive-turn → adapter.prompt → tool.X / turn.replied admissions
+ *   → post-on-reply → Discord post (under external_claim)
+ * Side-effect helpers (DmCourier, ack reaction) hang off store subscriptions
+ * in AgentHost, not off the inline pipeline.
  */
 
 import { readFileSync, chmodSync } from 'fs'
@@ -21,6 +29,9 @@ import { channelFold } from './ledger/concepts/channel.ts'
 import { turnFold } from './ledger/concepts/turn.ts'
 import { approvalFold } from './ledger/concepts/approval.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
+import { promptOnMessage } from './ledger/synchronizations/prompt-on-message.ts'
+import { driveTurn } from './ledger/synchronizations/drive-turn.ts'
+import { postOnReply } from './ledger/synchronizations/post-on-reply.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -62,13 +73,7 @@ await engine.register(channelFold)
 await engine.register(turnFold)
 await engine.register(approvalFold)
 
-// Synchronizations — behavior is one new file per synchronization (rubric #2).
-// classify-on-tool-request audits every tool request against the room policy
-// and journals the verdict so the dual-audience trail explains every block.
-const synchronizer = new Synchronizer(store, engine)
-synchronizer.register(classifyOnToolRequest())
-synchronizer.start()
-
+// Create AgentHosts (Discord clients not yet connected).
 for (const [key, agent] of agentEntries) {
   const token = process.env[agent.tokenEnv]
   if (!token) {
@@ -86,17 +91,66 @@ for (const [key, agent] of agentEntries) {
     continue
   }
 
-  const host = new AgentHost(key, agent, readAccessFile, ui, ledger, engine)
+  const host = new AgentHost(key, agent, readAccessFile, ui, ledger, store, engine)
   hosts.push(host)
   bootEntries.push({ key, runtime: agent.runtime, workspace: agent.workspace })
-  void host.start(token).catch(err => {
-    ui.error(key, `login failed: ${err}`)
-  })
 }
 
 if (hosts.length === 0) {
   process.stderr.write('relay: no agents could be started — check token env vars above.\n')
   process.exit(1)
+}
+
+// Synchronizations — behavior is one new file per synchronization (rubric #2).
+// The host-dependent ones close over the hosts array; the first host that
+// claims a channel handles it.
+const synchronizer = new Synchronizer(store, engine)
+synchronizer.register(classifyOnToolRequest())
+synchronizer.register(
+  promptOnMessage({
+    getAgentForChannel: channelId => {
+      for (const h of hosts) {
+        const r = h.getAgentForChannel(channelId)
+        if (r) return r
+      }
+      return undefined
+    },
+  }),
+)
+synchronizer.register(
+  driveTurn({
+    getDriveHandle: channelId => {
+      for (const h of hosts) {
+        const handle = h.getDriveHandle(channelId)
+        if (handle) return handle
+      }
+      return undefined
+    },
+    getByHash: hash => store.getByHash(hash),
+  }),
+)
+synchronizer.register(
+  postOnReply({
+    discordSend: async (channelId, text) => {
+      for (const h of hosts) {
+        if (h.getAgentForChannel(channelId)) {
+          return h.discordSend(channelId, text)
+        }
+      }
+      return undefined
+    },
+  }),
+)
+synchronizer.start()
+
+// Now connect the Discord clients — messages will start flowing into the
+// ledger-driven pipeline.
+for (let n = 0; n < hosts.length; n++) {
+  const entry = bootEntries[n]!
+  const token = process.env[access.agents[entry.key]!.tokenEnv]!
+  void hosts[n]!.start(token).catch(err => {
+    ui.error(entry.key, `login failed: ${err}`)
+  })
 }
 
 ui.banner(bootEntries)
