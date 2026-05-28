@@ -19,6 +19,8 @@ import type {
 } from './interaction.ts'
 import type { Store } from './store.ts'
 
+type ClaimRow = { held_by_hash: string; expires_at: string }
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS interaction (
   seq           INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -49,6 +51,14 @@ CREATE TABLE IF NOT EXISTS interaction_parent (
   PRIMARY KEY (child, parent)
 );
 CREATE INDEX IF NOT EXISTS ip_parent ON interaction_parent (parent);
+
+-- External-proxy claim table (Phase 2). No FK to interaction.hash because
+-- claims are acquired BEFORE the proposing interaction is appended.
+CREATE TABLE IF NOT EXISTS external_claim (
+  artifact_id  TEXT PRIMARY KEY,
+  held_by_hash TEXT NOT NULL,
+  expires_at   TEXT NOT NULL
+);
 `
 
 type Row = {
@@ -274,6 +284,60 @@ export class SqliteStore implements Store {
       | { m: number | null }
       | null
     return r?.m ?? 0
+  }
+
+  // ─── External-proxy Claim primitive ───────────────────────────────────────
+
+  async acquireClaim(
+    artifactId: ArtifactId,
+    holderHash: Hash,
+    ttlMs: number,
+  ): Promise<{ acquired: boolean; currentHolder?: Hash }> {
+    const now = Date.now()
+    const expiresAt = new Date(now + ttlMs).toISOString()
+    const current = this.db
+      .prepare('SELECT held_by_hash, expires_at FROM external_claim WHERE artifact_id = ?')
+      .get(artifactId) as ClaimRow | null
+    if (!current) {
+      this.db
+        .prepare(
+          'INSERT INTO external_claim (artifact_id, held_by_hash, expires_at) VALUES (?, ?, ?)',
+        )
+        .run(artifactId, holderHash, expiresAt)
+      return { acquired: true }
+    }
+    const expired = Date.parse(current.expires_at) <= now
+    if (expired || current.held_by_hash === holderHash) {
+      this.db
+        .prepare(
+          'UPDATE external_claim SET held_by_hash = ?, expires_at = ? WHERE artifact_id = ?',
+        )
+        .run(holderHash, expiresAt, artifactId)
+      return { acquired: true }
+    }
+    return { acquired: false, currentHolder: current.held_by_hash }
+  }
+
+  async releaseClaim(
+    artifactId: ArtifactId,
+    holderHash: Hash,
+  ): Promise<{ released: boolean }> {
+    const result = this.db
+      .prepare('DELETE FROM external_claim WHERE artifact_id = ? AND held_by_hash = ?')
+      .run(artifactId, holderHash)
+    return { released: result.changes > 0 }
+  }
+
+  async getClaim(
+    artifactId: ArtifactId,
+  ): Promise<{ holder: Hash; expiresAt: Date } | undefined> {
+    const row = this.db
+      .prepare('SELECT held_by_hash, expires_at FROM external_claim WHERE artifact_id = ?')
+      .get(artifactId) as ClaimRow | null
+    if (!row) return undefined
+    const expiresAt = new Date(row.expires_at)
+    if (expiresAt.getTime() <= Date.now()) return undefined
+    return { holder: row.held_by_hash, expiresAt }
   }
 
   close(): void {

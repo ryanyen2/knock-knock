@@ -43,6 +43,31 @@ export interface Store {
   /** Last assigned seq — for paging cursors. */
   maxSeq(): Promise<number>
 
+  // ─── External-proxy Claim primitive (Phase 2) ────────────────────────────
+  // Serializes side effects against an external system. The proposing actor
+  // must hold a claim before appending an `external.*` interaction; the
+  // merge gate bypasses role-ordered merge for external effects because the
+  // claim itself is the floor.
+
+  /**
+   * Try to acquire `artifactId` for `holderHash` for `ttlMs` milliseconds.
+   * - No current holder → acquired.
+   * - Same holder → renewed (TTL refreshed).
+   * - Different holder, expired → replaced.
+   * - Different holder, still live → not acquired; current holder returned.
+   */
+  acquireClaim(
+    artifactId: ArtifactId,
+    holderHash: Hash,
+    ttlMs: number,
+  ): Promise<{ acquired: boolean; currentHolder?: Hash }>
+
+  /** Release the claim if `holderHash` is the current holder. */
+  releaseClaim(artifactId: ArtifactId, holderHash: Hash): Promise<{ released: boolean }>
+
+  /** Current claim if one exists and hasn't expired. */
+  getClaim(artifactId: ArtifactId): Promise<{ holder: Hash; expiresAt: Date } | undefined>
+
   close(): void
 }
 
