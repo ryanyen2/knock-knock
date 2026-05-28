@@ -3,9 +3,7 @@
   "version": "0.1.0",
   "license": "MIT",
   "type": "module",
-  "bin": "./server.ts",
   "scripts": {
-    "start": "bun install --no-summary --production && bun server.ts",
     "relay": "bun relay.ts",
     "setup": "bun setup.ts",
     "test": "bun test",
@@ -15,8 +13,6 @@
     "@agentclientprotocol/sdk": "^0.22.1",
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@clack/prompts": "^1.4.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "@opencode-ai/sdk": "^1.15.10",
     "discord.js": "^14.14.0",
     "picocolors": "^1.1.1"
   },

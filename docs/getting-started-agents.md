@@ -1,9 +1,9 @@
 # Getting started: running knock-knock with different agents
 
-Phase 1 makes the runtime swappable. The relay drives **any** coding agent
-through one `AgentAdapter` seam; you pick the agent with the `KNOCK_KNOCK_AGENT`
-environment variable. Nothing in `relay.ts` / `driver.ts` / `lib.ts` knows which
-agent is underneath.
+The relay drives **any** coding agent through one `AgentAdapter` seam. You pick
+the agent with the `runtime` field on the agent, set during `bun setup.ts` —
+not with an environment variable. Nothing in `relay.ts` / `agent-host.ts` /
+`driver.ts` / `lib.ts` knows which agent is underneath; only the adapters do.
 
 There are two transports behind that seam:
 
@@ -16,17 +16,14 @@ ACP is the universal path: one adapter (`adapters/acp.ts`) drives every
 ACP-speaking agent — the agent is chosen by **which command we spawn**, not by
 any agent-specific code.
 
-```
-KNOCK_KNOCK_AGENT   agent / transport
-─────────────────   ──────────────────────────────────────────────
-claude-sdk          Claude Code, in-process SDK  (default; no install)
-claude-acp          Claude Code, via ACP         (npx @agentclientprotocol/claude-agent-acp)
-opencode            OpenCode, via ACP            (opencode acp)
-codex               OpenAI Codex, via ACP        (npx @agentclientprotocol/codex-acp)
-gemini              Gemini CLI, via ACP          (gemini --experimental-acp)
-acp                 any agent — set KNOCK_KNOCK_ACP_COMMAND / _ARGS yourself
-opencode-http       OpenCode over HTTP+SSE       (legacy/experimental — see note)
-```
+| `runtime` | agent / transport |
+|-----------|-------------------|
+| `claude-sdk` | Claude Code, in-process SDK (default; no install) |
+| `claude-acp` | Claude Code, via ACP (`npx @agentclientprotocol/claude-agent-acp`) |
+| `opencode` | OpenCode, via ACP (`opencode acp`) |
+| `codex` | OpenAI Codex, via ACP (`npx @agentclientprotocol/codex-acp`) |
+| `gemini` | Gemini CLI, via ACP (`gemini --experimental-acp`) |
+| `acp` | any agent — set `KNOCK_KNOCK_ACP_COMMAND` / `KNOCK_KNOCK_ACP_ARGS` yourself |
 
 All modes start the same way:
 
@@ -34,35 +31,18 @@ All modes start the same way:
 bun relay.ts
 ```
 
-### Prerequisite: set up an agent
-
-**Option A — standalone CLI (any coding agent, no Claude Code needed):**
+### Prerequisite: configure an agent
 
 ```bash
-bun setup.ts                  # guided wizard: agent identity → room → token
+bun setup.ts                  # guided wizard: agent identity → runtime → room → token
 bun relay.ts                  # start the relay — picks up everything from access.json
 ```
 
 `bun setup.ts` with no arguments runs an interactive wizard (arrow-key runtime
 picker, masked token input, inline validation). After the first agent exists it
 opens an action menu instead; re-run it whenever you need to add agents, rooms,
-peers, humans, or bot tokens.
-
-**Option B — Claude Code skill (if you're already using Claude Code):**
-
-Run `/knock-knock:room setup` in Claude Code. It writes the same `access.json`
-and room settings files, then tells you to run `bun relay.ts`.
-
-**Legacy single-agent env-var path (still supported):**
-
-Set `KNOCK_KNOCK_AGENT`, `KNOCK_KNOCK_WORKSPACE`, and `DISCORD_BOT_TOKEN` in
-the environment. `readAccessFileV2()` migrates these to a one-entry `agents`
-map on startup. This path is retained for backwards compatibility; the CLI is
-the recommended path for new installs.
-
-```bash
-KNOCK_KNOCK_AGENT=<agent> KNOCK_KNOCK_WORKSPACE=/abs/path DISCORD_BOT_TOKEN=<token> bun relay.ts
-```
+peers, humans, or bot tokens. The runtime you pick is written to the agent's
+`runtime` field in `access.json`.
 
 ---
 
@@ -86,40 +66,37 @@ per-agent sections below say exactly how.
 > and `rm -rf` with **zero** permission requests. After adding
 > `"permission": { "bash": "ask" }` to its config, every shell call surfaced as
 > an ACP permission request and the `deny` floor blocked `rm -rf` correctly,
-> even when OpenCode mislabelled the tool kind. The matcher therefore blocks a
-> denied command literal regardless of the reported tool kind.
+> even when OpenCode mislabelled the tool kind. `classifyTool` therefore blocks
+> a denied command literal regardless of the reported tool kind.
 
 ---
 
 ## Claude Code
 
-**Option A — in-process SDK (simplest, nothing to install):**
+**In-process SDK (simplest, nothing to install) — `runtime: claude-sdk`:**
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...        # or an existing `claude` login
-KNOCK_KNOCK_AGENT=claude-sdk \
-KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+bun relay.ts
 ```
 
 The SDK enforces `deny` natively (`disallowedTools`) and routes `ask` through
 `canUseTool` — the deny floor is solid without extra config.
 
-**Option B — via ACP** (same code path as the other agents):
+**Via ACP (same code path as the other agents) — `runtime: claude-acp`:**
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-KNOCK_KNOCK_AGENT=claude-acp \
-KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+bun relay.ts
 ```
 
 `npx` fetches `@agentclientprotocol/claude-agent-acp` on first run (binary
-`claude-agent-acp`, formerly `@zed-industries/claude-code-acp` which is now
-deprecated). Claude Code asks before non-allowlisted tools by default, so the
-floor holds.
+`claude-agent-acp`). Claude Code asks before non-allowlisted tools by default,
+so the floor holds.
 
 ---
 
-## OpenCode
+## OpenCode — `runtime: opencode`
 
 1. Install: `brew install sst/tap/opencode` (or see opencode.ai).
 2. Configure a provider/model — OpenCode won't prompt without one:
@@ -137,8 +114,7 @@ floor holds.
 4. Run:
 
    ```bash
-   KNOCK_KNOCK_AGENT=opencode \
-   KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+   bun relay.ts
    ```
 
 The relay spawns `opencode acp` and drives it over stdio. (No global install of
@@ -146,7 +122,7 @@ an adapter needed — ACP is built into OpenCode.)
 
 ---
 
-## OpenAI Codex
+## OpenAI Codex — `runtime: codex`
 
 1. Auth: `export OPENAI_API_KEY=sk-...` (the `codex-acp` server reads it).
 2. **Approval mode:** the default `codex-acp` behaviour surfaces tool calls as
@@ -156,42 +132,39 @@ an adapter needed — ACP is built into OpenCode.)
 3. Run:
 
    ```bash
-   KNOCK_KNOCK_AGENT=codex \
-   KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+   bun relay.ts
    ```
 
-`npx` fetches `@agentclientprotocol/codex-acp` (v0.0.44+) on first run.
-`OPENAI_BASE_URL` is also read if you're routing through a proxy.
-If you have a locally built `codex-acp` binary instead, point at it directly:
+`npx` fetches `@agentclientprotocol/codex-acp` on first run. If you have a
+locally built `codex-acp` binary instead, point at it directly with the generic
+ACP runtime:
 
 ```bash
-KNOCK_KNOCK_AGENT=acp \
-KNOCK_KNOCK_ACP_COMMAND=codex-acp \
-KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+KNOCK_KNOCK_ACP_COMMAND=codex-acp bun relay.ts   # agent's runtime set to "acp"
 ```
 
 ---
 
-## Any other ACP agent (Gemini, Cursor, …)
+## Any other ACP agent (Gemini, Cursor, …) — `runtime: acp`
 
 Use the generic escape hatch — set the spawn command yourself:
 
 ```bash
-KNOCK_KNOCK_AGENT=acp \
 KNOCK_KNOCK_ACP_COMMAND=gemini \
 KNOCK_KNOCK_ACP_ARGS="--experimental-acp" \
-KNOCK_KNOCK_WORKSPACE=/abs/path bun relay.ts
+bun relay.ts
 ```
 
-`gemini` also has a built-in preset (`KNOCK_KNOCK_AGENT=gemini`).
+`gemini` also has a built-in preset (`runtime: gemini`), so for the Gemini CLI
+you can just set the runtime and run `bun relay.ts`.
 
 ---
 
 ## Multi-agent collaboration
 
-One relay process can manage several bot identities simultaneously — each with its
-own Discord bot token, runtime, workspace, and rooms. The bots can share a channel
-and @-mention each other.
+One relay process can host several bot identities simultaneously — each with its
+own Discord bot token, runtime, workspace, and rooms. The bots can share a
+channel and `@`-mention each other.
 
 ```bash
 # Re-run setup to add a second agent (different bot token, different workspace),
@@ -200,23 +173,24 @@ bun setup.ts
 
 # One relay starts both
 bun relay.ts
-# relay [default]: connected as agent-a#1234
-# relay [agent-b]: connected as agent-b#5678
+# relay [research-bot]: connected as agent-a#1234
+# relay [deploy-bot]:   connected as agent-b#5678
 ```
 
 **Collaborative features baked in:**
 
-- **Identity preamble** — each bot knows its own name, blurb, and the owner/human/peer
-  priority (`owner > human > peer`). Injected into the first turn of each session.
-- **Peer roster** — the agent sees who else is in the room (peer name + blurb) so it
-  can address them by `<@botId>`.
-- **`<channel>` envelope** — every inbound message is wrapped with sender kind, user ID,
-  message ID, and timestamp so the agent has structured context.
-- **Loop guard** — prevents two bots from ping-ponging indefinitely: after 4 consecutive
-  agent-to-agent turns (configurable), the relay stops auto-responding until an
+- **Identity preamble** — each bot knows its own name, blurb, and the
+  owner/human/peer priority (`owner > human > peer`). Injected into the first
+  turn of each session.
+- **Peer roster** — the agent sees who else is in the room (peer name + blurb)
+  so it can address them by `<@botId>`.
+- **`<channel>` envelope** — every inbound message is wrapped with sender kind,
+  user ID, message ID, and timestamp so the agent has structured context.
+- **Loop guard** — prevents two bots from ping-ponging indefinitely: after 4
+  consecutive agent-to-agent turns, the relay stops auto-responding until an
   owner/human message resets the counter.
-- **Per-channel approvals** — each bot's tool-permission prompts go to *that bot's*
-  owner, not a shared approver.
+- **Per-channel approvals** — each bot's tool-permission prompts go to *that
+  bot's* owner, not a shared approver.
 
 ---
 
@@ -236,13 +210,4 @@ With the room profile `allow: ["Read(**)"]`, `ask: ["Bash(*)"]`,
 Run with `KNOCK_KNOCK_DEBUG=1` to log every ACP event and each permission
 decision (`[acp] permission: … → allow|ask|deny`) — a real turn produces tool
 and message events; a reply with no upstream events is a stub.
-
----
-
-## Note on `opencode-http`
-
-An earlier adapter (`adapters/opencode.ts`) drove OpenCode over its HTTP+SSE
-API. It is **superseded** by the ACP path (`KNOCK_KNOCK_AGENT=opencode`), which
-is native, simpler, and verified. The HTTP adapter is kept only as a
-structurally-different reference (it remains reachable as
-`KNOCK_KNOCK_AGENT=opencode-http`) and is not part of the supported flow.
+</content>

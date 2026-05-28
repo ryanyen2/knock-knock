@@ -26,7 +26,6 @@ type PendingApproval = {
   timer: ReturnType<typeof setTimeout>
   channelId: string
   messageId?: string
-  messageContent?: string
 }
 
 export class Approvals {
@@ -40,7 +39,6 @@ export class Approvals {
   ) {}
 
   request(opts: {
-    sessionKey: string
     channelId: string
     toolName: string
     input: unknown
@@ -106,7 +104,6 @@ export class Approvals {
         components: [row],
       })
       pending.messageId = sent.id
-      pending.messageContent = text
       this.msgToCorr.set(sent.id, correlationId)
     } catch (e) {
       this._fail(correlationId, pending, `Failed to post approval request: ${e}`)

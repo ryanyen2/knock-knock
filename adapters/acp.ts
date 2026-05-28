@@ -7,12 +7,6 @@
  * Claude Code, OpenCode, Codex, Gemini, Cursor… — the agent is chosen by which
  * command we spawn (see adapters/index.ts), not by code here.
  *
- * Shape vs the in-process ClaudeSdkAdapter (the seam's stress test):
- *  - ClaudeSdk: in-process, pull async-iterator, canUseTool callback.
- *  - ACP:       out-of-process subprocess, push notifications over stdio,
- *               permission surfaced as a session/request_permission request.
- * If the AgentAdapter contract survives this inversion it survives anything.
- *
  * Permission model — IMPORTANT (the deny floor):
  *  ACP has no policy array you hand the agent up front; every gated tool call
  *  arrives as a `requestPermission` the client answers. So the allow/ask/deny
@@ -131,7 +125,13 @@ function denyResponse(options: PermissionOption[]): RequestPermissionResponse {
 
 function allowResponse(options: PermissionOption[]): RequestPermissionResponse {
   const o = pickOption(options, 'allow')
-  return o ? selected(o) : { outcome: { outcome: 'cancelled' } }
+  if (!o) {
+    // We decided to allow but the agent offered no allow option. Cancelling is
+    // the only safe answer; surface it so the dropped tool call isn't a mystery.
+    dbg('allow decision but agent offered no allow option — cancelling')
+    return { outcome: { outcome: 'cancelled' } }
+  }
+  return selected(o)
 }
 
 // ─── Adapter ────────────────────────────────────────────────────────────────
@@ -139,7 +139,6 @@ function allowResponse(options: PermissionOption[]): RequestPermissionResponse {
 export class AcpAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
-  private child?: ChildProcess
   private conn?: ClientSideConnection
   private initPromise?: Promise<void>
   /** Accumulates assistant text for the in-flight turn. Safe because the Driver
@@ -185,10 +184,8 @@ export class AcpAdapter implements AgentAdapter {
     return { sessionId: sid, text: this.turnText.trim() || '(no response)' }
   }
 
-  /** Kill the agent subprocess. Called on relay shutdown. */
-  shutdown(): void {
-    this.child?.kill()
-  }
+  // The spawned subprocess is killed on process exit via the trackChild hook
+  // above, so there is no explicit shutdown path to wire through the seam.
 
   // ─── Private ──────────────────────────────────────────────────────────────
 
@@ -208,7 +205,6 @@ export class AcpAdapter implements AgentAdapter {
     })
     child.on('error', err => process.stderr.write(`[acp] spawn error: ${err}\n`))
     child.on('exit', (code, sig) => dbg(`agent exited code=${code} sig=${sig}`))
-    this.child = child
     trackChild(child)
 
     const writable = Writable.toWeb(child.stdin!) as unknown as WritableStream<Uint8Array>

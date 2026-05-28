@@ -2,21 +2,14 @@
 /**
  * relay.ts — multi-agent supervisor.
  *
- * Reads the v2 access file and spawns one AgentHost per configured agent.
- * Each AgentHost owns its own Discord bot identity, token, runtime, and rooms.
- * Add agents via `bun setup.ts agent add` or the /knock-knock:room skill.
- *
- * Start: bun relay.ts
- *
- * Legacy single-agent installs still work without any config changes:
- * readAccessFileV2 migrates the old {self, rooms} shape into a one-entry
- * agents map on read, using DISCORD_BOT_TOKEN / KNOCK_KNOCK_AGENT /
- * KNOCK_KNOCK_WORKSPACE from the environment.
+ * Reads the access file and spawns one AgentHost per configured agent. Each
+ * AgentHost owns its own Discord bot identity, token, runtime, and rooms.
+ * Configure agents with `bun setup.ts`, then start with `bun relay.ts`.
  */
 
 import { readFileSync, chmodSync } from 'fs'
 import { join } from 'path'
-import { STATE_DIR, readAccessFileV2 } from './state.ts'
+import { STATE_DIR, readAccessFile } from './state.ts'
 import { AgentHost } from './agent-host.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -32,14 +25,11 @@ try {
 
 // ─── Boot agents ──────────────────────────────────────────────────────────────
 
-const access = readAccessFileV2()
+const access = readAccessFile()
 const agentEntries = Object.entries(access.agents)
 
 if (agentEntries.length === 0) {
-  process.stderr.write(
-    'relay: no agents configured.\n' +
-      '  Run `bun setup.ts agent add` or `/knock-knock:room setup` in Claude Code first.\n',
-  )
+  process.stderr.write('relay: no agents configured. Run `bun setup.ts` first.\n')
   process.exit(1)
 }
 
@@ -50,19 +40,19 @@ for (const [key, agent] of agentEntries) {
   if (!token) {
     process.stderr.write(
       `relay: agent "${key}" skipped — ${agent.tokenEnv} is not set.\n` +
-        `  Run \`bun setup.ts configure\` or add it to ${ENV_FILE}.\n`,
+        `  Run \`bun setup.ts\` to save its bot token.\n`,
     )
     continue
   }
   if (!agent.workspace) {
     process.stderr.write(
       `relay: agent "${key}" skipped — workspace is not set.\n` +
-        `  Run \`bun setup.ts agent add\` to configure it.\n`,
+        `  Run \`bun setup.ts\` to configure it.\n`,
     )
     continue
   }
 
-  const host = new AgentHost(key, agent, readAccessFileV2)
+  const host = new AgentHost(key, agent, readAccessFile)
   hosts.push(host)
   void host.start(token).catch(err => {
     process.stderr.write(`relay [${key}]: login failed: ${err}\n`)

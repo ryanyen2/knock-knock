@@ -4,9 +4,8 @@
  * race), and one AgentAdapter. The relay holds Drivers in its routing table;
  * a Driver never holds other Drivers.
  *
- * When a PreambleContext is supplied, the driver ports the collaborative layer
- * from server.ts onto the relay path WITHOUT changing the AgentAdapter seam —
- * all collaboration goes into the prompt *text*:
+ * When a PreambleContext is supplied, the collaborative layer rides in the
+ * prompt *text* — the AgentAdapter seam stays a plain prompt/response contract:
  *   • First turn: buildPreamble(ctx) prepended (identity, roster, role priority)
  *   • Every turn:  wrapEnvelope(meta, text)  (<channel kind=…> wrapper)
  */

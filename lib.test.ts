@@ -1,22 +1,14 @@
 import { test, expect } from 'bun:test'
 import {
-  approverFor,
   guildSenderAllowed,
   senderKind,
-  isWithinRoots,
-  buildRosterLines,
-  pruneExpired,
   chunk,
   classifyTool,
-  defaultAccess,
-  // v2 multi-agent API
   approverForAgent,
   buildRosterLinesForRoom,
   wrapEnvelope,
   buildPreamble,
   loopGuard,
-  defaultAccessV2,
-  type Access,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
@@ -61,8 +53,8 @@ test('deny does not false-match a substring inside another word', () => {
 })
 
 test('T3 deny floor holds even when the agent mislabels the tool kind', () => {
-  // Observed in the wild: OpenCode surfaced the same `rm -rf` as kind "other"
-  // first, then "execute". The deny literal must block it regardless of kind.
+  // The same `rm -rf` can surface as kind "other" first, then "execute". The
+  // deny literal must block it regardless of kind.
   expect(classifyTool(PROFILE, { kind: 'other', subject: 'rm -rf /tmp/x' })).toBe('deny')
   expect(classifyTool(PROFILE, { kind: 'read', subject: 'sudo rm file' })).toBe('deny')
 })
@@ -90,36 +82,9 @@ function room(overrides: Partial<RoomConfig> = {}): RoomConfig {
     requireMention: true,
     participants: {},
     humans: [],
-    sendableRoots: [],
     ...overrides,
   }
 }
-
-function access(overrides: Partial<Access> = {}): Access {
-  return { ...defaultAccess(), ...overrides }
-}
-
-// ─── approverFor: who may approve this agent's work ──────────────────────────
-
-test('approverFor falls back to self.ownerUserId when no room override', () => {
-  const a = access({
-    self: { name: 'A', ownerUserId: 'owner1', blurb: '', roomChannelId: 'chan1' },
-    rooms: { chan1: room() },
-  })
-  expect(approverFor(a)).toBe('owner1')
-})
-
-test('approverFor prefers room.approvalActorId over self owner', () => {
-  const a = access({
-    self: { name: 'A', ownerUserId: 'owner1', blurb: '', roomChannelId: 'chan1' },
-    rooms: { chan1: room({ approvalActorId: 'delegate2' }) },
-  })
-  expect(approverFor(a)).toBe('delegate2')
-})
-
-test('approverFor is undefined when self is unconfigured', () => {
-  expect(approverFor(access())).toBeUndefined()
-})
 
 // ─── guildSenderAllowed: who may drive this agent in a room ──────────────────
 
@@ -163,75 +128,6 @@ test('senderKind labels the owner, humans, peers, and strangers', () => {
   expect(senderKind(r, 'stranger', 'owner1')).toBe('unknown')
 })
 
-// ─── isWithinRoots: the send-path security boundary ──────────────────────────
-
-test('isWithinRoots accepts a file nested under a root', () => {
-  expect(isWithinRoots('/home/me/proj/src/a.ts', ['/home/me/proj'])).toBe(true)
-})
-
-test('isWithinRoots accepts the root itself', () => {
-  expect(isWithinRoots('/home/me/proj', ['/home/me/proj'])).toBe(true)
-})
-
-test('isWithinRoots rejects a file outside all roots', () => {
-  expect(isWithinRoots('/etc/passwd', ['/home/me/proj'])).toBe(false)
-})
-
-test('isWithinRoots rejects a sibling-prefix path (no partial match)', () => {
-  // /home/me/project-secret must NOT match root /home/me/proj
-  expect(isWithinRoots('/home/me/proj-secret/x', ['/home/me/proj'])).toBe(false)
-})
-
-test('isWithinRoots rejects everything when roots is empty', () => {
-  expect(isWithinRoots('/anything', [])).toBe(false)
-})
-
-// ─── buildRosterLines ────────────────────────────────────────────────────────
-
-test('buildRosterLines formats peers with mention handles', () => {
-  const a = access({
-    self: { name: 'A', ownerUserId: 'o', blurb: '', roomChannelId: 'chan1' },
-    rooms: {
-      chan1: room({
-        participants: {
-          '111': { name: 'agent-C', blurb: 'schema specialist' },
-          '222': { name: 'agent-B', blurb: 'deploy agent' },
-        },
-      }),
-    },
-  })
-  const lines = buildRosterLines(a)
-  expect(lines).toContain('agent-C (<@111>): schema specialist')
-  expect(lines).toContain('agent-B (<@222>): deploy agent')
-})
-
-test('buildRosterLines is empty when no peers', () => {
-  const a = access({
-    self: { name: 'A', ownerUserId: 'o', blurb: '', roomChannelId: 'chan1' },
-    rooms: { chan1: room() },
-  })
-  expect(buildRosterLines(a)).toBe('')
-})
-
-// ─── pruneExpired ──────────────────────────────────────────────────────────────
-
-test('pruneExpired removes expired codes and reports the change', () => {
-  const now = Date.now()
-  const a = access({
-    pending: {
-      old: { senderId: 's', chatId: 'c', createdAt: 0, expiresAt: now - 1000, replies: 1 },
-      fresh: { senderId: 's', chatId: 'c', createdAt: 0, expiresAt: now + 60_000, replies: 1 },
-    },
-  })
-  expect(pruneExpired(a)).toBe(true)
-  expect(Object.keys(a.pending)).toEqual(['fresh'])
-})
-
-test('pruneExpired reports no change when nothing expired', () => {
-  const a = access()
-  expect(pruneExpired(a)).toBe(false)
-})
-
 // ─── chunk: Discord 2000-char split ──────────────────────────────────────────
 
 test('chunk returns a single piece under the limit', () => {
@@ -246,7 +142,7 @@ test('chunk splits oversized text and preserves all content', () => {
   expect(parts.every(p => p.length <= 2000)).toBe(true)
 })
 
-// ─── v2 helpers ───────────────────────────────────────────────────────────────
+// ─── Agent / room helpers ───────────────────────────────────────────────────
 
 function agentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {

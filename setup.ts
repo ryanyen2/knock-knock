@@ -2,8 +2,7 @@
 /**
  * setup.ts — interactive setup wizard for knock-knock.
  *
- * Works for any coding agent (Codex, OpenCode, Gemini, Claude Code…) without
- * requiring Claude Code or its skills.
+ * Works for any coding agent (Codex, OpenCode, Gemini, Claude Code…).
  *
  * Usage:
  *   bun setup.ts           First run → guided wizard; existing setup → action menu
@@ -18,8 +17,8 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'f
 import { isAbsolute, join } from 'path'
 import * as p from '@clack/prompts'
 import color from 'picocolors'
-import { STATE_DIR, readAccessFileV2, saveAccessV2 } from './state.ts'
-import type { AccessV2, AgentConfig, RoomConfig } from './lib.ts'
+import { STATE_DIR, readAccessFile, saveAccess } from './state.ts'
+import type { Access, AgentConfig, RoomConfig } from './lib.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -121,7 +120,7 @@ function setToken(tokenEnv: string, token: string): void {
 
 // ─── Pickers ─────────────────────────────────────────────────────────────────
 
-async function pickAgentKey(access: AccessV2): Promise<string | null> {
+async function pickAgentKey(access: Access): Promise<string | null> {
   const keys = Object.keys(access.agents)
   if (keys.length === 0) {
     p.log.error('No agents configured yet — add one first.')
@@ -149,7 +148,7 @@ async function pickRoomId(agent: AgentConfig): Promise<string | null> {
 
 // ─── Collectors ───────────────────────────────────────────────────────────────
 
-async function collectAgent(access: AccessV2): Promise<string | null> {
+async function collectAgent(access: Access): Promise<string | null> {
   const hasAgents = Object.keys(access.agents).length > 0
 
   const key = orCancel(await p.text({
@@ -197,13 +196,13 @@ async function collectAgent(access: AccessV2): Promise<string | null> {
 
   const tokenEnv = deriveTokenEnv(key)
   access.agents[key] = { ownerUserId, blurb, runtime, workspace, tokenEnv, rooms: {} }
-  saveAccessV2(access)
+  saveAccess(access)
   p.log.success(`Saved agent ${color.cyan(key)} ${color.dim(`· token env: ${tokenEnv}`)}`)
   return key
 }
 
 /** Collect a room, then chain inline peer registration + bulk human add. */
-async function collectRoomFlow(access: AccessV2, agentKey: string): Promise<void> {
+async function collectRoomFlow(access: Access, agentKey: string): Promise<void> {
   const channelId = await collectRoom(access, agentKey)
   if (!channelId) return
 
@@ -213,17 +212,17 @@ async function collectRoomFlow(access: AccessV2, agentKey: string): Promise<void
     initialValue: false,
   }))
   while (addPeer) {
-    access = readAccessFileV2()
+    access = readAccessFile()
     await collectPeer(access, agentKey, channelId)
     addPeer = orCancel(await p.confirm({ message: 'Register another peer?', initialValue: false }))
   }
 
   // Bulk humans — comma-separated so multiple can be added in one prompt
-  access = readAccessFileV2()
+  access = readAccessFile()
   await collectHumans(access, agentKey, channelId)
 }
 
-async function collectRoom(access: AccessV2, agentKey: string): Promise<string | null> {
+async function collectRoom(access: Access, agentKey: string): Promise<string | null> {
   const agent = access.agents[agentKey]!
 
   const channelId = orCancel(await p.text({
@@ -245,22 +244,14 @@ async function collectRoom(access: AccessV2, agentKey: string): Promise<string |
     initialValue: true,
   }))
 
-  const sendableRaw = orCancel(await p.text({
-    message: 'Sendable file roots (comma-separated absolute paths the agent may attach)',
-    placeholder: agent.workspace,
-    initialValue: agent.workspace,
-  })).trim()
-  const sendableRoots = sendableRaw.split(',').map(s => s.trim()).filter(Boolean)
-
   const room: RoomConfig = {
     requireMention,
     participants: {},
     humans: [],
-    sendableRoots,
     approvalActorId: agent.ownerUserId,
   }
   agent.rooms[channelId] = room
-  saveAccessV2(access)
+  saveAccess(access)
 
   const dir = join(STATE_DIR, 'rooms', agentKey)
   mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -275,7 +266,7 @@ async function collectRoom(access: AccessV2, agentKey: string): Promise<string |
   return channelId
 }
 
-async function collectPeer(access: AccessV2, agentKey?: string, channelId?: string): Promise<void> {
+async function collectPeer(access: Access, agentKey?: string, channelId?: string): Promise<void> {
   const key = agentKey ?? (await pickAgentKey(access))
   if (!key) return
   const agent = access.agents[key]!
@@ -295,7 +286,7 @@ async function collectPeer(access: AccessV2, agentKey?: string, channelId?: stri
 
   const peerBlurb = orCancel(await p.text({
     message: 'Peer description',
-    placeholder: 'deploy + migration specialist',
+    placeholder: 'deploy specialist',
     validate: required,
   })).trim()
 
@@ -303,14 +294,14 @@ async function collectPeer(access: AccessV2, agentKey?: string, channelId?: stri
     ...(peerName ? { name: peerName } : {}),
     blurb: peerBlurb,
   }
-  saveAccessV2(access)
+  saveAccess(access)
   p.log.success(`Peer ${color.cyan(peerBotId)}${peerName ? ` (${peerName})` : ''} registered`)
   p.log.message(color.dim('Make sure they register your bot on their side too.'))
 }
 
 /** Bulk-add humans via comma-separated IDs. Called both from the room flow and
  *  the menu, so agentKey + channelId may come pre-picked or require prompts. */
-async function collectHumans(access: AccessV2, agentKey?: string, channelId?: string): Promise<void> {
+async function collectHumans(access: Access, agentKey?: string, channelId?: string): Promise<void> {
   const key = agentKey ?? (await pickAgentKey(access))
   if (!key) return
   const agent = access.agents[key]!
@@ -323,10 +314,11 @@ async function collectHumans(access: AccessV2, agentKey?: string, channelId?: st
   })).trim()
   if (!raw) return
 
+  const isSnowflake = (id: string): boolean => /^\d{17,20}$/.test(id)
   const all = raw.split(',').map(s => s.trim()).filter(Boolean)
-  const invalid = all.filter(id => !/^\d{17,20}$/.test(id))
+  const valid = all.filter(isSnowflake)
+  const invalid = all.filter(id => !isSnowflake(id))
   if (invalid.length) p.log.warn(`Skipped invalid IDs: ${invalid.join(', ')}`)
-  const valid = all.filter(id => /^\d{17,20}$/.test(id))
   if (!valid.length) return
 
   const room = agent.rooms[cid]!
@@ -335,14 +327,14 @@ async function collectHumans(access: AccessV2, agentKey?: string, channelId?: st
     if (!room.humans.includes(id)) { room.humans.push(id); added++ }
   }
   if (added > 0) {
-    saveAccessV2(access)
+    saveAccess(access)
     p.log.success(`Added ${added} human${added > 1 ? 's' : ''} to room ${cid}`)
   } else {
     p.log.info('All provided user IDs were already in the room.')
   }
 }
 
-async function collectToken(access: AccessV2, agentKey?: string): Promise<void> {
+async function collectToken(access: Access, agentKey?: string): Promise<void> {
   const key = agentKey ?? (await pickAgentKey(access))
   if (!key) return
   const tokenEnv = access.agents[key]!.tokenEnv
@@ -359,7 +351,7 @@ async function collectToken(access: AccessV2, agentKey?: string): Promise<void> 
 
 // ─── Status ───────────────────────────────────────────────────────────────────
 
-function statusReport(access: AccessV2): string {
+function statusReport(access: Access): string {
   const agents = Object.entries(access.agents)
   if (agents.length === 0) return color.dim('No agents configured yet.')
 
@@ -387,7 +379,7 @@ function statusReport(access: AccessV2): string {
   return lines.join('\n')
 }
 
-function finishWithNextSteps(access: AccessV2): void {
+function finishWithNextSteps(access: Access): void {
   const tips: string[] = []
   const noToken = Object.entries(access.agents).filter(([, a]) => !isTokenSet(a.tokenEnv)).map(([k]) => k)
   const noRoom = Object.entries(access.agents).filter(([, a]) => Object.keys(a.rooms).length === 0).map(([k]) => k)
@@ -404,28 +396,28 @@ function finishWithNextSteps(access: AccessV2): void {
 async function firstRunWizard(): Promise<void> {
   p.log.info("No agents yet — let's get you set up.")
 
-  const access = readAccessFileV2()
+  const access = readAccessFile()
   const key = await collectAgent(access)
-  if (!key) { finishWithNextSteps(readAccessFileV2()); return }
+  if (!key) { finishWithNextSteps(readAccessFile()); return }
 
   const addRoom = orCancel(await p.confirm({
     message: 'Add a room (Discord channel) now?',
     initialValue: true,
   }))
-  if (addRoom) await collectRoomFlow(readAccessFileV2(), key)
+  if (addRoom) await collectRoomFlow(readAccessFile(), key)
 
   const addToken = orCancel(await p.confirm({
     message: 'Save the Discord bot token now?',
     initialValue: true,
   }))
-  if (addToken) await collectToken(readAccessFileV2(), key)
+  if (addToken) await collectToken(readAccessFile(), key)
 
-  finishWithNextSteps(readAccessFileV2())
+  finishWithNextSteps(readAccessFile())
 }
 
 /** Action menu for existing setups — multiselect so several tasks run in one go. */
 async function interactiveMenu(): Promise<void> {
-  p.note(statusReport(readAccessFileV2()), 'Current setup')
+  p.note(statusReport(readAccessFile()), 'Current setup')
 
   const TASK_ORDER = ['agent', 'room', 'peer', 'human', 'token'] as const
   type Task = typeof TASK_ORDER[number]
@@ -449,7 +441,7 @@ async function interactiveMenu(): Promise<void> {
     // Execute in dependency order regardless of selection order
     const sorted = [...tasks].sort((a, b) => TASK_ORDER.indexOf(a) - TASK_ORDER.indexOf(b))
     for (const task of sorted) {
-      const access = readAccessFileV2()
+      const access = readAccessFile()
       if (task === 'agent') {
         await collectAgent(access)
       } else if (task === 'room') {
@@ -465,14 +457,14 @@ async function interactiveMenu(): Promise<void> {
     }
   }
 
-  finishWithNextSteps(readAccessFileV2())
+  finishWithNextSteps(readAccessFile())
 }
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
   p.intro(banner())
-  const access = readAccessFileV2()
+  const access = readAccessFile()
   if (Object.keys(access.agents).length === 0) {
     await firstRunWizard()
   } else {

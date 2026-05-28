@@ -1,14 +1,10 @@
 /**
- * AgentHost — one Discord bot identity + one agent runtime.
- *
- * Extracted from relay.ts so the supervisor (relay.ts) can instantiate N hosts
- * in a single process — one per configured agent. Each host owns its own
- * Discord Client (its own gateway connection + token), its own driver map
- * (one Driver per channel/session), its own Approvals service, and its own
- * rate-limit and recentBotMsg state.
- *
- * The AgentAdapter seam is intentionally untouched: the host calls
- * makeAdapter(agent.runtime, {workspace}) exactly as relay.ts Phase 0 did.
+ * AgentHost — one Discord bot identity + one agent runtime. The supervisor
+ * (relay.ts) instantiates one per configured agent in a single process. Each
+ * host owns its own Discord client (gateway connection + token), its driver map
+ * (one Driver per channel/session), its Approvals service, and its rate-limit
+ * and recent-message state. It selects a runtime through makeAdapter; it never
+ * imports an agent SDK directly.
  */
 
 import {
@@ -21,7 +17,7 @@ import {
 import { readRoomSettings } from './state.ts'
 import {
   type AgentConfig,
-  type AccessV2,
+  type Access,
   type PreambleContext,
   type LoopGuardState,
   guildSenderAllowed,
@@ -47,7 +43,7 @@ export class AgentHost {
   constructor(
     private readonly key: string,
     private readonly agent: AgentConfig,
-    private readonly getAccess: () => AccessV2,
+    private readonly getAccess: () => Access,
   ) {
     this.client = new Client({
       intents: [
@@ -138,7 +134,7 @@ export class AgentHost {
 
   private async handleInbound(msg: Message): Promise<void> {
     // Re-read the live access file on each message so room/peer config changes
-    // (from the CLI or skills) take effect without restarting the relay.
+    // from the setup CLI take effect without restarting the relay.
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
 
@@ -154,8 +150,11 @@ export class AgentHost {
     // Self-loop guard
     if (msg.author.id === this.client.user?.id) return
 
-    // Sender gate: owner, registered participant, or listed human
-    const ownerId = room.approvalActorId ?? liveAgent.ownerUserId
+    // Sender gate + priority classification key off the agent's real owner. The
+    // approval actor (who may click Allow/Deny) is a separate role resolved by
+    // Approvals via approverForAgent, so a delegated approver never locks the
+    // owner out of driving their own agent.
+    const ownerId = liveAgent.ownerUserId
     if (!guildSenderAllowed(room, msg.author.id, this.client.user?.id, ownerId)) return
 
     // Rate cap: max 10 inbound per sender per 60s
@@ -216,7 +215,7 @@ export class AgentHost {
         rosterLines: buildRosterLinesForRoom(room),
       }
       driver = new Driver(adapter, sessionKey, profile, req =>
-        this.approvals.request({ sessionKey, channelId, toolName: req.toolName, input: req.input }),
+        this.approvals.request({ channelId, toolName: req.toolName, input: req.input }),
         ctx,
       )
       this.drivers.set(sessionKey, driver)

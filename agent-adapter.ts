@@ -1,9 +1,7 @@
 /**
  * AgentAdapter seam — the interface the relay and driver use to talk to any
- * agent runtime. No SDK imports here; this module is the contract only.
- *
- * Phase 0 has one implementation: ClaudeSdkAdapter (adapters/claude-sdk.ts).
- * Phase 1 adds more (OpenCode, Codex) behind the same interface.
+ * agent runtime. No SDK imports here; this module is the contract only. Adding
+ * a runtime means writing a new adapter against this interface, nothing else.
  */
 
 export type PermissionProfile = {

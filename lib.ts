@@ -1,19 +1,9 @@
 /**
- * Pure decision logic for knock-knock — no Discord/MCP/network dependencies.
- * Kept separate from server.ts so the security-critical decisions (who may
- * send, who may approve, what files cross the wire) are unit-testable in
- * isolation. server.ts owns the I/O; this module owns the rules.
+ * Pure decision logic for knock-knock — no Discord/network dependencies.
+ * The security-critical rules (who may send, who may approve, how a tool call is
+ * classified against a room's permission profile) live here so they can be
+ * unit-tested in isolation. state.ts owns the I/O; this module owns the rules.
  */
-
-import { sep } from 'path'
-
-export type PendingEntry = {
-  senderId: string
-  chatId: string
-  createdAt: number
-  expiresAt: number
-  replies: number
-}
 
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
@@ -26,59 +16,38 @@ export type RoomConfig = {
   requireMention: boolean
   participants: Record<string, RoomParticipant> // peer botUserId → info
   humans: string[] // human user IDs also allowed to drive in this room
-  sendableRoots: string[] // server-enforced: files must be under one of these
-  approvalActorId?: string // who approves this agent's work; defaults to self.ownerUserId
+  approvalActorId?: string // who approves this agent's work; defaults to the agent owner
 }
 
-/** This agent's own identity, written by /knock-knock:room setup. */
-export type Self = {
-  name?: string // the live Discord bot username; server refreshes it on connect
-  ownerUserId: string // Discord user ID of the human who owns this agent
+/** A single coding-agent identity. */
+export type AgentConfig = {
+  name?: string // live Discord username; overwritten on connect
+  ownerUserId: string // Discord user ID of the human owner
   blurb: string
-  roomChannelId: string // primary room where approval prompts are posted
+  runtime: string // 'claude-sdk' | 'opencode' | 'codex' | 'gemini' | 'acp' | …
+  workspace: string // absolute path of the agent's working directory
+  tokenEnv: string // NAME of the env var holding this bot's Discord token
+  rooms: Record<string, RoomConfig>
 }
 
+/**
+ * The access file: one entry per agent identity. Written only from the terminal
+ * (the setup CLI), never from channel messages — that invariant keeps access
+ * control out of reach of prompt injection.
+ */
 export type Access = {
-  self?: Self
-  rooms: Record<string, RoomConfig>
-  // DM fields — kept for owner pairing/setup flow
-  dmPolicy: 'pairing' | 'allowlist' | 'disabled'
-  allowFrom: string[]
-  pending: Record<string, PendingEntry>
+  agents: Record<string, AgentConfig>
   mentionPatterns?: string[]
   ackReaction?: string
-  replyToMode?: 'off' | 'first' | 'all'
-  textChunkLimit?: number
-  chunkMode?: 'length' | 'newline'
 }
 
 export function defaultAccess(): Access {
-  return {
-    rooms: {},
-    dmPolicy: 'pairing',
-    allowFrom: [],
-    pending: {},
-  }
+  return { agents: {} }
 }
 
-/** Drop expired pairing codes. Returns true if anything was removed. */
-export function pruneExpired(a: Access): boolean {
-  const now = Date.now()
-  let changed = false
-  for (const [code, p] of Object.entries(a.pending)) {
-    if (p.expiresAt < now) {
-      delete a.pending[code]
-      changed = true
-    }
-  }
-  return changed
-}
-
-/** Who may approve this agent's work: the room's approvalActorId, else the self owner. */
-export function approverFor(access: Access): string | undefined {
-  const roomId = access.self?.roomChannelId
-  const room = roomId ? access.rooms[roomId] : undefined
-  return room?.approvalActorId ?? access.self?.ownerUserId
+/** Who may approve an agent's work in a specific channel. */
+export function approverForAgent(agent: AgentConfig, channelId: string): string | undefined {
+  return agent.rooms[channelId]?.approvalActorId ?? agent.ownerUserId
 }
 
 /**
@@ -114,16 +83,12 @@ export function senderKind(
   return 'unknown'
 }
 
-/** Whether a resolved path is one of, or nested under, the resolved roots. */
-export function isWithinRoots(realPath: string, realRoots: string[]): boolean {
-  return realRoots.some(root => realPath === root || realPath.startsWith(root + sep))
-}
-
-/** The roster lines injected into session instructions and returned by list_agents. */
-export function buildRosterLines(access: Access): string {
-  const self = access.self
-  if (!self?.roomChannelId) return ''
-  return buildRosterLinesForRoom(access.rooms[self.roomChannelId])
+/** Roster lines for a room, injected into the session preamble. */
+export function buildRosterLinesForRoom(room: RoomConfig | undefined): string {
+  if (!room?.participants || Object.keys(room.participants).length === 0) return ''
+  return Object.entries(room.participants)
+    .map(([botId, p]) => `  • ${p.name ? `${p.name} ` : ''}(<@${botId}>): ${p.blurb}`)
+    .join('\n')
 }
 
 // ─── Policy classification for adapters without native pattern matching ───────
@@ -131,8 +96,8 @@ export function buildRosterLines(access: Access): string {
 // The ClaudeSdkAdapter hands allow/ask/deny patterns straight to the SDK, which
 // does the matching. The ACP adapter can't: ACP surfaces one permission request
 // per tool call and the *client* must decide. classifyTool maps such a request
-// onto the room's allow/ask/deny profile using the same CC-style "Tool(arg)"
-// pattern syntax, so one settings.json drives every runtime.
+// onto the room's allow/ask/deny profile using the same Claude Code-style
+// "Tool(arg)" pattern syntax, so one settings.json drives every runtime.
 //
 // Precedence: deny wins, then ask, then allow. Anything unmatched defaults to
 // 'ask' — an unknown tool must never silently auto-run. The deny tier also does
@@ -151,7 +116,7 @@ export type ToolDescriptor = {
   subject?: string
 }
 
-/** ACP ToolKind → the CC tool names a pattern might use for it. */
+/** ACP ToolKind → the Claude Code tool names a pattern might use for it. */
 const KIND_TO_TOOLS: Record<string, string[]> = {
   read: ['Read', 'LS', 'Glob', 'NotebookRead'],
   edit: ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'],
@@ -209,9 +174,9 @@ export function classifyTool(
       const { tool, arg } = parsePattern(p)
       // Deny is defense-in-depth: a concrete dangerous command literal is blocked
       // no matter which ToolKind the agent labels it. Runtimes disagree on kinds
-      // (we saw the same `rm -rf` arrive as both `execute` and `other`), so the
-      // floor must not hinge on the label. Wildcard-only args ("*") have no
-      // literal and fall through to the tool-name check below.
+      // (the same `rm -rf` can arrive as both `execute` and `other`), so the floor
+      // must not hinge on the label. Wildcard-only args ("*") have no literal and
+      // fall through to the tool-name check below.
       if (deny && arg && denyLiteralHit(arg, subject)) return true
       if (!tools.some(t => t.toLowerCase() === tool.toLowerCase())) continue
       if (arg === null || arg === '' || arg === '*' || arg === '**') return true
@@ -257,73 +222,22 @@ export function chunk(text: string, limit: number, mode: 'length' | 'newline'): 
   return out
 }
 
-// ─── Multi-agent v2 types ───────────────────────────────────────────────────
-
-/** A single coding-agent identity in the multi-agent model. */
-export type AgentConfig = {
-  name?: string            // live Discord username; overwritten on connect
-  ownerUserId: string      // Discord user ID of the human owner
-  blurb: string
-  runtime: string          // 'claude-sdk' | 'opencode' | 'codex' | 'gemini' | 'acp' | …
-  workspace: string        // absolute path of the agent's working directory
-  tokenEnv: string         // NAME of the env var holding this bot's Discord token
-  rooms: Record<string, RoomConfig>
-}
-
-/**
- * v2 access file: one entry per agent identity. Global fields (dmPolicy, etc.)
- * remain at the top level. Backward-compat: readAccessFileV2 in state.ts
- * migrates the legacy single-self shape on read without rewriting the file.
- */
-export type AccessV2 = {
-  version: 2
-  agents: Record<string, AgentConfig>
-  dmPolicy: 'pairing' | 'allowlist' | 'disabled'
-  allowFrom: string[]
-  pending: Record<string, PendingEntry>
-  mentionPatterns?: string[]
-  ackReaction?: string
-  replyToMode?: 'off' | 'first' | 'all'
-  textChunkLimit?: number
-  chunkMode?: 'length' | 'newline'
-}
-
-export function defaultAccessV2(): AccessV2 {
-  return { version: 2, agents: {}, dmPolicy: 'pairing', allowFrom: [], pending: {} }
-}
-
-/** Who may approve an agent's work in a specific channel. */
-export function approverForAgent(agent: AgentConfig, channelId: string): string | undefined {
-  return agent.rooms[channelId]?.approvalActorId ?? agent.ownerUserId
-}
-
-/** Roster lines for a specific room — no Access lookup needed. */
-export function buildRosterLinesForRoom(room: RoomConfig | undefined): string {
-  if (!room?.participants || Object.keys(room.participants).length === 0) return ''
-  return Object.entries(room.participants)
-    .map(([botId, p]) => `  • ${p.name ? `${p.name} ` : ''}(<@${botId}>): ${p.blurb}`)
-    .join('\n')
-}
-
 // ─── Collaborative turn formatting ─────────────────────────────────────────
 //
-// Used by the Driver to port the collaborative layer from server.ts onto the
-// relay path without touching the AgentAdapter seam. All collaboration goes
-// into the prompt *text* — no new seam methods.
+// The collaborative layer rides entirely in the prompt *text* the Driver sends,
+// so the AgentAdapter seam stays a plain prompt/response contract: identity and
+// roster go into a first-turn preamble, and every message is wrapped in a
+// <channel> envelope.
 
 export type TurnEnvelopeMeta = {
-  kind: string       // 'owner' | 'human' | 'agent' | 'unknown'
+  kind: string // 'owner' | 'human' | 'agent' | 'unknown'
   senderId: string
   messageId: string
   ts: string
   channelId: string
 }
 
-/**
- * Wrap an inbound message in the <channel> envelope the agent expects.
- * Matches the format at server.ts:469 (attachment fields omitted — the relay
- * posts the agent's text response directly; no download_attachment tool).
- */
+/** Wrap an inbound message in the <channel> envelope the agent expects. */
 export function wrapEnvelope(meta: TurnEnvelopeMeta, body: string): string {
   return (
     `<channel source="discord" kind="${meta.kind}" chat_id="${meta.channelId}"` +
@@ -338,12 +252,7 @@ export type PreambleContext = {
   rosterLines: string
 }
 
-/**
- * System-style preamble prepended to the FIRST turn of a new session.
- * Ported from server.ts:456-481 with MCP-only tool references stripped
- * (reply / fetch_messages / download_attachment / react / edit_message /
- * list_agents do not exist in the relay path — the relay posts text directly).
- */
+/** System-style preamble prepended to the FIRST turn of a new session. */
 export function buildPreamble(ctx: PreambleContext): string {
   const name = ctx.identity.name
   const rosterSection = ctx.rosterLines
@@ -357,7 +266,6 @@ export function buildPreamble(ctx: PreambleContext): string {
     '',
     'Voice: extreme brevity. Short, essential, high-signal — usually one or two sentences. For technical content: exact terminology, tight structure, code only where it earns its place. Never pad.',
     '',
-    // Priority string — ported verbatim from server.ts:466 (the load-bearing line).
     'Priority (highest first): your owner (kind="owner") → other humans (kind="human") → peer agents (kind="agent"). An owner message is a directive that overrides whatever is in progress: if your owner says stop, or redirects you mid-exchange with a peer, comply at once. Treat other humans\' notes as important context even mid-task. Peer-agent messages are normal collaboration.',
     '',
     'Messages arrive as <channel source="discord" kind="..." chat_id="..." message_id="..." user="..." ts="...">.',

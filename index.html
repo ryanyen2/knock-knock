@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>knock-knock — Agent Channels for Claude Code</title>
+  <title>knock-knock — Agent Channels over Discord</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Lora:wght@400;500;600;700&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -758,7 +758,7 @@
     knock-knock
   </a>
   <div class="topbar-divider"></div>
-  <span class="topbar-subtitle">Agent Channels for Claude Code</span>
+  <span class="topbar-subtitle">Collaborative coding agents over Discord</span>
   <div class="topbar-right">
     <a href="https://github.com/r4yen/knock-knock" class="gh-btn" target="_blank" rel="noopener">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.009-.868-.013-1.703-2.782.604-3.369-1.342-3.369-1.342-.454-1.155-1.11-1.462-1.11-1.462-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.268 2.75 1.026A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.026 2.747-1.026.546 1.377.202 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.741 0 .267.18.579.688.481C19.138 20.163 22 16.418 22 12c0-5.523-4.477-10-10-10z"/></svg>
@@ -786,12 +786,10 @@
       <div class="nav-group-label">Setup</div>
       <a href="#step-1">1. Create your bot</a>
       <a href="#step-2">2. Invite to server</a>
-      <a href="#step-3">3. Install plugin</a>
-      <a href="#step-4">4. Save token</a>
-      <a href="#step-5">5. Set up room</a>
-      <a href="#step-6">6. Exchange IDs</a>
-      <a href="#step-7">7. Register peers</a>
-      <a href="#step-8">8. Launch</a>
+      <a href="#step-3">3. Configure</a>
+      <a href="#step-4">4. Exchange IDs</a>
+      <a href="#step-5">5. Register peers</a>
+      <a href="#step-6">6. Launch</a>
     </div>
     <div class="nav-group">
       <div class="nav-group-label">Verify</div>
@@ -799,7 +797,7 @@
     </div>
     <div class="nav-group">
       <div class="nav-group-label">Reference</div>
-      <a href="#mcp-tools">MCP tools</a>
+      <a href="#runtimes">Coding agents</a>
       <a href="#access-json">access.json</a>
       <a href="#troubleshooting">Troubleshooting</a>
       <a href="#security">Security model</a>
@@ -811,12 +809,12 @@
 
     <!-- Hero -->
     <div class="hero">
-      <div class="hero-eyebrow"><span class="dot"></span>Research preview · Claude Code v2.1.80+</div>
+      <div class="hero-eyebrow"><span class="dot"></span>Runs on Bun · works with Claude Code, OpenCode, Codex, Gemini</div>
       <h1>Agent Channels</h1>
       <p class="hero-lead">
         Your agent and a collaborator's agent — each running on your own machine — meet in a shared
-        Discord channel. Ask each other questions, hand off files, request work. Every action that
-        touches your machine still goes through <em>your own</em> Claude Code permission rules.
+        Discord channel. Ask each other questions, request work, collaborate. Every action that
+        touches your machine still goes through <em>your own</em> allow / ask / deny rules.
         Nobody hands anyone else control of their machine.
       </p>
       <div class="hero-meta">
@@ -876,30 +874,28 @@
         <div class="tc-desc">Doesn't matter what anyone requests or approves.</div>
       </div>
       <div class="tier-cell">
-        <div class="tc-desc"><strong>Never executes.</strong> Claude Code blocks it at the machine level — even if the owner clicked Allow.</div>
+        <div class="tc-desc"><strong>Never executes.</strong> The relay auto-rejects it before it runs — even if the owner clicked Allow.</div>
       </div>
     </div>
-
-    <p>You can also send files from your project to the channel. A peer agent can download them with <code>download_attachment</code>. The server enforces which paths you're allowed to share — see <a href="#security">Security model</a>.</p>
 
     <!-- How it works -->
     <h2 id="how-it-works">How it works</h2>
-    <p class="section-intro">Two layers of enforcement keep each machine owner in control.</p>
+    <p class="section-intro">A single <strong>relay</strong> process connects each of your bots to Discord and drives its coding agent. Configure it once with <code>bun setup.ts</code>, then start it with <code>bun relay.ts</code>.</p>
 
     <div class="layer-row">
       <div class="layer-cell">
-        <div class="lc-label">Layer 1 — Claude Code</div>
-        <div class="lc-title">What runs on your machine</div>
-        <div class="lc-desc">Your <code>settings.json</code> allow / ask / deny rules. Generated by <code>/knock-knock:room setup</code> and applied at launch via <code>--settings</code>. Only you configure it.</div>
+        <div class="lc-label">The relay</div>
+        <div class="lc-title">One process, N bots</div>
+        <div class="lc-desc">The relay reads <code>access.json</code> and hosts one bot identity per agent — each with its own Discord token, runtime, workspace, and rooms. It re-reads the file on every message, so room and peer changes take effect without a restart.</div>
       </div>
       <div class="layer-cell">
-        <div class="lc-label">Layer 2 — Server boundary</div>
-        <div class="lc-title">What files cross the wire</div>
-        <div class="lc-desc"><code>sendableRoots</code> in <code>access.json</code>. The MCP server enforces it. <code>reply(files:…)</code> reads inside the server process and bypasses CC's <code>Read</code> permission — so this must be enforced here, not by CC.</div>
+        <div class="lc-label">The permission profile</div>
+        <div class="lc-title">What runs on your machine</div>
+        <div class="lc-desc">Each room has an allow / ask / deny profile. <code>allow</code> runs automatically, <code>ask</code> posts an approval prompt to the channel, and <code>deny</code> is a hard floor that never runs. Only you configure it.</div>
       </div>
     </div>
 
-    <p><strong>Each agent is one Discord bot.</strong> Agents address each other by @mention in the shared channel. Your session only wakes when your bot is mentioned (<code>requireMention: true</code> by default), which prevents infinite back-and-forth loops. A per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
+    <p><strong>Each agent is one Discord bot.</strong> Agents address each other by @mention in the shared channel. A bot only wakes when it's mentioned (<code>requireMention: true</code> by default), an agent↔agent loop guard caps consecutive bot-to-bot turns, and a per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
 
     <!-- Prerequisites -->
     <h2 id="prerequisites">Prerequisites</h2>
@@ -909,17 +905,17 @@
         <thead><tr><th>Requirement</th><th>How to check</th></tr></thead>
         <tbody>
           <tr><td><a href="https://bun.sh">Bun</a> installed</td><td><code>bun --version</code> — if missing, <code>curl -fsSL https://bun.sh/install | bash</code></td></tr>
-          <tr><td>Claude Code v2.1.80+</td><td><code>claude --version</code></td></tr>
+          <tr><td>A coding agent</td><td>Claude Code (<code>ANTHROPIC_API_KEY</code> or a <code>claude</code> login), or any ACP agent — OpenCode, Codex, Gemini, Cursor.</td></tr>
           <tr><td>Shared Discord server</td><td>Both you and your collaborator must be members of the same guild.</td></tr>
           <tr><td>Discord Developer Mode</td><td>User Settings → Advanced → Developer Mode. Required to copy channel and user IDs.</td></tr>
         </tbody>
       </table>
     </div>
 
-    <div class="callout callout-note">
-      <span class="callout-icon">ℹ</span>
+    <div class="callout callout-tip">
+      <span class="callout-icon">✦</span>
       <div class="callout-body">
-        <p><strong>Team / Enterprise orgs:</strong> an admin must enable channels in managed settings before any channel can deliver messages. Go to <strong>claude.ai → Admin settings → Claude Code → Channels</strong>.</p>
+        <p>The relay drives any coding agent through one adapter seam — pick the runtime per agent during setup. See <a href="#runtimes">Coding agents</a> for per-agent configuration.</p>
       </div>
     </div>
 
@@ -938,7 +934,7 @@
         <div id="step-1" class="step-body">
           <h3>Create your Discord bot</h3>
           <p>Go to <a href="https://discord.com/developers/applications">discord.com/developers/applications</a>, click <strong>New Application</strong>, and name it (e.g. <code>alice-agent</code>).</p>
-          <p>Under <strong>Bot</strong> → <strong>Reset Token</strong> — copy the token. This is your <code>DISCORD_BOT_TOKEN</code> (shown once only).</p>
+          <p>Under <strong>Bot</strong> → <strong>Reset Token</strong> — copy the token (shown once only). You'll save it in step 3.</p>
           <p>Under <strong>Privileged Gateway Intents</strong> → enable <strong>Message Content Intent</strong>. This is the only privileged intent required.</p>
         </div>
       </div>
@@ -948,93 +944,65 @@
         <div id="step-2" class="step-body">
           <h3>Invite your bot to the shared server</h3>
           <p>Go to <strong>OAuth2 → URL Generator</strong>. Scope: <code>bot</code>. Enable these permissions:</p>
-          <p style="font-size:13.5px; color: var(--text-muted)">View Channels · Send Messages · Read Message History · Attach Files · Add Reactions</p>
+          <p style="font-size:13.5px; color: var(--text-muted)">View Channels · Send Messages · Read Message History · Add Reactions</p>
           <p>Open the generated URL and invite the bot to the server where your shared channel lives.</p>
-          <p>Right-click your bot in the member list → <strong>Copy User ID</strong>. Save this — you'll give it to your collaborator in step 6.</p>
+          <p>Right-click your bot in the member list → <strong>Copy User ID</strong>. Save this — you'll give it to your collaborator in step 4.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-n">3</div>
         <div id="step-3" class="step-body">
-          <h3>Install the plugin</h3>
-          <pre><code>/plugin install /absolute/path/to/knock-knock</code></pre>
-          <p>Run <code>/reload-plugins</code> to activate the skills.</p>
+          <h3>Configure the agent</h3>
+          <p>You'll need your shared channel's <strong>channel ID</strong> (right-click the channel → <strong>Copy Channel ID</strong>) and your own <strong>Discord user ID</strong> (right-click yourself → <strong>Copy User ID</strong>). Then run the guided setup:</p>
+          <pre><code>bun setup.ts</code></pre>
+          <p>The wizard walks you through, with arrow-key menus and inline validation:</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Prompt</th><th>What to enter</th></tr></thead>
+              <tbody>
+                <tr><td>Your Discord user ID</td><td>You own this agent — approval prompts ping you here, and your word outranks peer agents</td></tr>
+                <tr><td>Blurb</td><td>One line peers see, e.g. <code>read-only research agent</code></td></tr>
+                <tr><td>Runtime</td><td>Pick the coding agent: Claude Code, OpenCode, Codex, Gemini, or any ACP agent</td></tr>
+                <tr><td>Workspace</td><td>The absolute path the agent works in</td></tr>
+                <tr><td>Room channel ID</td><td>The <code>#project-x</code> channel ID</td></tr>
+                <tr><td>Bot token</td><td>Pasted masked; stored in <code>~/.claude/channels/knock-knock/.env</code></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p><strong>No agent name is asked for</strong> — the agent's handle is its live Discord bot username, synced from Discord on every launch (rename the bot to rename the agent). Setup writes <code>access.json</code> and a default permission profile. Re-run <code>bun setup.ts</code> any time to add agents, rooms, peers, humans, or update a token.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-n">4</div>
         <div id="step-4" class="step-body">
-          <h3>Save your bot token</h3>
-          <pre><code>/knock-knock:configure &lt;your-bot-token&gt;</code></pre>
-          <p>Saves to <code>~/.claude/channels/knock-knock/.env</code> and is read once at boot.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-n">5</div>
-        <div id="step-5" class="step-body">
-          <h3>Set up your room</h3>
-          <p>You'll need your shared channel's <strong>channel ID</strong> (right-click the channel → <strong>Copy Channel ID</strong>) and your own <strong>Discord user ID</strong> (right-click yourself → <strong>Copy User ID</strong>).</p>
-          <pre><code>/knock-knock:room setup</code></pre>
-          <p>The skill asks for:</p>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Prompt</th><th>What to enter</th></tr></thead>
-              <tbody>
-                <tr><td>Your Discord user ID</td><td>Your human user ID — approval prompts ping you here, your DMs drive the agent, and your word outranks peer agents</td></tr>
-                <tr><td>Blurb</td><td>One line peers see, e.g. <code>read-only research agent</code></td></tr>
-                <tr><td>Room channel ID</td><td>The <code>#project-x</code> channel ID</td></tr>
-                <tr><td>Sendable file roots</td><td>Absolute path(s) the agent may attach, e.g. <code>/Users/alice/repos/project-x</code></td></tr>
-                <tr><td>What the agent may do</td><td>Describe capabilities; the skill generates a scoped <code>settings.json</code></td></tr>
-              </tbody>
-            </table>
-          </div>
-          <p><strong>No agent name is asked for</strong> — the agent's handle is its live Discord bot username, synced from Discord on every launch (rename the bot to rename the agent). The skill writes <code>access.json</code>, generates a <code>settings.json</code> permission profile, and prints your launch command.</p>
-        </div>
-      </div>
-
-      <div class="step">
-        <div class="step-n">6</div>
-        <div id="step-6" class="step-body">
           <h3>Exchange bot User IDs</h3>
           <p>Alice tells Bob her bot's User ID; Bob tells Alice his. (Copied in step 2.)</p>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-n">7</div>
-        <div id="step-7" class="step-body">
+        <div class="step-n">5</div>
+        <div id="step-5" class="step-body">
           <h3>Register each other as peers</h3>
-          <p>So your agent hears the other agent, register their bot in your room:</p>
-          <pre><code>/knock-knock:room add-peer &lt;channelId&gt; &lt;theirBotUserId&gt; "deploy + migration specialist"</code></pre>
-          <p>Alice registers Bob's bot; Bob registers Alice's. No restart needed — the server picks it up immediately.</p>
+          <p>So your agent hears the other agent, register their bot in your room — re-run setup and choose <strong>Register a peer bot</strong>:</p>
+          <pre><code>bun setup.ts</code></pre>
+          <p>Enter their bot's User ID and a one-line blurb (e.g. <code>deploy specialist</code>). Alice registers Bob's bot; Bob registers Alice's. No restart needed — the relay picks it up immediately.</p>
           <div class="callout callout-tip">
             <span class="callout-icon">✦</span>
-            <div class="callout-body"><p>Your agent only hears messages from explicitly registered bots and listed humans. Unregistered bots are silently dropped — this is the primary loop-prevention mechanism.</p></div>
+            <div class="callout-body"><p>Your agent only hears messages from explicitly registered bots and listed humans. Unregistered bots are silently dropped — part of the loop-prevention design.</p></div>
           </div>
         </div>
       </div>
 
       <div class="step">
-        <div class="step-n">8</div>
-        <div id="step-8" class="step-body">
+        <div class="step-n">6</div>
+        <div id="step-6" class="step-body">
           <h3>Launch</h3>
-          <p>The <code>room setup</code> command prints your launch command. Use the bundled launcher — one short line, so your terminal can't split it:</p>
-          <pre><code>bash &lt;path-to-knock-knock&gt;/scripts/launch-room.sh &lt;channelId&gt;</code></pre>
-          <p>On first launch, approve the one-time dev-channel confirmation prompt. When the bot connects you'll see <code>knock-knock: gateway connected as &lt;bot&gt;#1234</code> in stderr.</p>
-          <div class="callout callout-note">
-            <span class="callout-icon">ℹ</span>
-            <div class="callout-body">
-              <p><strong>Why not <code>--channels</code>?</strong> A custom channel you run locally loads via <code>--dangerously-load-development-channels server:knock-knock</code>, not <code>--channels</code>. <code>--channels</code> is allowlist-only and needs a <code>plugin:&lt;name&gt;@&lt;marketplace&gt;</code> tag — a dev/local plugin has none, so <code>--channels plugin:knock-knock</code> fails with <em>“--channels entries must be tagged”</em>. The raw command the launcher runs:</p>
-              <pre><code>claude --dangerously-load-development-channels server:knock-knock \
-  --mcp-config '{"mcpServers":{"knock-knock":{"command":"bun","args":["run","--cwd","&lt;path-to-knock-knock&gt;","--shell=bun","--silent","start"]}}}' \
-  --settings ~/.claude/channels/knock-knock/rooms/&lt;channelId&gt;.settings.json</code></pre>
-              <p>Requires Claude Code v2.1.80+ and claude.ai / Console API-key auth (not Bedrock/Vertex/Foundry). The inline <code>--mcp-config</code> is needed because the plugin's <code>.mcp.json</code> uses <code>${CLAUDE_PLUGIN_ROOT}</code>, which is undefined on the <code>server:</code> path. See <a href="https://code.claude.com/docs/en/channels">code.claude.com/docs/en/channels</a>.</p>
-            </div>
-          </div>
-          <p>Once both bots are online in Discord, proceed to the acceptance tests.</p>
+          <p>Everything the relay needs — runtime, workspace, token — is in <code>access.json</code> and <code>.env</code>, so just:</p>
+          <pre><code>bun relay.ts</code></pre>
+          <p>When the bot connects you'll see <code>relay [&lt;agentKey&gt;]: connected as &lt;bot&gt;#1234</code> in stderr. One relay process hosts every agent you've configured. Once both bots are online in Discord, proceed to the acceptance tests.</p>
         </div>
       </div>
 
@@ -1070,13 +1038,13 @@
       <div class="test-body">
         <ol>
           <li><strong>Alice:</strong> tell your agent — <em>"Ask agent-bob to run the test suite and report results."</em><br><em>(Assumes Bob has <code>Bash(bun test)</code> in his <code>ask</code> list.)</em></li>
-          <li>Bob sees a message in the shared channel: <code>@Bob 🔐 Permission request: Bash</code> with <strong>Allow / Deny / See more</strong> buttons.</li>
+          <li>Bob sees a message in the shared channel: <code>@Bob 🔐 Permission request: Bash</code> with <strong>Allow / Deny</strong> buttons.</li>
           <li>Bob clicks <strong>Allow</strong> (or reacts ✅). Bob's agent runs the tests and replies with results.</li>
           <li>Alice's agent receives the result.</li>
         </ol>
         <div class="callout callout-warn" style="margin: 10px 0 8px">
           <span class="callout-icon">⚠</span>
-          <div class="callout-body"><p>Have a third person click Allow — the server should respond "Not authorized." Only the registered owner can approve.</p></div>
+          <div class="callout-body"><p>Have a third person click Allow — they get "Not authorized." Only the room's owner can approve.</p></div>
         </div>
         <div class="pass">✓ Pass — request waited for Bob's tap; only Bob could approve.</div>
       </div>
@@ -1091,69 +1059,63 @@
         <ol>
           <li>Add something to Bob's <code>deny</code> list (e.g. <code>Bash(rm -rf *)</code>).</li>
           <li><strong>Alice:</strong> ask Bob's agent to run that command.</li>
-          <li>Even if Bob clicks <strong>Allow</strong>, Claude Code blocks it — the tool never runs.</li>
+          <li>The deny floor auto-rejects it before it runs — for a denied command, the approval prompt never even appears.</li>
         </ol>
-        <div class="pass">✓ Pass — an approved action on the deny list still does not execute.</div>
-      </div>
-    </div>
-
-    <div class="test">
-      <div class="test-head">
-        <span class="test-label" style="background: var(--bg-callout); color: var(--text-muted)">Files</span>
-        <span class="test-title">Test 4 — File handoff + send boundary</span>
-      </div>
-      <div class="test-body">
-        <ol>
-          <li><strong>Alice:</strong> tell your agent to send a file <strong>inside</strong> <code>sendableRoots</code>. It attaches; Bob's agent runs <code>download_attachment</code>. ✓</li>
-          <li><strong>Alice:</strong> tell your agent to send <code>~/.ssh/id_rsa</code> (outside <code>sendableRoots</code>). The server refuses: <em>"refusing to send file outside sendableRoots"</em> — regardless of CC permissions. ✓</li>
-        </ol>
-        <div class="pass">✓ Pass — in-root sends succeed; out-of-root sends are blocked server-side.</div>
+        <div class="pass">✓ Pass — a denied action does not execute, and no one is asked to approve it.</div>
       </div>
     </div>
 
     <hr>
 
-    <!-- MCP tools -->
-    <h2 id="mcp-tools">MCP tools</h2>
-    <p>These tools are available to the agent in its Claude Code session.</p>
+    <!-- Coding agents -->
+    <h2 id="runtimes">Coding agents</h2>
+    <p class="section-intro">The relay drives any coding agent through one adapter seam. Pick the runtime per agent during <code>bun setup.ts</code>.</p>
 
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Tool</th><th>What it does</th></tr></thead>
+        <thead><tr><th>Runtime</th><th>Agent / transport</th></tr></thead>
         <tbody>
-          <tr><td><code>reply</code></td><td>Send text and optional file attachments to the channel</td></tr>
-          <tr><td><code>react</code></td><td>Add an emoji reaction to a message</td></tr>
-          <tr><td><code>edit_message</code></td><td>Edit a previously sent bot message</td></tr>
-          <tr><td><code>fetch_messages</code></td><td>Fetch recent channel history (oldest-first, up to 100)</td></tr>
-          <tr><td><code>download_attachment</code></td><td>Download message attachments to the local inbox</td></tr>
-          <tr><td><code>list_agents</code></td><td>List peer agents in this room with mention handles and blurbs</td></tr>
+          <tr><td><code>claude-sdk</code></td><td>Claude Code, in-process Claude Agent SDK (default; nothing to install)</td></tr>
+          <tr><td><code>claude-acp</code></td><td>Claude Code over ACP (<code>npx @agentclientprotocol/claude-agent-acp</code>)</td></tr>
+          <tr><td><code>opencode</code></td><td>OpenCode over ACP (<code>opencode acp</code>)</td></tr>
+          <tr><td><code>codex</code></td><td>OpenAI Codex over ACP (<code>npx @agentclientprotocol/codex-acp</code>)</td></tr>
+          <tr><td><code>gemini</code></td><td>Gemini CLI over ACP (<code>gemini --experimental-acp</code>)</td></tr>
+          <tr><td><code>acp</code></td><td>Any ACP agent — set <code>KNOCK_KNOCK_ACP_COMMAND</code> / <code>KNOCK_KNOCK_ACP_ARGS</code></td></tr>
         </tbody>
       </table>
     </div>
 
+    <div class="callout callout-warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><p><strong>The deny floor only holds if the agent asks before running tools.</strong> The Claude SDK enforces it natively. Every ACP agent must run in its default ask-first mode — never a "yolo" / auto-approve mode — or it will run tools without surfacing a permission request. See <a href="https://github.com/r4yen/knock-knock/blob/main/docs/getting-started-agents.md">getting-started-agents.md</a>.</p></div>
+    </div>
+
     <!-- access.json -->
     <h2 id="access-json">access.json reference</h2>
-    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>/knock-knock:room setup</code> — you rarely need to edit it by hand.</p>
+    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>bun setup.ts</code> — you rarely need to edit it by hand. One entry per agent identity.</p>
 
     <pre><code>{
-  <span class="t-ky">"self"</span>: {
-    <span class="t-ky">"name"</span>: <span class="t-st">"agent-alice"</span>,
-    <span class="t-ky">"ownerUserId"</span>: <span class="t-st">"184695080709324800"</span>,   <span class="t-cm">// your Discord user ID</span>
-    <span class="t-ky">"blurb"</span>: <span class="t-st">"read-only research agent for project-x"</span>,
-    <span class="t-ky">"roomChannelId"</span>: <span class="t-st">"846209781206941736"</span>
-  },
-  <span class="t-ky">"rooms"</span>: {
-    <span class="t-ky">"846209781206941736"</span>: {
-      <span class="t-ky">"requireMention"</span>: <span class="t-kw">true</span>,         <span class="t-cm">// only wake when @mentioned</span>
-      <span class="t-ky">"participants"</span>: {             <span class="t-cm">// peer bots this agent will hear</span>
-        <span class="t-ky">"987654321098765432"</span>: {
-          <span class="t-ky">"name"</span>: <span class="t-st">"agent-bob"</span>,
-          <span class="t-ky">"blurb"</span>: <span class="t-st">"deploy + migration specialist"</span>
+  <span class="t-ky">"agents"</span>: {
+    <span class="t-ky">"research-bot"</span>: {
+      <span class="t-ky">"name"</span>: <span class="t-st">"agent-alice"</span>,                  <span class="t-cm">// live Discord username; filled on connect</span>
+      <span class="t-ky">"ownerUserId"</span>: <span class="t-st">"184695080709324800"</span>,   <span class="t-cm">// your Discord user ID</span>
+      <span class="t-ky">"blurb"</span>: <span class="t-st">"read-only research agent for project-x"</span>,
+      <span class="t-ky">"runtime"</span>: <span class="t-st">"claude-sdk"</span>,
+      <span class="t-ky">"workspace"</span>: <span class="t-st">"/Users/alice/repos/project-x"</span>,
+      <span class="t-ky">"tokenEnv"</span>: <span class="t-st">"DISCORD_BOT_TOKEN"</span>,        <span class="t-cm">// NAME of the .env var holding the token</span>
+      <span class="t-ky">"rooms"</span>: {
+        <span class="t-ky">"846209781206941736"</span>: {
+          <span class="t-ky">"requireMention"</span>: <span class="t-kw">true</span>,         <span class="t-cm">// only wake when @mentioned</span>
+          <span class="t-ky">"participants"</span>: {             <span class="t-cm">// peer bots this agent will hear</span>
+            <span class="t-ky">"987654321098765432"</span>: {
+              <span class="t-ky">"name"</span>: <span class="t-st">"agent-bob"</span>,
+              <span class="t-ky">"blurb"</span>: <span class="t-st">"deploy specialist"</span>
+            }
+          },
+          <span class="t-ky">"humans"</span>: [],                   <span class="t-cm">// human IDs also allowed to drive</span>
+          <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// who may approve; defaults to ownerUserId</span>
         }
-      },
-      <span class="t-ky">"humans"</span>: [],                   <span class="t-cm">// human IDs also allowed to drive</span>
-      <span class="t-ky">"sendableRoots"</span>: [<span class="t-st">"/Users/alice/repos/project-x"</span>],
-      <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// button/reaction approval only; DM trust is always ownerUserId</span>
+      }
     }
   }
 }</code></pre>
@@ -1167,31 +1129,27 @@
         <tbody>
           <tr>
             <td>Bot shows offline in Discord</td>
-            <td>Token wrong or not loaded. Re-run <code>/knock-knock:configure &lt;token&gt;</code>, then restart — <code>.env</code> is read once at boot.</td>
+            <td>Token wrong or not loaded. Re-run <code>bun setup.ts</code> → "Save / update a bot token", then restart the relay — <code>.env</code> is read at startup.</td>
           </tr>
           <tr>
             <td>Agent never sees room messages</td>
-            <td>(a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't registered via <code>add-peer</code>; (c) <code>requireMention: true</code> and the message didn't @mention your bot.</td>
+            <td>(a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't registered as a participant; (c) <code>requireMention: true</code> and the message didn't @mention your bot.</td>
           </tr>
           <tr>
             <td>No approval prompt appears</td>
-            <td><code>self.roomChannelId</code> or <code>ownerUserId</code> not set — re-run <code>/knock-knock:room setup</code>. Check stderr for <em>"no roomChannelId or owner configured"</em>.</td>
+            <td>The room's <code>approvalActorId</code> / agent <code>ownerUserId</code> isn't set — re-run <code>bun setup.ts</code> and reconfigure the room.</td>
           </tr>
           <tr>
             <td>✅ reaction does nothing</td>
-            <td>Only the registered owner's reaction counts (verified by user ID). Make sure you're reacting as the user ID set in <code>ownerUserId</code>.</td>
+            <td>Only the room owner's reaction counts (verified by user ID). Make sure you're reacting as the user ID set in <code>ownerUserId</code>.</td>
           </tr>
           <tr>
-            <td>"channel is not registered"</td>
-            <td>The target channel isn't in <code>access.rooms</code>. Run <code>/knock-knock:room join &lt;channelId&gt;</code>.</td>
+            <td>Agent skipped at startup</td>
+            <td><code>relay: agent "x" skipped</code> means its <code>tokenEnv</code> isn't set in <code>.env</code>, or its <code>workspace</code> is empty. Re-run <code>bun setup.ts</code> to fix it.</td>
           </tr>
           <tr>
-            <td>Agents talk in a loop</td>
-            <td>Shouldn't happen: <code>requireMention</code> + self-ignore + 10-msg/sender/60s rate cap. If it does, check both bots have distinct user IDs.</td>
-          </tr>
-          <tr>
-            <td>File send blocked unexpectedly</td>
-            <td>The path must be <em>inside</em> (not a sibling prefix of) a <code>sendableRoots</code> entry. <code>/home/me/proj-extra</code> does not match root <code>/home/me/proj</code>.</td>
+            <td>Two bots stop replying to each other</td>
+            <td>Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns. An owner/human message resets it.</td>
           </tr>
         </tbody>
       </table>
@@ -1200,19 +1158,27 @@
     <!-- Security -->
     <h2 id="security">Security model</h2>
 
-    <p>The "ignore all bots" guard from Anthropic's reference plugin (<code>if (msg.author.bot) return</code>) is intentionally removed — peer agents connect as bots, so it had to go. Three mechanisms replace it:</p>
+    <p>Peer agents connect to the channel as Discord bots, so the relay can't simply ignore bot senders. Several mechanisms keep each machine owner in control.</p>
 
     <div class="table-wrap">
       <table>
         <thead><tr><th>Mechanism</th><th>What it prevents</th></tr></thead>
         <tbody>
           <tr>
+            <td>The deny floor</td>
+            <td>For the Claude SDK, <code>deny</code> rules reach <code>disallowedTools</code> and block the tool before execution. For ACP agents, the relay matches the same rules on every permission request — a denied command is auto-rejected and the owner never even sees it.</td>
+          </tr>
+          <tr>
             <td>Participant allowlist</td>
-            <td>Only explicitly registered bots and listed humans can push messages. Everyone else is silently dropped.</td>
+            <td>Only explicitly registered peer bots and listed humans can drive an agent. Everyone else is silently dropped.</td>
           </tr>
           <tr>
             <td>Self-ignore guard</td>
-            <td>The server drops every message whose sender ID matches its own bot ID — prevents self-loops.</td>
+            <td>The relay drops every message whose sender ID matches its own bot ID — prevents self-loops.</td>
+          </tr>
+          <tr>
+            <td>Agent↔agent loop guard</td>
+            <td>A local per-room heuristic caps consecutive agent-to-agent turns (default 4); an owner or human message resets the counter.</td>
           </tr>
           <tr>
             <td>Rate cap</td>
@@ -1220,15 +1186,11 @@
           </tr>
           <tr>
             <td>Prompt-injection protection</td>
-            <td>Skills refuse to mutate <code>access.json</code> when the request came via a channel message. All access changes must run from your terminal.</td>
+            <td><code>access.json</code> is only ever written from your terminal by <code>bun setup.ts</code>, never from a channel message — so access changes stay out of reach of untrusted input.</td>
           </tr>
           <tr>
             <td>Owner-only approval</td>
-            <td>Button clicks and ✅ reactions are verified against the configured approver (<code>approvalActorId</code>, defaulting to <code>ownerUserId</code>). DM trust — driving the agent via DM — is always strictly <code>ownerUserId</code>, regardless of any delegate. Anyone else's action is silently ignored.</td>
-          </tr>
-          <tr>
-            <td>Server-side send boundary</td>
-            <td><code>reply(files:…)</code> reads inside the MCP process, bypassing CC's <code>Read</code> permission. <code>sendableRoots</code> is enforced by the server so this path cannot exfiltrate files outside the allowed roots.</td>
+            <td>Button clicks and ✅ reactions are verified against the room's approver (<code>approvalActorId</code>, defaulting to <code>ownerUserId</code>). Each agent's prompts route to that agent's owner. Anyone else's action is rejected.</td>
           </tr>
         </tbody>
       </table>
@@ -1237,11 +1199,11 @@
     <div class="page-footer">
       <span>knock-knock v0.1.0</span>
       <span>·</span>
-      <a href="https://github.com/anthropics/claude-plugins-official/tree/main/external_plugins/discord">Forked from Anthropic's Discord channel plugin</a>
+      <a href="https://github.com/r4yen/knock-knock">GitHub</a>
       <span>·</span>
-      <a href="https://github.com/anthropics/claude-code/issues">Report an issue</a>
+      <a href="https://github.com/r4yen/knock-knock/issues">Report an issue</a>
       <span>·</span>
-      <a href="https://code.claude.com/docs/en/channels">Claude Code channels docs</a>
+      <a href="https://agentclientprotocol.com">Agent Client Protocol</a>
     </div>
 
   </main>
@@ -1255,12 +1217,11 @@
     <a href="#setup">Setup walkthrough</a>
     <a href="#step-1" style="padding-left: 18px; font-size: 12px">1. Create your bot</a>
     <a href="#step-2" style="padding-left: 18px; font-size: 12px">2. Invite to server</a>
-    <a href="#step-3" style="padding-left: 18px; font-size: 12px">3. Install plugin</a>
-    <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Set up room</a>
-    <a href="#step-7" style="padding-left: 18px; font-size: 12px">7. Register peers</a>
-    <a href="#step-8" style="padding-left: 18px; font-size: 12px">8. Launch</a>
+    <a href="#step-3" style="padding-left: 18px; font-size: 12px">3. Configure</a>
+    <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Register peers</a>
+    <a href="#step-6" style="padding-left: 18px; font-size: 12px">6. Launch</a>
     <a href="#acceptance-tests">Acceptance tests</a>
-    <a href="#mcp-tools">MCP tools</a>
+    <a href="#runtimes">Coding agents</a>
     <a href="#access-json">access.json</a>
     <a href="#troubleshooting">Troubleshooting</a>
     <a href="#security">Security model</a>
