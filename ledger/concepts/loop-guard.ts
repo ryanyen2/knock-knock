@@ -28,15 +28,33 @@ export const LOOP_GUARD_FOLD = 'loop-guard'
 export const loopGuardFold: Fold<LoopGuardFoldState> = {
   name: LOOP_GUARD_FOLD,
   init: () => new Map(),
-  key: i =>
-    i.verb === 'channel.message' && (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
+  /**
+   * Steps on:
+   *   - `turn.prompted` — represents "we decided to take a turn here." This
+   *     is what increments the counter; matches the original Phase 0
+   *     semantics where lgNext was set only when the loop guard allowed.
+   *   - `channel.message` with role=owner|human — resets the counter (a
+   *     human breaking the chain is the canonical reset signal).
+   * Crucially does NOT step on agent-role channel.messages — those are
+   *  pending inputs that the loop-guard decides on; counting them before
+   *  the decision causes the synchronization's pre-prompt check to see
+   *  state that already includes the message it's deciding about, which
+   *  breaks the cooldown semantics.
+   */
+  key: i => {
+    if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return false
+    if (i.verb === 'turn.prompted') return true
+    if (i.verb === 'channel.message' && (i.role === 'owner' || i.role === 'human')) return true
+    return false
+  },
   step: (state, i) => {
     const next = new Map(state)
     const prior = next.get(i.channel) ?? FRESH
-    if (i.role === 'owner' || i.role === 'human') {
+    if (i.verb === 'channel.message') {
+      // owner/human channel.message → reset counter
       next.set(i.channel, { consecutiveAgentTurns: 0, lastAgentReplyAt: 0 })
     } else {
-      // role === 'agent' (the only other admittable role)
+      // turn.prompted → this is a turn we decided to take, count it.
       next.set(i.channel, {
         consecutiveAgentTurns: prior.consecutiveAgentTurns + 1,
         lastAgentReplyAt: Date.parse(i.createdAt),

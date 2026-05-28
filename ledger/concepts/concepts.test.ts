@@ -68,9 +68,12 @@ async function admitVerdict(
 
 // ─── LoopGuard ─────────────────────────────────────────────────────────────
 
-test('LoopGuard concept: owner message resets the counter', async () => {
+test('LoopGuard concept: owner channel.message resets the counter', async () => {
+  // The Phase 3 fold counts turn.prompted (turns we DECIDED to take), not
+  // raw channel.messages. Three turn.prompted admissions → counter = 3.
+  // An owner channel.message resets to 0; subsequent turn.prompted (e.g.,
+  // for our reply) would re-increment.
   const { store, ledger, engine } = await setupEngine()
-  // Three agent messages prime the counter
   for (let n = 0; n < 3; n++) {
     await TurnRecorder.beginTurn(ledger, ctx, {
       senderId: `peer${n}`,
@@ -79,17 +82,33 @@ test('LoopGuard concept: owner message resets the counter', async () => {
       text: 'hi',
     })
   }
-  expect(stateFor(engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD), ctx.channelId)
-    .consecutiveAgentTurns).toBe(3)
-  // Owner message resets
-  await TurnRecorder.beginTurn(ledger, ctx, {
-    senderId: 'owner1',
-    senderKind: 'owner',
-    messageId: 'm-owner',
-    text: 'stop',
+  expect(
+    stateFor(engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD), ctx.channelId)
+      .consecutiveAgentTurns,
+  ).toBe(3)
+  // Admit a raw owner channel.message (no follow-up turn.prompted) so we
+  // can observe the reset isolated from any new prompt.
+  await admit(store, {
+    actor: 'owner1',
+    role: 'owner',
+    channel: ctx.channelId,
+    target: { artifactId: ctx.channelArtifactId, anchor: { kind: 'none' } },
+    verb: 'channel.message',
+    patch: {
+      kind: 'external',
+      intent: {
+        channel: 'discord',
+        op: 'received',
+        args: { text: 'stop', messageId: 'm-owner' },
+      },
+    },
+    effect: 'external',
+    caused_by: [],
   })
-  expect(stateFor(engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD), ctx.channelId)
-    .consecutiveAgentTurns).toBe(0)
+  expect(
+    stateFor(engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD), ctx.channelId)
+      .consecutiveAgentTurns,
+  ).toBe(0)
   engine.close()
   store.close()
 })

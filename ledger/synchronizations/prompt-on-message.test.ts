@@ -99,11 +99,12 @@ test('prompt-on-message: agent message past loop-guard threshold is skipped', as
   store.close()
 })
 
-test('prompt-on-message: owner inbound resets the loop-guard counter', async () => {
-  // Saturate the counter with agents; verify state goes up; owner inbound
-  // brings it back to zero. (A subsequent agent message would still be
-  // cooldown-blocked within 8s — that's `loopGuard`'s rule, not this
-  // synchronization's concern.)
+test('prompt-on-message: owner channel.message resets the loop-guard counter', async () => {
+  // The fold counts turn.prompted (turns we DECIDED to take), so admitting
+  // agent inbounds and letting prompt-on-message admit turn.prompted runs
+  // up the counter. An owner channel.message resets it. (The owner's own
+  // turn would then re-increment the counter — we test the reset in
+  // isolation by NOT registering prompt-on-message for the owner cycle.)
   const { store, sync, engine } = await setup({ agentForChannel: 'bot1' })
   for (let n = 0; n < 4; n++) {
     await admit(store, inbound('agent', `peer-${n}`))
@@ -113,12 +114,14 @@ test('prompt-on-message: owner inbound resets the loop-guard counter', async () 
   const peak = stateFor(engine.get(LOOP_GUARD_FOLD), CHANNEL)
   expect(peak.consecutiveAgentTurns).toBeGreaterThan(0)
 
+  // Stop the synchronizer so the owner inbound doesn't trigger a follow-up
+  // turn.prompted that would re-increment the counter.
+  sync.stop()
   await admit(store, inbound('owner', 'owner1'))
   await settle()
   const after = stateFor(engine.get(LOOP_GUARD_FOLD), CHANNEL)
   expect(after.consecutiveAgentTurns).toBe(0)
   expect(after.lastAgentReplyAt).toBe(0)
-  sync.stop()
   engine.close()
   store.close()
 })

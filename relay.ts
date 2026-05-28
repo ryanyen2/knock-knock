@@ -21,9 +21,12 @@ import { STATE_DIR, readAccessFile } from './state.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { SqliteStore } from './ledger/store-sqlite.ts'
+import { PgStore } from './ledger/store-pg.ts'
+import type { Store } from './ledger/store.ts'
 import { Ledger } from './ledger/capture.ts'
 import { FoldEngine } from './ledger/fold.ts'
 import { Synchronizer } from './ledger/sync.ts'
+import { bootstrap } from './ledger/bootstrap.ts'
 import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
 import { channelFold } from './ledger/concepts/channel.ts'
 import { turnFold } from './ledger/concepts/turn.ts'
@@ -59,10 +62,22 @@ const hosts: AgentHost[] = []
 const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
 
 // One ledger + one fold engine shared across every agent on this machine.
-// Phase 4 swaps SqliteStore for store-pg; nothing else changes.
-const ledgerPath =
-  process.env.KNOCK_KNOCK_LEDGER_FILE ?? join(STATE_DIR, 'ledger.sqlite')
-const store = new SqliteStore(ledgerPath)
+// Phase 4: KNOCK_KNOCK_LEDGER_URL switches to Postgres for cross-machine.
+const pgUrl = process.env.KNOCK_KNOCK_LEDGER_URL
+let store: Store
+if (pgUrl) {
+  store = await PgStore.connect(pgUrl)
+  process.stderr.write(`relay: ledger = postgres (${pgUrl.replace(/:[^:@]+@/, ':***@')})\n`)
+} else {
+  const ledgerPath =
+    process.env.KNOCK_KNOCK_LEDGER_FILE ?? join(STATE_DIR, 'ledger.sqlite')
+  store = new SqliteStore(ledgerPath)
+  process.stderr.write(`relay: ledger = sqlite (${ledgerPath})\n`)
+}
+const bootResult = await bootstrap(store)
+if (bootResult.hasExistingData) {
+  process.stderr.write(`relay: replaying ${bootResult.scanned} interactions from existing ledger\n`)
+}
 const ledger = new Ledger(store)
 const engine = new FoldEngine(store)
 

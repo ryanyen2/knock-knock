@@ -77,13 +77,19 @@ export function mergeProposal(
 
   // 4. Role-ordered partition.
   const pRank = roleRank(proposed.role)
+  // Sort peers by hash first so multiple higher-role peers resolve to the
+  // SAME winner across machines — the lower-hash tiebreak the plan calls for.
+  const sortedPeers = [...concurrentAtAnchor].sort((a, b) =>
+    a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0,
+  )
   const conflict: Hash[] = []
   const supersede: Hash[] = []
-  for (const c of concurrentAtAnchor) {
+  for (const c of sortedPeers) {
     const cRank = roleRank(c.role)
     if (cRank > pRank) {
       // A strictly higher-role admitted peer wins; proposed is rejected.
-      // The caller surfaces this back to the proposer via a knowledge note.
+      // Multiple higher-role peers tie-break to the lower hash (first in
+      // sortedPeers) so cross-machine consistency holds without coordination.
       return { kind: 'reject', reason: 'lower-role', winner: c.hash }
     }
     if (cRank === pRank) {
@@ -93,9 +99,13 @@ export function mergeProposal(
     }
   }
 
+  // Output arrays are sorted (sortedPeers preserved order); branches also
+  // sorted so two machines computing the same MergeOutcome get byte-equal
+  // results regardless of pull/insertion order at their local store.
+  supersede.sort()
   if (conflict.length > 0) {
-    // Surface both authors. Resolution = a higher-role merge.resolve patch.
-    return { kind: 'conflict', branches: [proposed.hash, ...conflict] }
+    const branches = [proposed.hash, ...conflict].sort()
+    return { kind: 'conflict', branches }
   }
   return { kind: 'admit', supersede }
 }
