@@ -6,9 +6,11 @@
  * its rate-limit + recent-message state. It selects a runtime through
  * makeAdapter; it never imports an agent SDK directly.
  *
- * Visibility: as a turn runs, the host fans adapter AgentEvents to two sinks:
- * the operator terminal renderer (ConsoleUI) and the owner's DM transcript
- * (DmCourier). Both are best-effort; failures never block the turn.
+ * Phase 0 capture: every decision point that has historically been ephemeral
+ * (an inbound message, a turn start, a tool call, an approval, a reply) is
+ * journaled into the Ledger via TurnRecorder. The relay still executes the
+ * action imperatively — the ledger is a side-effect-free observer until the
+ * Phase 2 admission gate inverts that relationship.
  */
 
 import {
@@ -23,11 +25,10 @@ import {
   type AgentConfig,
   type Access,
   type PreambleContext,
-  type LoopGuardState,
   guildSenderAllowed,
   senderKind,
   buildRosterLinesForRoom,
-  loopGuard,
+  approverForAgent,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
@@ -35,6 +36,14 @@ import { Approvals } from './approvals.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { DmCourier, type TurnHandle } from './dm-courier.ts'
 import type { AgentEvent } from './agent-adapter.ts'
+import type { Ledger } from './ledger/capture.ts'
+import type { FoldEngine } from './ledger/fold.ts'
+import { TurnRecorder } from './ledger/turn-recorder.ts'
+import {
+  LOOP_GUARD_FOLD,
+  decideLoopGuard,
+  type LoopGuardFoldState,
+} from './ledger/concepts/loop-guard.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -45,6 +54,7 @@ type Session = {
   activeTurn?: {
     consoleAgentKey: string
     dmHandle: TurnHandle
+    recorder: TurnRecorder
   }
 }
 
@@ -55,14 +65,18 @@ export class AgentHost {
   private readonly sessions = new Map<string, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
-  /** Per-channel loop-guard state: consecutive agent-triggered turns + last reply timestamp. */
-  private readonly loopState = new Map<string, LoopGuardState>()
+  // No more `loopState: Map` — per-channel loop-guard counters live in the
+  // LoopGuard fold over the ledger (rubric #1: replayable from interactions).
 
   constructor(
     private readonly key: string,
     private readonly agent: AgentConfig,
     private readonly getAccess: () => Access,
     private readonly ui: ConsoleUI,
+    /** Capture: every decision point appends an Interaction here. */
+    private readonly ledger: Ledger,
+    /** Concept folds — the only place per-channel/per-turn state lives. */
+    private readonly engine: FoldEngine,
   ) {
     this.client = new Client({
       intents: [
@@ -88,6 +102,7 @@ export class AgentHost {
 
     this.courier = new DmCourier(
       this.client,
+      this.engine,
       () => liveAgentGetter().ownerUserId,
       reason => this.ui.note(this.key, reason),
     )
@@ -211,12 +226,13 @@ export class AgentHost {
       channelId,
     }
 
-    // ─── Agent↔agent loop guard ──────────────────────────────────────────────
-    // Suppress auto-response when two bots are ping-ponging beyond the threshold.
-    // Owner/human messages always pass and reset the counter (they break the loop).
-    const lg = this.loopState.get(channelId) ?? { consecutiveAgentTurns: 0, lastAgentReplyAt: 0 }
-    const { decision: lgDecision, next: lgNext } = loopGuard(lg, kind, now)
-    this.loopState.set(channelId, lgNext)
+    // ─── Agent↔agent loop guard (fold-driven) ────────────────────────────────
+    // Per-channel counters live in the LoopGuard fold over admitted
+    // channel.message interactions. The decision is a pure function of fold
+    // state + the inbound kind. When we admit (TurnRecorder.beginTurn below)
+    // the fold advances itself; when we deny, we just don't record.
+    const lgState = this.engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)
+    const lgDecision = decideLoopGuard(lgState, channelId, kind, now)
     if (!lgDecision.allow) {
       this.ui.note(this.key, `loop guard skipped a reply in ${channelId} (${lgDecision.reason})`)
       return
@@ -225,6 +241,28 @@ export class AgentHost {
     // Session key is channelId within this host; globally unique via the per-host
     // sessions map (agentKey is implicit — different hosts have separate maps).
     const sessionKey = channelId
+
+    // ─── Begin ledger capture for this turn ──────────────────────────────────
+    // TurnRecorder owns channel.message + turn.prompted up front; the adapter
+    // event fanout below feeds it tool_call/tool_result; finishTurn closes
+    // with turn.replied. The recorder is the *only* place per-turn ledger
+    // state lives — AgentHost stays a Discord-to-recorder router.
+    const approverUserId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    const recorder = await TurnRecorder.beginTurn(
+      this.ledger,
+      {
+        agentKey: this.key,
+        approverUserId,
+        channelId,
+        channelArtifactId: `extp:discord/${channelId}`,
+      },
+      {
+        senderId: msg.author.id,
+        senderKind: kind,
+        messageId: msg.id,
+        text: msg.content,
+      },
+    )
 
     // Find or create the session (driver + event fanout)
     let session = this.sessions.get(sessionKey)
@@ -247,14 +285,34 @@ export class AgentHost {
           adapter,
           sessionKey,
           profile,
-          req => this.approvals.request({ channelId, toolName: req.toolName, input: req.input }),
+          async req => {
+            const verdict = await this.approvals.request({
+              channelId,
+              toolName: req.toolName,
+              input: req.input,
+            })
+            const at = this.sessions.get(sessionKey)?.activeTurn
+            if (at) {
+              await at.recorder
+                .onVerdict(req.toolName, req.input, verdict)
+                .catch(err => this.ui.error(this.key, `ledger verdict: ${err}`))
+            }
+            return verdict
+          },
           ctx,
         ),
       }
-      // Fan adapter events into the console + the DM transcript for the in-flight turn.
+      // Fan adapter events into the console renderer and into the ledger.
+      // The DM transcript no longer subscribes here — it subscribes to the
+      // Turn fold directly (pure projection, rubric #1).
       adapter.onEvent((event: AgentEvent) => {
         this.ui.event(this.key, event)
-        created.activeTurn?.dmHandle.onEvent(event)
+        const at = created.activeTurn
+        if (at) {
+          void at.recorder
+            .onAdapterEvent(event)
+            .catch(err => this.ui.error(this.key, `ledger adapter event: ${err}`))
+        }
       })
       session = created
       this.sessions.set(sessionKey, session)
@@ -273,8 +331,9 @@ export class AgentHost {
       senderLabel,
       channelLabel,
       userPrompt: msg.content,
+      promptHash: recorder.promptHash,
     })
-    session.activeTurn = { consoleAgentKey: this.key, dmHandle }
+    session.activeTurn = { consoleAgentKey: this.key, dmHandle, recorder }
 
     // ─── Presence: 👀 while working ─────────────────────────────────────────
     // React with ackReaction (default 👀) to signal "received and working."
@@ -297,9 +356,15 @@ export class AgentHost {
       ?.users.remove(this.client.user?.id ?? '')
       .catch(() => {})
 
-    // Finalize the DM transcript with the response text (or error).
-    const finalText = chunks.join('\n').trim() || undefined
-    void dmHandle.finalize(finalText, turnError).catch(() => {})
+    // ─── Close the turn in the ledger (turn.replied) ─────────────────────────
+    const replyText = chunks.join('\n').trim() || undefined
+    await recorder
+      .finishTurn(replyText)
+      .catch(err => this.ui.error(this.key, `ledger finish turn: ${err}`))
+
+    // Finalize the DM transcript — the reply text is already in the Turn fold,
+    // so finalize just needs to know about an error (if any) and stop subscribing.
+    void dmHandle.finalize(turnError).catch(() => {})
     session.activeTurn = undefined
 
     // Post each chunk to the originating channel / thread

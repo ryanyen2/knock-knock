@@ -12,6 +12,13 @@ import { join } from 'path'
 import { STATE_DIR, readAccessFile } from './state.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
+import { SqliteStore } from './ledger/store-sqlite.ts'
+import { Ledger } from './ledger/capture.ts'
+import { FoldEngine } from './ledger/fold.ts'
+import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
+import { channelFold } from './ledger/concepts/channel.ts'
+import { turnFold } from './ledger/concepts/turn.ts'
+import { approvalFold } from './ledger/concepts/approval.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -38,6 +45,21 @@ const ui = new ConsoleUI()
 const hosts: AgentHost[] = []
 const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
 
+// One ledger + one fold engine shared across every agent on this machine.
+// Phase 4 swaps SqliteStore for store-pg; nothing else changes.
+const ledgerPath =
+  process.env.KNOCK_KNOCK_LEDGER_FILE ?? join(STATE_DIR, 'ledger.sqlite')
+const store = new SqliteStore(ledgerPath)
+const ledger = new Ledger(store)
+const engine = new FoldEngine(store)
+
+// Bootstrap every concept's fold from existing ledger data before any host
+// starts handling messages — `engine.get(name)` is synchronous after this.
+await engine.register(loopGuardFold)
+await engine.register(channelFold)
+await engine.register(turnFold)
+await engine.register(approvalFold)
+
 for (const [key, agent] of agentEntries) {
   const token = process.env[agent.tokenEnv]
   if (!token) {
@@ -55,7 +77,7 @@ for (const [key, agent] of agentEntries) {
     continue
   }
 
-  const host = new AgentHost(key, agent, readAccessFile, ui)
+  const host = new AgentHost(key, agent, readAccessFile, ui, ledger, engine)
   hosts.push(host)
   bootEntries.push({ key, runtime: agent.runtime, workspace: agent.workspace })
   void host.start(token).catch(err => {
@@ -83,6 +105,8 @@ process.on('uncaughtException', err => {
 async function shutdown(): Promise<void> {
   process.stderr.write('relay: shutting down\n')
   await Promise.all(hosts.map(h => h.stop()))
+  engine.close()
+  store.close()
   process.exit(0)
 }
 process.on('SIGTERM', () => void shutdown())

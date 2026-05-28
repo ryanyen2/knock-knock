@@ -1,11 +1,11 @@
 /**
  * DmCourier — live transcript of an agent's work in the owner's Discord DM.
  *
- * One DmCourier per AgentHost. On each inbound mention the host calls
- * beginTurn(ctx) to get a TurnHandle; the host forwards adapter events into
- * handle.onEvent and finally handle.finalize(finalText). The handle posts ONE
- * DM message and edits it in place as events arrive — so the owner sees a
- * compact, live transcript without their DM inbox getting spammed.
+ * Phase 1: the per-turn state lives in the Turn fold over the ledger, not in
+ * a local `events[]` buffer. DmCourier subscribes to the fold for the active
+ * turn's promptHash; every fold delta re-renders the DM message in place.
+ * Result: the DM transcript is now a pure projection — replayable from any
+ * frontier, survives a restart, and is exactly the same data the auditor sees.
  *
  * Failure mode: if the owner has closed DMs (or the bot otherwise can't reach
  * them), the courier disables itself for that owner for the rest of the
@@ -15,10 +15,17 @@
  */
 
 import type { Client, Message, DMChannel } from 'discord.js'
-import type { AgentEvent } from './agent-adapter.ts'
+import type { FoldEngine } from './ledger/fold.ts'
+import {
+  TURN_FOLD,
+  type TurnFoldState,
+  type TurnState,
+  type TurnToolCall,
+} from './ledger/concepts/turn.ts'
+import type { Hash } from './ledger/interaction.ts'
 
 const EDIT_DEBOUNCE_MS = 500
-const MAX_EVENT_LINES = 14
+const MAX_TOOL_LINES = 14
 const MAX_MESSAGE_CHARS = 1900 // leave headroom under Discord's 2000 cap
 const MAX_FINAL_TEXT_CHARS = 800
 
@@ -26,11 +33,13 @@ export type DmTurnContext = {
   senderLabel: string
   channelLabel: string
   userPrompt: string
+  /** Hash of the turn.prompted record — the fold key for this turn. */
+  promptHash: Hash
 }
 
 export interface TurnHandle {
-  onEvent(e: AgentEvent): void
-  finalize(finalText?: string, error?: string): Promise<void>
+  /** Mark the turn done. Renders one final time with the optional error. */
+  finalize(error?: string): Promise<void>
 }
 
 export class DmCourier {
@@ -39,6 +48,7 @@ export class DmCourier {
 
   constructor(
     private readonly client: Client,
+    private readonly engine: FoldEngine,
     /** Re-read on each turn so owner changes take effect without a restart. */
     private readonly getOwnerId: () => string | undefined,
     /** Called when DM delivery is impossible so the operator sees one note. */
@@ -57,7 +67,7 @@ export class DmCourier {
     })
     if (!dm) return noopHandle
 
-    return new LiveTurn(dm, ctx, () => {
+    return new LiveTurn(dm, ctx, this.engine, () => {
       this.disabled.add(ownerId)
       this.onDeliveryFailure?.('DM send failed mid-turn; disabling for this owner.')
     })
@@ -75,40 +85,43 @@ export class DmCourier {
 }
 
 class LiveTurn implements TurnHandle {
-  private events: AgentEvent[] = []
   private message?: Message
   private debounceTimer?: ReturnType<typeof setTimeout>
-  private pendingRender = false
   private rendering: Promise<void> = Promise.resolve()
-  private finalText?: string
   private errorText?: string
   private done = false
+  private readonly unsubscribe: () => void
+  private latestState?: TurnState
 
   constructor(
     private readonly dm: DMChannel,
     private readonly ctx: DmTurnContext,
+    private readonly engine: FoldEngine,
     private readonly onSendFailure: () => void,
-  ) {}
-
-  onEvent(e: AgentEvent): void {
-    if (this.done) return
-    this.events.push(e)
-    this.scheduleRender()
+  ) {
+    // Subscribe to the Turn fold; render on every change for this turn's
+    // promptHash. The initial state is delivered eagerly by the engine.
+    this.unsubscribe = this.engine.subscribe<TurnFoldState>(TURN_FOLD, state => {
+      const turn = state.get(this.ctx.promptHash)
+      if (turn) {
+        this.latestState = turn
+        this.scheduleRender()
+      }
+    })
   }
 
-  async finalize(finalText?: string, error?: string): Promise<void> {
+  async finalize(error?: string): Promise<void> {
     if (this.done) return
     this.done = true
-    this.finalText = finalText
     this.errorText = error
     if (this.debounceTimer) clearTimeout(this.debounceTimer)
-    // Wait for any in-flight render, then post the final state.
+    this.unsubscribe()
     await this.rendering
     await this.flush()
   }
 
   private scheduleRender(): void {
-    if (this.debounceTimer) return
+    if (this.debounceTimer || this.done) return
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = undefined
       void this.flush()
@@ -140,23 +153,26 @@ class LiveTurn implements TurnHandle {
     if (prompt) lines.push(`> ${prompt}`)
     lines.push('')
 
-    const eventLines = renderEventLines(this.events)
-    lines.push(...eventLines)
+    const turn = this.latestState
+    if (turn) {
+      const toolLines = renderToolCalls(turn.toolCalls)
+      lines.push(...toolLines)
 
-    if (this.finalText) {
-      lines.push('')
-      lines.push('───')
-      lines.push(squish(this.finalText, MAX_FINAL_TEXT_CHARS))
+      if (turn.reply) {
+        lines.push('')
+        lines.push('───')
+        lines.push(squish(turn.reply.text, MAX_FINAL_TEXT_CHARS))
+      }
     }
+
     if (this.errorText) {
       lines.push('')
       lines.push(`⚠️ ${squish(this.errorText, 200)}`)
     }
 
-    const footer = renderFooter(this.events, this.done)
-    if (footer) {
+    if (this.done && !this.errorText && !turn?.reply) {
       lines.push('')
-      lines.push(footer)
+      lines.push('-# done')
     }
 
     let body = lines.join('\n').trimEnd()
@@ -169,71 +185,37 @@ class LiveTurn implements TurnHandle {
 
 // ─── Rendering helpers ───────────────────────────────────────────────────────
 
-function renderEventLines(events: AgentEvent[]): string[] {
-  const lines: string[] = []
-  for (const e of events) {
-    const line = renderEvent(e)
-    if (line) lines.push(line)
-  }
-  if (lines.length <= MAX_EVENT_LINES) return lines
+function renderToolCalls(tools: TurnToolCall[]): string[] {
+  const lines = tools.map(t => {
+    const subject = squish(extractSubject(t.inputJson), 140)
+    const name = `**${escapeMd(t.name)}**`
+    const head = subject ? `• ${name} \`${subject}\`` : `• ${name}`
+    if (t.status === 'failed') return `${head}\n  ↳ ⚠️ failed`
+    if (t.status === 'denied') return `${head}\n  ↳ ❌ denied`
+    if (t.status === 'requested') return `${head}\n  ↳ … pending`
+    return head
+  })
+  if (lines.length <= MAX_TOOL_LINES) return lines
   const head = lines.slice(0, 3)
-  const tailCount = MAX_EVENT_LINES - 4
+  const tailCount = MAX_TOOL_LINES - 4
   const tail = lines.slice(lines.length - tailCount)
   const hidden = lines.length - head.length - tail.length
   return [...head, `-# … ${hidden} more step${hidden === 1 ? '' : 's'} …`, ...tail]
 }
 
-function renderEvent(e: AgentEvent): string | undefined {
-  switch (e.type) {
-    case 'session_init': {
-      const bits = [`\`session ${e.sessionId.slice(0, 8)}\``]
-      if (e.model) bits.push(`\`${e.model}\``)
-      if (e.tools !== undefined) bits.push(`${e.tools} tools`)
-      return `-# • ${bits.join(' · ')}`
-    }
-    case 'assistant_text': {
-      const t = squish(e.text, 220)
-      return t ? `◆ ${t}` : undefined
-    }
-    case 'tool_call': {
-      const subject = squish(stringifyInput(e.input), 140)
-      const name = `**${escapeMd(e.name)}**`
-      return subject ? `• ${name} \`${subject}\`` : `• ${name}`
-    }
-    case 'tool_result':
-      return e.status === 'failed' ? `  ↳ ⚠️ failed` : undefined
-    case 'turn_done':
-      return undefined // handled in renderFooter
-  }
-}
-
-function renderFooter(events: AgentEvent[], done: boolean): string | undefined {
-  const last = [...events].reverse().find(e => e.type === 'turn_done') as
-    | Extract<AgentEvent, { type: 'turn_done' }>
-    | undefined
-  if (!last && !done) return undefined
-  const bits: string[] = []
-  if (last?.durationMs !== undefined) bits.push(fmtDuration(last.durationMs))
-  if (last?.tokensIn !== undefined || last?.tokensOut !== undefined) {
-    bits.push(`${fmtTokens(last?.tokensIn)} in / ${fmtTokens(last?.tokensOut)} out`)
-  }
-  if (last?.costUsd !== undefined) bits.push(fmtCost(last.costUsd))
-  if (!bits.length && done) bits.push('done')
-  return bits.length ? `-# ${bits.join(' · ')}` : undefined
-}
-
-function stringifyInput(input: unknown): string {
-  if (typeof input === 'string') return input
-  if (!input || typeof input !== 'object') return String(input ?? '')
-  const r = input as Record<string, unknown>
-  for (const k of ['command', 'cmd', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern']) {
-    const v = r[k]
-    if (typeof v === 'string' && v) return v
-  }
+function extractSubject(inputJson: string): string {
   try {
-    return JSON.stringify(input)
+    const parsed = JSON.parse(inputJson) as unknown
+    if (typeof parsed === 'string') return parsed
+    if (!parsed || typeof parsed !== 'object') return String(parsed ?? '')
+    const r = parsed as Record<string, unknown>
+    for (const k of ['command', 'cmd', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern']) {
+      const v = r[k]
+      if (typeof v === 'string' && v) return v
+    }
+    return inputJson
   } catch {
-    return '[unserializable]'
+    return inputJson
   }
 }
 
@@ -242,27 +224,11 @@ function squish(s: string, n: number): string {
   return flat.length > n ? flat.slice(0, n - 1) + '…' : flat
 }
 
-function fmtTokens(n: number | undefined): string {
-  if (n === undefined) return '?'
-  if (n < 1000) return String(n)
-  return `${(n / 1000).toFixed(1)}k`
-}
-
-function fmtCost(usd: number): string {
-  return `$${usd < 0.01 ? usd.toFixed(4) : usd.toFixed(3)}`
-}
-
-function fmtDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
 /** Escape Discord markdown control characters in user-supplied strings. */
 function escapeMd(s: string): string {
   return s.replace(/([*_`~|>])/g, '\\$1')
 }
 
 const noopHandle: TurnHandle = {
-  onEvent: () => {},
   finalize: async () => {},
 }
