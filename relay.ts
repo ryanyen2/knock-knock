@@ -15,10 +15,12 @@ import { ConsoleUI } from './console-ui.ts'
 import { SqliteStore } from './ledger/store-sqlite.ts'
 import { Ledger } from './ledger/capture.ts'
 import { FoldEngine } from './ledger/fold.ts'
+import { Synchronizer } from './ledger/sync.ts'
 import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
 import { channelFold } from './ledger/concepts/channel.ts'
 import { turnFold } from './ledger/concepts/turn.ts'
 import { approvalFold } from './ledger/concepts/approval.ts'
+import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -59,6 +61,13 @@ await engine.register(loopGuardFold)
 await engine.register(channelFold)
 await engine.register(turnFold)
 await engine.register(approvalFold)
+
+// Synchronizations — behavior is one new file per synchronization (rubric #2).
+// classify-on-tool-request audits every tool request against the room policy
+// and journals the verdict so the dual-audience trail explains every block.
+const synchronizer = new Synchronizer(store, engine)
+synchronizer.register(classifyOnToolRequest())
+synchronizer.start()
 
 for (const [key, agent] of agentEntries) {
   const token = process.env[agent.tokenEnv]
@@ -105,6 +114,7 @@ process.on('uncaughtException', err => {
 async function shutdown(): Promise<void> {
   process.stderr.write('relay: shutting down\n')
   await Promise.all(hosts.map(h => h.stop()))
+  synchronizer.stop()
   engine.close()
   store.close()
   process.exit(0)
