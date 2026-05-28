@@ -4,6 +4,11 @@
  * approver's identity, and resolves the pending promise on click or timeout.
  * Supports both button interactions (interactionCreate) and ✅/❌ reactions
  * (messageReactionAdd).
+ *
+ * Delivery preference: the prompt is sent to the approver's DM whenever
+ * possible — that way private tool decisions stay private. If the DM cannot
+ * be opened (DMs closed, blocked, etc.) we fall back to the originating
+ * channel so the agent never silently stalls.
  */
 
 import {
@@ -24,7 +29,10 @@ const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000
 type PendingApproval = {
   resolver: (verdict: Verdict) => void
   timer: ReturnType<typeof setTimeout>
-  channelId: string
+  /** Where the prompt actually landed (DM channel id or origin channel id). */
+  promptChannelId: string
+  /** Where the work originated; used to resolve the approver via approverForAgent. */
+  originChannelId: string
   messageId?: string
 }
 
@@ -36,6 +44,8 @@ export class Approvals {
     private readonly client: Client,
     /** Re-read on each resolution so owner changes take effect without restart. */
     private readonly getAgent: () => AgentConfig,
+    /** Optional hook for the operator console to note where the prompt landed. */
+    private readonly onDelivery?: (info: { destination: 'dm' | 'channel'; reason?: string }) => void,
   ) {}
 
   request(opts: {
@@ -49,7 +59,8 @@ export class Approvals {
     return new Promise<Verdict>(resolve => {
       const pending: PendingApproval = {
         resolver: resolve,
-        channelId,
+        promptChannelId: channelId,
+        originChannelId: channelId,
         timer: setTimeout(() => {
           this.pending.delete(correlationId)
           if (pending.messageId) this.msgToCorr.delete(pending.messageId)
@@ -70,21 +81,14 @@ export class Approvals {
     input: unknown,
   ): Promise<void> {
     try {
-      const ch = await this.client.channels.fetch(channelId)
-      if (!ch || !('send' in ch)) {
-        this._fail(correlationId, pending, 'Cannot reach channel for approval prompt.')
-        return
-      }
-
       const agent = this.getAgent()
-      const ownerId = approverForAgent(agent, channelId)
+      const approverId = approverForAgent(agent, channelId)
 
       const preview = JSON.stringify(input, null, 2)
       const shortPreview = preview.length > 280 ? preview.slice(0, 280) + '…' : preview
-      let text = ownerId ? `<@${ownerId}> ` : ''
-      text += `🔐 Permission request: **${toolName}**`
-      text += `\n\`\`\`\n${shortPreview}\n\`\`\``
-      if (text.length > 1900) text = text.slice(0, 1899) + '…'
+      const body =
+        `🔐 Permission request: **${toolName}**` +
+        `\n\`\`\`\n${shortPreview}\n\`\`\``
 
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
@@ -99,15 +103,61 @@ export class Approvals {
           .setStyle(ButtonStyle.Danger),
       )
 
-      const sent = await (ch as TextBasedChannel & { send: Function }).send({
-        content: text,
+      // Prefer the approver's DM; fall back to the originating channel.
+      const target = await this._resolveTarget(approverId, channelId)
+      if (!target) {
+        this._fail(correlationId, pending, 'Cannot reach a channel for approval prompt.')
+        return
+      }
+
+      const content =
+        target.kind === 'dm'
+          ? body
+          : (approverId ? `<@${approverId}> ` : '') + body
+      const trimmed = content.length > 1900 ? content.slice(0, 1899) + '…' : content
+
+      const sent = await (target.channel as TextBasedChannel & { send: Function }).send({
+        content: trimmed,
         components: [row],
       })
+      pending.promptChannelId = target.channel.id
       pending.messageId = sent.id
       this.msgToCorr.set(sent.id, correlationId)
+      this.onDelivery?.({ destination: target.kind, reason: target.reason })
     } catch (e) {
       this._fail(correlationId, pending, `Failed to post approval request: ${e}`)
     }
+  }
+
+  /** Try DM first; on failure, return the origin channel so the agent isn't stuck. */
+  private async _resolveTarget(
+    approverId: string | undefined,
+    originChannelId: string,
+  ): Promise<
+    | { kind: 'dm'; channel: TextBasedChannel & { id: string }; reason?: string }
+    | { kind: 'channel'; channel: TextBasedChannel & { id: string }; reason?: string }
+    | undefined
+  > {
+    if (approverId) {
+      try {
+        const user = await this.client.users.fetch(approverId)
+        const dm = await user.createDM()
+        return { kind: 'dm', channel: dm }
+      } catch (e) {
+        // DM unavailable — fall through to the originating channel.
+        const reason = `DM unavailable: ${e instanceof Error ? e.message : String(e)}`
+        const ch = await this.client.channels.fetch(originChannelId).catch(() => null)
+        if (ch && 'send' in ch) {
+          return { kind: 'channel', channel: ch as TextBasedChannel & { id: string }, reason }
+        }
+        return undefined
+      }
+    }
+    const ch = await this.client.channels.fetch(originChannelId).catch(() => null)
+    if (ch && 'send' in ch) {
+      return { kind: 'channel', channel: ch as TextBasedChannel & { id: string } }
+    }
+    return undefined
   }
 
   private _fail(correlationId: string, pending: PendingApproval, message: string): void {
@@ -130,8 +180,8 @@ export class Approvals {
     }
 
     const agent = this.getAgent()
-    const ownerId = approverForAgent(agent, pending.channelId)
-    if (!ownerId || interaction.user.id !== ownerId) {
+    const approverId = approverForAgent(agent, pending.originChannelId)
+    if (!approverId || interaction.user.id !== approverId) {
       await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
       return
     }
@@ -157,22 +207,21 @@ export class Approvals {
     if (!correlationId) return
     if (emoji !== '✅' && emoji !== '❌') return
 
-    // Fetch pending before the owner check so we have channelId for approverForAgent.
     const pending = this.pending.get(correlationId)
     if (!pending) return
 
     const agent = this.getAgent()
-    const ownerId = approverForAgent(agent, pending.channelId)
-    if (!ownerId || userId !== ownerId) return
+    const approverId = approverForAgent(agent, pending.originChannelId)
+    if (!approverId || userId !== approverId) return
 
     clearTimeout(pending.timer)
     this.pending.delete(correlationId)
     this.msgToCorr.delete(messageId)
 
-    // Update the prompt message to reflect the decision
+    // Update the prompt message to reflect the decision.
     try {
-      const ch = await this.client.channels.fetch(pending.channelId)
-      if (ch && ch.isTextBased() && !ch.isDMBased()) {
+      const ch = await this.client.channels.fetch(pending.promptChannelId)
+      if (ch && ch.isTextBased()) {
         const msg = await (ch as GuildTextBasedChannel).messages.fetch(messageId)
         const label = emoji === '✅' ? '✅ Allowed' : '❌ Denied'
         await msg.edit({ content: `${msg.content}\n\n${label}`, components: [] })

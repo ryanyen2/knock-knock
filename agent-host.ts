@@ -2,9 +2,13 @@
  * AgentHost — one Discord bot identity + one agent runtime. The supervisor
  * (relay.ts) instantiates one per configured agent in a single process. Each
  * host owns its own Discord client (gateway connection + token), its driver map
- * (one Driver per channel/session), its Approvals service, and its rate-limit
- * and recent-message state. It selects a runtime through makeAdapter; it never
- * imports an agent SDK directly.
+ * (one Driver per channel/session), its Approvals service, its DM courier, and
+ * its rate-limit + recent-message state. It selects a runtime through
+ * makeAdapter; it never imports an agent SDK directly.
+ *
+ * Visibility: as a turn runs, the host fans adapter AgentEvents to two sinks:
+ * the operator terminal renderer (ConsoleUI) and the owner's DM transcript
+ * (DmCourier). Both are best-effort; failures never block the turn.
  */
 
 import {
@@ -28,13 +32,27 @@ import {
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
+import { ConsoleUI } from './console-ui.ts'
+import { DmCourier, type TurnHandle } from './dm-courier.ts'
+import type { AgentEvent } from './agent-adapter.ts'
 
 const RECENT_BOT_MSG_CAP = 200
+
+/** Per-session bookkeeping the host owns alongside each Driver. */
+type Session = {
+  driver: Driver
+  /** Set by handleInbound before each turn; consumed by the adapter event handler. */
+  activeTurn?: {
+    consoleAgentKey: string
+    dmHandle: TurnHandle
+  }
+}
 
 export class AgentHost {
   private readonly client: Client
   private readonly approvals: Approvals
-  private readonly drivers = new Map<string, Driver>()
+  private readonly courier: DmCourier
+  private readonly sessions = new Map<string, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
   /** Per-channel loop-guard state: consecutive agent-triggered turns + last reply timestamp. */
@@ -44,6 +62,7 @@ export class AgentHost {
     private readonly key: string,
     private readonly agent: AgentConfig,
     private readonly getAccess: () => Access,
+    private readonly ui: ConsoleUI,
   ) {
     this.client = new Client({
       intents: [
@@ -51,24 +70,35 @@ export class AgentHost {
         GatewayIntentBits.GuildMessages,
         GatewayIntentBits.MessageContent,
         GatewayIntentBits.GuildMessageReactions,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.DirectMessageReactions,
       ],
-      partials: [Partials.Message, Partials.Reaction],
+      partials: [Partials.Message, Partials.Reaction, Partials.Channel],
     })
 
-    // Approvals is per-host. The agent getter re-reads the live access file so
-    // owner/approvalActorId changes take effect without a restart.
-    this.approvals = new Approvals(
+    const liveAgentGetter = () => getAccess().agents[this.key] ?? this.agent
+
+    this.approvals = new Approvals(this.client, liveAgentGetter, info => {
+      if (info.destination === 'channel' && info.reason) {
+        this.ui.note(this.key, `approval fell back to channel — ${info.reason}`)
+      } else {
+        this.ui.note(this.key, `approval prompt sent to ${info.destination}`)
+      }
+    })
+
+    this.courier = new DmCourier(
       this.client,
-      () => getAccess().agents[this.key] ?? this.agent,
+      () => liveAgentGetter().ownerUserId,
+      reason => this.ui.note(this.key, reason),
     )
 
     this.client.once('ready', c => {
-      process.stderr.write(`relay [${this.key}]: connected as ${c.user.tag}\n`)
+      this.ui.connected(this.key, c.user.tag)
     })
 
     this.client.on('messageCreate', (msg: Message) => {
       this.handleInbound(msg).catch(e =>
-        process.stderr.write(`relay [${this.key}]: handleInbound error: ${e}\n`),
+        this.ui.error(this.key, `handleInbound error: ${e}`),
       )
     })
 
@@ -76,7 +106,7 @@ export class AgentHost {
       if (!interaction.isButton()) return
       if (!interaction.customId.startsWith('appr:')) return
       this.approvals.resolveInteraction(interaction).catch(e =>
-        process.stderr.write(`relay [${this.key}]: interaction error: ${e}\n`),
+        this.ui.error(this.key, `interaction error: ${e}`),
       )
     })
 
@@ -85,12 +115,12 @@ export class AgentHost {
       const emoji = reaction.emoji.name
       if (!emoji || (emoji !== '✅' && emoji !== '❌')) return
       this.approvals.resolveReaction(reaction.message.id, emoji, user.id).catch(e =>
-        process.stderr.write(`relay [${this.key}]: reaction error: ${e}\n`),
+        this.ui.error(this.key, `reaction error: ${e}`),
       )
     })
 
     this.client.on('error', err => {
-      process.stderr.write(`relay [${this.key}]: client error: ${err}\n`)
+      this.ui.error(this.key, `client error: ${err}`)
     })
   }
 
@@ -188,19 +218,17 @@ export class AgentHost {
     const { decision: lgDecision, next: lgNext } = loopGuard(lg, kind, now)
     this.loopState.set(channelId, lgNext)
     if (!lgDecision.allow) {
-      process.stderr.write(
-        `relay [${this.key}]: agent loop guard triggered (${lgDecision.reason}) in ${channelId}\n`,
-      )
+      this.ui.note(this.key, `loop guard skipped a reply in ${channelId} (${lgDecision.reason})`)
       return
     }
 
     // Session key is channelId within this host; globally unique via the per-host
-    // drivers map (agentKey is implicit — different hosts have separate maps).
+    // sessions map (agentKey is implicit — different hosts have separate maps).
     const sessionKey = channelId
 
-    // Find or create the driver for this session
-    let driver = this.drivers.get(sessionKey)
-    if (!driver) {
+    // Find or create the session (driver + event fanout)
+    let session = this.sessions.get(sessionKey)
+    if (!session) {
       const profile = readRoomSettings(this.key, channelId)
       const adapter = makeAdapter(liveAgent.runtime, { workspace: liveAgent.workspace })
       // Collaborative context: inject identity + roster into the first-turn preamble
@@ -214,12 +242,39 @@ export class AgentHost {
         },
         rosterLines: buildRosterLinesForRoom(room),
       }
-      driver = new Driver(adapter, sessionKey, profile, req =>
-        this.approvals.request({ channelId, toolName: req.toolName, input: req.input }),
-        ctx,
-      )
-      this.drivers.set(sessionKey, driver)
+      const created: Session = {
+        driver: new Driver(
+          adapter,
+          sessionKey,
+          profile,
+          req => this.approvals.request({ channelId, toolName: req.toolName, input: req.input }),
+          ctx,
+        ),
+      }
+      // Fan adapter events into the console + the DM transcript for the in-flight turn.
+      adapter.onEvent((event: AgentEvent) => {
+        this.ui.event(this.key, event)
+        created.activeTurn?.dmHandle.onEvent(event)
+      })
+      session = created
+      this.sessions.set(sessionKey, session)
     }
+
+    // Build the operator-visible context for this turn.
+    const channelLabel = await this.describeChannel(msg).catch(() => `#${channelId}`)
+    const senderLabel = msg.author.username ?? msg.author.id
+    this.ui.turnStart(this.key, {
+      channel: { label: channelLabel },
+      sender: { label: senderLabel, kind },
+      text: msg.content,
+    })
+
+    const dmHandle = await this.courier.beginTurn({
+      senderLabel,
+      channelLabel,
+      userPrompt: msg.content,
+    })
+    session.activeTurn = { consoleAgentKey: this.key, dmHandle }
 
     // ─── Presence: 👀 while working ─────────────────────────────────────────
     // React with ackReaction (default 👀) to signal "received and working."
@@ -227,13 +282,25 @@ export class AgentHost {
     const ackEmoji = access.ackReaction ?? '👀'
     void msg.react(ackEmoji).catch(() => {})
 
-    const chunks = await driver.runTurn(msg.content, meta)
+    let chunks: string[] = []
+    let turnError: string | undefined
+    try {
+      chunks = await session.driver.runTurn(msg.content, meta)
+    } catch (e) {
+      turnError = e instanceof Error ? e.message : String(e)
+      this.ui.error(this.key, `turn failed: ${turnError}`)
+    }
 
     // Remove the ack reaction now that the response is ready.
     void msg.reactions.cache
       .get(ackEmoji)
       ?.users.remove(this.client.user?.id ?? '')
       .catch(() => {})
+
+    // Finalize the DM transcript with the response text (or error).
+    const finalText = chunks.join('\n').trim() || undefined
+    void dmHandle.finalize(finalText, turnError).catch(() => {})
+    session.activeTurn = undefined
 
     // Post each chunk to the originating channel / thread
     if ('send' in msg.channel) {
@@ -244,5 +311,16 @@ export class AgentHost {
         this.noteBotMsg(sent.id)
       }
     }
+  }
+
+  /** Best-effort human-friendly channel label for the operator console + DM. */
+  private async describeChannel(msg: Message): Promise<string> {
+    const ch = msg.channel as { name?: string; isThread?: () => boolean; parent?: { name?: string } }
+    if (msg.channel.isThread?.() && ch.parent?.name) {
+      return `#${ch.parent.name} › ${ch.name ?? 'thread'}`
+    }
+    if (ch.name) return `#${ch.name}`
+    if (msg.channel.isDMBased?.()) return 'DM'
+    return `#${msg.channelId}`
   }
 }

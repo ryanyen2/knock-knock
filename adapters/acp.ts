@@ -32,7 +32,7 @@ import {
   type SessionNotification,
   type PermissionOption,
 } from '@agentclientprotocol/sdk'
-import type { AgentAdapter, PermissionProfile, Verdict } from '../agent-adapter.ts'
+import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from '../agent-adapter.ts'
 import { classifyTool, type ToolDescriptor } from '../lib.ts'
 
 const DEBUG = process.env.KNOCK_KNOCK_DEBUG === '1'
@@ -139,6 +139,7 @@ function allowResponse(options: PermissionOption[]): RequestPermissionResponse {
 export class AcpAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
+  private eventHandler?: (event: AgentEvent) => void
   private conn?: ClientSideConnection
   private initPromise?: Promise<void>
   /** Accumulates assistant text for the in-flight turn. Safe because the Driver
@@ -148,6 +149,10 @@ export class AcpAdapter implements AgentAdapter {
    *  command needed to match deny/ask patterns arrives in a tool_call_update,
    *  not in the request_permission payload, so we correlate by id. */
   private toolCalls = new Map<string, ToolDescriptorInput>()
+  /** toolCallIds for which a tool_call event has already been emitted this turn. */
+  private emittedToolCalls = new Set<string>()
+  /** Was the session_init event already fired for this sessionId? */
+  private sessionAnnouncedFor: string | undefined
 
   constructor(
     private readonly launch: AcpLaunch,
@@ -164,22 +169,42 @@ export class AcpAdapter implements AgentAdapter {
     this.permHandler = handler
   }
 
+  onEvent(handler: (event: AgentEvent) => void): void {
+    this.eventHandler = handler
+  }
+
+  private emit(event: AgentEvent): void {
+    try {
+      this.eventHandler?.(event)
+    } catch {
+      // A bad subscriber must never break the turn.
+    }
+  }
+
   async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
     await this.init()
     const conn = this.conn!
 
     let sid = input.sessionId
+    const isNewSession = !sid
     if (!sid) {
       const res = await conn.newSession({ cwd: this.directory, mcpServers: [] })
       sid = res.sessionId
       dbg(`session created: ${sid}`)
     }
+    if (isNewSession && this.sessionAnnouncedFor !== sid) {
+      this.sessionAnnouncedFor = sid
+      this.emit({ type: 'session_init', sessionId: sid, cwd: this.directory })
+    }
 
     dbg(`prompt → ${sid}: ${input.text.slice(0, 80)}`)
     this.turnText = ''
     this.toolCalls.clear()
+    this.emittedToolCalls.clear()
+    const startedAt = Date.now()
     const res = await conn.prompt({ sessionId: sid, prompt: [{ type: 'text', text: input.text }] })
     dbg(`turn stopped: ${res.stopReason}`)
+    this.emit({ type: 'turn_done', durationMs: Date.now() - startedAt })
 
     return { sessionId: sid, text: this.turnText.trim() || '(no response)' }
   }
@@ -232,16 +257,39 @@ export class AcpAdapter implements AgentAdapter {
     const u = params.update
     if (u.sessionUpdate === 'agent_message_chunk' && u.content.type === 'text') {
       this.turnText += u.content.text
+      this.emit({ type: 'assistant_text', text: u.content.text })
       return
     }
     if (u.sessionUpdate === 'tool_call' || u.sessionUpdate === 'tool_call_update') {
-      const tc = u as { toolCallId: string } & ToolDescriptorInput
+      const tc = u as { toolCallId: string; status?: string } & ToolDescriptorInput
       const prev = this.toolCalls.get(tc.toolCallId) ?? {}
-      this.toolCalls.set(tc.toolCallId, {
+      const merged: ToolDescriptorInput = {
         kind: tc.kind ?? prev.kind,
         title: tc.title ?? prev.title,
         rawInput: isPopulated(tc.rawInput) ? tc.rawInput : prev.rawInput,
-      })
+      }
+      this.toolCalls.set(tc.toolCallId, merged)
+
+      // Emit one tool_call event per id as soon as we have a name/title to show.
+      if (!this.emittedToolCalls.has(tc.toolCallId)) {
+        const name = merged.kind ?? merged.title
+        if (name) {
+          this.emittedToolCalls.add(tc.toolCallId)
+          this.emit({
+            type: 'tool_call',
+            toolCallId: tc.toolCallId,
+            name,
+            kind: merged.kind ?? undefined,
+            title: merged.title ?? undefined,
+            input: merged.rawInput ?? {},
+          })
+        }
+      }
+
+      // Emit a result when the agent reports a terminal status.
+      if (tc.status === 'completed' || tc.status === 'failed') {
+        this.emit({ type: 'tool_result', toolCallId: tc.toolCallId, status: tc.status })
+      }
     }
   }
 

@@ -11,6 +11,7 @@ import { readFileSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { STATE_DIR, readAccessFile } from './state.ts'
 import { AgentHost } from './agent-host.ts'
+import { ConsoleUI } from './console-ui.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -33,7 +34,9 @@ if (agentEntries.length === 0) {
   process.exit(1)
 }
 
+const ui = new ConsoleUI()
 const hosts: AgentHost[] = []
+const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
 
 for (const [key, agent] of agentEntries) {
   const token = process.env[agent.tokenEnv]
@@ -52,10 +55,11 @@ for (const [key, agent] of agentEntries) {
     continue
   }
 
-  const host = new AgentHost(key, agent, readAccessFile)
+  const host = new AgentHost(key, agent, readAccessFile, ui)
   hosts.push(host)
+  bootEntries.push({ key, runtime: agent.runtime, workspace: agent.workspace })
   void host.start(token).catch(err => {
-    process.stderr.write(`relay [${key}]: login failed: ${err}\n`)
+    ui.error(key, `login failed: ${err}`)
   })
 }
 
@@ -63,6 +67,8 @@ if (hosts.length === 0) {
   process.stderr.write('relay: no agents could be started — check token env vars above.\n')
   process.exit(1)
 }
+
+ui.banner(bootEntries)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 

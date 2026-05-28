@@ -5,48 +5,12 @@
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type { SDKSystemMessage, SDKResultSuccess, SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentAdapter, PermissionProfile, Verdict } from '../agent-adapter.ts'
-
-const DEBUG = process.env.KNOCK_KNOCK_DEBUG === '1'
-
-function preview(v: unknown, n = 120): string {
-  const s = typeof v === 'string' ? v : JSON.stringify(v)
-  return s.length > n ? s.slice(0, n) + '…' : s
-}
-
-/** Log one SDK stream message to stderr. Proves the reply came from a real
- *  Claude turn: you'll see model + session id + tool calls + token usage. */
-function logSdkMessage(m: any): void {
-  if (!DEBUG) return
-  switch (m?.type) {
-    case 'system':
-      if (m.subtype === 'init') {
-        process.stderr.write(
-          `[sdk] init · model=${m.model} · session=${m.session_id} · cwd=${m.cwd} · tools=${m.tools?.length ?? '?'}\n`,
-        )
-      }
-      break
-    case 'assistant':
-      for (const block of m.message?.content ?? []) {
-        if (block.type === 'text') process.stderr.write(`[sdk] assistant: ${preview(block.text)}\n`)
-        else if (block.type === 'tool_use') process.stderr.write(`[sdk] tool_use: ${block.name}(${preview(block.input)})\n`)
-      }
-      break
-    case 'user':
-      process.stderr.write(`[sdk] tool result received\n`)
-      break
-    case 'result':
-      process.stderr.write(
-        `[sdk] result · ${m.subtype} · turns=${m.num_turns} · ` +
-          `tokens(in/out)=${m.usage?.input_tokens ?? '?'}/${m.usage?.output_tokens ?? '?'} · cost_usd=${m.total_cost_usd ?? '?'}\n`,
-      )
-      break
-  }
-}
+import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from '../agent-adapter.ts'
 
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
+  private eventHandler?: (event: AgentEvent) => void
 
   constructor(private readonly cwd: string) {}
 
@@ -60,9 +24,22 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     this.permHandler = handler
   }
 
+  onEvent(handler: (event: AgentEvent) => void): void {
+    this.eventHandler = handler
+  }
+
+  private emit(event: AgentEvent): void {
+    try {
+      this.eventHandler?.(event)
+    } catch {
+      // A bad subscriber must never break the turn.
+    }
+  }
+
   async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
     let sessionId = ''
     let text = ''
+    const startedAt = Date.now()
 
     const result = query({
       prompt: input.text,
@@ -91,7 +68,7 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     })
 
     for await (const msg of result) {
-      logSdkMessage(msg)
+      this.translate(msg, startedAt)
       if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
         sessionId = msg.session_id
       } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
@@ -113,5 +90,62 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     }
 
     return { sessionId, text: text.trim() || '(no response)' }
+  }
+
+  /** Translate one SDK stream message into the structured event the host listens for. */
+  private translate(m: any, startedAt: number): void {
+    switch (m?.type) {
+      case 'system':
+        if (m.subtype === 'init') {
+          this.emit({
+            type: 'session_init',
+            sessionId: m.session_id,
+            model: m.model,
+            tools: Array.isArray(m.tools) ? m.tools.length : undefined,
+            cwd: m.cwd,
+          })
+        }
+        return
+      case 'assistant':
+        for (const block of m.message?.content ?? []) {
+          if (block.type === 'text') {
+            this.emit({ type: 'assistant_text', text: block.text })
+          } else if (block.type === 'tool_use') {
+            this.emit({
+              type: 'tool_call',
+              toolCallId: block.id,
+              name: block.name,
+              input: block.input,
+            })
+          }
+        }
+        return
+      case 'user': {
+        // Tool result(s) — SDK ships them as user-typed messages containing tool_result blocks.
+        const content = m.message?.content
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'tool_result') {
+              this.emit({
+                type: 'tool_result',
+                toolCallId: block.tool_use_id,
+                status: block.is_error ? 'failed' : 'completed',
+              })
+            }
+          }
+        }
+        return
+      }
+      case 'result':
+        this.emit({
+          type: 'turn_done',
+          tokensIn: m.usage?.input_tokens,
+          tokensOut: m.usage?.output_tokens,
+          costUsd: m.total_cost_usd,
+          turns: m.num_turns,
+          durationMs: Date.now() - startedAt,
+        })
+        return
+    }
   }
 }
