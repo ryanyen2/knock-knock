@@ -144,7 +144,7 @@ export function toolSubject(inputJson: string): string | undefined {
   if (typeof parsed === 'string') return parsed || undefined
   if (!parsed || typeof parsed !== 'object') return undefined
   const r = parsed as Record<string, unknown>
-  for (const k of ['command', 'cmd', 'script', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern']) {
+  for (const k of ['command', 'cmd', 'script', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern', 'subject']) {
     const v = r[k]
     if (typeof v === 'string' && v) return v
     if (Array.isArray(v) && v.every(x => typeof x === 'string')) return (v as string[]).join(' ')

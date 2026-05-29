@@ -53,7 +53,7 @@ function stringifyInput(input: unknown): string {
   if (typeof input === 'string') return input
   if (!input || typeof input !== 'object') return String(input ?? '')
   const r = input as Record<string, unknown>
-  for (const k of ['command', 'cmd', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern']) {
+  for (const k of ['command', 'cmd', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern', 'subject']) {
     const v = r[k]
     if (typeof v === 'string' && v) return v
   }

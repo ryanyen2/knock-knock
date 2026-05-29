@@ -99,6 +99,8 @@ test('workbenchEntries: filters by channel', () => {
 test('toolSubject: probes common fields, undefined on junk', () => {
   expect(toolSubject('{"command":"git status"}')).toBe('git status')
   expect(toolSubject('{"file_path":"a.ts"}')).toBe('a.ts')
+  // ACP-derived subject (when rawInput is empty, the adapter synthesizes this).
+  expect(toolSubject('{"subject":"git status"}')).toBe('git status')
   expect(toolSubject('"raw string"')).toBe('raw string')
   expect(toolSubject('{}')).toBeUndefined()
   expect(toolSubject('not json')).toBeUndefined()
