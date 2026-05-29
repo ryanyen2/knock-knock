@@ -22,12 +22,12 @@ test('workbench: working agent shows step log with status glyphs', () => {
     [
       {
         agent: 'research-bot',
-        working: true,
+        status: 'working',
         stage: 'whats the current unstaged changes about',
         steps: [
           { tool: 'Bash', subject: 'git status', status: 'executed' },
           { tool: 'Bash', subject: 'git diff', status: 'executed' },
-          { tool: 'Read', subject: 'driver.ts', status: 'failed' },
+          { tool: 'Read', subject: 'driver.ts', status: 'requested' },
         ],
         lastSeen: '02:41',
       },
@@ -38,24 +38,51 @@ test('workbench: working agent shows step log with status glyphs', () => {
   expect(out).toContain('updated 02:41')
   expect(out).toContain(`${GLYPHS.working} research-bot — whats the current unstaged changes about`)
   expect(out).toContain('→ Bash git status ✓')
-  expect(out).toContain('→ Read driver.ts ✗')
-  expect(out).toContain('◆ replying…') // no pending steps left
+  expect(out).toContain('◆ working…') // a step is still pending
 })
 
-test('workbench: pending steps → working… ; idle agents collapse', () => {
+test('workbench: a FINISHED turn keeps its step log + done/failed footer', () => {
   const out = renderWorkbench([
-    { agent: 'a-bot', working: true, stage: 'x', steps: [{ tool: 'Bash', status: 'requested' }] },
-    { agent: 'z-bot', working: false, stage: '', steps: [], lastSeen: '01:10' },
+    {
+      agent: 'research-bot',
+      status: 'done',
+      stage: 'commit and push',
+      steps: [
+        { tool: 'Terminal', subject: 'git add -A', status: 'executed' },
+        { tool: 'Terminal', subject: 'git push', status: 'executed' },
+      ],
+      lastSeen: '03:28',
+    },
+    {
+      agent: 'fail-bot',
+      status: 'failed',
+      stage: 'run the build',
+      steps: [{ tool: 'Terminal', subject: 'bun run build', status: 'failed' }],
+      lastSeen: '03:30',
+    },
+  ])
+  // Done turn: log retained, not collapsed to a bare idle line.
+  expect(out).toContain(`${GLYPHS.doneMark} research-bot — commit and push`)
+  expect(out).toContain('→ Terminal git add -A ✓')
+  expect(out).toContain('→ Terminal git push ✓')
+  expect(out).toContain(`${GLYPHS.doneMark} done 03:28`)
+  // Failed turn keeps its log too.
+  expect(out).toContain(`${GLYPHS.failMark} fail-bot — run the build`)
+  expect(out).toContain('finished with errors 03:30')
+})
+
+test('workbench: pending steps → working… and working sorts first', () => {
+  const out = renderWorkbench([
+    { agent: 'z-bot', status: 'done', stage: 'x', steps: [], lastSeen: '01:10' },
+    { agent: 'a-bot', status: 'working', stage: 'y', steps: [{ tool: 'Bash', status: 'requested' }] },
   ])
   expect(out).toContain('◆ working…')
-  expect(out).toContain(`${GLYPHS.idle} z-bot — idle · last seen 01:10`)
-  // working agent sorts above idle
   expect(out.indexOf('a-bot')).toBeLessThan(out.indexOf('z-bot'))
 })
 
 test('workbench: caps step log and notes elided count', () => {
   const steps = Array.from({ length: 11 }, (_, i) => ({ tool: `t${i}`, status: 'executed' as const }))
-  const out = renderWorkbench([{ agent: 'b', working: true, stage: '', steps }])
+  const out = renderWorkbench([{ agent: 'b', status: 'working', stage: '', steps }])
   expect(out).toContain('… 3 earlier steps')
 })
 
@@ -84,10 +111,10 @@ test('workbenchEntries: derives working/idle + steps from the Turn fold', () => 
   const entries = workbenchEntries(state, 'chan-A', h => (h === 'in1' ? 'list files' : undefined))
   const alice = entries.find(e => e.agent === 'alice-bot')!
   const bob = entries.find(e => e.agent === 'bob-bot')!
-  expect(alice.working).toBe(true)
+  expect(alice.status).toBe('working')
   expect(alice.stage).toBe('list files')
   expect(alice.steps).toEqual([{ tool: 'Bash', subject: 'ls', status: 'requested' }])
-  expect(bob.working).toBe(false)
+  expect(bob.status).toBe('done')
   expect(bob.lastSeen).toBe('13:42')
 })
 

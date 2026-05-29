@@ -54,6 +54,7 @@ import type { ChannelId, Hash } from './ledger/interaction.ts'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
+  GLYPHS,
   LETTERS,
   renderWorkbench,
   workbenchEntries,
@@ -196,14 +197,13 @@ export class AgentHost {
       this.ui.error(this.key, `client error: ${err}`)
     })
 
-    // Side-effect subscribers: turn.prompted → start DmCourier; turn.replied
-    // → remove ack reaction. These are the UX touches that need Discord
-    // context the synchronizer chain doesn't have. The work itself is
-    // ledger-driven; only the Discord-side bookkeeping lives here.
+    // Side-effect subscriber: turn.prompted → start the DmCourier. The
+    // 👀→done/failed reaction transition is owned by runTurnForChannel (it
+    // knows the turn's outcome, including failures that never reach
+    // turn.replied). Ledger-driven work; only Discord bookkeeping lives here.
     this.storeUnsub = this.store.subscribe(i => {
       if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
       if (i.verb === 'turn.prompted') void this.onTurnPrompted(i.hash, i.caused_by[0])
-      else if (i.verb === 'turn.replied') void this.onTurnReplied(i)
     })
   }
 
@@ -273,16 +273,26 @@ export class AgentHost {
     try {
       const turns = this.engine.get<TurnFoldState>(TURN_FOLD)
       // Prompt text lives on the inbound message, not the Turn fold — pre-fetch
-      // it for in-flight turns so the workbench can show what each agent is on.
-      const prompts = new Map<Hash, string>()
+      // it for each agent's latest turn (working OR finished) so the workbench
+      // header shows what was asked, kept as the trace after the turn ends.
+      const latest = new Map<string, Hash>()
+      const startedAt = new Map<string, string>()
       for (const t of turns.values()) {
-        if (t.channel !== channelId || t.reply || t.endedAt || !t.inboundHash) continue
-        const inbound = await this.store.getByHash(t.inboundHash)
+        if (t.channel !== channelId || !t.inboundHash) continue
+        const prev = startedAt.get(t.agentKey)
+        if (!prev || t.startedAt > prev) {
+          startedAt.set(t.agentKey, t.startedAt)
+          latest.set(t.agentKey, t.inboundHash)
+        }
+      }
+      const prompts = new Map<Hash, string>()
+      for (const inboundHash of new Set(latest.values())) {
+        const inbound = await this.store.getByHash(inboundHash)
         const txt =
           inbound?.patch.kind === 'external'
             ? (inbound.patch.intent.args as { text?: string } | undefined)?.text
             : undefined
-        if (txt) prompts.set(t.inboundHash, txt)
+        if (txt) prompts.set(inboundHash, txt)
       }
       const entries = workbenchEntries(turns, channelId, h => (h ? prompts.get(h) : undefined))
       text = renderWorkbench(entries, new Date().toISOString())
@@ -547,9 +557,9 @@ export class AgentHost {
       text: msg.content,
     })
 
-    // Ack reaction — removed by onTurnReplied below when the synchronizer
-    // chain finishes. If the loop-guard denies the turn, the ack stays
-    // until the side-table entry is cleaned by a TTL sweep (Phase 3.1).
+    // Ack reaction (👀 = received/working). Swapped for a persistent 🏁 done /
+    // 🛑 failed by markInboundOutcome when the turn ends. If the loop-guard
+    // denies the turn, the ack stays until a TTL sweep (Phase 3.1).
     void msg.react(ackEmoji).catch(() => {})
   }
 
@@ -576,26 +586,20 @@ export class AgentHost {
     }
   }
 
-  private async onTurnReplied(replied: { hash: Hash; caused_by: Hash[]; channel: ChannelId }): Promise<void> {
-    // turn.replied.caused_by = [turn.prompted, ...tool.executeds]; the prompt
-    // is the first parent. The inbound is the prompt's first parent — we
-    // can resolve it via the store.
-    const promptHash = replied.caused_by[0]
-    if (!promptHash) return
-    const prompt = await this.store.getByHash(promptHash)
-    if (!prompt) return
-    const inboundHash = prompt.caused_by[0]
-    if (!inboundHash) return
+  /**
+   * Transition the inbound message's reactions when a turn winds down: drop the
+   * transient 👀 (working/saw) and add a persistent 🏁 done or 🛑 failed, so the
+   * channel keeps a glance-able, traceable record of which prompts succeeded.
+   * Then release the side-table. Called from runTurnForChannel for both success
+   * and failure (a crash never reaches turn.replied, so this can't live there).
+   */
+  private async markInboundOutcome(inboundHash: Hash, failed: boolean): Promise<void> {
     const side = this.inboundByHash.get(inboundHash)
     if (!side) return
-
-    void side.msg.reactions.cache
-      .get(side.ackEmoji)
-      ?.users.remove(this.client.user?.id ?? '')
-      .catch(() => {})
-
-    // Side-table cleanup — the turn has fully wound down.
     this.inboundByHash.delete(inboundHash)
+    const botId = this.client.user?.id ?? ''
+    void side.msg.reactions.cache.get(side.ackEmoji)?.users.remove(botId).catch(() => {})
+    void side.msg.react(failed ? GLYPHS.failed : GLYPHS.done).catch(() => {})
   }
 
   /** Looking up a session's channel from a promptHash; usually it's just
@@ -676,6 +680,11 @@ export class AgentHost {
     // landed in the Turn fold which the courier subscribes to.
     void session.activeTurn?.dmHandle.finalize(turnError).catch(() => {})
     session.activeTurn = undefined
+
+    // Transition the inbound reaction to a persistent outcome marker. A turn
+    // that errored OR produced no reply is "failed" for tracing purposes.
+    const failed = !!turnError || !replyText
+    void this.markInboundOutcome(opts.inboundHash, failed).catch(() => {})
 
     return { chunks, error: turnError }
   }

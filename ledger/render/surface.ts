@@ -20,16 +20,24 @@ import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts
  * surface draws the same symbol for the same concept.
  */
 export const GLYPHS = {
-  working: '▸', // a bot is actively working (pill)
-  idle: '·', // a bot is idle (pill)
+  working: '▸', // a bot is actively working (workbench header)
+  doneMark: '✓', // a finished turn / executed step (workbench)
+  failMark: '✗', // a failed turn / step (workbench)
+  idle: '·', // separator / quiet marker
   conflict: '🔀', // two equal-role drafts collided (conflict card)
   override: '🔁', // a draft was superseded / retry (override DM, rewind)
   rewind: '⏪', // rewind the frontier (rewind reaction)
   checkpoint: '🧷', // pin a checkpoint (rewind reaction)
   stale: '⚠️', // a reply rests on invalidated knowledge (§4.6)
+  // Inbound-message status reactions (traceable at a glance, persistent):
+  saw: '👀', // received / working (transient, removed when the turn ends)
+  done: '🏁', // turn completed (persists)
+  failed: '🛑', // turn errored (persists)
 } as const
 
 // ─── §4.1 the "now working" workbench ─────────────────────────────────────────
+
+export type WorkbenchStatus = 'working' | 'done' | 'failed'
 
 export type WorkbenchStep = {
   tool: string
@@ -39,8 +47,8 @@ export type WorkbenchStep = {
 
 export type WorkbenchEntry = {
   agent: string
-  working: boolean
-  /** Short summary of what the agent is doing this turn (the prompt). */
+  status: WorkbenchStatus
+  /** Short summary of what the agent worked on this turn (the prompt). */
   stage: string
   steps: WorkbenchStep[]
   /** HH:MM of the agent's last activity. */
@@ -50,19 +58,26 @@ export type WorkbenchEntry = {
 const STEP_GLYPH: Record<TurnToolCall['status'], string> = {
   requested: '·',
   approved: '·',
-  executed: '✓',
-  failed: '✗',
+  executed: GLYPHS.doneMark,
+  failed: GLYPHS.failMark,
   denied: '⛔',
+}
+
+const HEAD_GLYPH: Record<WorkbenchStatus, string> = {
+  working: GLYPHS.working,
+  done: GLYPHS.doneMark,
+  failed: GLYPHS.failMark,
 }
 
 const MAX_STEPS = 8
 
 /**
- * The pinned per-channel "Workbench" — an append-style activity log rather than
- * a one-line-per-agent summary. Each working agent gets a header plus its tool
- * steps (newest underneath), with failures/denials surfaced, and a final
- * "current state" line. Idle agents collapse to one line. Edited in place by
- * the glue, so the log grows as the turn runs.
+ * The pinned per-channel "Workbench" — a per-agent activity log. Each agent's
+ * latest turn keeps its full tool-step log so the channel always shows a
+ * traceable record of what happened, even after the turn finished; only the
+ * header glyph and the final state line change (working… → done/failed).
+ * Edited in place by the glue, so the log grows as the turn runs and then
+ * stays put as the trace of that turn.
  */
 export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): string {
   const stamp = updatedAt ? formatIsoTime(updatedAt) : ''
@@ -70,9 +85,10 @@ export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): 
   if (entries.length === 0) {
     return ['**Workbench**', `-# ${GLYPHS.idle} no agents active`, ...footer].join('\n')
   }
+  const rank: Record<WorkbenchStatus, number> = { working: 0, failed: 1, done: 2 }
   const blocks = entries
     .slice()
-    .sort((a, b) => Number(b.working) - Number(a.working) || a.agent.localeCompare(b.agent))
+    .sort((a, b) => rank[a.status] - rank[b.status] || a.agent.localeCompare(b.agent))
     .map(e => renderEntry(e))
   // `-#` subtext only renders at the start of a line, so the timestamp is its
   // own trailing line, never appended to the bold header.
@@ -80,11 +96,8 @@ export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): 
 }
 
 function renderEntry(e: WorkbenchEntry): string {
-  if (!e.working) {
-    const seen = e.lastSeen ? ` · last seen ${e.lastSeen}` : ''
-    return `${GLYPHS.idle} ${e.agent} — idle${seen}`
-  }
-  const lines = [`${GLYPHS.working} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`]
+  const head = `${HEAD_GLYPH[e.status]} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`
+  const lines = [head]
   const steps = e.steps.length > MAX_STEPS ? e.steps.slice(e.steps.length - MAX_STEPS) : e.steps
   const hidden = e.steps.length - steps.length
   if (hidden > 0) lines.push(`-#   … ${hidden} earlier step${hidden === 1 ? '' : 's'}`)
@@ -92,16 +105,30 @@ function renderEntry(e: WorkbenchEntry): string {
     const subj = s.subject ? ` ${quote(s.subject, 60)}` : ''
     lines.push(`-#   → ${s.tool}${subj} ${STEP_GLYPH[s.status]}`)
   }
-  const pending = e.steps.some(s => s.status === 'requested' || s.status === 'approved')
-  lines.push(`-#   ◆ ${pending ? 'working…' : 'replying…'}`)
+  lines.push(`-#   ${stateLine(e)}`)
   return lines.join('\n')
+}
+
+function stateLine(e: WorkbenchEntry): string {
+  const at = e.lastSeen ? ` ${e.lastSeen}` : ''
+  switch (e.status) {
+    case 'working': {
+      const pending = e.steps.some(s => s.status === 'requested' || s.status === 'approved')
+      return `◆ ${pending ? 'working…' : 'replying…'}`
+    }
+    case 'done':
+      return `${GLYPHS.doneMark} done${at}`
+    case 'failed':
+      return `${GLYPHS.failMark} finished with errors${at}`
+  }
 }
 
 /**
  * Derive a workbench entry per agent that has worked in a channel, from the
- * Turn fold. `working` = the agent's newest turn has no reply yet. `stage` comes
- * from the prompt text the caller resolves (the fold stores only the inbound
- * hash). Pure: the glue pre-fetches prompt texts and passes them in.
+ * Turn fold. `working` = the agent's newest turn has no reply yet; otherwise
+ * `failed` if any tool failed/was denied, else `done`. `stage` is the prompt
+ * text the caller resolves (the fold stores only the inbound hash) and is kept
+ * for finished turns too so the trace shows what was asked. Pure.
  */
 export function workbenchEntries(
   turns: TurnFoldState,
@@ -117,10 +144,11 @@ export function workbenchEntries(
   const entries: WorkbenchEntry[] = []
   for (const [agent, t] of latest) {
     const working = !t.reply && !t.endedAt
+    const failed = t.toolCalls.some(tc => tc.status === 'failed' || tc.status === 'denied')
     entries.push({
       agent,
-      working,
-      stage: working ? (promptText(t.inboundHash) ?? '') : '',
+      status: working ? 'working' : failed ? 'failed' : 'done',
+      stage: promptText(t.inboundHash) ?? '',
       steps: t.toolCalls.map(tc => ({
         tool: tc.name,
         subject: toolSubject(tc.inputJson),
