@@ -135,8 +135,14 @@ export async function admit(
  *
  * The inbox is anchor: 'none' so it never conflicts (notes are addressed
  * by note.id; the artifact is append-only).
+ *
+ * Exported so both surface-back paths share one implementation: the gate
+ * (above, for higher-role admissions and lower-role rejections) and the
+ * owner conflict-card resolution in `AgentHost.resolveConflict`. The note's
+ * `system:merge-gate` author is also what `dm-on-supersede` matches on, so
+ * surfacing here likewise DMs the losing agent's owner.
  */
-async function surfaceToInbox(
+export async function surfaceToInbox(
   store: Store,
   loser: Interaction,
   reason: { why: string; winner: Hash; channel: string },

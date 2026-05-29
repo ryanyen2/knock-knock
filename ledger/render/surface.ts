@@ -211,6 +211,12 @@ export function renderConflictCard(facts: ConflictCardFacts): string {
     lines.push(`${LETTERS[idx] ?? '•'} ${b.author}`)
     lines.push(`> ${quote(b.body)}`)
   })
+  // The letters come from a hash sort (stable across machines), not the order
+  // the drafts arrived in — say so, so 🅰 isn't misread as "the first draft".
+  if (facts.branches.length > 0) {
+    lines.push('')
+    lines.push('-# letters are stable across machines, not arrival order')
+  }
   return lines.join('\n')
 }
 

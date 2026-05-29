@@ -149,11 +149,15 @@ test('conflict card: glyph, owner mention, lettered branches', () => {
   expect(out).toContain('🅰 @bob-bot')
   expect(out).toContain('🅱 @charlie-bot')
   expect(out).toContain('> supports 8 levels')
+  // The A/B letters are a hash sort, not arrival order — the card says so.
+  expect(out).toContain('not arrival order')
 })
 
 test('conflict card: no owner falls back gracefully', () => {
   const out = renderConflictCard({ target: 'x', branches: [] })
   expect(out).toContain('An owner — pick one')
+  // No branches → no letters → no ordering hint.
+  expect(out).not.toContain('not arrival order')
 })
 
 // ─── §4.4 override DM ─────────────────────────────────────────────────────────

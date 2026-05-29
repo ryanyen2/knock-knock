@@ -47,7 +47,7 @@ import type { AgentEvent } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
-import { admit } from './ledger/admit.ts'
+import { admit, surfaceToInbox } from './ledger/admit.ts'
 import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import type { ChannelId, Hash } from './ledger/interaction.ts'
@@ -486,7 +486,22 @@ export class AgentHost {
     })
     await this.store.updateLifecycle(chosen, 'applied')
     await this.store.updateLifecycle(resolve.hash, 'applied', { supersedes: losers })
-    for (const loser of losers) await this.store.updateLifecycle(loser, 'superseded')
+    // Flip each loser to 'superseded' AND surface the drop to its inbox — same
+    // surface-back the admission gate uses (admit.ts), so a draft dropped by an
+    // owner *resolution* is no longer silent: the losing agent learns of it on
+    // its next "what do I know" fold, and `dm-on-supersede` DMs that agent's
+    // owner. caused_by links the loser to the owner's merge.resolve.
+    for (const loser of losers) {
+      await this.store.updateLifecycle(loser, 'superseded')
+      const peer = await this.store.getByHash(loser)
+      if (peer) {
+        await surfaceToInbox(this.store, peer, {
+          why: `superseded by owner conflict resolution ${resolve.hash.slice(0, 10)} (took ${LETTERS[idx]})`,
+          winner: resolve.hash,
+          channel: card.channelId,
+        })
+      }
+    }
 
     this.conflictCards.delete(interaction.message.id)
     await interaction

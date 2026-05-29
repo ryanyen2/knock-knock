@@ -44,7 +44,11 @@ export function conflictCard(opts: ConflictCardOpts): Synchronization {
 
       // Deterministic order so the letters are stable across machines:
       // sort the whole branch set (proposed + peers) by hash, matching the
-      // merge gate's lower-hash tiebreak.
+      // merge gate's lower-hash tiebreak. This is intentional and is NOT
+      // arrival order — the second writer to land can take 🅰 if its hash
+      // sorts lower. The hash tiebreak is precisely what lets two machines
+      // render byte-identical cards (and label the same buttons); do not
+      // re-sort by timestamp. The card text carries a one-line hint saying so.
       const all = [i, ...peers].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
       const branches: ConflictBranch[] = all.map(b => ({
         author: `@${b.actor}`,
