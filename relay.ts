@@ -31,10 +31,14 @@ import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
 import { channelFold } from './ledger/concepts/channel.ts'
 import { turnFold } from './ledger/concepts/turn.ts'
 import { approvalFold } from './ledger/concepts/approval.ts'
+import { knowledgeFold } from './ledger/artifacts/knowledge.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
 import { promptOnMessage } from './ledger/synchronizations/prompt-on-message.ts'
 import { driveTurn } from './ledger/synchronizations/drive-turn.ts'
 import { postOnReply } from './ledger/synchronizations/post-on-reply.ts'
+import { dmOnSupersede } from './ledger/synchronizations/dm-on-supersede.ts'
+import { conflictCard } from './ledger/synchronizations/conflict-card.ts'
+import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -87,6 +91,7 @@ await engine.register(loopGuardFold)
 await engine.register(channelFold)
 await engine.register(turnFold)
 await engine.register(approvalFold)
+await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at reply time
 
 // Create AgentHosts (Discord clients not yet connected).
 for (const [key, agent] of agentEntries) {
@@ -156,7 +161,50 @@ synchronizer.register(
     },
   }),
 )
+synchronizer.register(
+  dmOnSupersede({
+    getOwnerForAgent: agentKey => access.agents[agentKey]?.ownerUserId,
+    dmSend: async (userId, text) => {
+      // Any connected host can deliver the DM; use the first.
+      for (const h of hosts) {
+        const id = await h.dmUser(userId, text)
+        if (id) return id
+      }
+      return undefined
+    },
+  }),
+)
+synchronizer.register(
+  conflictCard({
+    getOwnerForChannel: channelId => {
+      for (const h of hosts) {
+        const o = h.getOwnerForChannel(channelId)
+        if (o) return o
+      }
+      return undefined
+    },
+    postCard: async post => {
+      for (const h of hosts) {
+        if (h.getAgentForChannel(post.channelId)) {
+          await h.postConflictCard(post)
+          return
+        }
+      }
+    },
+  }),
+)
+synchronizer.register(retryOnReaction())
 synchronizer.start()
+
+// §4.1 now-working pill — one pinned message per channel, edited on turn
+// start/end. Driven at relay level (not per-host) so a channel served by
+// several agents still gets a single pill, rendered from the shared Turn fold.
+store.subscribe(i => {
+  if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
+  if (i.verb !== 'turn.prompted' && i.verb !== 'turn.replied') return
+  const host = hosts.find(h => h.getAgentForChannel(i.channel))
+  void host?.updatePill(i.channel)
+})
 
 // Now connect the Discord clients — messages will start flowing into the
 // ledger-driven pipeline.

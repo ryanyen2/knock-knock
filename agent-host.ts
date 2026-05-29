@@ -21,8 +21,12 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
+  ButtonBuilder,
+  ButtonStyle,
+  ActionRowBuilder,
   type Message,
   type Interaction,
+  type ButtonInteraction,
 } from 'discord.js'
 import { readRoomSettings } from './state.ts'
 import {
@@ -48,6 +52,16 @@ import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import type { ChannelId, Hash } from './ledger/interaction.ts'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
+import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
+import {
+  LETTERS,
+  renderPill,
+  pillLinesForChannel,
+  rewindActionFor,
+  renderRewindAck,
+  type RewindAction,
+} from './ledger/render/surface.ts'
+import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -83,6 +97,10 @@ export class AgentHost {
    *  turn.prompted subscriber (DmCourier kickoff) and the turn.replied
    *  subscriber (ack cleanup). */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
+  /** §4.2 conflict card messageId → its branch hashes, for button resolution. */
+  private readonly conflictCards = new Map<string, { branchHashes: Hash[]; channelId: ChannelId }>()
+  /** §4.1 per-channel pinned pill message id. */
+  private readonly pillMsgByChannel = new Map<ChannelId, string>()
   private storeUnsub?: () => void
 
   constructor(
@@ -140,19 +158,33 @@ export class AgentHost {
 
     this.client.on('interactionCreate', (interaction: Interaction) => {
       if (!interaction.isButton()) return
-      if (!interaction.customId.startsWith('appr:')) return
-      this.approvals.resolveInteraction(interaction).catch(e =>
-        this.ui.error(this.key, `interaction error: ${e}`),
-      )
+      if (interaction.customId.startsWith('appr:')) {
+        this.approvals.resolveInteraction(interaction).catch(e =>
+          this.ui.error(this.key, `interaction error: ${e}`),
+        )
+      } else if (interaction.customId.startsWith('cflt:')) {
+        this.resolveConflict(interaction).catch(e =>
+          this.ui.error(this.key, `conflict resolve error: ${e}`),
+        )
+      }
     })
 
     this.client.on('messageReactionAdd', (reaction, user) => {
       if (user.bot) return
       const emoji = reaction.emoji.name
-      if (!emoji || (emoji !== '✅' && emoji !== '❌')) return
-      this.approvals.resolveReaction(reaction.message.id, emoji, user.id).catch(e =>
-        this.ui.error(this.key, `reaction error: ${e}`),
-      )
+      if (!emoji) return
+      if (emoji === '✅' || emoji === '❌') {
+        this.approvals.resolveReaction(reaction.message.id, emoji, user.id).catch(e =>
+          this.ui.error(this.key, `reaction error: ${e}`),
+        )
+        return
+      }
+      const action = rewindActionFor(emoji)
+      if (action) {
+        this.handleRewind(reaction.message.id, reaction.message.channelId, user.id, action).catch(
+          e => this.ui.error(this.key, `rewind error: ${e}`),
+        )
+      }
     })
 
     this.client.on('error', err => {
@@ -203,6 +235,208 @@ export class AgentHost {
     const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
     this.noteBotMsg(sent.id)
     return sent.id
+  }
+
+  /**
+   * §4.1 — refresh this channel's pinned "now working" pill from the Turn fold
+   * (shared across all agents, so one host renders the complete picture). The
+   * message is edited in place; created and pinned once. Best-effort: a missing
+   * Manage-Messages permission just means it isn't pinned.
+   */
+  async updatePill(channelId: ChannelId): Promise<void> {
+    if (!this.getAgentForChannel(channelId)) return
+    let text: string
+    try {
+      const turns = this.engine.get<TurnFoldState>(TURN_FOLD)
+      text = renderPill(pillLinesForChannel(turns, channelId))
+    } catch {
+      return // Turn fold not registered — pill is off.
+    }
+    try {
+      const ch = await this.client.channels.fetch(channelId).catch(() => null)
+      if (!ch || !('send' in ch)) return
+      const sendable = ch as { send: Function; messages: { fetch: (id: string) => Promise<any> } }
+      const existing = this.pillMsgByChannel.get(channelId)
+      if (existing) {
+        const msg = await sendable.messages.fetch(existing).catch(() => null)
+        if (msg) {
+          await msg.edit(text).catch(() => {})
+          return
+        }
+      }
+      const sent = await sendable.send(text)
+      this.pillMsgByChannel.set(channelId, sent.id)
+      this.noteBotMsg(sent.id)
+      void sent.pin?.().catch(() => {})
+    } catch {}
+  }
+
+  /**
+   * §4.5 — owner reacted ⏪/🔁/🧷 on one of this bot's messages. We require the
+   * reaction to be on THIS host's message (recentBotMsgIds) which also dedups
+   * across hosts sharing a channel, and that the reactor is the channel owner.
+   * The action is journaled as an interaction; 🔁 retry re-runs the turn via
+   * the retry-on-reaction synchronization, ⏪/🧷 are recorded + acknowledged.
+   */
+  private async handleRewind(
+    messageId: string,
+    rawChannelId: string,
+    userId: string,
+    action: RewindAction,
+  ): Promise<void> {
+    if (!this.recentBotMsgIds.has(messageId)) return // not our message / dedup
+    const channelId = rawChannelId
+    if (!this.getAgentForChannel(channelId)) return
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const ownerId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    if (!ownerId || userId !== ownerId) return
+
+    const channelArtifactId = `extp:discord/${channelId}`
+    const frontier = await this.store.channelFrontier(channelId)
+
+    if (action === 'retry') {
+      // Target the channel's most recent turn.prompted.
+      const inChannel = await this.store.listByChannel(channelId)
+      const lastPrompt = [...inChannel].reverse().find(i => i.verb === 'turn.prompted')
+      if (!lastPrompt) return
+      await admit(this.store, {
+        actor: ownerId,
+        role: 'owner',
+        channel: channelId,
+        target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
+        verb: 'turn.retry',
+        patch: { kind: 'none' },
+        effect: 'pure',
+        caused_by: [lastPrompt.hash],
+      })
+    } else {
+      const verb = action === 'rewind' ? 'frontier.rewind' : 'frontier.checkpoint'
+      await admit(this.store, {
+        actor: ownerId,
+        role: 'owner',
+        channel: channelId,
+        target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
+        verb,
+        patch: { kind: 'none' },
+        effect: 'pure',
+        caused_by: frontier.length > 0 ? frontier : [],
+      })
+    }
+
+    await this.discordSend(channelId, renderRewindAck(action)).catch(() => {})
+  }
+
+  /** dm-on-supersede (§4.4) sends an owner a short override note. */
+  async dmUser(userId: string, text: string): Promise<string | undefined> {
+    try {
+      const user = await this.client.users.fetch(userId)
+      const dm = await user.createDM()
+      const sent = await dm.send(text)
+      return sent.id
+    } catch {
+      return undefined
+    }
+  }
+
+  /**
+   * §4.2 — post a conflict card with Take A / Take B / … / Write buttons. The
+   * branch hashes are remembered against the message so a click resolves to a
+   * merge.resolve. Returns the posted message id.
+   */
+  async postConflictCard(post: ConflictCardPost): Promise<string | undefined> {
+    const ch = await this.client.channels.fetch(post.channelId).catch(() => null)
+    if (!ch || !('send' in ch)) return undefined
+
+    const buttons = post.branchHashes.slice(0, LETTERS.length).map((_, idx) =>
+      new ButtonBuilder()
+        .setCustomId(`cflt:take:${idx}`)
+        .setLabel(`Take ${String.fromCharCode(65 + idx)}`)
+        .setEmoji(LETTERS[idx]!)
+        .setStyle(ButtonStyle.Secondary),
+    )
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId('cflt:write')
+        .setLabel('Write my own')
+        .setEmoji('✏️')
+        .setStyle(ButtonStyle.Primary),
+    )
+    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)
+
+    const sent = await (ch as { send: Function }).send({ content: post.text, components: [row] })
+    this.conflictCards.set(sent.id, { branchHashes: post.branchHashes, channelId: post.channelId })
+    this.noteBotMsg(sent.id)
+    return sent.id
+  }
+
+  /** Resolve a conflict-card button click into a merge.resolve (§4.2). */
+  private async resolveConflict(interaction: ButtonInteraction): Promise<void> {
+    const card = this.conflictCards.get(interaction.message.id)
+    if (!card) {
+      await interaction.reply({ content: 'This conflict is no longer open.', ephemeral: true }).catch(() => {})
+      return
+    }
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const ownerId = approverForAgent(liveAgent, card.channelId) ?? liveAgent.ownerUserId
+    if (!ownerId || interaction.user.id !== ownerId) {
+      await interaction.reply({ content: 'Only the owner can resolve this.', ephemeral: true }).catch(() => {})
+      return
+    }
+
+    if (interaction.customId === 'cflt:write') {
+      await interaction
+        .reply({ content: 'Reply in this channel with your merge — it supersedes both drafts.', ephemeral: true })
+        .catch(() => {})
+      return
+    }
+
+    const m = /^cflt:take:(\d+)$/.exec(interaction.customId)
+    if (!m) return
+    const idx = Number(m[1])
+    const chosen = card.branchHashes[idx]
+    if (!chosen) return
+    const losers = card.branchHashes.filter(h => h !== chosen)
+
+    const winner = await this.store.getByHash(chosen)
+    if (!winner) return
+
+    // Journal the owner's decision, then flip lifecycles: chosen wins, the
+    // rest are superseded (kept in the ledger, surfaced back via the inbox).
+    const resolve = await this.ledger.record({
+      actor: ownerId,
+      role: 'owner',
+      channel: card.channelId,
+      target: winner.target,
+      verb: 'merge.resolve',
+      patch: { kind: 'none' },
+      effect: 'pure',
+      caused_by: [...card.branchHashes].sort(),
+    })
+    await this.store.updateLifecycle(chosen, 'applied')
+    await this.store.updateLifecycle(resolve.hash, 'applied', { supersedes: losers })
+    for (const loser of losers) await this.store.updateLifecycle(loser, 'superseded')
+
+    this.conflictCards.delete(interaction.message.id)
+    await interaction
+      .update({ content: `${interaction.message.content}\n\n-# ✓ took ${LETTERS[idx]}`, components: [] })
+      .catch(() => {})
+  }
+
+  /** This host's agent key — relay uses it to map agentKey → owner. */
+  get agentKey(): string {
+    return this.key
+  }
+
+  /** Owner of this host's agent (live-read so setup changes apply). */
+  get ownerUserId(): string | undefined {
+    return (this.getAccess().agents[this.key] ?? this.agent).ownerUserId
+  }
+
+  /** Owner/approver for a channel this host serves, else undefined (§4.2). */
+  getOwnerForChannel(channelId: ChannelId): string | undefined {
+    if (!this.getAgentForChannel(channelId)) return undefined
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    return approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
   }
 
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────

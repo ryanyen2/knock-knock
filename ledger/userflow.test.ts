@@ -292,8 +292,10 @@ test('flow: owner asks; agent replies; the audit trail tells the story', async (
   // Causal chain: reply ← prompt ← message
   expect(prompts[0]!.caused_by).toEqual([messages[0]!.hash])
   expect(replies[0]!.caused_by).toEqual([prompts[0]!.hash])
-  // Discord post happened.
-  expect(h.posts).toEqual([{ channel: 'chan-A', text: 'you said: hello bot' }])
+  // Discord post happened. Body is followed by the §4.3 attribution line.
+  expect(h.posts).toHaveLength(1)
+  expect(h.posts[0]!.channel).toBe('chan-A')
+  expect(h.posts[0]!.text.split('\n\n')[0]).toBe('you said: hello bot')
   // Turn-fold projection (the dual-audience view, rubric #3) has the full picture.
   const turn = h.engine.get<TurnFoldState>(TURN_FOLD).get(prompts[0]!.hash)!
   expect(turn.reply?.text).toBe('you said: hello bot')
@@ -317,7 +319,7 @@ test('flow: three sequential owner turns each produce their own audit slice', as
 
   const replies = await h.store.listByVerb('turn.replied')
   expect(replies).toHaveLength(3)
-  expect(h.posts.map(p => p.text)).toEqual([
+  expect(h.posts.map(p => p.text.split('\n\n')[0])).toEqual([
     'reply 1: first',
     'reply 2: second',
     'reply 3: third',

@@ -118,6 +118,29 @@ export function annotateWithStaleness(
 }
 
 /**
+ * Stale notes across every knowledge artifact scoped to one actor
+ * (`know:actor/<actorId>/...` — the convention `admit.ts` writes inbox and
+ * supersession notes under), oldest-first within each artifact. Used by the
+ * §4.6 reply flag: at reply time we surface any knowledge the agent holds whose
+ * source was invalidated, so the human sees the same staleness the agent's
+ * prompt context already filters out.
+ */
+export function staleNotesForActor(
+  state: KnowledgeFoldState,
+  agentKey: string,
+): StoredNote[] {
+  const prefix = `know:actor/${agentKey}/`
+  const out: StoredNote[] = []
+  for (const artifactId of state.keys()) {
+    if (!artifactId.startsWith(prefix)) continue
+    for (const { note, stale } of annotateWithStaleness(state, artifactId)) {
+      if (stale) out.push(note)
+    }
+  }
+  return out
+}
+
+/**
  * A note is stale if it is itself tombstoned OR any ancestor (intra-artifact)
  * is tombstoned. BFS through parentNotes; bounded by the artifact size, no
  * unbounded recursion since parentNotes only references known notes.

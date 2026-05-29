@@ -123,8 +123,10 @@ test('Phase 3 e2e: inbound → channel.message → turn.prompted → adapter stu
   expect(prompts[0]!.caused_by).toEqual([messages[0]!.hash])
   expect(replies[0]!.caused_by).toEqual([prompts[0]!.hash])
 
-  // Discord post happened.
-  expect(sent).toEqual([{ channel: CHANNEL, text: 'echo: ping' }])
+  // Discord post happened. The body is followed by the §4.3 attribution line.
+  expect(sent).toHaveLength(1)
+  expect(sent[0]!.channel).toBe(CHANNEL)
+  expect(sent[0]!.text.split('\n\n')[0]).toBe('echo: ping')
 
   sync.stop()
   engine.close()

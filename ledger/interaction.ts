@@ -53,6 +53,11 @@ export type Verb =
   | 'merge.resolve'
   // Policy admissions journaled into the log so folds see them live
   | 'policy.classified'
+  // Frontier control surfaced as reactions (§4.5): rewind the active frontier,
+  // re-run a turn, or pin a named checkpoint. All are just interactions.
+  | 'frontier.rewind'
+  | 'turn.retry'
+  | 'frontier.checkpoint'
 
 export type KnowledgeNote = { id: string; body: string; tags?: string[] }
 
