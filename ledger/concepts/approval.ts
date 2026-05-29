@@ -17,6 +17,7 @@
 
 import type { Fold } from '../fold.ts'
 import type { Hash, Interaction } from '../interaction.ts'
+import { stableJson } from '../util.ts'
 
 export type ApprovalStatus = 'pending' | 'allowed' | 'denied'
 
@@ -79,12 +80,4 @@ export const approvalFold: Fold<ApprovalFoldState> = {
  */
 export function pendingApprovals(state: ApprovalFoldState): ApprovalState[] {
   return [...state.values()].filter(a => a.status === 'pending')
-}
-
-function stableJson(v: unknown): string {
-  try {
-    return JSON.stringify(v)
-  } catch {
-    return String(v)
-  }
 }

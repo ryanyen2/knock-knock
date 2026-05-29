@@ -36,16 +36,29 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     }
   }
 
-  async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
+  async prompt(input: {
+    text: string
+    sessionId?: string
+    signal?: AbortSignal
+  }): Promise<{ sessionId: string; text: string }> {
     let sessionId = ''
     let text = ''
     const startedAt = Date.now()
+
+    // Bridge the relay's AbortSignal to the SDK's AbortController so a 🛑 stops
+    // the query promptly.
+    const abortController = new AbortController()
+    if (input.signal) {
+      if (input.signal.aborted) abortController.abort()
+      else input.signal.addEventListener('abort', () => abortController.abort(), { once: true })
+    }
 
     const result = query({
       prompt: input.text,
       options: {
         cwd: this.cwd,
         permissionMode: 'default',
+        abortController,
         allowedTools: this.profile.allow,
         // deny is the hard floor — must reach the SDK here, not via canUseTool alone
         disallowedTools: this.profile.deny,
@@ -67,26 +80,32 @@ export class ClaudeSdkAdapter implements AgentAdapter {
       },
     })
 
-    for await (const msg of result) {
-      this.translate(msg, startedAt)
-      if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
-        sessionId = msg.session_id
-      } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
-        const r = msg as SDKResultSuccess
-        sessionId = r.session_id
-        text = r.result
-      } else if (msg.type === 'assistant' && !text) {
-        // Accumulate assistant text as fallback if result.result is not populated
-        const a = msg as SDKAssistantMessage
-        const content = a.message?.content
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === 'text' && 'text' in block) {
-              text += (block as { type: 'text'; text: string }).text
+    try {
+      for await (const msg of result) {
+        this.translate(msg, startedAt)
+        if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
+          sessionId = msg.session_id
+        } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
+          const r = msg as SDKResultSuccess
+          sessionId = r.session_id
+          text = r.result
+        } else if (msg.type === 'assistant' && !text) {
+          // Accumulate assistant text as fallback if result.result is not populated
+          const a = msg as SDKAssistantMessage
+          const content = a.message?.content
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && 'text' in block) {
+                text += (block as { type: 'text'; text: string }).text
+              }
             }
           }
         }
       }
+    } catch (err) {
+      // Aborting the query (owner 🛑) surfaces as a throw — return whatever
+      // text we had rather than failing the turn. Re-throw anything else.
+      if (!abortController.signal.aborted) throw err
     }
 
     return { sessionId, text: text.trim() || '(no response)' }

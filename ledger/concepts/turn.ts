@@ -11,6 +11,7 @@
 
 import type { Fold } from '../fold.ts'
 import type { Hash, Interaction } from '../interaction.ts'
+import { stableJson } from '../util.ts'
 
 export type TurnToolCall = {
   hash: Hash
@@ -125,12 +126,4 @@ function findPromptAncestor(state: TurnFoldState, i: Interaction): Hash | undefi
     }
   }
   return undefined
-}
-
-function stableJson(v: unknown): string {
-  try {
-    return JSON.stringify(v)
-  } catch {
-    return String(v)
-  }
 }

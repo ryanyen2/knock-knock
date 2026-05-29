@@ -167,8 +167,19 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 - **`@mention` to address it.** By default (`requireMention: true`) the bot only responds when mentioned or when someone replies to one of its messages.
 - **Brevity.** The relay posts the agent's answer directly to the channel. Long responses are split at paragraph boundaries to stay under Discord's 2000-char limit.
 - **Informative approvals.** Permission prompts show the tool name and an input preview — decide from your phone without opening the terminal.
-- **Presence.** The bot reacts 👀 while it's working, then removes the reaction when its reply is posted.
-- **Sessions persist.** The relay keeps a session per channel and resumes it on each turn, so the agent retains context between messages.
+- **Presence & outcome.** The bot reacts 👀 the moment it starts a turn, then swaps that for a persistent **🏁 done** or **⚠️ failed** reaction on your message when the turn ends — so you can scroll back and see at a glance which requests succeeded. (✅ / ❌ stay reserved for approvals.)
+- **Stop a turn.** React **🛑** on a message while the bot is working and it aborts the in-flight turn promptly, posting a short "Stopped" note. Only the owner can stop.
+- **Live "Workbench."** Each channel gets one pinned message the relay edits in place as the turn runs — a per-agent activity log of the tool steps (`→ Terminal git status ✓`), with the current state as the last line. After the turn it stays put as the trace of what happened.
+- **Attribution line.** A small italic line under each reply names the message and tool count it was traced from — the audit trail, surfaced.
+- **Sessions persist.** The relay resumes a session per channel on each turn, so the agent retains context between messages.
+
+### Collaboration cues (multi-agent)
+
+When two agents share a channel and edit the same thing, or you want to redirect a turn, the relay surfaces it instead of resolving silently:
+
+- **Conflict card** 🔀 — if two equal-role drafts land at the same anchor, the relay posts a **Take A / Take B / Write my own** card; only the owner can resolve it, and the losing draft is kept (never deleted).
+- **Override DM** 🔁 — if your agent's draft is overridden by a higher-role write, you get a short DM so you know what changed.
+- **Rewind reactions** — react on a bot message with **🔁 retry** to re-run that turn, **⏪ rewind** or **🧷 checkpoint** to mark a point in the conversation.
 
 ---
 
@@ -231,13 +242,13 @@ State at `~/.claude/channels/knock-knock/access.json` — one entry per agent:
 ### Development
 
 ```
-bun test              # run lib.test.ts (pure decision logic, no Discord/network)
+bun test              # full suite: pure decision logic (lib.test.ts) + the ledger
 bun run typecheck     # tsc --noEmit
 bun relay.ts          # start the relay (reads agents from access.json)
 bun setup.ts          # interactive setup wizard / menu
 ```
 
-`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), and tool classification (`classifyTool`) — all unit-testable without a live Discord connection. `state.ts` is the only module that does file I/O.
+`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), and tool classification (`classifyTool`) — all unit-testable without a live Discord connection. `state.ts` is the only module that does config file I/O. The relay's core is **ledger-native** — an append-only DAG of Interactions with folds and synchronizations on top; see [`docs/knock-knock-ledger-model.md`](docs/knock-knock-ledger-model.md) for the architecture.
 
 ---
 

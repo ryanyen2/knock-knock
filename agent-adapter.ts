@@ -58,6 +58,15 @@ export interface AgentAdapter {
   /**
    * Run one turn. Resume the prior session if sessionId is given.
    * Returns the (new) sessionId and the agent's final text.
+   *
+   * `signal` (optional) aborts the turn promptly — the relay fires it when the
+   * owner reacts 🛑. An adapter that can cancel should stop its work and return
+   * whatever text it has; one that can't may ignore it (the relay still
+   * suppresses the reply).
    */
-  prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }>
+  prompt(input: {
+    text: string
+    sessionId?: string
+    signal?: AbortSignal
+  }): Promise<{ sessionId: string; text: string }>
 }

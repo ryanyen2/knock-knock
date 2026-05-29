@@ -16,6 +16,7 @@
 import type { Synchronization, SyncCtx } from '../sync.ts'
 import type { Interaction } from '../interaction.ts'
 import type { Store } from '../store.ts'
+import { chunk } from '../../lib.ts'
 import { withClaim } from '../artifacts/external.ts'
 import {
   KNOWLEDGE_FOLD,
@@ -43,6 +44,9 @@ export type PostOnReplyOpts = {
    */
   resolveActorName?: ResolveName
 }
+
+/** Discord's hard message cap is 2000; stay a little under for safety. */
+const DISCORD_LIMIT = 1900
 
 export function postOnReply(opts: PostOnReplyOpts): Synchronization {
   const ttl = opts.claimTtlMs ?? 30_000
@@ -80,10 +84,13 @@ export function postOnReply(opts: PostOnReplyOpts): Synchronization {
         i.target.artifactId,
         i.hash,
         async () => {
-          // Phase 3 ships text as-is (Driver already chunked under
-          // CHUNK_LIMIT for Discord). A future split-on-paragraph helper
-          // could subdivide here if turn.replied carries an over-long text.
-          await opts.discordSend(i.channel, finalText)
+          // The turn.replied carries the full reply (the Driver's chunks were
+          // re-joined for the ledger record), and we append annotations on top,
+          // so split here to stay under Discord's 2000-char hard limit. Sent
+          // sequentially under the held claim, preferring paragraph/newline cuts.
+          for (const part of chunk(finalText, DISCORD_LIMIT, 'newline')) {
+            await opts.discordSend(i.channel, part)
+          }
         },
         ttl,
       )

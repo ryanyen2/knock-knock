@@ -191,6 +191,17 @@ bun relay.ts
   owner/human message resets the counter.
 - **Per-channel approvals** — each bot's tool-permission prompts go to *that
   bot's* owner, not a shared approver.
+- **Live "Workbench"** — one pinned message per channel, edited in place as each
+  agent works: a per-agent log of tool steps with status (`→ Terminal git
+  status ✓`), kept afterward as the trace of the turn.
+- **Outcome reactions** — 👀 while a turn runs, swapped for a persistent **🏁
+  done** / **⚠️ failed** on the triggering message. ✅ / ❌ stay approval-only.
+- **Stop** — react **🛑** (owner only) on a message while the bot is working to
+  abort the in-flight turn promptly; the relay posts a short "Stopped" note.
+- **Conflict cards & override DMs** — when two equal-role drafts collide at the
+  same anchor, the relay posts a 🔀 **Take A / Take B / Write my own** card (only
+  the owner resolves; the loser is kept); the overridden agent's owner gets a 🔁
+  DM. React **🔁 / ⏪ / 🧷** on a bot message to retry, rewind, or checkpoint a turn.
 
 ---
 

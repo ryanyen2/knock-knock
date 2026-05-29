@@ -60,6 +60,32 @@ test('post-on-reply: sends the turn.replied text to Discord', async () => {
   store.close()
 })
 
+test('post-on-reply: splits an over-long reply under Discord 2000-char limit', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  const sync = new Synchronizer(store, engine)
+  const sent: Array<{ channel: string; text: string }> = []
+  sync.register(
+    postOnReply({
+      discordSend: async (channel, text) => {
+        sent.push({ channel, text })
+        return 'm'
+      },
+    }),
+  )
+  sync.start()
+  const long = 'x'.repeat(4500)
+  await admit(store, reply(long))
+  await settle()
+
+  expect(sent.length).toBeGreaterThan(1)
+  for (const s of sent) expect(s.text.length).toBeLessThanOrEqual(2000)
+  expect(sent.map(s => s.text).join('')).toBe(long) // no content lost
+  sync.stop()
+  engine.close()
+  store.close()
+})
+
 test('post-on-reply: empty reply text is skipped', async () => {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)

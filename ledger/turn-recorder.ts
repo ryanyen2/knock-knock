@@ -10,6 +10,7 @@
 import type { AgentEvent } from '../agent-adapter.ts'
 import type { Ledger } from './capture.ts'
 import type { ChannelId, Hash, Interaction, Role } from './interaction.ts'
+import { stableJson } from './util.ts'
 
 export type TurnRecorderCtx = {
   agentKey: string
@@ -199,12 +200,4 @@ export class TurnRecorder {
 
 function roleFromKind(kind: 'owner' | 'human' | 'agent' | 'unknown'): Role {
   return kind === 'unknown' ? 'agent' : kind
-}
-
-function stableJson(v: unknown): string {
-  try {
-    return JSON.stringify(v)
-  } catch {
-    return String(v)
-  }
 }

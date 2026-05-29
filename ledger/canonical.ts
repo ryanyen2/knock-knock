@@ -63,14 +63,9 @@ export function hashInteraction(p: ProposedInteraction): Hash {
 }
 
 /**
- * Verify that an Interaction's stored hash matches its content. Used by the
- * bootstrap path and by the sanity checks in tests.
+ * Verify that an Interaction's stored hash matches its content — the
+ * content-addressing invariant. Exercised by the ledger's hash-integrity tests.
  */
 export function verifyHash(i: Interaction): boolean {
   return hashInteraction(i) === i.hash
-}
-
-/** Sort + dedup caused_by the same way `hashInput` does — useful at write time. */
-export function normalizeCauses(causes: Hash[]): Hash[] {
-  return Array.from(new Set(causes)).sort()
 }

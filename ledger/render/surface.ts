@@ -32,7 +32,10 @@ export const GLYPHS = {
   // Inbound-message status reactions (traceable at a glance, persistent):
   saw: '👀', // received / working (transient, removed when the turn ends)
   done: '🏁', // turn completed (persists)
-  failed: '🛑', // turn errored (persists)
+  failed: '⚠️', // turn errored / produced nothing (persists)
+  stopped: '⏹', // turn was stopped by the owner (persists)
+  // Owner-initiated control reaction:
+  stop: '🛑', // react on a message to abort the channel's in-flight turn
 } as const
 
 // ─── §4.1 the "now working" workbench ─────────────────────────────────────────

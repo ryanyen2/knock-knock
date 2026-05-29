@@ -227,7 +227,11 @@ export class AcpAdapter implements AgentAdapter {
     }
   }
 
-  async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
+  async prompt(input: {
+    text: string
+    sessionId?: string
+    signal?: AbortSignal
+  }): Promise<{ sessionId: string; text: string }> {
     await this.init()
     const conn = this.conn!
 
@@ -243,13 +247,29 @@ export class AcpAdapter implements AgentAdapter {
       this.emit({ type: 'session_init', sessionId: sid, cwd: this.directory })
     }
 
+    // 🛑 stop → ACP `session/cancel`. The agent cancels its work and `prompt`
+    // resolves with a cancelled stop reason; we return the partial text.
+    const sessionForCancel = sid
+    const onAbort = (): void => {
+      dbg(`cancel → ${sessionForCancel}`)
+      void conn.cancel({ sessionId: sessionForCancel }).catch(() => {})
+    }
+    if (input.signal) {
+      if (input.signal.aborted) onAbort()
+      else input.signal.addEventListener('abort', onAbort, { once: true })
+    }
+
     dbg(`prompt → ${sid}: ${input.text.slice(0, 80)}`)
     this.turnText = ''
     this.toolCalls.clear()
     this.emittedToolCalls.clear()
     const startedAt = Date.now()
-    const res = await conn.prompt({ sessionId: sid, prompt: [{ type: 'text', text: input.text }] })
-    dbg(`turn stopped: ${res.stopReason}`)
+    try {
+      const res = await conn.prompt({ sessionId: sid, prompt: [{ type: 'text', text: input.text }] })
+      dbg(`turn stopped: ${res.stopReason}`)
+    } finally {
+      input.signal?.removeEventListener('abort', onAbort)
+    }
     this.emit({ type: 'turn_done', durationMs: Date.now() - startedAt })
 
     return { sessionId: sid, text: this.turnText.trim() || '(no response)' }

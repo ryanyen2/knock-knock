@@ -76,6 +76,8 @@ type Session = {
     promptHash: Hash
     recorder: TurnRecorder
     dmHandle: DmTurnHandle
+    /** Aborts this turn when the owner reacts 🛑. */
+    abort: AbortController
   }
 }
 
@@ -182,6 +184,12 @@ export class AgentHost {
       if (emoji === '✅' || emoji === '❌') {
         this.approvals.resolveReaction(reaction.message.id, emoji, user.id).catch(e =>
           this.ui.error(this.key, `reaction error: ${e}`),
+        )
+        return
+      }
+      if (emoji === GLYPHS.stop) {
+        this.handleStop(reaction.message.channelId, user.id).catch(e =>
+          this.ui.error(this.key, `stop error: ${e}`),
         )
         return
       }
@@ -316,6 +324,23 @@ export class AgentHost {
       this.noteBotMsg(sent.id)
       void sent.pin?.().catch(() => {})
     } catch {}
+  }
+
+  /**
+   * Owner reacted 🛑 on a message in a channel with an in-flight turn — abort it
+   * promptly via the turn's AbortController. The adapter cancels its work and
+   * runTurnForChannel posts a short "Stopped" note and marks the outcome. No-op
+   * if there's no active turn here or the reactor isn't this agent's owner.
+   */
+  private async handleStop(channelId: ChannelId, userId: string): Promise<void> {
+    if (!this.getAgentForChannel(channelId)) return
+    const at = this.sessions.get(channelId)?.activeTurn
+    if (!at) return
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const ownerId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    if (!ownerId || userId !== ownerId) return
+    this.ui.note(this.key, `stop requested in ${channelId}`)
+    at.abort.abort()
   }
 
   /**
@@ -588,18 +613,23 @@ export class AgentHost {
 
   /**
    * Transition the inbound message's reactions when a turn winds down: drop the
-   * transient 👀 (working/saw) and add a persistent 🏁 done or 🛑 failed, so the
-   * channel keeps a glance-able, traceable record of which prompts succeeded.
-   * Then release the side-table. Called from runTurnForChannel for both success
-   * and failure (a crash never reaches turn.replied, so this can't live there).
+   * transient 👀 (working/saw) and add a persistent outcome marker — 🏁 done,
+   * ⚠️ failed, or ⏹ stopped — so the channel keeps a glance-able, traceable
+   * record. Then release the side-table. Called from runTurnForChannel for every
+   * outcome (a crash never reaches turn.replied, so this can't live there).
    */
-  private async markInboundOutcome(inboundHash: Hash, failed: boolean): Promise<void> {
+  private async markInboundOutcome(
+    inboundHash: Hash,
+    outcome: 'done' | 'failed' | 'stopped',
+  ): Promise<void> {
     const side = this.inboundByHash.get(inboundHash)
     if (!side) return
     this.inboundByHash.delete(inboundHash)
     const botId = this.client.user?.id ?? ''
     void side.msg.reactions.cache.get(side.ackEmoji)?.users.remove(botId).catch(() => {})
-    void side.msg.react(failed ? GLYPHS.failed : GLYPHS.done).catch(() => {})
+    const glyph =
+      outcome === 'stopped' ? GLYPHS.stopped : outcome === 'failed' ? GLYPHS.failed : GLYPHS.done
+    void side.msg.react(glyph).catch(() => {})
   }
 
   /** Looking up a session's channel from a promptHash; usually it's just
@@ -652,7 +682,8 @@ export class AgentHost {
       opts.promptHash,
     )
     // No-op DM handle as a placeholder; replaced by onTurnPrompted's call.
-    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: noopDm() }
+    const abort = new AbortController()
+    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: noopDm(), abort }
 
     const meta: TurnMeta = {
       senderId: opts.senderId,
@@ -665,13 +696,18 @@ export class AgentHost {
     let chunks: string[] = []
     let turnError: string | undefined
     try {
-      chunks = await session.driver.runTurn(opts.promptText, meta)
+      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal)
     } catch (e) {
       turnError = e instanceof Error ? e.message : String(e)
       this.ui.error(this.key, `turn failed: ${turnError}`)
     }
 
-    const replyText = chunks.join('\n').trim() || undefined
+    // A 🛑 stop suppresses the (partial) reply in favour of a short note, so the
+    // channel and the ledger both close the turn cleanly.
+    const stopped = abort.signal.aborted
+    const replyText = stopped
+      ? '⏹ Stopped by owner.'
+      : chunks.join('\n').trim() || undefined
     await recorder
       .finishTurn(replyText)
       .catch(err => this.ui.error(this.key, `ledger finish turn: ${err}`))
@@ -681,10 +717,13 @@ export class AgentHost {
     void session.activeTurn?.dmHandle.finalize(turnError).catch(() => {})
     session.activeTurn = undefined
 
-    // Transition the inbound reaction to a persistent outcome marker. A turn
-    // that errored OR produced no reply is "failed" for tracing purposes.
-    const failed = !!turnError || !replyText
-    void this.markInboundOutcome(opts.inboundHash, failed).catch(() => {})
+    // Transition the inbound reaction to a persistent outcome marker.
+    const outcome: 'done' | 'failed' | 'stopped' = stopped
+      ? 'stopped'
+      : turnError || !replyText
+        ? 'failed'
+        : 'done'
+    void this.markInboundOutcome(opts.inboundHash, outcome).catch(() => {})
 
     return { chunks, error: turnError }
   }

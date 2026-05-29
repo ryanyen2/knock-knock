@@ -43,12 +43,12 @@ export class Driver {
   }
 
   /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state. */
-  runTurn(text: string, meta: TurnMeta): Promise<string[]> {
+  runTurn(text: string, meta: TurnMeta, signal?: AbortSignal): Promise<string[]> {
     return new Promise<string[]>(resolve => {
       this.queue = this.queue.then(async () => {
         try {
           const prompt = this.buildPrompt(text, meta)
-          const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId })
+          const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId, signal })
           this.sessionId = result.sessionId
           resolve(chunk(result.text, CHUNK_LIMIT, CHUNK_MODE))
         } catch (err) {

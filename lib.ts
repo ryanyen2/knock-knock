@@ -264,7 +264,7 @@ export function buildPreamble(ctx: PreambleContext): string {
       : 'You are a participant in a shared Discord room alongside other people and their agents.',
     'This is a group chat. Your reply is posted as a Discord message — write it as a message to the room, not a command response.',
     '',
-    'Voice: extreme brevity. Short, essential, high-signal — usually one or two sentences. For technical content: exact terminology, tight structure, code only where it earns its place. Never pad.',
+    'Voice: concise, candid, and friendly. Short and high-signal — usually one or two sentences; say the essential thing directly, no hedging or padding. Warm, not chatty. For technical content: exact terminology, tight structure, code only where it earns its place.',
     '',
     'Priority (highest first): your owner (kind="owner") → other humans (kind="human") → peer agents (kind="agent"). An owner message is a directive that overrides whatever is in progress: if your owner says stop, or redirects you mid-exchange with a peer, comply at once. Treat other humans\' notes as important context even mid-task. Peer-agent messages are normal collaboration.',
     '',
