@@ -270,15 +270,21 @@ export class AcpAdapter implements AgentAdapter {
       }
       this.toolCalls.set(tc.toolCallId, merged)
 
-      // Emit one tool_call event per id as soon as we have a name/title to show.
+      const terminal = tc.status === 'completed' || tc.status === 'failed'
+
+      // Emit one tool_call per id, but DEFER until we have something worth
+      // showing — a populated rawInput or a human title — rather than firing on
+      // the first bare `{kind: 'execute'}` notification (which renders as
+      // `execute {}`). Terminal status forces the emit so no tool is dropped
+      // even if its input never arrives.
       if (!this.emittedToolCalls.has(tc.toolCallId)) {
-        const name = merged.kind ?? merged.title
-        if (name) {
+        const rich = isPopulated(merged.rawInput) || !!merged.title
+        if (rich || terminal) {
           this.emittedToolCalls.add(tc.toolCallId)
           this.emit({
             type: 'tool_call',
             toolCallId: tc.toolCallId,
-            name,
+            name: merged.title ?? merged.kind ?? 'tool',
             kind: merged.kind ?? undefined,
             title: merged.title ?? undefined,
             input: merged.rawInput ?? {},
@@ -287,8 +293,12 @@ export class AcpAdapter implements AgentAdapter {
       }
 
       // Emit a result when the agent reports a terminal status.
-      if (tc.status === 'completed' || tc.status === 'failed') {
-        this.emit({ type: 'tool_result', toolCallId: tc.toolCallId, status: tc.status })
+      if (terminal) {
+        this.emit({
+          type: 'tool_result',
+          toolCallId: tc.toolCallId,
+          status: tc.status as 'completed' | 'failed',
+        })
       }
     }
   }

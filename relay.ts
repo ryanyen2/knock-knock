@@ -196,14 +196,23 @@ synchronizer.register(
 synchronizer.register(retryOnReaction())
 synchronizer.start()
 
-// §4.1 now-working pill — one pinned message per channel, edited on turn
-// start/end. Driven at relay level (not per-host) so a channel served by
-// several agents still gets a single pill, rendered from the shared Turn fold.
+// §4.1 now-working Workbench — one pinned message per channel, refreshed as the
+// turn runs (start, each tool step, end). Driven at relay level (not per-host)
+// so a channel served by several agents still gets a single board, rendered
+// from the shared Turn fold. AgentHost.updatePill throttles the Discord edits.
+const PILL_VERBS = new Set([
+  'turn.prompted',
+  'turn.replied',
+  'tool.requested',
+  'tool.approved',
+  'tool.denied',
+  'tool.executed',
+])
 store.subscribe(i => {
   if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
-  if (i.verb !== 'turn.prompted' && i.verb !== 'turn.replied') return
+  if (!PILL_VERBS.has(i.verb)) return
   const host = hosts.find(h => h.getAgentForChannel(i.channel))
-  void host?.updatePill(i.channel)
+  host?.updatePill(i.channel)
 })
 
 // Now connect the Discord clients — messages will start flowing into the

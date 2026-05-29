@@ -90,6 +90,12 @@ export type TurnContext = {
 }
 
 export class ConsoleUI {
+  /** toolCallId → display label, so a failed result can name its tool. */
+  private readonly toolLabels = new Map<string, string>()
+  /** Agents that have already shown an assistant-text preview this turn — so a
+   *  streamed reply collapses to one line instead of one ◆ per chunk. */
+  private readonly assistantShown = new Set<string>()
+
   private write(line: string): void {
     process.stderr.write(line + '\n')
   }
@@ -126,6 +132,7 @@ export class ConsoleUI {
         : ctx.sender.kind === 'agent'
           ? pc.dim
           : (s: string) => s
+    this.assistantShown.delete(agentKey) // fresh turn → allow one new preview
     this.write('')
     this.write(
       `${this.chip(agentKey)} ${pc.bold('▸')} ${senderTone(ctx.sender.label)} ${pc.dim(`in ${ctx.channel.label}`)}`,
@@ -145,21 +152,30 @@ export class ConsoleUI {
         return
       }
       case 'assistant_text': {
+        // A streamed reply arrives as many chunks; show one glance-able preview
+        // per turn, not one ◆ line each. The full reply goes to Discord.
+        if (this.assistantShown.has(agentKey)) return
         const snippet = squish(e.text, 140)
         if (!snippet) return
-        this.write(`${chip}   ${pc.bold('◆')} ${snippet}`)
+        this.assistantShown.add(agentKey)
+        this.write(`${chip}   ${pc.bold('◆')} ${snippet} ${pc.dim('…')}`)
         return
       }
       case 'tool_call': {
+        // e.name is the human title (ACP) or real tool name (SDK); show its
+        // primary argument as dim detail, unless the name already is it.
+        const label = e.title?.trim() || e.name
         const subject = squish(stringifyInput(e.input), 100)
-        const name = pc.bold(e.name)
-        const tail = subject ? ` ${pc.dim(subject)}` : ''
-        this.write(`${chip}   ${pc.cyan('→')} ${name}${tail}`)
+        const tail = subject && subject !== label ? ` ${pc.dim(subject)}` : ''
+        if (e.toolCallId) this.rememberToolLabel(e.toolCallId, label)
+        this.write(`${chip}   ${pc.cyan('→')} ${pc.bold(label)}${tail}`)
         return
       }
       case 'tool_result': {
         if (e.status === 'failed') {
-          this.write(`${chip}   ${pc.red('✗')} ${pc.dim('tool failed')}`)
+          const named = e.toolCallId ? this.toolLabels.get(e.toolCallId) : undefined
+          const what = named ? `${pc.bold(named)} ${pc.dim('failed')}` : pc.dim('tool failed')
+          this.write(`${chip}   ${pc.red('✗')} ${what}`)
         }
         // 'completed' stays silent — keeps the column scannable.
         return
@@ -187,6 +203,14 @@ export class ConsoleUI {
   /** Inline error from somewhere in the host's run loop. */
   error(agentKey: string, text: string): void {
     this.write(`${this.chip(agentKey)}   ${pc.red('!')} ${text}`)
+  }
+
+  private rememberToolLabel(toolCallId: string, label: string): void {
+    this.toolLabels.set(toolCallId, label)
+    if (this.toolLabels.size > 256) {
+      const first = this.toolLabels.keys().next().value
+      if (first) this.toolLabels.delete(first)
+    }
   }
 
   private chip(agentKey: string): string {

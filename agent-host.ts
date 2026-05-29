@@ -55,8 +55,8 @@ import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
   LETTERS,
-  renderPill,
-  pillLinesForChannel,
+  renderWorkbench,
+  workbenchEntries,
   rewindActionFor,
   renderRewindAck,
   type RewindAction,
@@ -64,6 +64,8 @@ import {
 import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
 
 const RECENT_BOT_MSG_CAP = 200
+/** §4.1 max one Workbench edit per channel per this window (Discord rate limit). */
+const PILL_THROTTLE_MS = 1500
 
 /** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
@@ -101,6 +103,9 @@ export class AgentHost {
   private readonly conflictCards = new Map<string, { branchHashes: Hash[]; channelId: ChannelId }>()
   /** §4.1 per-channel pinned pill message id. */
   private readonly pillMsgByChannel = new Map<ChannelId, string>()
+  /** §4.1 throttle: pending render timer + last render time per channel. */
+  private readonly pillTimers = new Map<ChannelId, ReturnType<typeof setTimeout>>()
+  private readonly pillLastRender = new Map<ChannelId, number>()
   private storeUnsub?: () => void
 
   constructor(
@@ -146,7 +151,7 @@ export class AgentHost {
       reason => this.ui.note(this.key, reason),
     )
 
-    this.client.once('ready', c => {
+    this.client.once('clientReady', c => {
       this.ui.connected(this.key, c.user.tag)
     })
 
@@ -208,6 +213,8 @@ export class AgentHost {
 
   async stop(): Promise<void> {
     this.storeUnsub?.()
+    for (const t of this.pillTimers.values()) clearTimeout(t)
+    this.pillTimers.clear()
     await this.client.destroy()
   }
 
@@ -238,17 +245,47 @@ export class AgentHost {
   }
 
   /**
-   * §4.1 — refresh this channel's pinned "now working" pill from the Turn fold
-   * (shared across all agents, so one host renders the complete picture). The
-   * message is edited in place; created and pinned once. Best-effort: a missing
-   * Manage-Messages permission just means it isn't pinned.
+   * §4.1 — request a refresh of this channel's pinned Workbench. Throttled to
+   * at most one Discord edit per PILL_THROTTLE_MS per channel (tool events can
+   * burst); the trailing render always reads the latest Turn fold state, so the
+   * activity log stays current without tripping Discord's edit rate limit.
    */
-  async updatePill(channelId: ChannelId): Promise<void> {
+  updatePill(channelId: ChannelId): void {
     if (!this.getAgentForChannel(channelId)) return
+    if (this.pillTimers.has(channelId)) return // a render is already scheduled
+    const since = Date.now() - (this.pillLastRender.get(channelId) ?? 0)
+    const wait = Math.max(0, PILL_THROTTLE_MS - since)
+    const timer = setTimeout(() => {
+      this.pillTimers.delete(channelId)
+      this.pillLastRender.set(channelId, Date.now())
+      void this.renderWorkbenchNow(channelId)
+    }, wait)
+    this.pillTimers.set(channelId, timer)
+  }
+
+  /**
+   * Render and edit-in-place the Workbench from the Turn fold (shared across
+   * agents, so one host renders the whole channel). Created and pinned once;
+   * best-effort — a missing Manage-Messages permission just means no pin.
+   */
+  private async renderWorkbenchNow(channelId: ChannelId): Promise<void> {
     let text: string
     try {
       const turns = this.engine.get<TurnFoldState>(TURN_FOLD)
-      text = renderPill(pillLinesForChannel(turns, channelId))
+      // Prompt text lives on the inbound message, not the Turn fold — pre-fetch
+      // it for in-flight turns so the workbench can show what each agent is on.
+      const prompts = new Map<Hash, string>()
+      for (const t of turns.values()) {
+        if (t.channel !== channelId || t.reply || t.endedAt || !t.inboundHash) continue
+        const inbound = await this.store.getByHash(t.inboundHash)
+        const txt =
+          inbound?.patch.kind === 'external'
+            ? (inbound.patch.intent.args as { text?: string } | undefined)?.text
+            : undefined
+        if (txt) prompts.set(t.inboundHash, txt)
+      }
+      const entries = workbenchEntries(turns, channelId, h => (h ? prompts.get(h) : undefined))
+      text = renderWorkbench(entries, new Date().toISOString())
     } catch {
       return // Turn fold not registered — pill is off.
     }

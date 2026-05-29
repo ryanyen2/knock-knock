@@ -5,8 +5,9 @@
 import { test, expect } from 'bun:test'
 import {
   GLYPHS,
-  renderPill,
-  pillLinesForChannel,
+  renderWorkbench,
+  workbenchEntries,
+  toolSubject,
   renderConflictCard,
   renderOverrideDm,
   rewindActionFor,
@@ -14,21 +15,52 @@ import {
 } from './surface.ts'
 import type { TurnFoldState, TurnState } from '../concepts/turn.ts'
 
-// ─── §4.1 pill ────────────────────────────────────────────────────────────────
+// ─── §4.1 workbench ─────────────────────────────────────────────────────────
 
-test('pill: working and idle lines, sorted by agent', () => {
-  const out = renderPill([
-    { agent: 'bob-bot', working: false, detail: 'last seen 13:42' },
-    { agent: 'alice-bot', working: true, detail: '3 tools' },
-  ])
-  const lines = out.split('\n')
-  expect(lines[0]).toBe('**Workbench**')
-  expect(lines[1]).toBe(`-# ${GLYPHS.working} alice-bot — 3 tools`)
-  expect(lines[2]).toBe(`-# ${GLYPHS.idle} bob-bot — idle · last seen 13:42`)
+test('workbench: working agent shows step log with status glyphs', () => {
+  const out = renderWorkbench(
+    [
+      {
+        agent: 'research-bot',
+        working: true,
+        stage: 'whats the current unstaged changes about',
+        steps: [
+          { tool: 'Bash', subject: 'git status', status: 'executed' },
+          { tool: 'Bash', subject: 'git diff', status: 'executed' },
+          { tool: 'Read', subject: 'driver.ts', status: 'failed' },
+        ],
+        lastSeen: '02:41',
+      },
+    ],
+    '2026-05-28T02:41:00Z',
+  )
+  expect(out).toContain('**Workbench**')
+  expect(out).toContain('updated 02:41')
+  expect(out).toContain(`${GLYPHS.working} research-bot — whats the current unstaged changes about`)
+  expect(out).toContain('→ Bash git status ✓')
+  expect(out).toContain('→ Read driver.ts ✗')
+  expect(out).toContain('◆ replying…') // no pending steps left
 })
 
-test('pill: empty roster', () => {
-  expect(renderPill([])).toContain('no agents active')
+test('workbench: pending steps → working… ; idle agents collapse', () => {
+  const out = renderWorkbench([
+    { agent: 'a-bot', working: true, stage: 'x', steps: [{ tool: 'Bash', status: 'requested' }] },
+    { agent: 'z-bot', working: false, stage: '', steps: [], lastSeen: '01:10' },
+  ])
+  expect(out).toContain('◆ working…')
+  expect(out).toContain(`${GLYPHS.idle} z-bot — idle · last seen 01:10`)
+  // working agent sorts above idle
+  expect(out.indexOf('a-bot')).toBeLessThan(out.indexOf('z-bot'))
+})
+
+test('workbench: caps step log and notes elided count', () => {
+  const steps = Array.from({ length: 11 }, (_, i) => ({ tool: `t${i}`, status: 'executed' as const }))
+  const out = renderWorkbench([{ agent: 'b', working: true, stage: '', steps }])
+  expect(out).toContain('… 3 earlier steps')
+})
+
+test('workbench: empty', () => {
+  expect(renderWorkbench([])).toContain('no agents active')
 })
 
 function turn(p: Partial<TurnState> & { promptHash: string }): TurnState {
@@ -36,6 +68,7 @@ function turn(p: Partial<TurnState> & { promptHash: string }): TurnState {
     promptHash: p.promptHash,
     channel: p.channel ?? 'chan-A',
     agentKey: p.agentKey ?? 'alice-bot',
+    inboundHash: p.inboundHash,
     toolCalls: p.toolCalls ?? [],
     reply: p.reply,
     startedAt: p.startedAt ?? '2026-05-28T13:00:00Z',
@@ -43,23 +76,32 @@ function turn(p: Partial<TurnState> & { promptHash: string }): TurnState {
   }
 }
 
-test('pillLinesForChannel: in-flight turn → working with tool count', () => {
+test('workbenchEntries: derives working/idle + steps from the Turn fold', () => {
   const state: TurnFoldState = new Map([
-    ['p1', turn({ promptHash: 'p1', agentKey: 'alice-bot', toolCalls: [{ hash: 't', name: 'Bash', inputJson: '{}', status: 'requested' }] })],
+    ['p1', turn({ promptHash: 'p1', agentKey: 'alice-bot', inboundHash: 'in1', toolCalls: [{ hash: 't', name: 'Bash', inputJson: '{"command":"ls"}', status: 'requested' }] })],
     ['p2', turn({ promptHash: 'p2', agentKey: 'bob-bot', endedAt: '2026-05-28T13:42:00Z', reply: { hash: 'r', text: 'done', ts: '2026-05-28T13:42:00Z' } })],
   ])
-  const lines = pillLinesForChannel(state, 'chan-A')
-  const alice = lines.find(l => l.agent === 'alice-bot')!
-  const bob = lines.find(l => l.agent === 'bob-bot')!
-  expect(alice).toEqual({ agent: 'alice-bot', working: true, detail: '1 tool' })
-  expect(bob).toEqual({ agent: 'bob-bot', working: false, detail: 'last seen 13:42' })
+  const entries = workbenchEntries(state, 'chan-A', h => (h === 'in1' ? 'list files' : undefined))
+  const alice = entries.find(e => e.agent === 'alice-bot')!
+  const bob = entries.find(e => e.agent === 'bob-bot')!
+  expect(alice.working).toBe(true)
+  expect(alice.stage).toBe('list files')
+  expect(alice.steps).toEqual([{ tool: 'Bash', subject: 'ls', status: 'requested' }])
+  expect(bob.working).toBe(false)
+  expect(bob.lastSeen).toBe('13:42')
 })
 
-test('pillLinesForChannel: filters by channel', () => {
-  const state: TurnFoldState = new Map([
-    ['p1', turn({ promptHash: 'p1', channel: 'other' })],
-  ])
-  expect(pillLinesForChannel(state, 'chan-A')).toEqual([])
+test('workbenchEntries: filters by channel', () => {
+  const state: TurnFoldState = new Map([['p1', turn({ promptHash: 'p1', channel: 'other' })]])
+  expect(workbenchEntries(state, 'chan-A', () => undefined)).toEqual([])
+})
+
+test('toolSubject: probes common fields, undefined on junk', () => {
+  expect(toolSubject('{"command":"git status"}')).toBe('git status')
+  expect(toolSubject('{"file_path":"a.ts"}')).toBe('a.ts')
+  expect(toolSubject('"raw string"')).toBe('raw string')
+  expect(toolSubject('{}')).toBeUndefined()
+  expect(toolSubject('not json')).toBeUndefined()
 })
 
 // ─── §4.2 conflict card ───────────────────────────────────────────────────────

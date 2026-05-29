@@ -13,7 +13,7 @@
  */
 
 import { formatIsoTime } from './reply-annotations.ts'
-import type { TurnFoldState, TurnState } from '../concepts/turn.ts'
+import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts'
 
 /**
  * §9 glyph reference — the complete visual vocabulary, in one place so every
@@ -29,74 +29,127 @@ export const GLYPHS = {
   stale: '⚠️', // a reply rests on invalidated knowledge (§4.6)
 } as const
 
-// ─── §4.1 the "now working" pill ──────────────────────────────────────────────
+// ─── §4.1 the "now working" workbench ─────────────────────────────────────────
 
-export type PillLine = {
+export type WorkbenchStep = {
+  tool: string
+  subject?: string
+  status: TurnToolCall['status']
+}
+
+export type WorkbenchEntry = {
   agent: string
   working: boolean
-  /** "tracing parser bug · 3 tools" when working; "last seen 14:02" when idle. */
-  detail: string
+  /** Short summary of what the agent is doing this turn (the prompt). */
+  stage: string
+  steps: WorkbenchStep[]
+  /** HH:MM of the agent's last activity. */
+  lastSeen?: string
 }
 
+const STEP_GLYPH: Record<TurnToolCall['status'], string> = {
+  requested: '·',
+  approved: '·',
+  executed: '✓',
+  failed: '✗',
+  denied: '⛔',
+}
+
+const MAX_STEPS = 8
+
 /**
- * The single pinned per-channel status message. Each bot owns one line; the
- * line is `▸ agent — detail` while working, `· agent — idle · detail` at rest.
+ * The pinned per-channel "Workbench" — an append-style activity log rather than
+ * a one-line-per-agent summary. Each working agent gets a header plus its tool
+ * steps (newest underneath), with failures/denials surfaced, and a final
+ * "current state" line. Idle agents collapse to one line. Edited in place by
+ * the glue, so the log grows as the turn runs.
  */
-export function renderPill(lines: PillLine[]): string {
-  const head = '**Workbench**'
-  if (lines.length === 0) return `${head}\n-# ${GLYPHS.idle} no agents active`
-  const body = lines
+export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): string {
+  const stamp = updatedAt ? formatIsoTime(updatedAt) : ''
+  const footer = stamp ? [`-# updated ${stamp}`] : []
+  if (entries.length === 0) {
+    return ['**Workbench**', `-# ${GLYPHS.idle} no agents active`, ...footer].join('\n')
+  }
+  const blocks = entries
     .slice()
-    .sort((a, b) => a.agent.localeCompare(b.agent))
-    .map(l => {
-      const glyph = l.working ? GLYPHS.working : GLYPHS.idle
-      const state = l.working ? l.detail : `idle${l.detail ? ` · ${l.detail}` : ''}`
-      return `-# ${glyph} ${l.agent} — ${state}`
-    })
-    .join('\n')
-  return `${head}\n${body}`
+    .sort((a, b) => Number(b.working) - Number(a.working) || a.agent.localeCompare(b.agent))
+    .map(e => renderEntry(e))
+  // `-#` subtext only renders at the start of a line, so the timestamp is its
+  // own trailing line, never appended to the bold header.
+  return ['**Workbench**', ...blocks, ...footer].join('\n')
+}
+
+function renderEntry(e: WorkbenchEntry): string {
+  if (!e.working) {
+    const seen = e.lastSeen ? ` · last seen ${e.lastSeen}` : ''
+    return `${GLYPHS.idle} ${e.agent} — idle${seen}`
+  }
+  const lines = [`${GLYPHS.working} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`]
+  const steps = e.steps.length > MAX_STEPS ? e.steps.slice(e.steps.length - MAX_STEPS) : e.steps
+  const hidden = e.steps.length - steps.length
+  if (hidden > 0) lines.push(`-#   … ${hidden} earlier step${hidden === 1 ? '' : 's'}`)
+  for (const s of steps) {
+    const subj = s.subject ? ` ${quote(s.subject, 60)}` : ''
+    lines.push(`-#   → ${s.tool}${subj} ${STEP_GLYPH[s.status]}`)
+  }
+  const pending = e.steps.some(s => s.status === 'requested' || s.status === 'approved')
+  lines.push(`-#   ◆ ${pending ? 'working…' : 'replying…'}`)
+  return lines.join('\n')
 }
 
 /**
- * Derive one pill line per agent that has worked in a channel, from the Turn
- * fold. An agent is "working" if it has a turn here with no reply yet; its
- * detail is the in-flight tool count. Otherwise it's idle, detail = last-seen
- * time of its most recent finished turn. Pure: the glue passes Turn fold state
- * straight in.
+ * Derive a workbench entry per agent that has worked in a channel, from the
+ * Turn fold. `working` = the agent's newest turn has no reply yet. `stage` comes
+ * from the prompt text the caller resolves (the fold stores only the inbound
+ * hash). Pure: the glue pre-fetches prompt texts and passes them in.
  */
-export function pillLinesForChannel(
+export function workbenchEntries(
   turns: TurnFoldState,
   channelId: string,
-): PillLine[] {
-  // newest turn per agent + whether any of its turns is currently in flight.
+  promptText: (inboundHash: string | undefined) => string | undefined,
+): WorkbenchEntry[] {
   const latest = new Map<string, TurnState>()
-  const working = new Map<string, TurnState>()
   for (const t of turns.values()) {
     if (t.channel !== channelId) continue
-    const prevLatest = latest.get(t.agentKey)
-    if (!prevLatest || t.startedAt > prevLatest.startedAt) latest.set(t.agentKey, t)
-    const inFlight = !t.reply && !t.endedAt
-    if (inFlight) {
-      const prevWork = working.get(t.agentKey)
-      if (!prevWork || t.startedAt > prevWork.startedAt) working.set(t.agentKey, t)
-    }
+    const prev = latest.get(t.agentKey)
+    if (!prev || t.startedAt > prev.startedAt) latest.set(t.agentKey, t)
   }
-  const lines: PillLine[] = []
+  const entries: WorkbenchEntry[] = []
   for (const [agent, t] of latest) {
-    const active = working.get(agent)
-    if (active) {
-      const n = active.toolCalls.length
-      lines.push({
-        agent,
-        working: true,
-        detail: n > 0 ? `${n} ${n === 1 ? 'tool' : 'tools'}` : 'thinking',
-      })
-    } else {
-      const seen = formatIsoTime(t.endedAt ?? t.startedAt)
-      lines.push({ agent, working: false, detail: seen ? `last seen ${seen}` : '' })
-    }
+    const working = !t.reply && !t.endedAt
+    entries.push({
+      agent,
+      working,
+      stage: working ? (promptText(t.inboundHash) ?? '') : '',
+      steps: t.toolCalls.map(tc => ({
+        tool: tc.name,
+        subject: toolSubject(tc.inputJson),
+        status: tc.status,
+      })),
+      lastSeen: formatIsoTime(t.endedAt ?? t.startedAt),
+    })
   }
-  return lines
+  return entries
+}
+
+/** Pull the primary argument (command / path / url) out of a tool's stable
+ *  input JSON for a compact workbench/step line. */
+export function toolSubject(inputJson: string): string | undefined {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(inputJson)
+  } catch {
+    return undefined
+  }
+  if (typeof parsed === 'string') return parsed || undefined
+  if (!parsed || typeof parsed !== 'object') return undefined
+  const r = parsed as Record<string, unknown>
+  for (const k of ['command', 'cmd', 'script', 'file_path', 'filePath', 'path', 'url', 'query', 'pattern']) {
+    const v = r[k]
+    if (typeof v === 'string' && v) return v
+    if (Array.isArray(v) && v.every(x => typeof x === 'string')) return (v as string[]).join(' ')
+  }
+  return undefined
 }
 
 // ─── §4.2 the conflict card ───────────────────────────────────────────────────
