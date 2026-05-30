@@ -24,6 +24,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
+  MessageFlags,
   type Message,
   type Interaction,
   type ButtonInteraction,
@@ -488,19 +489,19 @@ export class AgentHost {
   private async resolveConflict(interaction: ButtonInteraction): Promise<void> {
     const card = this.conflictCards.get(interaction.message.id)
     if (!card) {
-      await interaction.reply({ content: 'This conflict is no longer open.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'This conflict is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     const ownerId = approverForAgent(liveAgent, card.channelId) ?? liveAgent.ownerUserId
     if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can resolve this.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Only the owner can resolve this.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
     if (interaction.customId === 'cflt:write') {
       await interaction
-        .reply({ content: 'Reply in this channel with your merge — it supersedes both drafts.', ephemeral: true })
+        .reply({ content: 'Reply in this channel with your merge — it supersedes both drafts.', flags: MessageFlags.Ephemeral })
         .catch(() => {})
       return
     }
@@ -629,7 +630,7 @@ export class AgentHost {
   private async handleSessionPick(interaction: ButtonInteraction): Promise<void> {
     const card = this.sessionCards.get(interaction.message.id)
     if (!card) {
-      await interaction.reply({ content: 'This session menu is no longer open.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'This session menu is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
@@ -637,7 +638,7 @@ export class AgentHost {
     // your own local session is identity-bound, matching the trigger gate.
     const ownerId = liveAgent.ownerUserId
     if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can share or resume a session.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Only the owner can share or resume a session.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
@@ -664,7 +665,7 @@ export class AgentHost {
     const store = makeSessionStore(summary.runtime)
     const transcript = store ? await store.read(summary.id) : undefined
     if (!transcript) {
-      await interaction.reply({ content: 'Could not read that session anymore.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Could not read that session anymore.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
     const { brief, tags } = distill(transcript)
@@ -715,7 +716,7 @@ export class AgentHost {
       await interaction
         .reply({
           content: `This agent (${liveAgent.runtime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
-          ephemeral: true,
+          flags: MessageFlags.Ephemeral,
         })
         .catch(() => {})
       return

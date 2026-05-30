@@ -28,6 +28,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
+  MessageFlags,
 } from 'discord.js'
 import type { AgentConfig } from './lib.ts'
 import { approverForAgent } from './lib.ts'
@@ -143,14 +144,14 @@ export class Approvals {
     const [, behavior, prefix] = m
     const posted = this.byHashPrefix.get(prefix!)
     if (!posted) {
-      await interaction.reply({ content: 'Request no longer pending.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Request no longer pending.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
     const agent = this.getAgent()
     const approverId = approverForAgent(agent, posted.originChannelId)
     if (!approverId || interaction.user.id !== approverId) {
-      await interaction.reply({ content: 'Not authorized.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Not authorized.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
 
