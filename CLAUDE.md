@@ -148,6 +148,42 @@ failed / ⏹ stopped reaction on the inbound message. **✅/❌ are
 approval-reserved** (the button/reaction handlers route them to `Approvals`) and
 🛑 is the owner's stop signal — never reuse them for status.
 
+### Session sharing (`sessions/` + `AgentHost` glue)
+
+An owner can import the distilled context of one of their *local* coding-agent
+sessions (Claude Code / Codex / OpenCode / Gemini) into a channel, so a
+collaborating agent — including a teammate on another machine — starts from the
+prior plan, decisions, and pitfalls instead of cold. See
+**`docs/session-sharing.md`** for the full flow and security model.
+
+- **The read seam** (`sessions/`) mirrors `adapters/`: one best-effort
+  `SessionStore` per runtime reads that runtime's on-disk transcript
+  (`~/.claude/projects`, `~/.codex/sessions`, `~/.local/share/opencode`,
+  `~/.gemini/tmp/<sha256(cwd)>`), normalizing to a common transcript. A missing
+  dir or unreadable file degrades to fewer results, never throws. `list()`
+  filters to the agent's `workspace` (privacy). `sessions/index.ts` is the
+  factory + `listAllSessions` fan-out.
+- **Distill** (`sessions/distill.ts`, pure) → a context brief (latest
+  ExitPlanMode plan, TodoWrite todos, decisions, files touched, dead-ends).
+- **Trigger** — owner-only: `handleInbound` detects `isShareSessionCommand`
+  (`kind==='owner'`) and short-circuits *before* any admit to post a 📥 selection
+  card (the command is never admitted as a `channel.message`). The `sess:` button
+  handler reads + distills the chosen session and admits an **owner-role
+  `knowledge.append`** to `know:channel/<id>/shared-context` (anchor `none`, so
+  the merge gate is a no-op and no conflict card fires) — the same shape
+  `surfaceToInbox` uses. On the Postgres backend it syncs to teammates.
+- **Delivery** — `pendingSharedContext` reads active shared-context notes from
+  the knowledge fold and, via the pure `pickFreshContext`, injects each one
+  **once** into the next turn as a `<shared-context>` block prepended (in
+  `Driver.buildPrompt`) ahead of the `<channel>` envelope. (Knowledge is
+  otherwise read only at reply-time, so this delivery wiring is what makes an
+  imported note actually reach the agent.)
+- **Phase 2 (not built):** *resuming* a live session — `AcpAdapter.loadSession`
+  / Claude SDK `resume` — binding a channel to an existing runtime session id.
+  The `AgentAdapter.prompt({sessionId})` seam already threads the id.
+
+📥 is the session-sharing glyph (`GLYPHS.session`); like ✅/❌/🛑 it is reserved.
+
 ### State layout
 
 All persistent config lives in `~/.claude/channels/knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):

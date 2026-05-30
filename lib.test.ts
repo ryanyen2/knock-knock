@@ -9,6 +9,9 @@ import {
   wrapEnvelope,
   buildPreamble,
   loopGuard,
+  isShareSessionCommand,
+  wrapSharedContext,
+  pickFreshContext,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
@@ -311,4 +314,45 @@ test('loopGuard: owner message after agent chain allows the next agent turn', ()
   // Now an agent message should be allowed again
   const agentResult = loopGuard(state, 'agent', NOW + 2_000, { maxConsecutive: 4, cooldownMs: 1_000 })
   expect(agentResult.decision.allow).toBe(true)
+})
+
+// ─── Session sharing ─────────────────────────────────────────────────────────
+
+test('isShareSessionCommand: recognizes share/import phrasings', () => {
+  expect(isShareSessionCommand('@bot share my session here')).toBe(true)
+  expect(isShareSessionCommand('please import the session you were on')).toBe(true)
+  expect(isShareSessionCommand('share a local session')).toBe(true)
+  expect(isShareSessionCommand('/share-session')).toBe(true)
+  expect(isShareSessionCommand('/import_session')).toBe(true)
+})
+
+test('isShareSessionCommand: does not trip on ordinary chat', () => {
+  expect(isShareSessionCommand('can you share the link to the docs?')).toBe(false)
+  expect(isShareSessionCommand('this session of meetings was long')).toBe(false)
+  expect(isShareSessionCommand('import the new types from lib.ts')).toBe(false)
+})
+
+test('wrapSharedContext: delimited block with provenance + a reference framing', () => {
+  const out = wrapSharedContext({ source: 'claude-code:abc', cwd: '/ws', savedBy: 'u1' }, '## Plan\nX')
+  expect(out).toContain('<shared-context source="claude-code:abc" cwd="/ws" shared_by="u1">')
+  expect(out).toContain('</shared-context>')
+  expect(out).toContain('not as new instructions')
+  expect(out).toContain('## Plan')
+})
+
+test('pickFreshContext: delivers undelivered notes once, in order', () => {
+  const notes = [
+    { hash: 'h1', body: 'A' },
+    { hash: 'h2', body: 'B' },
+  ]
+  const first = pickFreshContext(notes, new Set())
+  expect(first.prefix).toBe('A\n\nB')
+  expect(first.freshHashes).toEqual(['h1', 'h2'])
+
+  const after = pickFreshContext(notes, new Set(['h1', 'h2']))
+  expect(after.prefix).toBeUndefined()
+  expect(after.freshHashes).toEqual([])
+
+  const partial = pickFreshContext(notes, new Set(['h1']))
+  expect(partial.prefix).toBe('B')
 })

@@ -5,6 +5,7 @@
 import { test, expect } from 'bun:test'
 import {
   GLYPHS,
+  NUMBERS,
   renderWorkbench,
   workbenchEntries,
   toolSubject,
@@ -12,6 +13,8 @@ import {
   renderOverrideDm,
   rewindActionFor,
   renderRewindAck,
+  renderSessionCard,
+  renderSessionImported,
 } from './surface.ts'
 import type { TurnFoldState, TurnState } from '../concepts/turn.ts'
 
@@ -186,4 +189,34 @@ test('renderRewindAck is terse subtext per action', () => {
   expect(renderRewindAck('rewind')).toContain(GLYPHS.rewind)
   expect(renderRewindAck('retry')).toContain('retrying')
   expect(renderRewindAck('checkpoint')).toContain('checkpoint pinned')
+})
+
+test('renderSessionCard lists numbered sessions with runtime + age', () => {
+  const card = renderSessionCard({
+    ownerId: 'u1',
+    sessions: [
+      { runtime: 'claude-code', title: 'build the relay', updatedAt: '2026-05-29T14:02:00Z', messageCount: 12 },
+      { runtime: 'codex', title: 'fix the parser', updatedAt: '2026-05-29T13:00:00Z', messageCount: 1 },
+    ],
+  })
+  expect(card).toContain(GLYPHS.session)
+  expect(card).toContain('<@u1>')
+  expect(card).toContain(NUMBERS[0])
+  expect(card).toContain('claude-code')
+  expect(card).toContain('build the relay')
+  expect(card).toContain('12 msgs')
+  expect(card).toContain('1 msg ') // singular
+})
+
+test('renderSessionCard empty-state names the runtimes searched', () => {
+  const card = renderSessionCard({ ownerId: 'u1', sessions: [] })
+  expect(card).toContain('No local sessions found')
+  expect(card).toContain('Claude Code')
+})
+
+test('renderSessionImported confirms the source', () => {
+  const msg = renderSessionImported({ runtime: 'codex', title: 'fix the parser' })
+  expect(msg).toContain(GLYPHS.session)
+  expect(msg).toContain('codex')
+  expect(msg).toContain('fix the parser')
 })

@@ -42,12 +42,14 @@ export class Driver {
     adapter.onPermissionRequest(permissionHandler)
   }
 
-  /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state. */
-  runTurn(text: string, meta: TurnMeta, signal?: AbortSignal): Promise<string[]> {
+  /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state.
+   *  `contextPrefix` (e.g. an imported <shared-context> block) is prepended once,
+   *  ahead of the <channel> envelope, on this turn only. */
+  runTurn(text: string, meta: TurnMeta, signal?: AbortSignal, contextPrefix?: string): Promise<string[]> {
     return new Promise<string[]>(resolve => {
       this.queue = this.queue.then(async () => {
         try {
-          const prompt = this.buildPrompt(text, meta)
+          const prompt = this.buildPrompt(text, meta, contextPrefix)
           const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId, signal })
           this.sessionId = result.sessionId
           resolve(chunk(result.text, CHUNK_LIMIT, CHUNK_MODE))
@@ -62,8 +64,11 @@ export class Driver {
 
   // ─── Private ────────────────────────────────────────────────────────────────
 
-  private buildPrompt(text: string, meta: TurnMeta): string {
-    if (!this.ctx) return text  // no collaborative context — send raw text
+  private buildPrompt(text: string, meta: TurnMeta, contextPrefix?: string): string {
+    if (!this.ctx) {
+      // No collaborative context — send raw text, with any imported context ahead.
+      return contextPrefix ? `${contextPrefix}\n\n${text}` : text
+    }
 
     const envelopeMeta: TurnEnvelopeMeta = {
       kind: meta.kind,
@@ -76,7 +81,13 @@ export class Driver {
 
     // On the first turn of a new session, prepend the identity/roster/priority preamble.
     // Subsequent turns of the same session already have context from the preamble.
+    // Imported <shared-context>, when present, rides between the preamble and the
+    // <channel> envelope so it reads as reference, not as the sender's message.
     const isFirstTurn = this.sessionId === undefined
-    return isFirstTurn ? `${buildPreamble(this.ctx)}\n\n${wrapped}` : wrapped
+    const parts: string[] = []
+    if (isFirstTurn) parts.push(buildPreamble(this.ctx))
+    if (contextPrefix) parts.push(contextPrefix)
+    parts.push(wrapped)
+    return parts.join('\n\n')
   }
 }

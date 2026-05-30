@@ -36,6 +36,8 @@ export const GLYPHS = {
   stopped: '⏹', // turn was stopped by the owner (persists)
   // Owner-initiated control reaction:
   stop: '🛑', // react on a message to abort the channel's in-flight turn
+  // Session sharing (owner imports a prior local coding session's context):
+  session: '📥', // share-session card header / imported-context cue
 } as const
 
 // ─── §4.1 the "now working" workbench ─────────────────────────────────────────
@@ -222,6 +224,62 @@ export function renderConflictCard(facts: ConflictCardFacts): string {
 
 /** A/B/C labels for conflict branches (regional-indicator glyphs). */
 export const LETTERS = ['🅰', '🅱', '🅲', '🅳'] as const
+
+// ─── session sharing: the share-a-session card ───────────────────────────────
+
+/** 1..N labels for the session-selection card buttons. */
+export const NUMBERS = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'] as const
+
+export type SessionCardEntry = {
+  /** Session-runtime, e.g. "claude-code". */
+  runtime: string
+  /** Short session label (first prompt / title). */
+  title?: string
+  /** ISO timestamp of last activity. */
+  updatedAt: string
+  /** User/assistant turn count. */
+  messageCount: number
+}
+
+export type SessionCardFacts = {
+  /** Discord id of the owner who may pick, or undefined. */
+  ownerId?: string
+  /** Recent local sessions across runtimes, newest first (already capped). */
+  sessions: SessionCardEntry[]
+}
+
+/**
+ * The in-channel card an owner gets after asking to share a session. Lists the
+ * recent local sessions across runtimes; the glue attaches one numbered button
+ * per entry. Body only — buttons live in AgentHost. Pure.
+ */
+export function renderSessionCard(facts: SessionCardFacts): string {
+  if (facts.sessions.length === 0) {
+    return [
+      `${GLYPHS.session} **No local sessions found** in this workspace.`,
+      '-# Looked across Claude Code, Codex, OpenCode, and Gemini.',
+    ].join('\n')
+  }
+  const who = facts.ownerId ? `<@${facts.ownerId}>` : 'An owner'
+  const lines = [
+    `${GLYPHS.session} **Share a local session** — import its plan & decisions here`,
+    `-# ${who} — pick one. Only your sessions in this workspace are shown; nothing runs.`,
+  ]
+  facts.sessions.forEach((s, idx) => {
+    lines.push('')
+    lines.push(`${NUMBERS[idx] ?? '•'} \`${s.runtime}\`${s.title ? ` — ${quote(s.title, 80)}` : ''}`)
+    lines.push(`-#   ${s.messageCount} msg${s.messageCount === 1 ? '' : 's'} · updated ${formatIsoTime(s.updatedAt)}`)
+  })
+  return lines.join('\n')
+}
+
+/** Terse confirmation after a session is imported into the channel. */
+export function renderSessionImported(facts: { runtime: string; title?: string }): string {
+  return [
+    `${GLYPHS.session} **Session context imported** from \`${facts.runtime}\`${facts.title ? ` — ${quote(facts.title, 80)}` : ''}.`,
+    '-# The next turn here starts from its plan, decisions, and pitfalls.',
+  ].join('\n')
+}
 
 // ─── §4.4 the "your draft was overridden" DM ──────────────────────────────────
 

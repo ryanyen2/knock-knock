@@ -37,6 +37,9 @@ import {
   senderKind,
   buildRosterLinesForRoom,
   approverForAgent,
+  isShareSessionCommand,
+  wrapSharedContext,
+  pickFreshContext,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
@@ -56,13 +59,23 @@ import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.t
 import {
   GLYPHS,
   LETTERS,
+  NUMBERS,
   renderWorkbench,
   workbenchEntries,
   rewindActionFor,
   renderRewindAck,
+  renderSessionCard,
+  renderSessionImported,
   type RewindAction,
 } from './ledger/render/surface.ts'
 import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
+import {
+  KNOWLEDGE_FOLD,
+  activeNotes,
+  type KnowledgeFoldState,
+} from './ledger/artifacts/knowledge.ts'
+import { listAllSessions, makeSessionStore, type SessionSummary } from './sessions/index.ts'
+import { distill } from './sessions/distill.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 /** §4.1 max one Workbench edit per channel per this window (Discord rate limit). */
@@ -104,6 +117,12 @@ export class AgentHost {
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
   /** §4.2 conflict card messageId → its branch hashes, for button resolution. */
   private readonly conflictCards = new Map<string, { branchHashes: Hash[]; channelId: ChannelId }>()
+  /** Share-session card messageId → the offered sessions, for pick resolution. */
+  private readonly sessionCards = new Map<string, { sessions: SessionSummary[]; channelId: ChannelId }>()
+  /** Per-channel set of shared-context note hashes already injected into the
+   *  live session, so each imported brief is delivered to the agent exactly
+   *  once (re-derivable; resets on restart, which only re-shows context). */
+  private readonly deliveredContext = new Map<ChannelId, Set<Hash>>()
   /** §4.1 per-channel pinned pill message id. */
   private readonly pillMsgByChannel = new Map<ChannelId, string>()
   /** §4.1 throttle: pending render timer + last render time per channel. */
@@ -173,6 +192,10 @@ export class AgentHost {
       } else if (interaction.customId.startsWith('cflt:')) {
         this.resolveConflict(interaction).catch(e =>
           this.ui.error(this.key, `conflict resolve error: ${e}`),
+        )
+      } else if (interaction.customId.startsWith('sess:')) {
+        this.handleSessionPick(interaction).catch(e =>
+          this.ui.error(this.key, `session pick error: ${e}`),
         )
       }
     })
@@ -509,6 +532,167 @@ export class AgentHost {
       .catch(() => {})
   }
 
+  // ─── Session sharing (owner imports a prior local session's context) ───────
+
+  /** Owner asked to share a session: discover this agent's local sessions
+   *  (any runtime, filtered to its workspace) and post the selection card. */
+  private async offerSessionShare(
+    channelId: ChannelId,
+    liveAgent: AgentConfig,
+    ownerId: string | undefined,
+  ): Promise<void> {
+    const sessions = await listAllSessions(liveAgent.workspace, { limit: NUMBERS.length })
+    await this.postSessionCard(channelId, sessions, ownerId)
+  }
+
+  /**
+   * Post the share-a-session card. With sessions, attaches one numbered button
+   * per entry (sess:pick:<idx>) plus a Cancel; empty just posts the empty-state.
+   * The offered set is remembered against the message id for pick resolution
+   * (analogue of postConflictCard / conflictCards).
+   */
+  async postSessionCard(
+    channelId: ChannelId,
+    sessions: SessionSummary[],
+    ownerId: string | undefined,
+  ): Promise<string | undefined> {
+    const ch = await this.client.channels.fetch(channelId).catch(() => null)
+    if (!ch || !('send' in ch)) return undefined
+    const offered = sessions.slice(0, NUMBERS.length)
+    const text = renderSessionCard({
+      ownerId,
+      sessions: offered.map(s => ({
+        runtime: s.runtime,
+        title: s.title,
+        updatedAt: s.updatedAt,
+        messageCount: s.messageCount,
+      })),
+    })
+    if (offered.length === 0) {
+      const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
+      this.noteBotMsg(sent.id)
+      return sent.id
+    }
+    const pickRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      ...offered.map((_, idx) =>
+        new ButtonBuilder()
+          .setCustomId(`sess:pick:${idx}`)
+          .setLabel(`${idx + 1}`)
+          .setEmoji(NUMBERS[idx]!)
+          .setStyle(ButtonStyle.Secondary),
+      ),
+    )
+    const cancelRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+      new ButtonBuilder().setCustomId('sess:cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
+    )
+    const sent = await (ch as { send: Function }).send({ content: text, components: [pickRow, cancelRow] })
+    this.sessionCards.set(sent.id, { sessions: offered, channelId })
+    this.noteBotMsg(sent.id)
+    return sent.id
+  }
+
+  /**
+   * Resolve a share-session button: owner-only. Cancel closes the card; a pick
+   * reads + distills the chosen on-disk session and admits an owner-role
+   * `knowledge.append` to know:channel/<id>/shared-context (anchor:none, so the
+   * merge gate is a no-op and no conflict card fires). The knowledge fold then
+   * carries it, the next turn injects it (pendingSharedContext), and on the
+   * Postgres backend it syncs to teammates' machines.
+   */
+  private async handleSessionPick(interaction: ButtonInteraction): Promise<void> {
+    const card = this.sessionCards.get(interaction.message.id)
+    if (!card) {
+      await interaction.reply({ content: 'This share menu is no longer open.', ephemeral: true }).catch(() => {})
+      return
+    }
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    // Owner-only, by ownerUserId (not a delegated room approver): sharing your
+    // own local session is identity-bound, and matches the trigger gate
+    // (senderKind === 'owner').
+    const ownerId = liveAgent.ownerUserId
+    if (!ownerId || interaction.user.id !== ownerId) {
+      await interaction.reply({ content: 'Only the owner can share a session.', ephemeral: true }).catch(() => {})
+      return
+    }
+
+    if (interaction.customId === 'sess:cancel') {
+      this.sessionCards.delete(interaction.message.id)
+      await interaction
+        .update({ content: `${interaction.message.content}\n\n-# ✖️ cancelled`, components: [] })
+        .catch(() => {})
+      return
+    }
+
+    const m = /^sess:pick:(\d+)$/.exec(interaction.customId)
+    if (!m) return
+    const summary = card.sessions[Number(m[1])]
+    if (!summary) return
+
+    // Read the on-disk transcript and distill it (pure). File-based read is the
+    // robust path; nothing in the live session is mutated.
+    const store = makeSessionStore(summary.runtime)
+    const transcript = store ? await store.read(summary.id) : undefined
+    if (!transcript) {
+      await interaction.reply({ content: 'Could not read that session anymore.', ephemeral: true }).catch(() => {})
+      return
+    }
+    const { brief, tags } = distill(transcript)
+    const cwd = transcript.cwd || summary.cwd
+    const body = wrapSharedContext(
+      { source: `${summary.runtime}:${summary.id.slice(0, 8)}`, cwd: cwd || undefined, savedBy: ownerId },
+      brief,
+    )
+
+    const noteId = `session-${summary.runtime}-${summary.id.slice(0, 8)}-${Date.now()}`
+    await admit(this.store, {
+      actor: ownerId,
+      role: 'owner',
+      channel: card.channelId,
+      target: {
+        artifactId: `know:channel/${card.channelId}/shared-context`,
+        anchor: { kind: 'none' },
+      },
+      verb: 'knowledge.append',
+      patch: { kind: 'knowledge', append: { id: noteId, body, tags } },
+      effect: 'pure',
+      caused_by: [],
+    }).catch(err => this.ui.error(this.key, `session import admit: ${err}`))
+
+    this.sessionCards.delete(interaction.message.id)
+    this.ui.note(
+      this.key,
+      `imported ${summary.runtime} session ${summary.id.slice(0, 8)} into ${card.channelId}`,
+    )
+    await interaction
+      .update({ content: renderSessionImported({ runtime: summary.runtime, title: summary.title }), components: [] })
+      .catch(() => {})
+  }
+
+  /**
+   * Shared-context to inject on the next turn in a channel: active
+   * know:channel/<id>/shared-context notes not yet delivered to this host's live
+   * session. Each note's body is already the wrapped <shared-context> block.
+   * Marks them delivered so the agent sees each import exactly once.
+   */
+  private pendingSharedContext(channelId: ChannelId): string | undefined {
+    let state: KnowledgeFoldState
+    try {
+      state = this.engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD)
+    } catch {
+      return undefined // knowledge fold not registered
+    }
+    const notes = activeNotes(state, `know:channel/${channelId}/shared-context`)
+    const delivered = this.deliveredContext.get(channelId) ?? new Set<Hash>()
+    const { prefix, freshHashes } = pickFreshContext(
+      notes.map(n => ({ hash: n.hash, body: n.note.body })),
+      delivered,
+    )
+    if (!prefix) return undefined
+    for (const h of freshHashes) delivered.add(h)
+    this.deliveredContext.set(channelId, delivered)
+    return prefix
+  }
+
   /** This host's agent key — relay uses it to map agentKey → owner. */
   get agentKey(): string {
     return this.key
@@ -556,6 +740,19 @@ export class AgentHost {
     }
 
     const kind = senderKind(room, msg.author.id, ownerId)
+
+    // ─── Owner share-session command — short-circuit before any admit ───────
+    // Owner-only (kind==='owner'): list this agent's local sessions and post a
+    // selection card. The command itself is NOT admitted as a channel.message,
+    // so the agent is never prompted with it; config/sessions stay terminal-
+    // and owner-driven (the prompt-injection invariant). A peer can't reach
+    // here — senderKind only returns 'owner' for the agent's owner.
+    if (kind === 'owner' && isShareSessionCommand(msg.content)) {
+      await this.offerSessionShare(channelId, liveAgent, ownerId).catch(e =>
+        this.ui.error(this.key, `offer session share: ${e}`),
+      )
+      return
+    }
 
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
     const channelArtifactId = `extp:discord/${channelId}`
@@ -708,10 +905,13 @@ export class AgentHost {
       channelId,
     }
 
+    // Inject any freshly-imported session context once, ahead of this turn.
+    const contextPrefix = this.pendingSharedContext(channelId)
+
     let chunks: string[] = []
     let turnError: string | undefined
     try {
-      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal)
+      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal, contextPrefix)
     } catch (e) {
       turnError = e instanceof Error ? e.message : String(e)
       this.ui.error(this.key, `turn failed: ${turnError}`)
