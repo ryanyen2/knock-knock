@@ -61,6 +61,10 @@ export type Verb =
   // Watches — the deferred-continuation primitive (docs/knock-knock-watches.md).
   // A turn that defers and is resumed by the world: arm a long-running command,
   // fire when its output gate matches, disarm when done/expired/canceled.
+  // `watch.requested` is the held-ask anchor: an arm whose command classified
+  // `ask`, awaiting the owner's verdict before `watch.armed` is admitted. The
+  // watch fold ignores it (it keys only on armed/disarmed).
+  | 'watch.requested'
   | 'watch.armed'
   | 'watch.fired'
   | 'watch.disarmed'

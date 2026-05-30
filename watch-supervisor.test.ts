@@ -124,6 +124,23 @@ test('supervisor: deny-classified command never spawns and is disarmed', async (
   store.close()
 })
 
+test('supervisor: an ask-classified (owner-approved) watch spawns and fires', async () => {
+  // By the time a watch.armed reaches the fold, an `ask` command was approved at
+  // arm time; the supervisor only backstops the deny floor, so it must run.
+  const { store, sup, procs } = await harness('ask')
+  const spec: WatchSpec = { name: 'notes', channel: CH, agentKey: 'bot', command: 'fswatch x', fireOn: { kind: 'each-line' } }
+  await admit(store, armProposal(spec))
+  await settle()
+  expect(procs).toHaveLength(1)
+
+  procs[0]!.push('changed')
+  await settle()
+  expect(await store.listByVerb('watch.fired')).toHaveLength(1)
+
+  sup.stop()
+  store.close()
+})
+
 test('supervisor: one-shot fires once then disarms and kills the process', async () => {
   const { store, sup, procs } = await harness()
   const spec: WatchSpec = {

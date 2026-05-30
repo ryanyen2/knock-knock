@@ -60,7 +60,7 @@ import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
 import { admit, surfaceToInbox } from './ledger/admit.ts'
-import { awaitVerdict } from './ledger/await-verdict.ts'
+import { awaitVerdict, DEFAULT_VERDICT_TIMEOUT_MS } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import type { ChannelId, Hash } from './ledger/interaction.ts'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
@@ -793,16 +793,27 @@ export class AgentHost {
    */
   private watchToolsFor(channelId: ChannelId): WatchToolHandlers {
     return {
-      arm: spec => this.armWatch(channelId, spec),
+      // The agent (via the MCP tool) is a proposer: an `ask`-tier command is
+      // held for the owner's one-time approval, not auto-armed.
+      arm: spec => this.armWatch(channelId, spec, { preApproved: false }),
       disarm: name => this.disarmWatch(channelId, name),
       list: async () => this.listWatchesText(channelId),
     }
   }
 
-  /** Arm a watch, deny-flooring its command exactly like a Bash call. */
+  /**
+   * Arm a watch. The command is classified exactly like a Bash call:
+   *   - `deny`  → refused (the hard floor — never armed, never run).
+   *   - `allow` → armed immediately.
+   *   - `ask`   → held: the owner gets one ✅/❌ for the exact command, and the
+   *               watch arms only on approve. `preApproved` (the owner's own
+   *               `!watch`) skips the prompt — typing the command IS the
+   *               approval. See docs/knock-knock-watches.md §5.
+   */
   private async armWatch(
     channelId: ChannelId,
     partial: WatchArmPartial,
+    opts: { preApproved: boolean },
   ): Promise<{ ok: boolean; message: string }> {
     if (!this.getAgentForChannel(channelId)) {
       return { ok: false, message: 'No agent serves this channel.' }
@@ -812,12 +823,60 @@ export class AgentHost {
       toolName: 'Bash',
       subject: spec.command,
     })
-    if (decision !== 'allow') {
+
+    if (decision === 'deny') {
       return {
         ok: false,
-        message: `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` classified \`${decision}\`. Watches require an explicit \`allow\` match; the deny floor still applies.`,
+        message: `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` hits the deny floor. Not armed.`,
       }
     }
+
+    if (decision === 'ask' && !opts.preApproved) {
+      const approved = await this.requestWatchApproval(channelId, spec)
+      if (!approved.ok) return approved // denied or timed out — surface the reason
+    }
+
+    await this.admitWatchArmed(channelId, spec)
+    return {
+      ok: true,
+      message: `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
+    }
+  }
+
+  /** Post the exact watch command to the owner and block on one ✅/❌. */
+  private async requestWatchApproval(
+    channelId: ChannelId,
+    spec: WatchSpec,
+  ): Promise<{ ok: boolean; message: string }> {
+    // Anchor the approval on a `watch.requested` interaction (inert to the watch
+    // fold). The owner's verdict admits tool.approved/denied caused_by its hash.
+    const requested = await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: channelId,
+      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
+      verb: 'watch.requested',
+      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.request', args: spec } },
+      effect: 'pure',
+      caused_by: [],
+    })
+    const anchor = requested.interaction.hash
+
+    await this.approvals.postDiscord({
+      channelId,
+      toolRequestedHash: anchor,
+      toolName: `watch «${spec.name}» (${spec.fireOn.kind})`,
+      input: { command: spec.command },
+    })
+    const verdict = await awaitVerdict(this.store, anchor, DEFAULT_VERDICT_TIMEOUT_MS)
+    if (verdict.behavior === 'allow') return { ok: true, message: 'approved' }
+    return {
+      ok: false,
+      message: `⛔ watch «${spec.name}» not armed — ${verdict.message ?? 'denied'}.`,
+    }
+  }
+
+  private async admitWatchArmed(channelId: ChannelId, spec: WatchSpec): Promise<void> {
     await admit(this.store, {
       actor: this.key,
       role: 'agent',
@@ -828,10 +887,6 @@ export class AgentHost {
       effect: 'pure',
       caused_by: [],
     })
-    return {
-      ok: true,
-      message: `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
-    }
   }
 
   private async disarmWatch(
@@ -879,7 +934,8 @@ export class AgentHost {
     const result =
       parsed.action === 'disarm'
         ? await this.disarmWatch(channelId, parsed.name)
-        : await this.armWatch(channelId, parsed.spec)
+        : // The owner typed the command — that IS the approval; skip the prompt.
+          await this.armWatch(channelId, parsed.spec, { preApproved: true })
     await this.discordSend(channelId, result.message)
   }
 

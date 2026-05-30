@@ -97,11 +97,12 @@ export class WatchSupervisor {
       this.opts.log?.(`watch «${spec.name}»: no host owns ${spec.channel} here — not started`)
       return
     }
-    if (env.decision !== 'allow') {
-      // Deny floor / ask: a background process can't route an interactive
-      // approval, so only an explicit `allow` arms. Refuse and disarm.
-      this.opts.log?.(`watch «${spec.name}»: command classified ${env.decision} — refusing`)
-      void this.disarm(spec, `command classified ${env.decision}`)
+    if (env.decision === 'deny') {
+      // Deny floor backstop: a watch.armed only reaches the fold after arm-time
+      // gating (allow, or an owner-approved `ask`), but the supervisor still
+      // refuses to RUN a command that hits the hard floor, however it got armed.
+      this.opts.log?.(`watch «${spec.name}»: command hits the deny floor — refusing`)
+      void this.disarm(spec, 'command hits the deny floor')
       return
     }
 

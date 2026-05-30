@@ -4,7 +4,7 @@
 - [-] version control over the actions (default primitives)
 - [-] crdt to handle the input/output train
 - [R] how about other social media app
-- [ ] Create threads for agent conversations, instead of flooding all conversations to users
+- [F] Create threads for agent conversations, instead of flooding all conversations to users
 - [ ] For each agent message, formalized it using a certain reader-friendly format: start with keywords or a phrase, then the chat content
 - [ ] editing message mean branching out?
 

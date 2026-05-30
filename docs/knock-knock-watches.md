@@ -184,19 +184,28 @@ works: it's prompted the instant the diff lands, through the normal inbound path
 This is the part to get right from day one, because a watch *runs a script,
 repeatedly, unattended.*
 
-- **Permission floor (non-negotiable).** The command is classified via
-  `classifyTool(readRoomSettings(agent, channel), {toolName:'Bash', subject:
-  command})` at arm time **and** the deny floor applies. A watch whose command
-  is `rm -rf …` is refused — the supervisor admits `watch.disarmed{reason:
-  'denied'}` and never spawns it. In the skeleton, `ask` is treated as refuse
-  too: a background process can't sensibly route an interactive approval, so only
-  an `allow`-classified command arms. (Designed, not yet shipped: arm an `ask`
-  command in a *held* state and let the owner approve it once.)
+- **Permission floor, three-way (non-negotiable).** The command is classified
+  via `classifyTool(readRoomSettings(agent, channel), {toolName:'Bash', subject:
+  command})` at arm time. The arm-gate is `AgentHost.armWatch`:
+  - **`deny`** → refused outright (the hard floor — `rm -rf …` never arms,
+    never runs).
+  - **`allow`** → armed immediately.
+  - **`ask`** → *held*: the owner gets one ✅/❌ for the **exact command** (via
+    the existing `Approvals.postDiscord` + `awaitVerdict`, anchored on a
+    `watch.requested` interaction), and `watch.armed` is admitted only on
+    approve. This is essential because the tier order is `deny → ask → allow`
+    (first match wins): a typical `ask:[Bash(*)]` profile **shadows every Bash
+    `allow`**, so pre-allowlisting a watch command is impractical — approving the
+    command once is the usable path. The owner's own `!watch` is pre-approved
+    (typing the command *is* the approval). The supervisor then backstops the
+    **deny floor only** — an armed watch has already cleared arm-time gating, but
+    a `deny` command is refused at spawn no matter how it got armed.
 - **Prompt-injection invariant.** Declarative watches come only from trusted
   config (the setup CLI / `access.json`), never synthesized from channel text —
-  the same rule that protects `rooms/*.settings.json`. Imperative arming in the
-  skeleton is **owner-only** (`!watch …`, short-circuited in `handleInbound`
-  like the share/resume commands), so a peer agent can't arm a watch by talking.
+  the same rule that protects `rooms/*.settings.json`. The owner `!watch` command
+  is owner-only (short-circuited in `handleInbound`); the agent self-arms via the
+  MCP tool but every `ask`-tier command it proposes is held for owner approval,
+  so a peer can never cause an unapproved command to run in the background.
 - **The gate prevents turn spam.** `fireOn` (`each-line | change | match | exit`)
   decides which lines escalate to a turn. A chatty `tail -F` with `fireOn: change`
   fires only on distinct lines, not every line.
@@ -269,6 +278,16 @@ requests in §4 work:
    The tool calls auto-allow (the *command* is still classified); the agent is
    nudged toward the capability by a one-line preamble entry, shown only for
    runtimes that wire the tool (`runtimeSelfArmsWatches`).
+8. **Held-`ask` arm approval** (`AgentHost.requestWatchApproval`): an agent-armed
+   command that classifies `ask` is posted to the owner for one ✅/❌ (reusing
+   `Approvals` + `awaitVerdict`, anchored on a `watch.requested` verb); the watch
+   arms only on approve. The supervisor's spawn gate relaxed to **deny-floor
+   only**. This is what makes self-arming usable under a real `ask:[Bash(*)]`
+   profile — see §5.
+9. **Robust profile loading** (`state.ts`/`readRoomSettings`): accepts both the
+   flat and `{"permissions":{…}}` shapes and the legacy `rooms/<channel>` path,
+   and warns on an empty-but-present profile — so a mis-located or mis-formatted
+   `settings.json` fails loudly instead of silently dropping the deny floor.
 
 ### How the agent self-arming works (§3 "imperative" path)
 
@@ -290,7 +309,6 @@ the universal fallback and works for every runtime.
 
 - ACP self-arming (per-runtime MCP config so out-of-process agents get the tool).
 - Workbench rendering + reaction-to-cancel.
-- Held-`ask` watches with one-time owner approval.
 - Loop-guard fold exempting watch-descended turns.
 - Cross-machine host affinity.
 - A `poll` sugar (`every 30s: <cmd>`) and a `file` specialization using native
