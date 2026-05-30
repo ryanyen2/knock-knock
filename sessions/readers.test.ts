@@ -192,6 +192,27 @@ describe('GeminiSessionStore', () => {
   })
 })
 
+describe('trailing-slash workspace (access.json may store one)', () => {
+  // Regression: a workspace like "/tmp/ws/proj/" must still resolve. The Claude
+  // reader encodes the path into a project-dir name and Gemini sha256-hashes it,
+  // so a stray trailing slash silently returned ZERO sessions before normalize.
+  test('Claude reader finds the session with a trailing slash', async () => {
+    const sessions = await new ClaudeCodeSessionStore().list({ workspace: WS + '/' })
+    expect(sessions.map(s => s.id)).toEqual(['sess-123'])
+  })
+
+  test('Gemini reader finds the session with a trailing slash', async () => {
+    const sessions = await new GeminiSessionStore().list({ workspace: WS + '/' })
+    expect(sessions.some(s => s.id === 'gem-1')).toBe(true)
+  })
+
+  test('listAllSessions is trailing-slash invariant', async () => {
+    const a = (await listAllSessions(WS)).map(s => s.id).sort()
+    const b = (await listAllSessions(WS + '/')).map(s => s.id).sort()
+    expect(b).toEqual(a)
+  })
+})
+
 describe('factory + fan-out', () => {
   test('makeSessionStore maps relay runtimes to session stores', () => {
     expect(makeSessionStore('claude-sdk')!.runtime).toBe('claude-code')

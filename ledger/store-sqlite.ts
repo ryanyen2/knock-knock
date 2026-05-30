@@ -114,6 +114,16 @@ export class SqliteStore implements Store {
     }
     this.db = new Database(path)
     this.db.exec('PRAGMA journal_mode = WAL;')
+    // Writers serialize even under WAL. Without a busy timeout the loser of a
+    // race fails immediately with SQLITE_BUSY ("database is locked"); knock-knock
+    // has several concurrent writers (the turn flow, inbound admits, approval
+    // verdicts, and the watch supervisor's background fires), so make a contending
+    // writer wait for the lock instead of erroring the turn.
+    this.db.exec('PRAGMA busy_timeout = 5000;')
+    // NORMAL is the safe pairing with WAL (no corruption risk, only the last
+    // commit is at risk on power loss) and shortens how long the write lock is
+    // held, which itself reduces contention.
+    this.db.exec('PRAGMA synchronous = NORMAL;')
     this.db.exec('PRAGMA foreign_keys = ON;')
     this.db.exec(SCHEMA)
   }

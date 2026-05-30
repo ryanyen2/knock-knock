@@ -74,10 +74,17 @@ export interface SessionStore {
  *  descendant of it (so a session started in a subdir still surfaces). */
 export function cwdMatchesWorkspace(cwd: string | undefined, workspace: string): boolean {
   if (!cwd) return false
-  const norm = (p: string) => p.replace(/\/+$/, '')
-  const a = norm(cwd)
-  const b = norm(workspace)
+  const a = normalizeWorkspace(cwd)
+  const b = normalizeWorkspace(workspace)
   return a === b || a.startsWith(b + '/')
+}
+
+/** Normalize a workspace path for matching/encoding: strip trailing slashes so
+ *  "/x/y/" and "/x/y" resolve identically. Critical because the path is encoded
+ *  into a Claude project-dir name and sha256-hashed for Gemini, where a trailing
+ *  slash diverges from the on-disk reality (access.json may carry one). */
+export function normalizeWorkspace(ws: string): string {
+  return ws.replace(/\/+$/, '')
 }
 
 /** First non-empty line of prose, collapsed + capped, for a session title. */

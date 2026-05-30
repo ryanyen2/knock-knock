@@ -25,6 +25,7 @@ import {
   countMessages,
   cwdMatchesWorkspace,
   deriveTitle,
+  normalizeWorkspace,
   parseJsonl,
 } from './session-store.ts'
 
@@ -111,7 +112,8 @@ export class ClaudeCodeSessionStore implements SessionStore {
   readonly runtime = 'claude-code' as const
 
   async list(opts: { workspace: string; limit?: number }): Promise<SessionSummary[]> {
-    const dirs = await candidateDirs(opts.workspace)
+    const workspace = normalizeWorkspace(opts.workspace)
+    const dirs = await candidateDirs(workspace)
     const out: SessionSummary[] = []
     for (const dir of dirs) {
       let files: string[]
@@ -125,7 +127,7 @@ export class ClaudeCodeSessionStore implements SessionStore {
         try {
           const [text, st] = await Promise.all([readFile(path, 'utf8'), stat(path)])
           const parsed = parseClaude(parseJsonl(text))
-          if (!cwdMatchesWorkspace(parsed.cwd, opts.workspace)) continue
+          if (!cwdMatchesWorkspace(parsed.cwd, workspace)) continue
           out.push({
             id: file.replace(/\.jsonl$/, ''),
             runtime: this.runtime,

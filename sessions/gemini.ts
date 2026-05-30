@@ -22,6 +22,7 @@ import {
   type TranscriptEvent,
   countMessages,
   deriveTitle,
+  normalizeWorkspace,
 } from './session-store.ts'
 
 function tmpRoot(): string {
@@ -105,7 +106,8 @@ export class GeminiSessionStore implements SessionStore {
   readonly runtime = 'gemini' as const
 
   async list(opts: { workspace: string; limit?: number }): Promise<SessionSummary[]> {
-    const dir = chatsDirFor(opts.workspace)
+    const workspace = normalizeWorkspace(opts.workspace)
+    const dir = chatsDirFor(workspace)
     let files: string[]
     try {
       files = (await readdir(dir)).filter(f => f.endsWith('.json'))
@@ -122,7 +124,7 @@ export class GeminiSessionStore implements SessionStore {
         out.push({
           id: parsed.id ?? stem,
           runtime: this.runtime,
-          cwd: opts.workspace, // the hash dir IS the project, so cwd is known
+          cwd: workspace, // the hash dir IS the project, so cwd is known
           updatedAt: parsed.lastTs ?? st.mtime.toISOString(),
           title: deriveTitle(parsed.events),
           messageCount: countMessages(parsed.events),
