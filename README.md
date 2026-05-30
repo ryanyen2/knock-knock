@@ -18,6 +18,12 @@ Your agent and a collaborator's agent each run on your own machines, connected t
 
 The relay is **agent-agnostic** and **multi-agent**: one process can host several bot identities at once, each with its own Discord token, runtime (Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent), workspace, and rooms. See **[Getting started with different agents](docs/getting-started-agents.md)** for per-agent runtime setup, multi-agent collaboration, and the deny-floor caveat.
 
+**Beyond request → reply, the relay adds three collaboration features:**
+
+- **[Session sharing](docs/session-sharing.md)** 📥 — start from the plan/decisions in one of your local coding sessions, instead of cold. Import a distilled brief, or resume the live session.
+- **[Watches](docs/knock-knock-watches.md)** ⏳ — let a turn *defer* and be resumed by the world: a file changing, a job finishing, a deadline passing. The relay owns the wait and re-prompts the agent when reality changes.
+- **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)** — the Discord reaction vocabulary, equal-role conflict cards, and how the append-only ledger versions every action (nothing deleted, only superseded; rewind/checkpoint the frontier).
+
 > **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
 
 ---
@@ -172,14 +178,18 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 - **Live "Workbench."** Each channel gets one pinned message the relay edits in place as the turn runs — a per-agent activity log of the tool steps (`→ Terminal git status ✓`), with the current state as the last line. After the turn it stays put as the trace of what happened.
 - **Attribution line.** A small italic line under each reply names the message and tool count it was traced from — the audit trail, surfaced.
 - **Sessions persist.** The relay resumes a session per channel on each turn, so the agent retains context between messages.
+- **Share or resume a local session** 📥 — start collaboration from the plan and decisions already in one of your local coding sessions (Claude Code, Codex, OpenCode, Gemini), instead of cold. `share session` imports a distilled context brief; `resume session` continues the live session. Owner-only. See **[Session sharing](docs/session-sharing.md)**.
+- **Watches — defer and resume on events** ⏳ — an agent (or the owner via `!watch`) can register interest in something that happens *later* — a file changing, a job finishing, a script exiting, a deadline passing — and be re-prompted to act and post the instant it does, without holding a turn open. See **[Watches](docs/knock-knock-watches.md)**.
 
 ### Collaboration cues (multi-agent)
 
-When two agents share a channel and edit the same thing, or you want to redirect a turn, the relay surfaces it instead of resolving silently:
+When two agents share a channel and edit the same thing, or you want to redirect a turn, the relay surfaces it instead of resolving silently — and because every action is recorded in an append-only ledger, **nothing is ever deleted, only superseded**:
 
-- **Conflict card** 🔀 — if two equal-role drafts land at the same anchor, the relay posts a **Take A / Take B / Write my own** card; only the owner can resolve it, and the losing draft is kept (never deleted).
-- **Override DM** 🔁 — if your agent's draft is overridden by a higher-role write, you get a short DM so you know what changed.
-- **Rewind reactions** — react on a bot message with **🔁 retry** to re-run that turn, **⏪ rewind** or **🧷 checkpoint** to mark a point in the conversation.
+- **Conflict card** 🔀 — two equal-role drafts at the same anchor → a **Take A / Take B / Write my own** card; only the owner resolves it, the loser is kept.
+- **Override DM** 🔁 — a higher-role write overrides your agent's draft → a short DM telling you what changed.
+- **Rewind reactions** — react on a bot message: **🔁 retry** re-runs the turn, **⏪ rewind** or **🧷 checkpoint** moves/pins the conversation frontier.
+
+These cues, the full reaction/glyph vocabulary, conflict resolution, and how the relay versions every action live in **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)**.
 
 ---
 

@@ -202,6 +202,48 @@ bun relay.ts
   same anchor, the relay posts a 🔀 **Take A / Take B / Write my own** card (only
   the owner resolves; the loser is kept); the overridden agent's owner gets a 🔁
   DM. React **🔁 / ⏪ / 🧷** on a bot message to retry, rewind, or checkpoint a turn.
+  The full reaction vocabulary, conflict resolution, and how the ledger versions
+  every action (nothing deleted, only superseded) are in
+  [reactions-and-versioning.md](reactions-and-versioning.md).
+- **Session sharing** 📥 — an owner can start collaboration from the plan and
+  decisions in one of their local coding sessions: `share session` imports a
+  distilled context brief into the channel; `resume session` continues the live
+  session. See [session-sharing.md](session-sharing.md).
+- **Watches** ⏳ — let a turn defer and be resumed by the world (a file changing,
+  a job finishing, a deadline passing). See the next section and
+  [knock-knock-watches.md](knock-knock-watches.md).
+
+---
+
+## Watches — deferring a turn until the world changes
+
+A watch lets an agent register interest in something that happens *later* and be
+re-prompted to act (and post to Discord) the instant it does — without holding a
+turn open or polling. It runs a supervised command; each output line is gated,
+and a matching line resumes a fresh turn. Two ways to arm one:
+
+- **Owner command** (every runtime): `!watch <name> on-change|each-line|on-exit|match:<regex> [every=10s ttl=10m max=5 once] <command>`, plus `!watch list` and `!unwatch <name>`. Owner-only, short-circuited in `handleInbound` before any admit — a peer can't arm a watch by talking.
+- **Agent tool** (Claude SDK runtime today): the in-process MCP server
+  (`adapters/watch-mcp.ts`) exposes `watch` / `unwatch` / `watch_list`, so the
+  agent arms from natural language ("start watching the notes file"). Only
+  runtimes wired for it self-arm (`runtimeSelfArmsWatches`); ACP agents use the
+  owner `!watch` fallback.
+
+Both paths funnel through one permission-gated `AgentHost.armWatch`:
+
+```
+agent calls watch (or owner types !watch)
+  → AgentHost.armWatch — classifyTool({toolName:'Bash', subject: command}) deny-floors it
+  → admit(watch.armed)                         [the watch fold records the intent]
+  → WatchSupervisor reconciles desired-vs-running → spawns the command
+  → each stdout line → watchGate → admit(watch.fired)
+  → resume-on-watch → admit(turn.prompted) → drive-turn → reply → post-on-reply
+```
+
+**Safety:** the watch command is classified exactly like a Bash call against the
+room's `allow/ask/deny` profile, and **only an `allow`-classified command arms**
+— `ask` and `deny` both refuse (a background process can't route an interactive
+approval, and the deny floor is absolute). TTL / max-fires bound a runaway watch.
 
 ---
 
