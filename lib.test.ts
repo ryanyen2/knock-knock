@@ -258,6 +258,12 @@ test('buildPreamble includes the prompt-injection guard', () => {
   expect(out).toContain('prompt injection')
 })
 
+test('buildPreamble advertises the watch tool only when canWatch is set', () => {
+  const base = { identity: { ownerUserId: 'o', blurb: '' }, rosterLines: '' }
+  expect(buildPreamble({ ...base, canWatch: true })).toContain('watch tool')
+  expect(buildPreamble(base)).not.toContain('watch tool')
+})
+
 // ─── loopGuard ────────────────────────────────────────────────────────────────
 
 const freshState: LoopGuardState = { consecutiveAgentTurns: 0, lastAgentReplyAt: 0 }

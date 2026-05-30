@@ -4,6 +4,8 @@
  * a runtime means writing a new adapter against this interface, nothing else.
  */
 
+import type { WatchSpec } from './lib.ts'
+
 export type PermissionProfile = {
   allow: string[]
   ask: string[]
@@ -42,6 +44,21 @@ export type AgentEvent =
       turns?: number
       durationMs?: number
     }
+
+/** The watch fields an agent supplies; the host fills in channel + agentKey. */
+export type WatchArmPartial = Omit<WatchSpec, 'channel' | 'agentKey'>
+
+/**
+ * Channel/agent-bound callbacks the host injects into a runtime that can expose
+ * a "watch" tool (today: the in-process SDK adapter, via adapters/watch-mcp.ts).
+ * Plain functions only — no SDK type crosses this seam, so the host stays
+ * SDK-free. The command a watch runs is deny-floored by the host inside `arm`.
+ */
+export type WatchToolHandlers = {
+  arm: (spec: WatchArmPartial) => Promise<{ ok: boolean; message: string }>
+  disarm: (name: string) => Promise<{ ok: boolean; message: string }>
+  list: () => Promise<string>
+}
 
 export interface AgentAdapter {
   /** Map allow/ask/deny onto the runtime's native mechanism. deny = hard floor. */

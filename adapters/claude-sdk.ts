@@ -4,15 +4,39 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { SDKSystemMessage, SDKResultSuccess, SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from '../agent-adapter.ts'
+import type {
+  SDKSystemMessage,
+  SDKResultSuccess,
+  SDKAssistantMessage,
+  McpServerConfig,
+} from '@anthropic-ai/claude-agent-sdk'
+import type {
+  AgentAdapter,
+  AgentEvent,
+  PermissionProfile,
+  Verdict,
+  WatchToolHandlers,
+} from '../agent-adapter.ts'
+import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
 
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
   private eventHandler?: (event: AgentEvent) => void
+  private readonly mcpServers?: Record<string, McpServerConfig>
+  private readonly alwaysAllow: string[]
 
-  constructor(private readonly cwd: string) {}
+  constructor(private readonly cwd: string, watchTools?: WatchToolHandlers) {
+    // The watch MCP server (if the host wired callbacks) lets the agent arm
+    // watches by calling a tool. The tool calls auto-allow so arming is smooth;
+    // the *command* a watch runs is deny-floored by the host before it runs.
+    if (watchTools) {
+      this.mcpServers = { 'knock-knock': makeWatchMcpServer(watchTools) }
+      this.alwaysAllow = WATCH_TOOL_NAMES
+    } else {
+      this.alwaysAllow = []
+    }
+  }
 
   applyPolicy(profile: PermissionProfile): void {
     this.profile = profile
@@ -59,9 +83,10 @@ export class ClaudeSdkAdapter implements AgentAdapter {
         cwd: this.cwd,
         permissionMode: 'default',
         abortController,
-        allowedTools: this.profile.allow,
+        allowedTools: [...this.profile.allow, ...this.alwaysAllow],
         // deny is the hard floor — must reach the SDK here, not via canUseTool alone
         disallowedTools: this.profile.deny,
+        ...(this.mcpServers ? { mcpServers: this.mcpServers } : {}),
         // Isolation mode: prevent the SDK from loading .mcp.json, CLAUDE.md, or
         // any project/local settings from the workspace cwd. The relay passes all
         // policy programmatically; stray disk config is the bug this guards against.

@@ -51,11 +51,11 @@ import {
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
-import { makeAdapter } from './adapters/index.ts'
+import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
-import type { AgentEvent } from './agent-adapter.ts'
+import type { AgentEvent, WatchToolHandlers, WatchArmPartial } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
@@ -786,7 +786,83 @@ export class AgentHost {
     return { workspace: liveAgent.workspace, decision }
   }
 
-  /** Owner `!watch` / `!unwatch` / `!watch list` — arm/disarm/inspect watches. */
+  /**
+   * The watch tool surface, bound to a channel. Shared by the owner `!watch`
+   * command and the agent's `mcp__knock-knock__watch` tool (adapters/watch-mcp.ts),
+   * so both paths arm through one permission-gated implementation.
+   */
+  private watchToolsFor(channelId: ChannelId): WatchToolHandlers {
+    return {
+      arm: spec => this.armWatch(channelId, spec),
+      disarm: name => this.disarmWatch(channelId, name),
+      list: async () => this.listWatchesText(channelId),
+    }
+  }
+
+  /** Arm a watch, deny-flooring its command exactly like a Bash call. */
+  private async armWatch(
+    channelId: ChannelId,
+    partial: WatchArmPartial,
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!this.getAgentForChannel(channelId)) {
+      return { ok: false, message: 'No agent serves this channel.' }
+    }
+    const spec: WatchSpec = { ...partial, channel: channelId, agentKey: this.key }
+    const decision = classifyTool(readRoomSettings(this.key, channelId), {
+      toolName: 'Bash',
+      subject: spec.command,
+    })
+    if (decision !== 'allow') {
+      return {
+        ok: false,
+        message: `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` classified \`${decision}\`. Watches require an explicit \`allow\` match; the deny floor still applies.`,
+      }
+    }
+    await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: channelId,
+      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
+      verb: 'watch.armed',
+      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.arm', args: spec } },
+      effect: 'pure',
+      caused_by: [],
+    })
+    return {
+      ok: true,
+      message: `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
+    }
+  }
+
+  private async disarmWatch(
+    channelId: ChannelId,
+    name: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: channelId,
+      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
+      verb: 'watch.disarmed',
+      patch: {
+        kind: 'external',
+        intent: { channel: 'tool', op: 'watch.disarm', args: { name, reason: 'requested' } },
+      },
+      effect: 'pure',
+      caused_by: [],
+    })
+    return { ok: true, message: `${GLYPHS.checkpoint} unwatched «${name}»` }
+  }
+
+  private listWatchesText(channelId: ChannelId): string {
+    const state = this.engine.get<WatchFoldState>(WATCH_FOLD)
+    const mine = liveWatches(state).filter(w => w.channel === channelId)
+    return mine.length
+      ? mine.map(w => `• \`${w.name}\` — ${w.fireOn.kind} — \`${w.command}\``).join('\n')
+      : 'No active watches in this channel.'
+  }
+
+  /** Owner `!watch` / `!unwatch` / `!watch list` — the same core as the agent tool. */
   private async handleWatchCommand(channelId: ChannelId, text: string): Promise<void> {
     const parsed = parseWatchCommand(text)
     if (!parsed) {
@@ -796,66 +872,15 @@ export class AgentHost {
       )
       return
     }
-
-    const artifactId = `extp:discord/${channelId}`
     if (parsed.action === 'list') {
-      const state = this.engine.get<WatchFoldState>(WATCH_FOLD)
-      const mine = liveWatches(state).filter(w => w.channel === channelId)
-      await this.discordSend(
-        channelId,
-        mine.length
-          ? mine.map(w => `• \`${w.name}\` — ${w.fireOn.kind} — \`${w.command}\``).join('\n')
-          : 'No active watches in this channel.',
-      )
+      await this.discordSend(channelId, this.listWatchesText(channelId))
       return
     }
-
-    if (parsed.action === 'disarm') {
-      await admit(this.store, {
-        actor: this.key,
-        role: 'owner',
-        channel: channelId,
-        target: { artifactId, anchor: { kind: 'none' } },
-        verb: 'watch.disarmed',
-        patch: {
-          kind: 'external',
-          intent: { channel: 'tool', op: 'watch.disarm', args: { name: parsed.name, reason: 'owner' } },
-        },
-        effect: 'pure',
-        caused_by: [],
-      })
-      await this.discordSend(channelId, `${GLYPHS.checkpoint} unwatched «${parsed.name}»`)
-      return
-    }
-
-    // arm — classify the command up front so the owner gets immediate feedback.
-    const spec: WatchSpec = { ...parsed.spec, channel: channelId, agentKey: this.key }
-    const decision = classifyTool(readRoomSettings(this.key, channelId), {
-      toolName: 'Bash',
-      subject: spec.command,
-    })
-    if (decision !== 'allow') {
-      await this.discordSend(
-        channelId,
-        `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` classified \`${decision}\`. Watches require an explicit \`allow\` match; the deny floor still applies.`,
-      )
-      return
-    }
-
-    await admit(this.store, {
-      actor: this.key,
-      role: 'owner',
-      channel: channelId,
-      target: { artifactId, anchor: { kind: 'none' } },
-      verb: 'watch.armed',
-      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.arm', args: spec } },
-      effect: 'pure',
-      caused_by: [],
-    })
-    await this.discordSend(
-      channelId,
-      `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
-    )
+    const result =
+      parsed.action === 'disarm'
+        ? await this.disarmWatch(channelId, parsed.name)
+        : await this.armWatch(channelId, parsed.spec)
+    await this.discordSend(channelId, result.message)
   }
 
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
@@ -1116,7 +1141,10 @@ export class AgentHost {
     if (existing) return existing
 
     const profile = readRoomSettings(this.key, channelId)
-    const adapter = makeAdapter(liveAgent.runtime, { workspace: liveAgent.workspace })
+    const adapter = makeAdapter(liveAgent.runtime, {
+      workspace: liveAgent.workspace,
+      watchTools: this.watchToolsFor(channelId),
+    })
     const ctx: PreambleContext = {
       identity: {
         name: liveAgent.name,
@@ -1124,6 +1152,7 @@ export class AgentHost {
         blurb: liveAgent.blurb,
       },
       rosterLines: buildRosterLinesForRoom(room),
+      canWatch: runtimeSelfArmsWatches(liveAgent.runtime),
     }
     const created: Session = {
       driver: new Driver(

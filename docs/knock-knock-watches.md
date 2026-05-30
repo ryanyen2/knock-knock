@@ -261,13 +261,34 @@ requests in §4 work:
    test using a fake process.
 6. Owner-only `!watch` / `!unwatch` arming in `AgentHost.handleInbound`, gated by
    `classifyTool` + the deny floor; wired into `relay.ts`.
+7. **Agent self-arming via an in-process MCP tool** (`adapters/watch-mcp.ts`):
+   the SDK adapter exposes `watch` / `unwatch` / `watch_list` so the agent arms
+   from natural language ("start watching the notes file"). Both paths — the
+   owner `!watch` command and the agent tool — funnel through one
+   permission-gated `AgentHost.armWatch`, so the deny floor applies identically.
+   The tool calls auto-allow (the *command* is still classified); the agent is
+   nudged toward the capability by a one-line preamble entry, shown only for
+   runtimes that wire the tool (`runtimeSelfArmsWatches`).
+
+### How the agent self-arming works (§3 "imperative" path)
+
+The tool surface mirrors Claude Code's Monitor schema (`{name, command, …}`).
+The handler runs **in-process** (no extra process, native to the SDK adapter):
+the agent calls `mcp__knock-knock__watch`, the handler translates the flat args
+to a `WatchArmPartial` (`armArgsToPartial`, pure + tested), the host fills in
+channel + agentKey, deny-floors the command, and admits `watch.armed` — the
+same interaction the `!watch` command produces. From there the supervisor and
+`resume-on-watch` are unchanged. The host stays SDK-free: only plain
+`WatchToolHandlers` functions cross the seam (defined in `agent-adapter.ts`),
+and the SDK import lives entirely in `adapters/watch-mcp.ts`.
+
+ACP agents don't get the in-process tool yet — they'd self-arm through their own
+MCP config, which is runtime-specific (deferred). The owner `!watch` command is
+the universal fallback and works for every runtime.
 
 **Designed, not yet shipped:**
 
-- An **MCP `watch` tool** the relay exposes so the *agent itself* arms watches
-  from natural language ("start watching the notes file") — the productionized
-  arming path, replacing the owner `!watch` command. This is the right long-term
-  UX; the owner command is the testable stand-in.
+- ACP self-arming (per-runtime MCP config so out-of-process agents get the tool).
 - Workbench rendering + reaction-to-cancel.
 - Held-`ask` watches with one-time owner approval.
 - Loop-guard fold exempting watch-descended turns.
