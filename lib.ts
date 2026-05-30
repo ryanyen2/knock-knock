@@ -330,3 +330,13 @@ export function loopGuard(
   // 'unknown' senders are gated by guildSenderAllowed before reaching here.
   return { decision: { allow: true }, next: state }
 }
+
+/**
+ * Derive a Discord thread name from the raw message text.
+ * Strips @mention tokens, trims whitespace, and caps at 80 chars.
+ */
+export function threadNameFromPrompt(text: string): string {
+  const stripped = text.replace(/<@!?\d+>/g, '').replace(/\s+/g, ' ').trim()
+  const trimmed = stripped.slice(0, 80) || 'task'
+  return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
+}

@@ -9,6 +9,7 @@ import {
   wrapEnvelope,
   buildPreamble,
   loopGuard,
+  threadNameFromPrompt,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
@@ -311,4 +312,28 @@ test('loopGuard: owner message after agent chain allows the next agent turn', ()
   // Now an agent message should be allowed again
   const agentResult = loopGuard(state, 'agent', NOW + 2_000, { maxConsecutive: 4, cooldownMs: 1_000 })
   expect(agentResult.decision.allow).toBe(true)
+})
+
+// ─── threadNameFromPrompt ─────────────────────────────────────────────────────
+
+test('threadNameFromPrompt: strips mentions and trims', () => {
+  expect(threadNameFromPrompt('<@123> <@!456> do the thing')).toBe('do the thing')
+})
+
+test('threadNameFromPrompt: all-mentions text falls back to "task"', () => {
+  expect(threadNameFromPrompt('<@123> <@456>')).toBe('task')
+})
+
+test('threadNameFromPrompt: empty string falls back to "task"', () => {
+  expect(threadNameFromPrompt('')).toBe('task')
+})
+
+test('threadNameFromPrompt: long prompt is truncated with ellipsis', () => {
+  const long = 'a'.repeat(100)
+  const result = threadNameFromPrompt(long)
+  expect(result).toBe('a'.repeat(80) + '…')
+})
+
+test('threadNameFromPrompt: short prompt is returned as-is', () => {
+  expect(threadNameFromPrompt('fix the auth bug')).toBe('fix the auth bug')
 })

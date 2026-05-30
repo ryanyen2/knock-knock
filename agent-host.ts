@@ -25,6 +25,7 @@ import {
   ButtonStyle,
   ActionRowBuilder,
   type Message,
+  type ThreadChannel,
   type Interaction,
   type ButtonInteraction,
 } from 'discord.js'
@@ -37,6 +38,7 @@ import {
   senderKind,
   buildRosterLinesForRoom,
   approverForAgent,
+  threadNameFromPrompt,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
@@ -250,6 +252,24 @@ export class AgentHost {
     const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
     this.noteBotMsg(sent.id)
     return sent.id
+  }
+
+  /**
+   * Get or create the task thread for a top-level message.
+   * Race-tolerant: if two AgentHosts race on startThread, the loser catches
+   * and refetches the message to pick up the winner's thread.
+   */
+  private async ensureTaskThread(msg: Message): Promise<ThreadChannel | null> {
+    if (msg.hasThread) return (msg.thread as ThreadChannel | null) ?? null
+    try {
+      return (await msg.startThread({
+        name: threadNameFromPrompt(msg.content),
+        autoArchiveDuration: 1440,
+      })) as ThreadChannel
+    } catch {
+      const fresh = await msg.fetch().catch(() => null)
+      return (fresh?.thread as ThreadChannel | null) ?? null
+    }
   }
 
   /**
@@ -532,10 +552,12 @@ export class AgentHost {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
 
-    const channelId = msg.channel.isThread()
-      ? msg.channel.parentId ?? msg.channelId
+    // roomKey: the parent text channel — used for permission profile and allowlist.
+    // Threads inherit their parent channel's room config.
+    const roomKey = msg.channel.isThread()
+      ? (msg.channel.parentId ?? msg.channelId)
       : msg.channelId
-    const room = liveAgent.rooms[channelId]
+    const room = liveAgent.rooms[roomKey]
     if (!room) return
 
     if (msg.author.id === this.client.user?.id) return
@@ -549,7 +571,21 @@ export class AgentHost {
     this.inboundRate.set(msg.author.id, [...recent, now])
 
     const requireMention = room.requireMention ?? true
-    if (requireMention && !(await this.isMentioned(msg, access.mentionPatterns))) return
+    const mentioned = await this.isMentioned(msg, access.mentionPatterns)
+    if (requireMention && !mentioned) return
+
+    // ledgerChannelId: the scope for all per-task concepts (loop-guard, turn
+    // lineage, knowledge fold, workbench). Messages already in a thread use
+    // the thread's own ID. Top-level mentions spawn (or reuse) a task thread.
+    let ledgerChannelId: ChannelId
+    if (msg.channel.isThread()) {
+      ledgerChannelId = msg.channelId
+    } else if (mentioned) {
+      const thread = await this.ensureTaskThread(msg)
+      ledgerChannelId = thread?.id ?? msg.channelId
+    } else {
+      ledgerChannelId = msg.channelId
+    }
 
     if ('sendTyping' in msg.channel) {
       void (msg.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
@@ -558,12 +594,12 @@ export class AgentHost {
     const kind = senderKind(room, msg.author.id, ownerId)
 
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
-    const channelArtifactId = `extp:discord/${channelId}`
-    const prior = await this.store.latestInChannel(channelId)
+    const channelArtifactId = `extp:discord/${ledgerChannelId}`
+    const prior = await this.store.latestInChannel(ledgerChannelId)
     const inboundResult = await admit(this.store, {
       actor: msg.author.id,
       role: kind === 'unknown' ? 'agent' : kind,
-      channel: channelId,
+      channel: ledgerChannelId,
       target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
       verb: 'channel.message',
       patch: {
@@ -581,7 +617,7 @@ export class AgentHost {
 
     // Side-table: stash Discord context so synchronization-driven UX can
     // use the live Message object (ack reaction, DmCourier header).
-    const channelLabel = await this.describeChannel(msg).catch(() => `#${channelId}`)
+    const channelLabel = await this.describeChannel(msg).catch(() => `#${roomKey}`)
     const ackEmoji = access.ackReaction ?? '👀'
     this.inboundByHash.set(inboundResult.interaction.hash, {
       msg,
