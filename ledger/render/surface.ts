@@ -241,30 +241,42 @@ export type SessionCardEntry = {
   messageCount: number
 }
 
+export type SessionCardMode = 'import' | 'resume'
+
 export type SessionCardFacts = {
   /** Discord id of the owner who may pick, or undefined. */
   ownerId?: string
   /** Recent local sessions across runtimes, newest first (already capped). */
   sessions: SessionCardEntry[]
+  /** 'import' (default) distills context; 'resume' continues the live session. */
+  mode?: SessionCardMode
 }
 
 /**
- * The in-channel card an owner gets after asking to share a session. Lists the
- * recent local sessions across runtimes; the glue attaches one numbered button
- * per entry. Body only — buttons live in AgentHost. Pure.
+ * The in-channel card an owner gets after asking to share/resume a session.
+ * Lists the recent local sessions; the glue attaches one numbered button per
+ * entry. Body only — buttons live in AgentHost. Pure.
  */
 export function renderSessionCard(facts: SessionCardFacts): string {
+  const mode: SessionCardMode = facts.mode ?? 'import'
   if (facts.sessions.length === 0) {
+    if (mode === 'resume') {
+      return [
+        `${GLYPHS.session} **No resumable session** for this agent's runtime here.`,
+        '-# Resume needs a session from the same runtime. Try "share session" to import context instead.',
+      ].join('\n')
+    }
     return [
       `${GLYPHS.session} **No local sessions found** in this workspace.`,
       '-# Looked across Claude Code, Codex, OpenCode, and Gemini.',
     ].join('\n')
   }
   const who = facts.ownerId ? `<@${facts.ownerId}>` : 'An owner'
-  const lines = [
-    `${GLYPHS.session} **Share a local session** — import its plan & decisions here`,
-    `-# ${who} — pick one. Only your sessions in this workspace are shown; nothing runs.`,
-  ]
+  const header =
+    mode === 'resume'
+      ? `${GLYPHS.session} **Resume a local session** — continue it live in this channel`
+      : `${GLYPHS.session} **Share a local session** — import its plan & decisions here`
+  const lines = [header, `-# ${who} — pick one. Only your sessions in this workspace are shown.`]
   facts.sessions.forEach((s, idx) => {
     lines.push('')
     lines.push(`${NUMBERS[idx] ?? '•'} \`${s.runtime}\`${s.title ? ` — ${quote(s.title, 80)}` : ''}`)
@@ -278,6 +290,14 @@ export function renderSessionImported(facts: { runtime: string; title?: string }
   return [
     `${GLYPHS.session} **Session context imported** from \`${facts.runtime}\`${facts.title ? ` — ${quote(facts.title, 80)}` : ''}.`,
     '-# The next turn here starts from its plan, decisions, and pitfalls.',
+  ].join('\n')
+}
+
+/** Terse confirmation after a channel is bound to resume a live session. */
+export function renderSessionResumed(facts: { runtime: string; title?: string }): string {
+  return [
+    `${GLYPHS.session} **Resuming session** on \`${facts.runtime}\`${facts.title ? ` — ${quote(facts.title, 80)}` : ''}.`,
+    '-# The next turn continues that session with its full history.',
   ].join('\n')
 }
 

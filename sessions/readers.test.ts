@@ -16,7 +16,7 @@ import { ClaudeCodeSessionStore } from './claude.ts'
 import { CodexSessionStore } from './codex.ts'
 import { OpenCodeSessionStore } from './opencode.ts'
 import { GeminiSessionStore } from './gemini.ts'
-import { listAllSessions, makeSessionStore } from './index.ts'
+import { listAllSessions, makeSessionStore, sessionRuntimeForAgent } from './index.ts'
 
 const WS = '/tmp/ws/proj'
 let root: string
@@ -200,6 +200,14 @@ describe('factory + fan-out', () => {
     expect(makeSessionStore('opencode')!.runtime).toBe('opencode')
     expect(makeSessionStore('gemini')!.runtime).toBe('gemini')
     expect(makeSessionStore('nonsense')).toBeUndefined()
+  })
+
+  test('sessionRuntimeForAgent resolves the resumable runtime (or undefined)', () => {
+    expect(sessionRuntimeForAgent('claude-sdk')).toBe('claude-code')
+    expect(sessionRuntimeForAgent('claude-acp')).toBe('claude-code')
+    expect(sessionRuntimeForAgent('opencode')).toBe('opencode')
+    expect(sessionRuntimeForAgent('gemini')).toBe('gemini')
+    expect(sessionRuntimeForAgent('nonsense')).toBeUndefined()
   })
 
   test('listAllSessions merges every runtime, newest first', async () => {

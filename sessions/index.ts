@@ -14,8 +14,8 @@ import { GeminiSessionStore } from './gemini.ts'
 import { OpenCodeSessionStore } from './opencode.ts'
 import type { SessionRuntime, SessionStore, SessionSummary } from './session-store.ts'
 
-/** All session readers, one per runtime. */
-export function allSessionStores(): SessionStore[] {
+/** All session readers, one per runtime. Internal: callers use the seam below. */
+function allSessionStores(): SessionStore[] {
   return [
     new ClaudeCodeSessionStore(),
     new CodexSessionStore(),
@@ -41,6 +41,13 @@ export function makeSessionStore(runtime: string): SessionStore | undefined {
     default:
       return undefined
   }
+}
+
+/** The session-runtime a relay runtime resumes against (claude-sdk/claude-acp →
+ *  claude-code, etc.), or undefined if no store maps. Used to check that a
+ *  session can actually be resumed by the channel's agent before offering it. */
+export function sessionRuntimeForAgent(runtime: string): SessionRuntime | undefined {
+  return makeSessionStore(runtime)?.runtime
 }
 
 /** Recent sessions across every runtime for a workspace, newest first. Each

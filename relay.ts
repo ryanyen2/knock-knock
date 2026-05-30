@@ -39,6 +39,9 @@ import { postOnReply } from './ledger/synchronizations/post-on-reply.ts'
 import { dmOnSupersede } from './ledger/synchronizations/dm-on-supersede.ts'
 import { conflictCard } from './ledger/synchronizations/conflict-card.ts'
 import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
+import { resumeOnWatch } from './ledger/synchronizations/resume-on-watch.ts'
+import { watchFold } from './ledger/concepts/watch.ts'
+import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -92,6 +95,7 @@ await engine.register(channelFold)
 await engine.register(turnFold)
 await engine.register(approvalFold)
 await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at reply time
+await engine.register(watchFold) // deferred-continuation primitive (docs/knock-knock-watches.md)
 
 // Create AgentHosts (Discord clients not yet connected).
 for (const [key, agent] of agentEntries) {
@@ -194,7 +198,27 @@ synchronizer.register(
   }),
 )
 synchronizer.register(retryOnReaction())
+synchronizer.register(resumeOnWatch())
 synchronizer.start()
+
+// WatchSupervisor — owns the OS processes behind armed watches and admits a
+// watch.fired when a watch's output gate matches; resume-on-watch turns that
+// into an agent turn. It reconciles against the watch fold, so watches armed
+// before this boot are re-armed on the initial subscribe.
+const watchSupervisor = new WatchSupervisor({
+  store,
+  engine,
+  resolve: spec => {
+    for (const h of hosts) {
+      const env = h.resolveWatch(spec)
+      if (env) return env
+    }
+    return undefined
+  },
+  spawn: bunSpawn,
+  log: msg => ui.note('watch', msg),
+})
+watchSupervisor.start()
 
 // §4.1 now-working Workbench — one pinned message per channel, refreshed as the
 // turn runs (start, each tool step, end). Driven at relay level (not per-host)

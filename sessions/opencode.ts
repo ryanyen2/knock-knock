@@ -144,9 +144,9 @@ export class OpenCodeSessionStore implements SessionStore {
     try {
       msgFiles = (await readdir(msgDir)).filter(f => f.endsWith('.json')).sort()
     } catch {
-      return meta
-        ? { id, runtime: this.runtime, cwd: meta ? metaCwd(meta) : '', events: [] }
-        : undefined
+      // No message dir: a known session with no turns yet, else truly absent.
+      if (!meta) return undefined
+      return { id, runtime: this.runtime, cwd: metaCwd(meta), events: [] }
     }
 
     const events: TranscriptEvent[] = []

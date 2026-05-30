@@ -1,21 +1,23 @@
 /**
- * Driver — the imported <shared-context> rides ahead of the <channel> envelope,
- * after the first-turn preamble, and only on the turn it's passed.
+ * Driver — imported <shared-context> rides ahead of the <channel> envelope and
+ * after the preamble; the preamble is sent once per session; a resume bind
+ * continues a foreign session id and re-sends the preamble for it.
  */
 
 import { test, expect } from 'bun:test'
 import { Driver, type TurnMeta } from './driver.ts'
 import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from './agent-adapter.ts'
 
-/** Records the prompt text it's handed; returns a stable session id. */
+/** Records each prompt + the sessionId it was handed; echoes the id back (or
+ *  mints one for a fresh session) like a real adapter. */
 class StubAdapter implements AgentAdapter {
-  prompts: string[] = []
+  calls: { text: string; sessionId?: string }[] = []
   applyPolicy(_p: PermissionProfile): void {}
   onPermissionRequest(_h: (r: { toolName: string; input: unknown }) => Promise<Verdict>): void {}
   onEvent(_h: (e: AgentEvent) => void): void {}
-  async prompt(input: { text: string }): Promise<{ sessionId: string; text: string }> {
-    this.prompts.push(input.text)
-    return { sessionId: 'sess-1', text: 'ok' }
+  async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
+    this.calls.push({ text: input.text, sessionId: input.sessionId })
+    return { sessionId: input.sessionId ?? 'fresh-1', text: 'ok' }
   }
 }
 
@@ -29,35 +31,57 @@ const meta: TurnMeta = {
 }
 const ctx = { identity: { name: 'Bot', ownerUserId: 'u1', blurb: 'b' }, rosterLines: '' }
 const PREFIX = '<shared-context source="claude-code:abc">prior plan</shared-context>'
+const deny = async (): Promise<Verdict> => ({ behavior: 'deny', message: 'x' })
 
 test('contextPrefix is injected after the preamble and before the <channel> envelope', async () => {
   const stub = new StubAdapter()
-  const driver = new Driver(stub, 'chan-X', PROFILE, async () => ({ behavior: 'deny', message: 'x' }), ctx)
+  const driver = new Driver(stub, 'chan-X', PROFILE, deny, ctx)
 
   await driver.runTurn('hello', meta, undefined, PREFIX)
 
-  const prompt = stub.prompts[0]!
+  const prompt = stub.calls[0]!.text
   expect(prompt).toContain(PREFIX)
   // The envelope is identified by its chat_id (the preamble also mentions the
   // literal "<channel …>" while explaining the format, so match the real one).
   const envOpen = prompt.indexOf('chat_id="chan-X"')
   expect(envOpen).toBeGreaterThan(-1)
-  // order: preamble … shared-context … <channel> envelope
   expect(prompt.indexOf('You are')).toBeLessThan(prompt.indexOf(PREFIX))
   expect(prompt.indexOf(PREFIX)).toBeLessThan(envOpen)
-  // the actual user text sits inside the envelope, after the context block
   expect(prompt.indexOf('hello')).toBeGreaterThan(prompt.indexOf(PREFIX))
 })
 
 test('a turn with no prefix carries no shared-context (and no preamble on turn 2)', async () => {
   const stub = new StubAdapter()
-  const driver = new Driver(stub, 'chan-X', PROFILE, async () => ({ behavior: 'deny', message: 'x' }), ctx)
+  const driver = new Driver(stub, 'chan-X', PROFILE, deny, ctx)
 
-  await driver.runTurn('first', meta, undefined, PREFIX) // delivers once
-  await driver.runTurn('second', meta) // host passes no prefix the next turn
+  await driver.runTurn('first', meta, undefined, PREFIX)
+  await driver.runTurn('second', meta)
 
-  const second = stub.prompts[1]!
+  const second = stub.calls[1]!.text
   expect(second).not.toContain(PREFIX)
   expect(second).not.toContain('You are') // preamble only on the first turn
   expect(second).toContain('second')
+})
+
+test('bindSession resumes the foreign session id and re-sends the preamble', async () => {
+  const stub = new StubAdapter()
+  const driver = new Driver(stub, 'chan-X', PROFILE, deny, ctx)
+
+  driver.bindSession('foreign-123')
+  await driver.runTurn('continue please', meta)
+
+  expect(stub.calls[0]!.sessionId).toBe('foreign-123') // resumed, not a fresh session
+  expect(stub.calls[0]!.text).toContain('You are') // resumed session is told the room context
+})
+
+test('binding mid-conversation rebinds and re-sends the preamble', async () => {
+  const stub = new StubAdapter()
+  const driver = new Driver(stub, 'chan-X', PROFILE, deny, ctx)
+
+  await driver.runTurn('first', meta) // fresh session: preamble sent, id = fresh-1
+  driver.bindSession('foreign-9') // owner resumes a different session
+  await driver.runTurn('second', meta)
+
+  expect(stub.calls[1]!.sessionId).toBe('foreign-9')
+  expect(stub.calls[1]!.text).toContain('You are') // preamble re-sent after the rebind
 })

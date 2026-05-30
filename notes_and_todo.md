@@ -1,12 +1,12 @@
-- [ ] user cannot see what the code agent locally doing
+- [-] user cannot see what the code agent locally doing
 - [ ] currently there is room-level permission but maybe we need agent-level permission? or relationship? for example agentA can only help agentB with read not write access to the codebase? (actor -> action)
 - [ ] need to have the good meta prompt, or inject role-based instruction to provide context on what they are doing
-- [ ] version control over the actions (default primitives)
-- [ ] crdt to handle the input/output train
-- [ ] how about other social medai app
+- [-] version control over the actions (default primitives)
+- [-] crdt to handle the input/output train
+- [R] how about other social media app
 - [ ] Create threads for agent conversations, instead of flooding all conversations to users
 - [ ] For each agent message, formalized it using a certain reader-friendly format: start with keywords or a phrase, then the chat content
-
+- [ ] editing message mean branching out?
 
 the conflict is not on the artifact but the action(artifact)
 our crdt policy is role-based, human > bot (bot sort it out but need to warn human)

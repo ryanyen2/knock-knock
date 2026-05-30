@@ -28,7 +28,12 @@ import {
   type Interaction,
   type ButtonInteraction,
 } from 'discord.js'
-import { readRoomSettings } from './state.ts'
+import {
+  readRoomSettings,
+  readSessionBinding,
+  writeSessionBinding,
+  clearSessionBinding,
+} from './state.ts'
 import {
   type AgentConfig,
   type Access,
@@ -38,8 +43,12 @@ import {
   buildRosterLinesForRoom,
   approverForAgent,
   isShareSessionCommand,
+  isResumeSessionCommand,
   wrapSharedContext,
   pickFreshContext,
+  classifyTool,
+  parseWatchCommand,
+  type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter } from './adapters/index.ts'
@@ -66,15 +75,23 @@ import {
   renderRewindAck,
   renderSessionCard,
   renderSessionImported,
+  renderSessionResumed,
   type RewindAction,
 } from './ledger/render/surface.ts'
 import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
+import { WATCH_FOLD, liveWatches, type WatchFoldState } from './ledger/concepts/watch.ts'
+import type { WatchRunEnv } from './watch-supervisor.ts'
 import {
   KNOWLEDGE_FOLD,
   activeNotes,
   type KnowledgeFoldState,
 } from './ledger/artifacts/knowledge.ts'
-import { listAllSessions, makeSessionStore, type SessionSummary } from './sessions/index.ts'
+import {
+  listAllSessions,
+  makeSessionStore,
+  sessionRuntimeForAgent,
+  type SessionSummary,
+} from './sessions/index.ts'
 import { distill } from './sessions/distill.ts'
 
 const RECENT_BOT_MSG_CAP = 200
@@ -117,8 +134,11 @@ export class AgentHost {
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
   /** §4.2 conflict card messageId → its branch hashes, for button resolution. */
   private readonly conflictCards = new Map<string, { branchHashes: Hash[]; channelId: ChannelId }>()
-  /** Share-session card messageId → the offered sessions, for pick resolution. */
-  private readonly sessionCards = new Map<string, { sessions: SessionSummary[]; channelId: ChannelId }>()
+  /** Share/resume card messageId → the offered sessions + mode, for resolution. */
+  private readonly sessionCards = new Map<
+    string,
+    { sessions: SessionSummary[]; channelId: ChannelId; mode: 'import' | 'resume' }
+  >()
   /** Per-channel set of shared-context note hashes already injected into the
    *  live session, so each imported brief is delivered to the agent exactly
    *  once (re-derivable; resets on restart, which only re-shows context). */
@@ -532,35 +552,42 @@ export class AgentHost {
       .catch(() => {})
   }
 
-  // ─── Session sharing (owner imports a prior local session's context) ───────
+  // ─── Session sharing & resume (owner-only) ─────────────────────────────────
 
-  /** Owner asked to share a session: discover this agent's local sessions
-   *  (any runtime, filtered to its workspace) and post the selection card. */
+  /** Owner asked to share/resume a session: discover this agent's local sessions
+   *  (workspace-filtered). For resume, keep only sessions whose runtime this
+   *  agent can actually continue. Then post the selection card. */
   private async offerSessionShare(
     channelId: ChannelId,
     liveAgent: AgentConfig,
     ownerId: string | undefined,
+    mode: 'import' | 'resume',
   ): Promise<void> {
-    const sessions = await listAllSessions(liveAgent.workspace, { limit: NUMBERS.length })
-    await this.postSessionCard(channelId, sessions, ownerId)
+    let sessions = await listAllSessions(liveAgent.workspace, { limit: NUMBERS.length * 2 })
+    if (mode === 'resume') {
+      const compatible = sessionRuntimeForAgent(liveAgent.runtime)
+      sessions = sessions.filter(s => s.runtime === compatible)
+    }
+    await this.postSessionCard(channelId, sessions.slice(0, NUMBERS.length), ownerId, mode)
   }
 
   /**
-   * Post the share-a-session card. With sessions, attaches one numbered button
-   * per entry (sess:pick:<idx>) plus a Cancel; empty just posts the empty-state.
-   * The offered set is remembered against the message id for pick resolution
-   * (analogue of postConflictCard / conflictCards).
+   * Post the share/resume card. With sessions, attaches one numbered button per
+   * entry (sess:pick:<idx> for import, sess:resume:<idx> for resume) plus a
+   * Cancel; empty posts the empty-state. The offered set + mode are remembered
+   * against the message id (analogue of postConflictCard / conflictCards).
    */
-  async postSessionCard(
+  private async postSessionCard(
     channelId: ChannelId,
-    sessions: SessionSummary[],
+    offered: SessionSummary[],
     ownerId: string | undefined,
+    mode: 'import' | 'resume',
   ): Promise<string | undefined> {
     const ch = await this.client.channels.fetch(channelId).catch(() => null)
     if (!ch || !('send' in ch)) return undefined
-    const offered = sessions.slice(0, NUMBERS.length)
     const text = renderSessionCard({
       ownerId,
+      mode,
       sessions: offered.map(s => ({
         runtime: s.runtime,
         title: s.title,
@@ -573,10 +600,11 @@ export class AgentHost {
       this.noteBotMsg(sent.id)
       return sent.id
     }
+    const action = mode === 'resume' ? 'resume' : 'pick'
     const pickRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
       ...offered.map((_, idx) =>
         new ButtonBuilder()
-          .setCustomId(`sess:pick:${idx}`)
+          .setCustomId(`sess:${action}:${idx}`)
           .setLabel(`${idx + 1}`)
           .setEmoji(NUMBERS[idx]!)
           .setStyle(ButtonStyle.Secondary),
@@ -586,32 +614,30 @@ export class AgentHost {
       new ButtonBuilder().setCustomId('sess:cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
     )
     const sent = await (ch as { send: Function }).send({ content: text, components: [pickRow, cancelRow] })
-    this.sessionCards.set(sent.id, { sessions: offered, channelId })
+    this.sessionCards.set(sent.id, { sessions: offered, channelId, mode })
     this.noteBotMsg(sent.id)
     return sent.id
   }
 
   /**
-   * Resolve a share-session button: owner-only. Cancel closes the card; a pick
-   * reads + distills the chosen on-disk session and admits an owner-role
-   * `knowledge.append` to know:channel/<id>/shared-context (anchor:none, so the
-   * merge gate is a no-op and no conflict card fires). The knowledge fold then
-   * carries it, the next turn injects it (pendingSharedContext), and on the
-   * Postgres backend it syncs to teammates' machines.
+   * Resolve a share/resume button: owner-only. Cancel closes the card. An
+   * 'import' pick reads + distills the session and admits an owner-role
+   * knowledge.append to know:channel/<id>/shared-context (anchor:none → no
+   * conflict card); the next turn injects it and on Postgres it syncs to peers.
+   * A 'resume' pick binds the channel's Driver to that runtime session id.
    */
   private async handleSessionPick(interaction: ButtonInteraction): Promise<void> {
     const card = this.sessionCards.get(interaction.message.id)
     if (!card) {
-      await interaction.reply({ content: 'This share menu is no longer open.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'This session menu is no longer open.', ephemeral: true }).catch(() => {})
       return
     }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    // Owner-only, by ownerUserId (not a delegated room approver): sharing your
-    // own local session is identity-bound, and matches the trigger gate
-    // (senderKind === 'owner').
+    // Owner-only, by ownerUserId (not a delegated room approver): sharing/resuming
+    // your own local session is identity-bound, matching the trigger gate.
     const ownerId = liveAgent.ownerUserId
     if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can share a session.', ephemeral: true }).catch(() => {})
+      await interaction.reply({ content: 'Only the owner can share or resume a session.', ephemeral: true }).catch(() => {})
       return
     }
 
@@ -623,13 +649,18 @@ export class AgentHost {
       return
     }
 
-    const m = /^sess:pick:(\d+)$/.exec(interaction.customId)
+    const m = /^sess:(pick|resume):(\d+)$/.exec(interaction.customId)
     if (!m) return
-    const summary = card.sessions[Number(m[1])]
+    const summary = card.sessions[Number(m[2])]
     if (!summary) return
 
-    // Read the on-disk transcript and distill it (pure). File-based read is the
-    // robust path; nothing in the live session is mutated.
+    if (card.mode === 'resume') {
+      await this.resumeSession(interaction, card.channelId, liveAgent, summary)
+      return
+    }
+
+    // import: read + distill the on-disk transcript (pure). File-based read is
+    // the robust path; nothing in the live session is mutated.
     const store = makeSessionStore(summary.runtime)
     const transcript = store ? await store.read(summary.id) : undefined
     if (!transcript) {
@@ -665,6 +696,37 @@ export class AgentHost {
     )
     await interaction
       .update({ content: renderSessionImported({ runtime: summary.runtime, title: summary.title }), components: [] })
+      .catch(() => {})
+  }
+
+  /**
+   * Bind a channel's Driver to an existing runtime session and persist it so the
+   * resume survives a relay restart. Only valid when the agent's runtime can
+   * continue that session's runtime; otherwise fall the owner back to import.
+   */
+  private async resumeSession(
+    interaction: ButtonInteraction,
+    channelId: ChannelId,
+    liveAgent: AgentConfig,
+    summary: SessionSummary,
+  ): Promise<void> {
+    const room = liveAgent.rooms[channelId]
+    if (!room || sessionRuntimeForAgent(liveAgent.runtime) !== summary.runtime) {
+      await interaction
+        .reply({
+          content: `This agent (${liveAgent.runtime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
+          ephemeral: true,
+        })
+        .catch(() => {})
+      return
+    }
+    const session = this.getOrCreateSession(channelId, liveAgent, room)
+    session.driver.bindSession(summary.id)
+    writeSessionBinding(this.key, channelId, { runtime: summary.runtime, sessionId: summary.id })
+    this.sessionCards.delete(interaction.message.id)
+    this.ui.note(this.key, `resuming ${summary.runtime} session ${summary.id.slice(0, 8)} in ${channelId}`)
+    await interaction
+      .update({ content: renderSessionResumed({ runtime: summary.runtime, title: summary.title }), components: [] })
       .catch(() => {})
   }
 
@@ -710,6 +772,92 @@ export class AgentHost {
     return approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
   }
 
+  /**
+   * Resolve workspace + permission for a watch the WatchSupervisor wants to run.
+   * The command is classified through the same `classifyTool` path (and deny
+   * floor) as any Bash call against this room's profile. Returns undefined if
+   * this host doesn't serve the watch's channel.
+   */
+  resolveWatch(spec: WatchSpec): WatchRunEnv | undefined {
+    if (!this.getAgentForChannel(spec.channel)) return undefined
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const profile = readRoomSettings(this.key, spec.channel)
+    const decision = classifyTool(profile, { toolName: 'Bash', subject: spec.command })
+    return { workspace: liveAgent.workspace, decision }
+  }
+
+  /** Owner `!watch` / `!unwatch` / `!watch list` — arm/disarm/inspect watches. */
+  private async handleWatchCommand(channelId: ChannelId, text: string): Promise<void> {
+    const parsed = parseWatchCommand(text)
+    if (!parsed) {
+      await this.discordSend(
+        channelId,
+        'Usage: `!watch <name> on-change|each-line|on-exit|match:<regex> [every=10s ttl=10m max=5 once] <command>`, `!watch list`, or `!unwatch <name>`',
+      )
+      return
+    }
+
+    const artifactId = `extp:discord/${channelId}`
+    if (parsed.action === 'list') {
+      const state = this.engine.get<WatchFoldState>(WATCH_FOLD)
+      const mine = liveWatches(state).filter(w => w.channel === channelId)
+      await this.discordSend(
+        channelId,
+        mine.length
+          ? mine.map(w => `• \`${w.name}\` — ${w.fireOn.kind} — \`${w.command}\``).join('\n')
+          : 'No active watches in this channel.',
+      )
+      return
+    }
+
+    if (parsed.action === 'disarm') {
+      await admit(this.store, {
+        actor: this.key,
+        role: 'owner',
+        channel: channelId,
+        target: { artifactId, anchor: { kind: 'none' } },
+        verb: 'watch.disarmed',
+        patch: {
+          kind: 'external',
+          intent: { channel: 'tool', op: 'watch.disarm', args: { name: parsed.name, reason: 'owner' } },
+        },
+        effect: 'pure',
+        caused_by: [],
+      })
+      await this.discordSend(channelId, `${GLYPHS.checkpoint} unwatched «${parsed.name}»`)
+      return
+    }
+
+    // arm — classify the command up front so the owner gets immediate feedback.
+    const spec: WatchSpec = { ...parsed.spec, channel: channelId, agentKey: this.key }
+    const decision = classifyTool(readRoomSettings(this.key, channelId), {
+      toolName: 'Bash',
+      subject: spec.command,
+    })
+    if (decision !== 'allow') {
+      await this.discordSend(
+        channelId,
+        `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` classified \`${decision}\`. Watches require an explicit \`allow\` match; the deny floor still applies.`,
+      )
+      return
+    }
+
+    await admit(this.store, {
+      actor: this.key,
+      role: 'owner',
+      channel: channelId,
+      target: { artifactId, anchor: { kind: 'none' } },
+      verb: 'watch.armed',
+      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.arm', args: spec } },
+      effect: 'pure',
+      caused_by: [],
+    })
+    await this.discordSend(
+      channelId,
+      `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
+    )
+  }
+
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
   private async handleInbound(msg: Message): Promise<void> {
@@ -741,15 +889,29 @@ export class AgentHost {
 
     const kind = senderKind(room, msg.author.id, ownerId)
 
-    // ─── Owner share-session command — short-circuit before any admit ───────
+    // ─── Owner share/resume-session command — short-circuit before any admit ─
     // Owner-only (kind==='owner'): list this agent's local sessions and post a
     // selection card. The command itself is NOT admitted as a channel.message,
     // so the agent is never prompted with it; config/sessions stay terminal-
     // and owner-driven (the prompt-injection invariant). A peer can't reach
-    // here — senderKind only returns 'owner' for the agent's owner.
-    if (kind === 'owner' && isShareSessionCommand(msg.content)) {
-      await this.offerSessionShare(channelId, liveAgent, ownerId).catch(e =>
-        this.ui.error(this.key, `offer session share: ${e}`),
+    // here — senderKind only returns 'owner' for the agent's owner. 'import'
+    // distills context; 'resume' continues the live session.
+    if (kind === 'owner' && (isShareSessionCommand(msg.content) || isResumeSessionCommand(msg.content))) {
+      const mode = isResumeSessionCommand(msg.content) ? 'resume' : 'import'
+      await this.offerSessionShare(channelId, liveAgent, ownerId, mode).catch(e =>
+        this.ui.error(this.key, `offer session ${mode}: ${e}`),
+      )
+      return
+    }
+
+    // ─── Owner watch control (!watch / !unwatch) — short-circuit before admit ─
+    // Owner-only, like the session commands: the control is NOT admitted as a
+    // channel.message, so a watch can't be armed by a peer talking (the
+    // prompt-injection invariant). Arming a command is permission-gated the same
+    // way a Bash call is. See docs/knock-knock-watches.md.
+    if (kind === 'owner' && (msg.content.startsWith('!watch') || msg.content.startsWith('!unwatch'))) {
+      await this.handleWatchCommand(channelId, msg.content).catch(e =>
+        this.ui.error(this.key, `watch command: ${e}`),
       )
       return
     }
@@ -996,6 +1158,19 @@ export class AgentHost {
           .catch(err => this.ui.error(this.key, `ledger adapter event: ${err}`))
       }
     })
+
+    // Rebind a persisted resume binding so an owner's resume survives a restart.
+    // Stale bindings (the agent's runtime changed) are cleared, not honored.
+    const binding = readSessionBinding(this.key, channelId)
+    if (binding) {
+      if (sessionRuntimeForAgent(liveAgent.runtime) === binding.runtime) {
+        created.driver.bindSession(binding.sessionId)
+        this.ui.note(this.key, `rebinding ${binding.runtime} session ${binding.sessionId.slice(0, 8)} in ${channelId}`)
+      } else {
+        clearSessionBinding(this.key, channelId)
+      }
+    }
+
     this.sessions.set(channelId, created)
     return created
   }

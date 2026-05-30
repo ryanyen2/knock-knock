@@ -40,6 +40,13 @@ function asString(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
 
+/** Checklist marker for a todo status. */
+function todoMark(status: unknown): string {
+  if (status === 'completed') return 'x'
+  if (status === 'in_progress') return '~'
+  return ' '
+}
+
 /** Latest ExitPlanMode plan text, if any. */
 function latestPlan(events: TranscriptEvent[]): string | undefined {
   for (let i = events.length - 1; i >= 0; i--) {
@@ -67,9 +74,7 @@ function latestTodos(events: TranscriptEvent[]): string | undefined {
           const todo = t as { content?: unknown; status?: unknown }
           const content = asString(todo.content)
           if (!content) return undefined
-          const status = todo.status
-          const mark = status === 'completed' ? 'x' : status === 'in_progress' ? '~' : ' '
-          return `- [${mark}] ${content}`
+          return `- [${todoMark(todo.status)}] ${content}`
         })
         .filter((x): x is string => !!x)
       if (lines.length) return lines.join('\n')

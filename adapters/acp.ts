@@ -180,6 +180,27 @@ function allowResponse(options: PermissionOption[]): RequestPermissionResponse {
   return selected(o)
 }
 
+// ─── Session acquisition ─────────────────────────────────────────────────────
+
+/**
+ * Decide how to obtain a usable session for a prompt. Pure (unit-tested):
+ *   - no id                          → 'create' a fresh session
+ *   - an id we created/loaded already → 'reuse' it (in-process)
+ *   - a foreign id + session/load     → 'load' it (resume from elsewhere/restart)
+ *   - a foreign id, no session/load   → 'create' (can't resume, start fresh)
+ * A foreign id appears when the relay binds a channel to a session created by a
+ * local CLI (resume), or re-binds a persisted session after a restart.
+ */
+export function planSessionAcquire(
+  sessionId: string | undefined,
+  known: ReadonlySet<string>,
+  canLoad: boolean,
+): 'create' | 'reuse' | 'load' {
+  if (!sessionId) return 'create'
+  if (known.has(sessionId)) return 'reuse'
+  return canLoad ? 'load' : 'create'
+}
+
 // ─── Adapter ────────────────────────────────────────────────────────────────
 
 export class AcpAdapter implements AgentAdapter {
@@ -199,6 +220,10 @@ export class AcpAdapter implements AgentAdapter {
   private emittedToolCalls = new Set<string>()
   /** Was the session_init event already fired for this sessionId? */
   private sessionAnnouncedFor: string | undefined
+  /** Session ids created OR loaded this process — so we acquire each once. */
+  private knownSessions = new Set<string>()
+  /** Whether the agent advertised `session/load` (captured at init). */
+  private canLoadSession = false
 
   constructor(
     private readonly launch: AcpLaunch,
@@ -236,13 +261,33 @@ export class AcpAdapter implements AgentAdapter {
     const conn = this.conn!
 
     let sid = input.sessionId
-    const isNewSession = !sid
-    if (!sid) {
-      const res = await conn.newSession({ cwd: this.directory, mcpServers: [] })
-      sid = res.sessionId
-      dbg(`session created: ${sid}`)
+    let acquired = false // created or loaded this call (vs. reusing an in-process one)
+    switch (planSessionAcquire(sid, this.knownSessions, this.canLoadSession)) {
+      case 'reuse':
+        break // an id we already created/loaded — nothing to do
+      case 'load':
+        try {
+          await conn.loadSession({ sessionId: sid!, cwd: this.directory, mcpServers: [] })
+          this.knownSessions.add(sid!)
+          acquired = true
+          dbg(`session loaded (resumed): ${sid}`)
+        } catch (err) {
+          dbg(`loadSession failed (${err}); starting a fresh session`)
+          sid = (await conn.newSession({ cwd: this.directory, mcpServers: [] })).sessionId
+          this.knownSessions.add(sid)
+          acquired = true
+        }
+        break
+      case 'create':
+        if (sid) dbg(`agent has no session/load; starting fresh instead of resuming ${sid}`)
+        sid = (await conn.newSession({ cwd: this.directory, mcpServers: [] })).sessionId
+        this.knownSessions.add(sid)
+        acquired = true
+        dbg(`session created: ${sid}`)
+        break
     }
-    if (isNewSession && this.sessionAnnouncedFor !== sid) {
+    if (!sid) throw new Error('acp: session acquisition produced no session id')
+    if (acquired && this.sessionAnnouncedFor !== sid) {
       this.sessionAnnouncedFor = sid
       this.emit({ type: 'session_init', sessionId: sid, cwd: this.directory })
     }
@@ -309,7 +354,10 @@ export class AcpAdapter implements AgentAdapter {
       protocolVersion: PROTOCOL_VERSION,
       clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
     })
-    dbg(`initialized: agent=${init.agentInfo?.name ?? '?'} protocol=v${init.protocolVersion}`)
+    this.canLoadSession = init.agentCapabilities?.loadSession === true
+    dbg(
+      `initialized: agent=${init.agentInfo?.name ?? '?'} protocol=v${init.protocolVersion} loadSession=${this.canLoadSession}`,
+    )
   }
 
   private makeClient(): Client {

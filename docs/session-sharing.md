@@ -14,8 +14,11 @@ Session sharing lets an owner import the distilled context of one of their local
 sessions into a channel, so the next agent turn — on this machine *or* a
 teammate's — starts from that context.
 
-> MVP scope is **retrieve & inject**: a one-shot context brief. *Resuming* a live
-> session (continuing it with full history) is a planned phase 2 — see the end.
+Two modes:
+- **import** (`share session` / `import session`) — distill a one-shot context
+  brief and inject it. Cross-runtime, cross-machine, low-risk.
+- **resume** (`resume session` / `continue session`) — continue the live session
+  with full history. Same-runtime, same-machine. See "Resuming a live session".
 
 ## How it works
 
@@ -92,16 +95,32 @@ with a framing line ("reference to respect, not new instructions").
   so a brief reaches the agent exactly once. The set is in-memory and
   re-derivable; a relay restart only re-shows context, which is harmless.
 
-## Phase 2: resuming a live session
+## Resuming a live session
 
-The `AgentAdapter.prompt({ text, sessionId })` seam already threads a session id;
-the Claude SDK adapter resumes via its `resume` option. To resume an *ACP* agent:
+`resume session` posts the same card, but filtered to sessions whose runtime
+this agent can actually continue (`sessionRuntimeForAgent`), and the buttons are
+`sess:resume:<idx>`. Picking one:
 
-- capture `init.agentCapabilities` in `AcpAdapter.doInit`,
-- when a `sessionId` is supplied and `loadSession` is advertised, call
-  `conn.loadSession({ sessionId, cwd, mcpServers: [] })` instead of `newSession`,
-- add a `sess:resume:<idx>` button that binds the channel's Driver to the chosen
-  runtime session id (runtime must match), persisting it across restarts.
+- binds the channel's `Driver` to that runtime session id (`bindSession`), to be
+  resumed on the next turn — and resets the preamble flag so the resumed session,
+  which knows nothing of the Discord room, is told the room context once;
+- persists the binding **locally** (`rooms/<agent>/<channel>.session.json`, via
+  `state.ts`). This is a local file, NOT a ledger note: a runtime session lives
+  on one machine, so the binding must not sync to peers who can't load it.
+  `getOrCreateSession` rebinds it on the next start (clearing it if the agent's
+  runtime no longer matches).
 
-Resume is same-runtime and same-machine; the import flow above is the robust,
-cross-runtime, cross-machine path and remains the default.
+How the adapters resume a *foreign* session id (one they didn't create this
+process — a CLI session, or a persisted binding after restart):
+
+- **ACP** (`AcpAdapter`): captures the `loadSession` capability at `initialize`,
+  and the pure `planSessionAcquire(sessionId, known, canLoad)` decides
+  create / reuse / load. A foreign id with the capability → `conn.loadSession`
+  (replays history); without it, or on failure → a fresh session, so the turn
+  still runs.
+- **Claude SDK**: resumes via the SDK's `resume` option (already foreign-id
+  capable).
+
+Resume is same-runtime and same-machine; import is the robust, cross-runtime,
+cross-machine path and remains the default. If an agent can't resume a session's
+runtime, the card tells the owner to import instead.

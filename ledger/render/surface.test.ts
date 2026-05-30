@@ -15,6 +15,7 @@ import {
   renderRewindAck,
   renderSessionCard,
   renderSessionImported,
+  renderSessionResumed,
 } from './surface.ts'
 import type { TurnFoldState, TurnState } from '../concepts/turn.ts'
 
@@ -219,4 +220,24 @@ test('renderSessionImported confirms the source', () => {
   expect(msg).toContain(GLYPHS.session)
   expect(msg).toContain('codex')
   expect(msg).toContain('fix the parser')
+})
+
+test('renderSessionCard resume mode reads as "resume", empty-state suggests import', () => {
+  const card = renderSessionCard({
+    ownerId: 'u1',
+    mode: 'resume',
+    sessions: [{ runtime: 'claude-code', title: 'build', updatedAt: '2026-05-29T14:00:00Z', messageCount: 3 }],
+  })
+  expect(card).toContain('Resume a local session')
+
+  const empty = renderSessionCard({ ownerId: 'u1', mode: 'resume', sessions: [] })
+  expect(empty).toContain('No resumable session')
+  expect(empty).toContain('share session')
+})
+
+test('renderSessionResumed confirms continuation with full history', () => {
+  const msg = renderSessionResumed({ runtime: 'opencode', title: 'wire the relay' })
+  expect(msg).toContain(GLYPHS.session)
+  expect(msg).toContain('Resuming session')
+  expect(msg).toContain('opencode')
 })

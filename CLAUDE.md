@@ -165,22 +165,31 @@ prior plan, decisions, and pitfalls instead of cold. See
   factory + `listAllSessions` fan-out.
 - **Distill** (`sessions/distill.ts`, pure) → a context brief (latest
   ExitPlanMode plan, TodoWrite todos, decisions, files touched, dead-ends).
-- **Trigger** — owner-only: `handleInbound` detects `isShareSessionCommand`
-  (`kind==='owner'`) and short-circuits *before* any admit to post a 📥 selection
-  card (the command is never admitted as a `channel.message`). The `sess:` button
-  handler reads + distills the chosen session and admits an **owner-role
-  `knowledge.append`** to `know:channel/<id>/shared-context` (anchor `none`, so
-  the merge gate is a no-op and no conflict card fires) — the same shape
-  `surfaceToInbox` uses. On the Postgres backend it syncs to teammates.
+- **Trigger** — owner-only: `handleInbound` detects `isShareSessionCommand` /
+  `isResumeSessionCommand` (`kind==='owner'`) and short-circuits *before* any
+  admit to post a 📥 selection card (the command is never admitted as a
+  `channel.message`). The `sess:` button handler is owner-gated by `ownerUserId`.
+- **Import (`sess:pick`)** — reads + distills the chosen session and admits an
+  **owner-role `knowledge.append`** to `know:channel/<id>/shared-context` (anchor
+  `none`, so the merge gate is a no-op and no conflict card fires) — the same
+  shape `surfaceToInbox` uses. On the Postgres backend it syncs to teammates.
 - **Delivery** — `pendingSharedContext` reads active shared-context notes from
   the knowledge fold and, via the pure `pickFreshContext`, injects each one
   **once** into the next turn as a `<shared-context>` block prepended (in
   `Driver.buildPrompt`) ahead of the `<channel>` envelope. (Knowledge is
   otherwise read only at reply-time, so this delivery wiring is what makes an
   imported note actually reach the agent.)
-- **Phase 2 (not built):** *resuming* a live session — `AcpAdapter.loadSession`
-  / Claude SDK `resume` — binding a channel to an existing runtime session id.
-  The `AgentAdapter.prompt({sessionId})` seam already threads the id.
+- **Resume (`sess:resume`)** — continues a live session. Offered only for
+  runtime-compatible sessions (`sessionRuntimeForAgent`); `Driver.bindSession`
+  sets the runtime session id to resume on the next turn (and resets the
+  preamble flag so the resumed session is told the room context once). The
+  `AcpAdapter` captures the `loadSession` capability at init and calls
+  `conn.loadSession` for a foreign id (pure `planSessionAcquire` decides
+  create/reuse/load; falls back to a fresh session if load is unsupported/fails);
+  the Claude SDK adapter resumes via its `resume` option. The binding is
+  persisted **locally** (`state.ts` `*.session.json`, not a synced ledger note —
+  runtime sessions don't cross machines) and rebound on restart in
+  `getOrCreateSession`.
 
 📥 is the session-sharing glyph (`GLYPHS.session`); like ✅/❌/🛑 it is reserved.
 

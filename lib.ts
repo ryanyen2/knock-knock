@@ -293,6 +293,15 @@ export function isShareSessionCommand(text: string): boolean {
   return /\b(share|import|pull in|bring in)\b[^.\n]{0,30}\bsession\b/.test(t)
 }
 
+/** Does this message ask to *resume* a local session (continue it live, not just
+ *  import its context)? Disjoint verbs from share/import so the two don't
+ *  overlap; owner-gated by the caller. */
+export function isResumeSessionCommand(text: string): boolean {
+  const t = text.toLowerCase()
+  if (/\/(resume|continue)[-_ ]?session\b/.test(t)) return true
+  return /\b(resume|continue|reopen|pick up)\b[^.\n]{0,30}\bsession\b/.test(t)
+}
+
 export type SharedContextMeta = {
   /** Provenance tag, e.g. "claude-code:1a2b3c4d". */
   source: string
@@ -388,4 +397,177 @@ export function loopGuard(
   }
   // 'unknown' senders are gated by guildSenderAllowed before reaching here.
   return { decision: { allow: true }, next: state }
+}
+
+// ─── Watches: the deferred-continuation primitive ────────────────────────────
+// See docs/knock-knock-watches.md. A watch is a long-running command whose
+// every stdout line is a candidate event; a pure `fireOn` gate decides which
+// lines escalate to a turn. All decision logic lives here (no I/O), the way
+// loopGuard does — the WatchSupervisor owns the process and the admit.
+
+/** When does a line (or process exit) escalate to a turn? */
+export type WatchFireOn =
+  | { kind: 'each-line' }                  // every non-empty line
+  | { kind: 'change' }                     // every line distinct from the last fired
+  | { kind: 'match'; pattern: string }     // every line matching this regex
+  | { kind: 'exit' }                       // once, when the process exits
+
+export type WatchSpec = {
+  /** Stable identity within a channel; re-arming the same name replaces it. */
+  name: string
+  /** Discord channel the resumed turn posts to. */
+  channel: string
+  /** Agent that owns the workspace and runs the resumed turn. */
+  agentKey: string
+  /** Long-running command; each stdout line is fed to the gate. */
+  command: string
+  fireOn: WatchFireOn
+  /** Prompt phrasing; `{line}` and `{name}` are substituted. */
+  promptTemplate?: string
+  /** Disarm after the first fire. */
+  oneShot?: boolean
+  /** Auto-disarm after this many fires. */
+  maxFires?: number
+  /** Auto-disarm after this long. */
+  ttlMs?: number
+}
+
+/** Per-watch runtime gate state — what the supervisor threads between lines. */
+export type WatchGateState = { lastFiredLine?: string; fires: number }
+
+export const FRESH_WATCH_GATE: WatchGateState = { fires: 0 }
+
+/**
+ * Decide whether a single line of a watch's output (or its exit) fires. Pure.
+ * `isExit` lets the supervisor pass the process-close event through the same
+ * gate so `fireOn: 'exit'` is handled in one place.
+ */
+export function watchGate(
+  spec: WatchSpec,
+  state: WatchGateState,
+  line: string,
+  isExit = false,
+): { fire: boolean; text?: string; next: WatchGateState } {
+  const trimmed = line.replace(/\r?\n$/, '')
+  let fire = false
+  switch (spec.fireOn.kind) {
+    case 'each-line':
+      fire = !isExit && trimmed.trim().length > 0
+      break
+    case 'change':
+      fire = !isExit && trimmed.trim().length > 0 && trimmed !== state.lastFiredLine
+      break
+    case 'match': {
+      if (isExit) break
+      let re: RegExp | undefined
+      try {
+        re = new RegExp(spec.fireOn.pattern)
+      } catch {
+        re = undefined
+      }
+      fire = !!re && re.test(trimmed)
+      break
+    }
+    case 'exit':
+      fire = isExit
+      break
+  }
+  if (!fire) return { fire: false, next: state }
+  return {
+    fire: true,
+    text: renderWatchPrompt(spec, trimmed, isExit),
+    next: { lastFiredLine: isExit ? state.lastFiredLine : trimmed, fires: state.fires + 1 },
+  }
+}
+
+/** Synthesize the prompt text a fired watch resumes its agent with. */
+export function renderWatchPrompt(spec: WatchSpec, line: string, isExit = false): string {
+  const body = isExit ? `process exited (${line})` : line
+  if (spec.promptTemplate) {
+    return spec.promptTemplate.replaceAll('{line}', body).replaceAll('{name}', spec.name)
+  }
+  return `Watch «${spec.name}» fired:\n${body}`
+}
+
+export type ParsedWatchCommand =
+  | { action: 'arm'; spec: Omit<WatchSpec, 'channel' | 'agentKey'> }
+  | { action: 'disarm'; name: string }
+  | { action: 'list' }
+  | null
+
+const DURATION_RE = /^(\d+)(ms|s|m|h)$/
+function parseDuration(s: string): number | undefined {
+  const m = s.match(DURATION_RE)
+  if (!m) return undefined
+  const n = Number(m[1])
+  return n * { ms: 1, s: 1_000, m: 60_000, h: 3_600_000 }[m[2] as 'ms' | 's' | 'm' | 'h']
+}
+
+/**
+ * Parse an owner control command into a watch action. Pure so it's unit-tested
+ * without a live Discord message. Grammar:
+ *
+ *   !watch <name> <mode> [flags…] <command…>
+ *   !watch list
+ *   !unwatch <name>
+ *
+ * mode  = on-change | each-line | on-exit | match:<regex>
+ * flags = every=<dur> | ttl=<dur> | max=<n> | once
+ *   every=<dur> desugars the command into a poll loop so any one-shot check
+ *   becomes a recurring watch without the supervisor needing a timer.
+ */
+export function parseWatchCommand(text: string): ParsedWatchCommand {
+  const tokens = text.trim().split(/\s+/)
+  const head = tokens[0]
+  if (head === '!unwatch') {
+    const name = tokens[1]
+    return name ? { action: 'disarm', name } : null
+  }
+  if (head !== '!watch') return null
+  if (tokens[1] === 'list') return { action: 'list' }
+
+  const name = tokens[1]
+  const mode = tokens[2]
+  if (!name || !/^[\w-]+$/.test(name) || !mode) return null
+
+  let fireOn: WatchFireOn
+  let oneShot = false
+  if (mode === 'on-change') fireOn = { kind: 'change' }
+  else if (mode === 'each-line') fireOn = { kind: 'each-line' }
+  else if (mode === 'on-exit') {
+    fireOn = { kind: 'exit' }
+    oneShot = true
+  } else if (mode.startsWith('match:')) fireOn = { kind: 'match', pattern: mode.slice('match:'.length) }
+  else return null
+
+  let i = 3
+  let ttlMs: number | undefined
+  let maxFires: number | undefined
+  let everyMs: number | undefined
+  for (; i < tokens.length; i++) {
+    const t = tokens[i]!
+    if (t === 'once') oneShot = true
+    else if (t.startsWith('ttl=')) ttlMs = parseDuration(t.slice(4))
+    else if (t.startsWith('max=')) maxFires = Number(t.slice(4)) || undefined
+    else if (t.startsWith('every=')) everyMs = parseDuration(t.slice(6))
+    else break
+  }
+  let command = tokens.slice(i).join(' ').trim()
+  if (!command) return null
+  if (everyMs !== undefined) {
+    const secs = Math.max(1, Math.round(everyMs / 1000))
+    command = `while :; do ( ${command} ); sleep ${secs}; done`
+  }
+
+  return {
+    action: 'arm',
+    spec: {
+      name,
+      command,
+      fireOn,
+      ...(oneShot ? { oneShot } : {}),
+      ...(ttlMs !== undefined ? { ttlMs } : {}),
+      ...(maxFires !== undefined ? { maxFires } : {}),
+    },
+  }
 }

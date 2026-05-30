@@ -10,11 +10,17 @@ import {
   buildPreamble,
   loopGuard,
   isShareSessionCommand,
+  isResumeSessionCommand,
   wrapSharedContext,
   pickFreshContext,
+  watchGate,
+  renderWatchPrompt,
+  parseWatchCommand,
+  FRESH_WATCH_GATE,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
+  type WatchSpec,
 } from './lib.ts'
 
 // ─── classifyTool: the ACP/runtime-agnostic policy floor ─────────────────────
@@ -332,6 +338,17 @@ test('isShareSessionCommand: does not trip on ordinary chat', () => {
   expect(isShareSessionCommand('import the new types from lib.ts')).toBe(false)
 })
 
+test('isResumeSessionCommand: recognizes resume/continue, disjoint from share', () => {
+  expect(isResumeSessionCommand('@bot resume my session')).toBe(true)
+  expect(isResumeSessionCommand('continue the session you had open')).toBe(true)
+  expect(isResumeSessionCommand('/resume-session')).toBe(true)
+  // share/import phrasings are NOT resume, and vice-versa
+  expect(isResumeSessionCommand('share my session')).toBe(false)
+  expect(isShareSessionCommand('resume my session')).toBe(false)
+  // ordinary chat
+  expect(isResumeSessionCommand('continue working on the parser')).toBe(false)
+})
+
 test('wrapSharedContext: delimited block with provenance + a reference framing', () => {
   const out = wrapSharedContext({ source: 'claude-code:abc', cwd: '/ws', savedBy: 'u1' }, '## Plan\nX')
   expect(out).toContain('<shared-context source="claude-code:abc" cwd="/ws" shared_by="u1">')
@@ -355,4 +372,95 @@ test('pickFreshContext: delivers undelivered notes once, in order', () => {
 
   const partial = pickFreshContext(notes, new Set(['h1']))
   expect(partial.prefix).toBe('B')
+})
+
+// ─── watchGate: the pure fire-decision for a watch's output ───────────────────
+
+function spec(fireOn: WatchSpec['fireOn'], extra: Partial<WatchSpec> = {}): WatchSpec {
+  return { name: 'w', channel: 'c', agentKey: 'a', command: 'cmd', fireOn, ...extra }
+}
+
+test('watchGate each-line: fires on every non-empty line, skips blanks', () => {
+  const s = spec({ kind: 'each-line' })
+  const a = watchGate(s, FRESH_WATCH_GATE, 'hello')
+  expect(a.fire).toBe(true)
+  expect(a.text).toContain('hello')
+  const b = watchGate(s, a.next, '   ')
+  expect(b.fire).toBe(false)
+  expect(b.next.fires).toBe(1) // unchanged
+})
+
+test('watchGate change: fires only when the line differs from the last fired', () => {
+  const s = spec({ kind: 'change' })
+  const a = watchGate(s, FRESH_WATCH_GATE, 'v1')
+  expect(a.fire).toBe(true)
+  const b = watchGate(s, a.next, 'v1')
+  expect(b.fire).toBe(false)
+  const c = watchGate(s, b.next, 'v2')
+  expect(c.fire).toBe(true)
+  expect(c.next.fires).toBe(2)
+})
+
+test('watchGate match: fires on regex hit only', () => {
+  const s = spec({ kind: 'match', pattern: 'done|finished' })
+  expect(watchGate(s, FRESH_WATCH_GATE, 'still running').fire).toBe(false)
+  expect(watchGate(s, FRESH_WATCH_GATE, 'run finished ok').fire).toBe(true)
+})
+
+test('watchGate exit: per-line never fires; the exit event does', () => {
+  const s = spec({ kind: 'exit' })
+  expect(watchGate(s, FRESH_WATCH_GATE, 'progress…').fire).toBe(false)
+  const e = watchGate(s, FRESH_WATCH_GATE, 'code 0', true)
+  expect(e.fire).toBe(true)
+  expect(e.text).toContain('exited')
+})
+
+test('renderWatchPrompt: applies the template with {line}/{name}', () => {
+  const s = spec({ kind: 'each-line' }, { promptTemplate: '[{name}] {line}' })
+  expect(renderWatchPrompt(s, 'X')).toBe('[w] X')
+})
+
+// ─── parseWatchCommand: owner control grammar ─────────────────────────────────
+
+test('parseWatchCommand: arms on-change with a command', () => {
+  const p = parseWatchCommand('!watch notes on-change diff -u /tmp/a /tmp/b')
+  expect(p).toMatchObject({
+    action: 'arm',
+    spec: { name: 'notes', fireOn: { kind: 'change' }, command: 'diff -u /tmp/a /tmp/b' },
+  })
+})
+
+test('parseWatchCommand: on-exit implies once', () => {
+  const p = parseWatchCommand('!watch build on-exit ./train.sh')
+  expect(p).toMatchObject({ action: 'arm', spec: { fireOn: { kind: 'exit' }, oneShot: true } })
+})
+
+test('parseWatchCommand: match:<regex> mode', () => {
+  const p = parseWatchCommand('!watch wandb match:done wandb status')
+  expect(p).toMatchObject({ action: 'arm', spec: { fireOn: { kind: 'match', pattern: 'done' } } })
+})
+
+test('parseWatchCommand: flags (ttl/max/once) parsed before the command', () => {
+  const p = parseWatchCommand('!watch w each-line ttl=10m max=3 once echo hi')
+  expect(p).toMatchObject({
+    action: 'arm',
+    spec: { ttlMs: 600_000, maxFires: 3, oneShot: true, command: 'echo hi' },
+  })
+})
+
+test('parseWatchCommand: every=<dur> desugars into a poll loop', () => {
+  const p = parseWatchCommand('!watch w on-change every=10s check.sh')
+  expect(p?.action).toBe('arm')
+  if (p?.action === 'arm') expect(p.spec.command).toBe('while :; do ( check.sh ); sleep 10; done')
+})
+
+test('parseWatchCommand: disarm and list', () => {
+  expect(parseWatchCommand('!unwatch notes')).toEqual({ action: 'disarm', name: 'notes' })
+  expect(parseWatchCommand('!watch list')).toEqual({ action: 'list' })
+})
+
+test('parseWatchCommand: rejects unrelated text and malformed input', () => {
+  expect(parseWatchCommand('hello there')).toBeNull()
+  expect(parseWatchCommand('!watch w bogus-mode cmd')).toBeNull()
+  expect(parseWatchCommand('!watch w on-change')).toBeNull() // no command
 })

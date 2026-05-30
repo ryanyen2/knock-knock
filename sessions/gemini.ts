@@ -62,17 +62,21 @@ function partsToEvents(role: 'user' | 'assistant', parts: unknown[]): Transcript
 
 type Parsed = { id?: string; lastTs?: string; events: TranscriptEvent[] }
 
-function parseGemini(raw: unknown, fallbackId: string): Parsed {
-  // Form A: a bare array of Content.
-  const contents: unknown[] = Array.isArray(raw)
-    ? raw
-    : raw && typeof raw === 'object' && Array.isArray((raw as { messages?: unknown }).messages)
-      ? ((raw as { messages: unknown[] }).messages)
-      : []
+/** Two shapes in the wild: a bare Content[] array, or an object wrapping the
+ *  conversation in `messages`. Return the message list either way. */
+function geminiContents(raw: unknown): unknown[] {
+  if (Array.isArray(raw)) return raw
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { messages?: unknown }).messages)) {
+    return (raw as { messages: unknown[] }).messages
+  }
+  return []
+}
 
-  const meta = (!Array.isArray(raw) && raw && typeof raw === 'object'
-    ? (raw as Record<string, unknown>)
-    : {}) as Record<string, unknown>
+function parseGemini(raw: unknown, fallbackId: string): Parsed {
+  const contents = geminiContents(raw)
+  // Session metadata only exists on the object form, not the bare array.
+  const meta: Record<string, unknown> =
+    !Array.isArray(raw) && raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
 
   const events: TranscriptEvent[] = []
   for (const c of contents) {

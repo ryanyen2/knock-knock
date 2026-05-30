@@ -26,6 +26,10 @@ const CHUNK_MODE = 'newline' as const
 
 export class Driver {
   private sessionId?: string
+  /** Whether the identity/roster preamble has been sent on this session yet.
+   *  Tracked separately from sessionId so a *resumed* foreign session (bound via
+   *  bindSession, sessionId already set) still gets the room preamble once. */
+  private preambleSent = false
   private queue: Promise<void> = Promise.resolve()
 
   constructor(
@@ -40,6 +44,15 @@ export class Driver {
   ) {
     adapter.applyPolicy(profile)
     adapter.onPermissionRequest(permissionHandler)
+  }
+
+  /** Bind this driver to an existing runtime session id, to be resumed on the
+   *  next turn (owner "resume session", or a persisted binding after restart).
+   *  Resets the preamble flag so the resumed session is (re)told the room
+   *  context, which it has no way of knowing. */
+  bindSession(sessionId: string): void {
+    this.sessionId = sessionId
+    this.preambleSent = false
   }
 
   /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state.
@@ -79,13 +92,15 @@ export class Driver {
     }
     const wrapped = wrapEnvelope(envelopeMeta, text)
 
-    // On the first turn of a new session, prepend the identity/roster/priority preamble.
-    // Subsequent turns of the same session already have context from the preamble.
-    // Imported <shared-context>, when present, rides between the preamble and the
-    // <channel> envelope so it reads as reference, not as the sender's message.
-    const isFirstTurn = this.sessionId === undefined
+    // Send the identity/roster/priority preamble once per session (the first
+    // turn, or the first turn after a resume bind). Imported <shared-context>,
+    // when present, rides between the preamble and the <channel> envelope so it
+    // reads as reference, not as the sender's message.
     const parts: string[] = []
-    if (isFirstTurn) parts.push(buildPreamble(this.ctx))
+    if (!this.preambleSent) {
+      parts.push(buildPreamble(this.ctx))
+      this.preambleSent = true
+    }
     if (contextPrefix) parts.push(contextPrefix)
     parts.push(wrapped)
     return parts.join('\n\n')

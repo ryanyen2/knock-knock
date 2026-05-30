@@ -58,6 +58,12 @@ export type Verb =
   | 'frontier.rewind'
   | 'turn.retry'
   | 'frontier.checkpoint'
+  // Watches — the deferred-continuation primitive (docs/knock-knock-watches.md).
+  // A turn that defers and is resumed by the world: arm a long-running command,
+  // fire when its output gate matches, disarm when done/expired/canceled.
+  | 'watch.armed'
+  | 'watch.fired'
+  | 'watch.disarmed'
 
 export type KnowledgeNote = { id: string; body: string; tags?: string[] }
 
