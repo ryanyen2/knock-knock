@@ -6,8 +6,7 @@
 - [R] how about other social media app
 - [F] Create threads for agent conversations, instead of flooding all conversations to users
 - [-] For each agent message, formalized it using a certain reader-friendly format: start with keywords or a phrase, then the chat content
-- [ ] editing message mean branching out?
-- [ ] new todo
+- [-] editing message mean branching out?
 
 the conflict is not on the artifact but the action(artifact)
 our crdt policy is role-based, human > bot (bot sort it out but need to warn human)

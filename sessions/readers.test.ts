@@ -62,6 +62,33 @@ beforeAll(() => {
     join(otherDir, 'other.jsonl'),
     jsonl([{ type: 'user', message: { content: 'unrelated' }, cwd: '/tmp/other/proj', timestamp: '2026-05-29T09:00:00Z' }]),
   )
+  // A relay-DRIVEN session (first user turn is the identity preamble) — the bot's
+  // own turns, must be filtered out of the share/resume card.
+  writeFileSync(
+    join(projDir, 'sess-relay.jsonl'),
+    jsonl([
+      { type: 'user', message: { role: 'user', content: 'You are "research-bot", a participant in a shared Discord room alongside other people and their agents.' }, cwd: WS, timestamp: '2026-05-29T09:45:00Z', sessionId: 'sess-relay' },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'ok' }] }, cwd: WS, timestamp: '2026-05-29T09:45:30Z' },
+    ]),
+  )
+  // A slash-command session: caveat + command machinery precede the real prompt.
+  writeFileSync(
+    join(projDir, 'sess-slash.jsonl'),
+    jsonl([
+      { type: 'user', message: { content: '<local-command-caveat>Caveat: messages were generated while running local commands.</local-command-caveat>' }, cwd: WS, timestamp: '2026-05-29T09:00:00Z', sessionId: 'sess-slash' },
+      { type: 'user', message: { content: '<command-name>/plan</command-name>' }, cwd: WS, timestamp: '2026-05-29T09:00:01Z' },
+      { type: 'user', message: { content: 'do the real thing now' }, cwd: WS, timestamp: '2026-05-29T09:00:02Z' },
+    ]),
+  )
+  // A session with Claude's own generated summary — that wins over message text.
+  writeFileSync(
+    join(projDir, 'sess-summary.jsonl'),
+    jsonl([
+      { type: 'summary', summary: 'Wire the relay to Postgres', leafUuid: 'x' },
+      { type: 'user', message: { content: '<local-command-caveat>noise</local-command-caveat>' }, cwd: WS, timestamp: '2026-05-29T09:30:00Z', sessionId: 'sess-summary' },
+      { type: 'assistant', message: { role: 'assistant', content: [{ type: 'text', text: 'done' }] }, cwd: WS, timestamp: '2026-05-29T09:30:30Z' },
+    ]),
+  )
 
   // ── Codex: <home>/sessions/YYYY/MM/DD/*.jsonl ──
   const codexBase = join(root, 'codex')
@@ -124,13 +151,28 @@ afterAll(() => {
 describe('ClaudeCodeSessionStore', () => {
   test('list filters to the workspace and reads metadata', async () => {
     const sessions = await new ClaudeCodeSessionStore().list({ workspace: WS })
-    expect(sessions.map(s => s.id)).toEqual(['sess-123']) // unrelated project excluded
-    const s = sessions[0]!
+    const ids = sessions.map(s => s.id)
+    expect(ids).toContain('sess-123')
+    expect(ids).not.toContain('other') // unrelated project excluded
+    expect(ids).not.toContain('sess-relay') // relay-driven session excluded
+    const s = sessions[0]! // sess-123 is the most recent (10:02)
+    expect(s.id).toBe('sess-123')
     expect(s.runtime).toBe('claude-code')
     expect(s.cwd).toBe(WS)
     expect(s.title).toBe('build a feature')
     expect(s.messageCount).toBe(2) // user + assistant text; tool calls don't count
     expect(s.updatedAt).toBe('2026-05-29T10:02:00Z')
+  })
+
+  test('title prefers Claude summary, else the first real prompt (skips caveats/commands)', async () => {
+    const sessions = await new ClaudeCodeSessionStore().list({ workspace: WS })
+    expect(sessions.find(s => s.id === 'sess-slash')?.title).toBe('do the real thing now')
+    expect(sessions.find(s => s.id === 'sess-summary')?.title).toBe('Wire the relay to Postgres')
+  })
+
+  test('relay-driven sessions (identity preamble first) are not offered', async () => {
+    const sessions = await new ClaudeCodeSessionStore().list({ workspace: WS })
+    expect(sessions.some(s => s.id === 'sess-relay')).toBe(false)
   })
 
   test('read returns normalized events incl. tool_use plan/todos', async () => {
@@ -197,8 +239,11 @@ describe('trailing-slash workspace (access.json may store one)', () => {
   // reader encodes the path into a project-dir name and Gemini sha256-hashes it,
   // so a stray trailing slash silently returned ZERO sessions before normalize.
   test('Claude reader finds the session with a trailing slash', async () => {
-    const sessions = await new ClaudeCodeSessionStore().list({ workspace: WS + '/' })
-    expect(sessions.map(s => s.id)).toEqual(['sess-123'])
+    const store = new ClaudeCodeSessionStore()
+    const withSlash = (await store.list({ workspace: WS + '/' })).map(s => s.id).sort()
+    const without = (await store.list({ workspace: WS })).map(s => s.id).sort()
+    expect(withSlash).toEqual(without)
+    expect(withSlash).toContain('sess-123')
   })
 
   test('Gemini reader finds the session with a trailing slash', async () => {

@@ -98,8 +98,13 @@ export class ClaudeSdkAdapter implements AgentAdapter {
             return { behavior: 'deny' as const, message: 'No approval handler registered.' }
           }
           const verdict = await handler({ toolName, input: toolInput })
+          // On allow, echo the (unmodified) input back as `updatedInput`. The
+          // SDK's control protocol validates the permission result and a bare
+          // `{behavior:'allow'}` can be rejected — surfacing to the agent as a
+          // tool error the moment the owner approves. Echoing the input is the
+          // documented "approve unchanged" shape.
           return verdict.behavior === 'allow'
-            ? { behavior: 'allow' as const }
+            ? { behavior: 'allow' as const, updatedInput: toolInput }
             : { behavior: 'deny' as const, message: verdict.message }
         },
       },

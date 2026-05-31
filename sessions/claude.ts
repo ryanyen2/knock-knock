@@ -39,7 +39,54 @@ function encodeWorkspace(workspace: string): string {
   return workspace.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-type Parsed = { cwd: string; lastTs?: string; events: TranscriptEvent[] }
+type Parsed = { cwd: string; lastTs?: string; summary?: string; events: TranscriptEvent[] }
+
+// User "messages" that aren't a real prompt: slash-command machinery, injected
+// caveats/reminders, and the relay's own envelope. Skipped when deriving a
+// human title (they're what made the card read "<local-command-caveat>…").
+const INJECTED_PREFIXES = [
+  '<local-command-caveat>',
+  '<local-command-stdout>',
+  '<command-name>',
+  '<command-message>',
+  '<command-args>',
+  '<command-stdout>',
+  '<system-reminder>',
+  '<channel ',
+]
+// A distinctive phrase from buildPreamble (lib.ts): marks a relay-DRIVEN session
+// (the bot talking to itself), as opposed to the user's own local `claude` run.
+const RELAY_PREAMBLE_MARK = 'participant in a shared Discord room'
+
+function firstUserText(events: TranscriptEvent[]): string | undefined {
+  return events.find(e => e.role === 'user' && e.text)?.text
+}
+
+/** A relay-driven session has the identity preamble as its first user turn.
+ *  Those are the agent's own turns — noise for sharing — so `list` drops them. */
+function isRelayDriven(events: TranscriptEvent[]): boolean {
+  return (firstUserText(events) ?? '').includes(RELAY_PREAMBLE_MARK)
+}
+
+function cap80(s: string): string {
+  const f = s.replace(/\s+/g, ' ').trim()
+  return f.length > 80 ? f.slice(0, 79) + '…' : f
+}
+
+/** A human-meaningful title, the way `claude --resume` shows one: Claude's own
+ *  session summary when present, else the first real user prompt (skipping the
+ *  slash-command/caveat/reminder/envelope wrappers). */
+function claudeTitle(parsed: Parsed): string | undefined {
+  if (parsed.summary && parsed.summary.trim()) return cap80(parsed.summary)
+  for (const e of parsed.events) {
+    if (e.role !== 'user' || !e.text) continue
+    const t = e.text.trimStart()
+    if (INJECTED_PREFIXES.some(p => t.startsWith(p))) continue
+    if (t.length < 4) continue
+    return cap80(t)
+  }
+  return deriveTitle(parsed.events) // last resort
+}
 
 /** Pull text out of a Claude content value (string or block array). */
 function textOf(content: unknown): string | undefined {
@@ -58,6 +105,7 @@ function textOf(content: unknown): string | undefined {
 function parseClaude(objs: unknown[]): Parsed {
   let cwd = ''
   let lastTs: string | undefined
+  let summary: string | undefined
   const events: TranscriptEvent[] = []
 
   for (const o of objs) {
@@ -67,6 +115,10 @@ function parseClaude(objs: unknown[]): Parsed {
     if (typeof rec.timestamp === 'string') lastTs = rec.timestamp
 
     const type = rec.type
+    if (type === 'summary' && typeof rec.summary === 'string' && rec.summary) {
+      summary = rec.summary // Claude's own generated session title (last one wins)
+      continue
+    }
     const message = rec.message as { role?: string; content?: unknown } | undefined
     if (type === 'user') {
       const text = textOf(message?.content)
@@ -89,7 +141,7 @@ function parseClaude(objs: unknown[]): Parsed {
       }
     }
   }
-  return { cwd, lastTs, events }
+  return { cwd, lastTs, summary, events }
 }
 
 /** Candidate project dirs for a workspace: the exact encoding, plus any dir
@@ -128,12 +180,13 @@ export class ClaudeCodeSessionStore implements SessionStore {
           const [text, st] = await Promise.all([readFile(path, 'utf8'), stat(path)])
           const parsed = parseClaude(parseJsonl(text))
           if (!cwdMatchesWorkspace(parsed.cwd, workspace)) continue
+          if (isRelayDriven(parsed.events)) continue // the bot's own turns, not the user's session
           out.push({
             id: file.replace(/\.jsonl$/, ''),
             runtime: this.runtime,
             cwd: parsed.cwd,
             updatedAt: parsed.lastTs ?? st.mtime.toISOString(),
-            title: deriveTitle(parsed.events),
+            title: claudeTitle(parsed),
             messageCount: countMessages(parsed.events),
           })
         } catch {
@@ -162,7 +215,7 @@ export class ClaudeCodeSessionStore implements SessionStore {
           id,
           runtime: this.runtime,
           cwd: parsed.cwd,
-          title: deriveTitle(parsed.events),
+          title: claudeTitle(parsed),
           events: parsed.events,
         }
       } catch {
