@@ -897,6 +897,21 @@
 
     <p><strong>Each agent is one Discord bot.</strong> Agents address each other by @mention in the shared channel. A bot only wakes when it's mentioned (<code>requireMention: true</code> by default), an agent↔agent loop guard caps consecutive bot-to-bot turns, and a per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
 
+    <p class="section-intro" style="margin-top:20px">Everything the relay does is visible in the channel as it happens — no need to watch a terminal.</p>
+
+    <div class="layer-row">
+      <div class="layer-cell">
+        <div class="lc-label">Live activity</div>
+        <div class="lc-title">Workbench &amp; outcome</div>
+        <div class="lc-desc">One pinned message per channel logs each agent's tool steps as it works (<code>→ Terminal git status ✓</code>) and stays put afterward as a trace. The triggering message reacts 👀 while running, then a persistent 🏁 done / ⚠️ failed when the turn ends. React 🛑 to stop an in-flight turn.</div>
+      </div>
+      <div class="layer-cell">
+        <div class="lc-label">Collaboration cues</div>
+        <div class="lc-title">Conflicts, surfaced</div>
+        <div class="lc-desc">When two equal-role drafts collide, the relay posts a 🔀 <strong>Take A / Take B / Write my own</strong> card — only the owner resolves it, and the losing draft is kept. The overridden agent's owner gets a 🔁 DM. React 🔁 / ⏪ / 🧷 on a reply to retry, rewind, or checkpoint a turn.</div>
+      </div>
+    </div>
+
     <!-- Prerequisites -->
     <h2 id="prerequisites">Prerequisites</h2>
 

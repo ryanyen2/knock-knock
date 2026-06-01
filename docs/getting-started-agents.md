@@ -191,6 +191,133 @@ bun relay.ts
   owner/human message resets the counter.
 - **Per-channel approvals** — each bot's tool-permission prompts go to *that
   bot's* owner, not a shared approver.
+- **Tasks run in threads** — a top-level `@mention` opens a Discord thread for
+  that task; the reply, tool steps, approvals, and activity log all live there.
+  The parent channel is the **room** (permissions, roster, allowlist); threads
+  inherit it. Each thread gets its own agent session, so tasks don't bleed.
+- **Live "Workbench"** — one pinned message per task thread, edited in place as
+  each agent works: a per-agent log of tool steps with status (`→ Terminal git
+  status ✓`), kept afterward as the trace of the turn.
+- **Outcome reactions** — 👀 while a turn runs, swapped for a persistent **🏁
+  done** / **⚠️ failed** on the triggering message. ✅ / ❌ stay approval-only.
+- **Stop** — react **🛑** (owner only) on a message while the bot is working to
+  abort the in-flight turn promptly; the relay posts a short "Stopped" note.
+- **Conflict cards & override DMs** — when two equal-role drafts collide at the
+  same anchor, the relay posts a 🔀 **Take A / Take B / Write my own** card (only
+  the owner resolves; the loser is kept); the overridden agent's owner gets a 🔁
+  DM. React **🔁 / ⏪ / 🧷** on a bot message to retry, rewind, or checkpoint a turn.
+  The full reaction vocabulary, conflict resolution, and how the ledger versions
+  every action (nothing deleted, only superseded) are in
+  [reactions-and-versioning.md](reactions-and-versioning.md).
+- **Session sharing** 📥 — an owner can start collaboration from the plan and
+  decisions in one of their local coding sessions: `share session` imports a
+  distilled context brief into the channel; `resume session` continues the live
+  session. See [session-sharing.md](session-sharing.md).
+- **Watches** ⏳ — let a turn defer and be resumed by the world (a file changing,
+  a job finishing, a deadline passing). See the next section and
+  [knock-knock-watches.md](knock-knock-watches.md).
+
+---
+
+## Watches — deferring a turn until the world changes
+
+A watch lets an agent register interest in something that happens *later* and be
+re-prompted to act (and post to Discord) the instant it does — without holding a
+turn open or polling. It runs a supervised command; each output line is gated,
+and a matching line resumes a fresh turn. Two ways to arm one:
+
+- **Owner command** (every runtime): `!watch <name> on-change|each-line|on-exit|match:<regex> [every=10s ttl=10m max=5 once] <command>`, plus `!watch list` and `!unwatch <name>`. Owner-only, short-circuited in `handleInbound` before any admit — a peer can't arm a watch by talking.
+- **Agent tool** (Claude SDK runtime today): the in-process MCP server
+  (`adapters/watch-mcp.ts`) exposes `watch` / `unwatch` / `watch_list`, so the
+  agent arms from natural language ("start watching the notes file"). Only
+  runtimes wired for it self-arm (`runtimeSelfArmsWatches`); ACP agents use the
+  owner `!watch` fallback.
+
+Both paths funnel through one permission-gated arm path (`WatchControl.arm`, in
+`host/watch-control.ts`):
+
+```
+agent calls watch (or owner types !watch)   in a task scope (thread)
+  → WatchControl.arm — classifyTool({toolName:'Bash', subject: command}) against
+    the room's profile (resolved scope→room), three-way:
+       deny  → refused;  allow → armed;  ask → held for one owner ✅/❌
+  → admit(watch.armed)                         [the watch fold records the intent]
+  → WatchSupervisor reconciles desired-vs-running → spawns the command
+  → each stdout line → watchGate → admit(watch.fired)
+  → resume-on-watch → admit(turn.prompted) → drive-turn → reply → post-on-reply
+                                               (resumes in the scope it was armed in)
+```
+
+**Safety:** the watch command is classified exactly like a Bash call against the
+room's `allow / ask / deny` profile (the floor resolves scope→room, never an
+empty profile):
+
+- **deny** → refused outright; the command never arms and never runs.
+- **allow** → armed immediately.
+- **ask** → *held*: the owner gets one ✅/❌ for the exact command (via the
+  `Approvals` flow, anchored on a `watch.requested` interaction), and the watch
+  arms only on approve. The owner's own `!watch` is pre-approved — typing the
+  command is the approval. This matters because a typical `ask: [Bash(*)]` profile
+  shadows every Bash `allow`, so approving the command once is the usable path.
+
+The `WatchSupervisor` then backstops the **deny floor** at spawn time regardless
+of how a watch got armed, and TTL / max-fires bound a runaway watch.
+
+---
+
+## Cross-machine setup (shared Postgres ledger)
+
+By default each relay keeps a **local SQLite ledger**, so two relays on different
+machines only see each other through the Discord channel. That's enough for the
+agents to talk — but anything coordinated through *ledger state* (an imported
+session brief, cross-machine conflict detection, knowledge notes) stays on the
+relay that created it. To share that across machines, point **every** relay at
+one **shared Postgres** database via `KNOCK_KNOCK_LEDGER_URL`.
+
+> **What's shared vs. local.** Only the **ledger** (all Interactions, and the
+> folds derived from them) is shared in Postgres. Each machine keeps its own
+> `access.json` (its agent), `.env` (its bot token), room permission profiles,
+> and **runtime session files** (`~/.claude/projects`, …). So **resuming a live
+> session stays same-machine** — the session file isn't on the other host; use
+> `share session` (import) to carry *context* across machines. Don't merge
+> `access.json` between machines.
+
+### Setting it up with Neon (tested on Postgres 18)
+
+1. Create a Neon project on **Postgres 18** and a database (e.g. `neondb`).
+2. Copy the **direct** connection string — the host must **not** contain
+   `-pooler`. Neon's pooled endpoint runs PgBouncer in transaction mode, which
+   **drops `LISTEN`/`NOTIFY`** — cross-machine notifications would then silently
+   never arrive. Direct host looks like `ep-xxxx.REGION.aws.neon.tech`; pooled is
+   `ep-xxxx-pooler.REGION.aws.neon.tech` (do not use the pooled one here).
+3. Prefer `sslmode=verify-full` (Neon presents a valid cert, and it avoids a
+   `pg` deprecation warning that `sslmode=require` now triggers).
+4. Set the **same** URL on **both** machines — in
+   `~/.claude/channels/knock-knock/.env`:
+   ```
+   KNOCK_KNOCK_LEDGER_URL=postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=verify-full
+   ```
+   (or `export KNOCK_KNOCK_LEDGER_URL=…` before launching).
+5. `bun relay.ts` — you'll see `relay: ledger = postgres (…)` (password masked).
+   The schema (tables + the `NOTIFY` trigger) is **created automatically** on
+   first connect; there's no migration to run, and the second machine's connect
+   is a no-op.
+
+### Caveats (Neon free tier)
+
+- **Direct endpoint only** (no `-pooler`) — `LISTEN`/`NOTIFY` needs a real session.
+- **Autosuspend.** The free plan suspends the compute after ~5 min idle, which
+  severs the listener (its `LISTEN` is session state). The relay now
+  **reconnects and re-`LISTEN`s automatically**, so it recovers — but
+  interactions another host wrote *during* the gap aren't replayed to the live
+  listener. **Restart the relay to fully re-fold**, or disable scale-to-zero
+  (paid) for an always-on listener. Active back-and-forth keeps the compute warm.
+- **Fresh start.** Switching to Postgres begins from an empty ledger; existing
+  local SQLite history isn't migrated.
+
+> Cross-machine **conflict resolution** also requires this shared ledger — two
+> relays only compute identical conflict cards when their merge gates see the
+> same Interactions. See [reactions-and-versioning.md](reactions-and-versioning.md).
 
 ---
 

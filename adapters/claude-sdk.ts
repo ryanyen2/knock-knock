@@ -4,15 +4,39 @@
  */
 
 import { query } from '@anthropic-ai/claude-agent-sdk'
-import type { SDKSystemMessage, SDKResultSuccess, SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from '../agent-adapter.ts'
+import type {
+  SDKSystemMessage,
+  SDKResultSuccess,
+  SDKAssistantMessage,
+  McpServerConfig,
+} from '@anthropic-ai/claude-agent-sdk'
+import type {
+  AgentAdapter,
+  AgentEvent,
+  PermissionProfile,
+  Verdict,
+  WatchToolHandlers,
+} from '../agent-adapter.ts'
+import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
 
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
   private eventHandler?: (event: AgentEvent) => void
+  private readonly mcpServers?: Record<string, McpServerConfig>
+  private readonly alwaysAllow: string[]
 
-  constructor(private readonly cwd: string) {}
+  constructor(private readonly cwd: string, watchTools?: WatchToolHandlers) {
+    // The watch MCP server (if the host wired callbacks) lets the agent arm
+    // watches by calling a tool. The tool calls auto-allow so arming is smooth;
+    // the *command* a watch runs is deny-floored by the host before it runs.
+    if (watchTools) {
+      this.mcpServers = { 'knock-knock': makeWatchMcpServer(watchTools) }
+      this.alwaysAllow = WATCH_TOOL_NAMES
+    } else {
+      this.alwaysAllow = []
+    }
+  }
 
   applyPolicy(profile: PermissionProfile): void {
     this.profile = profile
@@ -36,19 +60,33 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     }
   }
 
-  async prompt(input: { text: string; sessionId?: string }): Promise<{ sessionId: string; text: string }> {
+  async prompt(input: {
+    text: string
+    sessionId?: string
+    signal?: AbortSignal
+  }): Promise<{ sessionId: string; text: string }> {
     let sessionId = ''
     let text = ''
     const startedAt = Date.now()
+
+    // Bridge the relay's AbortSignal to the SDK's AbortController so a 🛑 stops
+    // the query promptly.
+    const abortController = new AbortController()
+    if (input.signal) {
+      if (input.signal.aborted) abortController.abort()
+      else input.signal.addEventListener('abort', () => abortController.abort(), { once: true })
+    }
 
     const result = query({
       prompt: input.text,
       options: {
         cwd: this.cwd,
         permissionMode: 'default',
-        allowedTools: this.profile.allow,
+        abortController,
+        allowedTools: [...this.profile.allow, ...this.alwaysAllow],
         // deny is the hard floor — must reach the SDK here, not via canUseTool alone
         disallowedTools: this.profile.deny,
+        ...(this.mcpServers ? { mcpServers: this.mcpServers } : {}),
         // Isolation mode: prevent the SDK from loading .mcp.json, CLAUDE.md, or
         // any project/local settings from the workspace cwd. The relay passes all
         // policy programmatically; stray disk config is the bug this guards against.
@@ -60,33 +98,44 @@ export class ClaudeSdkAdapter implements AgentAdapter {
             return { behavior: 'deny' as const, message: 'No approval handler registered.' }
           }
           const verdict = await handler({ toolName, input: toolInput })
+          // On allow, echo the (unmodified) input back as `updatedInput`. The
+          // SDK's control protocol validates the permission result and a bare
+          // `{behavior:'allow'}` can be rejected — surfacing to the agent as a
+          // tool error the moment the owner approves. Echoing the input is the
+          // documented "approve unchanged" shape.
           return verdict.behavior === 'allow'
-            ? { behavior: 'allow' as const }
+            ? { behavior: 'allow' as const, updatedInput: toolInput }
             : { behavior: 'deny' as const, message: verdict.message }
         },
       },
     })
 
-    for await (const msg of result) {
-      this.translate(msg, startedAt)
-      if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
-        sessionId = msg.session_id
-      } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
-        const r = msg as SDKResultSuccess
-        sessionId = r.session_id
-        text = r.result
-      } else if (msg.type === 'assistant' && !text) {
-        // Accumulate assistant text as fallback if result.result is not populated
-        const a = msg as SDKAssistantMessage
-        const content = a.message?.content
-        if (Array.isArray(content)) {
-          for (const block of content) {
-            if (block.type === 'text' && 'text' in block) {
-              text += (block as { type: 'text'; text: string }).text
+    try {
+      for await (const msg of result) {
+        this.translate(msg, startedAt)
+        if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
+          sessionId = msg.session_id
+        } else if (msg.type === 'result' && (msg as SDKResultSuccess).subtype === 'success') {
+          const r = msg as SDKResultSuccess
+          sessionId = r.session_id
+          text = r.result
+        } else if (msg.type === 'assistant' && !text) {
+          // Accumulate assistant text as fallback if result.result is not populated
+          const a = msg as SDKAssistantMessage
+          const content = a.message?.content
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === 'text' && 'text' in block) {
+                text += (block as { type: 'text'; text: string }).text
+              }
             }
           }
         }
       }
+    } catch (err) {
+      // Aborting the query (owner 🛑) surfaces as a throw — return whatever
+      // text we had rather than failing the turn. Re-throw anything else.
+      if (!abortController.signal.aborted) throw err
     }
 
     return { sessionId, text: text.trim() || '(no response)' }

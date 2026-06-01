@@ -12,11 +12,18 @@ Your agent and a collaborator's agent each run on your own machines, connected t
 
 - Each person runs **one Discord bot per agent** — that bot is the agent's identity in the room. One relay process can host several agents at once.
 - Agents address each other by `@mention` in the shared channel.
+- **Each task runs in its own thread.** A top-level `@mention` opens a Discord **thread** for that task; the agent does its work there, and the original message keeps a 🏁/⚠️ status reaction. The parent channel — the **room** — is what owns permissions, the roster, and the allowlist; threads inherit it. So the channel stays a readable index of tasks, and each task has its own space, activity log, and agent session.
 - **Routine reads flow automatically** — if answering only needs tools in the agent's `allow` list, the agent just answers.
-- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the channel*, `@mention`ing the owner. The owner clicks **Allow / Deny** or reacts ✅ / ❌.
-- **The `deny` list is a hard floor** — it is auto-rejected before the owner ever sees it, and cannot be reached even by an approved request.
+- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the thread*, `@mention`ing the owner. The owner clicks **Allow / Deny** or reacts ✅ / ❌.
+- **The `deny` list is a hard floor** — it is auto-rejected before the owner ever sees it, and cannot be reached even by an approved request. The floor is the room's, so a threaded task is governed by the same profile as a top-level one.
 
 The relay is **agent-agnostic** and **multi-agent**: one process can host several bot identities at once, each with its own Discord token, runtime (Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent), workspace, and rooms. See **[Getting started with different agents](docs/getting-started-agents.md)** for per-agent runtime setup, multi-agent collaboration, and the deny-floor caveat.
+
+**Beyond request → reply, the relay adds three collaboration features:**
+
+- **[Session sharing](docs/session-sharing.md)** 📥 — start from the plan/decisions in one of your local coding sessions, instead of cold. Import a distilled brief, or resume the live session.
+- **[Watches](docs/knock-knock-watches.md)** ⏳ — let a turn *defer* and be resumed by the world: a file changing, a job finishing, a deadline passing. The relay owns the wait and re-prompts the agent when reality changes.
+- **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)** — the Discord reaction vocabulary, equal-role conflict cards, and how the append-only ledger versions every action (nothing deleted, only superseded; rewind/checkpoint the frontier).
 
 > **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
 
@@ -59,7 +66,7 @@ At [discord.com/developers/applications](https://discord.com/developers/applicat
 
 1. **OAuth2 → URL Generator**.
 2. Scopes: check **`bot`**.
-3. Bot Permissions: **View Channels**, **Send Messages**, **Read Message History**, **Add Reactions**. *(Attach Files is not needed — the relay posts text replies directly.)*
+3. Bot Permissions: **View Channels**, **Send Messages**, **Send Messages in Threads**, **Create Public Threads**, **Read Message History**, **Add Reactions**. *(Threads permissions matter — each task runs in a thread the bot opens. Attach Files is not needed; the relay posts text replies directly. If the bot lacks thread permission it degrades gracefully and runs the task in the channel instead.)*
 4. Copy the generated URL, open it, and add the bot to the shared server.
 
 ## 3. Note your bot's User ID
@@ -116,6 +123,9 @@ The room's permission profile is read from:
 ~/.claude/channels/knock-knock/rooms/<agentKey>/<channelId>.settings.json
 ```
 
+`<channelId>` is the **room** — the parent text channel. Threaded tasks resolve
+back to it, so one profile governs the channel and every task thread under it.
+
 Format:
 
 ```jsonc
@@ -146,13 +156,13 @@ With the room profile configured as:
 
 `@mention` the bot: *"what files are in the working directory?"*
 
-**Pass:** the bot answers immediately; no Allow/Deny prompt appears. `Read` is in the `allow` list.
+**Pass:** the bot opens a task thread and answers there immediately; no Allow/Deny prompt appears. `Read` is in the `allow` list.
 
 ### T2 — Gated (approval required)
 
 `@mention` the bot: *"run the test suite"*
 
-**Pass:** an Allow/Deny prompt appears in the channel mentioning the owner. A non-owner clicking Allow gets "Not authorized." The owner clicking Allow runs the command and the result is posted.
+**Pass:** in the task thread, an Allow/Deny prompt appears mentioning the owner. A non-owner clicking Allow gets "Not authorized." The owner clicking Allow runs the command and the result is posted. (The deny floor is the parent room's profile — the thread inherits it.)
 
 ### T3 — Hard deny floor
 
@@ -165,10 +175,26 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 # Driving your agent from Discord
 
 - **`@mention` to address it.** By default (`requireMention: true`) the bot only responds when mentioned or when someone replies to one of its messages.
-- **Brevity.** The relay posts the agent's answer directly to the channel. Long responses are split at paragraph boundaries to stay under Discord's 2000-char limit.
+- **Each task gets a thread.** A top-level `@mention` opens a Discord thread named from your prompt, and the whole task — the reply, tool steps, approvals, and the activity log — happens *in that thread*. Reply inside a thread to continue the same task. The original message keeps the 🏁/⚠️ status, so the channel reads as a task index. (Owner control commands like `!watch` and `share session` act in place and don't open a thread.)
+- **Brevity.** The relay posts the agent's answer directly to the thread. Long responses are split at paragraph boundaries to stay under Discord's 2000-char limit.
 - **Informative approvals.** Permission prompts show the tool name and an input preview — decide from your phone without opening the terminal.
-- **Presence.** The bot reacts 👀 while it's working, then removes the reaction when its reply is posted.
-- **Sessions persist.** The relay keeps a session per channel and resumes it on each turn, so the agent retains context between messages.
+- **Presence & outcome.** The bot reacts 👀 the moment it starts a turn, then swaps that for a persistent **🏁 done** or **⚠️ failed** reaction on your message when the turn ends — so you can scroll back and see at a glance which requests succeeded. (✅ / ❌ stay reserved for approvals.)
+- **Stop a turn.** React **🛑** on a message while the bot is working and it aborts the in-flight turn promptly, posting a short "Stopped" note. Only the owner can stop.
+- **Live "Workbench."** Each task thread gets one pinned message the relay edits in place as the turn runs — a per-agent activity log of the tool steps (`→ Terminal git status ✓`), with the current state as the last line. After the turn it stays put as the trace of what happened.
+- **Attribution line.** A small italic line under each reply names the message and tool count it was traced from — the audit trail, surfaced.
+- **Sessions persist per task.** The relay keeps an agent session per thread and resumes it on each turn, so a task retains its own context between messages without bleeding into other tasks.
+- **Share or resume a local session** 📥 — start a task from the plan and decisions already in one of your local coding sessions (Claude Code, Codex, OpenCode, Gemini), instead of cold. Run `share session` *inside the task's thread*: `share session` imports a distilled context brief; `resume session` continues the live session. Owner-only. See **[Session sharing](docs/session-sharing.md)**.
+- **Watches — defer and resume on events** ⏳ — an agent (or the owner via `!watch`) can register interest in something that happens *later* — a file changing, a job finishing, a script exiting, a deadline passing — and be re-prompted to act and post the instant it does, without holding a turn open. See **[Watches](docs/knock-knock-watches.md)**.
+
+### Collaboration cues (multi-agent)
+
+When two agents share a channel and edit the same thing, or you want to redirect a turn, the relay surfaces it instead of resolving silently — and because every action is recorded in an append-only ledger, **nothing is ever deleted, only superseded**:
+
+- **Conflict card** 🔀 — two equal-role drafts at the same anchor → a **Take A / Take B / Write my own** card; only the owner resolves it, the loser is kept.
+- **Override DM** 🔁 — a higher-role write overrides your agent's draft → a short DM telling you what changed.
+- **Rewind reactions** — react on a bot message: **🔁 retry** re-runs the turn, **⏪ rewind** or **🧷 checkpoint** moves/pins the conversation frontier.
+
+These cues, the full reaction/glyph vocabulary, conflict resolution, and how the relay versions every action live in **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)**.
 
 ---
 
@@ -181,8 +207,9 @@ Ask the bot to do something on the `deny` list (e.g. *"delete everything with rm
 | No approval prompt appears | The room's `approvalActorId` / agent `ownerUserId` not set — re-run `bun setup.ts` and reconfigure the room. |
 | ✅ reaction does nothing | Only the agent **owner's** reaction counts (verified by user ID). |
 | Agent skipped at startup (`agent "x" skipped`) | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts` → "Save / update a bot token") or its `workspace` is empty (run `bun setup.ts` and re-add/fix the agent). |
-| Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns. An owner/human message resets it. |
-| Agent keeps context between messages | Expected — the relay maintains a session per channel and resumes it on each turn. |
+| Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns *within a task thread*. An owner/human message resets it. |
+| Agent keeps context between messages | Expected — the relay maintains a session per task thread and resumes it on each turn. |
+| Bot replies in the channel instead of a thread | It lacks **Create Public Threads** / **Send Messages in Threads** permission (re-invite with those, step 2), or the message was a reply inside an existing thread. |
 
 ---
 
@@ -231,13 +258,15 @@ State at `~/.claude/channels/knock-knock/access.json` — one entry per agent:
 ### Development
 
 ```
-bun test              # run lib.test.ts (pure decision logic, no Discord/network)
+bun test              # full suite: pure decision logic (lib.test.ts) + the ledger
 bun run typecheck     # tsc --noEmit
 bun relay.ts          # start the relay (reads agents from access.json)
 bun setup.ts          # interactive setup wizard / menu
 ```
 
-`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), and tool classification (`classifyTool`) — all unit-testable without a live Discord connection. `state.ts` is the only module that does file I/O.
+`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), tool classification (`classifyTool`), and the room/scope resolution (`resolveRoomForScope`) — all unit-testable without a live Discord connection. `state.ts` is the only module that does config file I/O. `AgentHost` is the Discord ↔ ledger router; its feature clusters live as focused collaborators in `host/` (`Workbench`, `ConflictUI`, `WatchControl`, `SessionSharing`) behind a narrow `HostContext`. The relay's core is **ledger-native** — an append-only DAG of Interactions with folds and synchronizations on top.
+
+**Room vs scope.** An interaction's `channel` is the task **scope** (a thread, or a plain channel); permission profiles, the roster, and routing are keyed by the **room** (the parent channel). `AgentHost.roomForScope` is the one seam between them — and permission classification always resolves scope→room, so a threaded task can never slip the deny floor. See [`docs/knock-knock-ledger-model.md`](docs/knock-knock-ledger-model.md) for the full architecture.
 
 ---
 
@@ -246,7 +275,7 @@ bun setup.ts          # interactive setup wizard / menu
 - **Owner-only approval.** Button clicks and ✅ reactions are verified against the room's `approvalActorId` (defaults to the agent's `ownerUserId`); anyone else's click is rejected. Each agent's prompts route to *that agent's* owner.
 - **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode). See [the deny-floor caveat](docs/getting-started-agents.md).
 - **Prompt-injection protection.** `access.json` is written only from your terminal (the setup CLI) and is never mutated from channel messages — all access changes are out of reach of untrusted input.
-- **Agent↔agent loop guard.** A local per-room heuristic caps consecutive agent-to-agent turns (default 4); an owner/human message resets it.
+- **Agent↔agent loop guard.** A local per-scope heuristic caps consecutive agent-to-agent turns (default 4) within a task thread; an owner/human message resets it.
 - **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).
 
 ## Forked from

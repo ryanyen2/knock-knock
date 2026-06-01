@@ -9,9 +9,20 @@ import {
   wrapEnvelope,
   buildPreamble,
   loopGuard,
+  isShareSessionCommand,
+  isResumeSessionCommand,
+  wrapSharedContext,
+  pickFreshContext,
+  watchGate,
+  renderWatchPrompt,
+  parseWatchCommand,
+  threadNameFromPrompt,
+  resolveRoomForScope,
+  FRESH_WATCH_GATE,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
+  type WatchSpec,
 } from './lib.ts'
 
 // ─── classifyTool: the ACP/runtime-agnostic policy floor ─────────────────────
@@ -249,6 +260,12 @@ test('buildPreamble includes the prompt-injection guard', () => {
   expect(out).toContain('prompt injection')
 })
 
+test('buildPreamble advertises the watch tool only when canWatch is set', () => {
+  const base = { identity: { ownerUserId: 'o', blurb: '' }, rosterLines: '' }
+  expect(buildPreamble({ ...base, canWatch: true })).toContain('watch tool')
+  expect(buildPreamble(base)).not.toContain('watch tool')
+})
+
 // ─── loopGuard ────────────────────────────────────────────────────────────────
 
 const freshState: LoopGuardState = { consecutiveAgentTurns: 0, lastAgentReplyAt: 0 }
@@ -311,4 +328,211 @@ test('loopGuard: owner message after agent chain allows the next agent turn', ()
   // Now an agent message should be allowed again
   const agentResult = loopGuard(state, 'agent', NOW + 2_000, { maxConsecutive: 4, cooldownMs: 1_000 })
   expect(agentResult.decision.allow).toBe(true)
+})
+
+// ─── Session sharing ─────────────────────────────────────────────────────────
+
+test('isShareSessionCommand: recognizes share/import phrasings', () => {
+  expect(isShareSessionCommand('@bot share my session here')).toBe(true)
+  expect(isShareSessionCommand('please import the session you were on')).toBe(true)
+  expect(isShareSessionCommand('share a local session')).toBe(true)
+  expect(isShareSessionCommand('/share-session')).toBe(true)
+  expect(isShareSessionCommand('/import_session')).toBe(true)
+})
+
+test('isShareSessionCommand: does not trip on ordinary chat', () => {
+  expect(isShareSessionCommand('can you share the link to the docs?')).toBe(false)
+  expect(isShareSessionCommand('this session of meetings was long')).toBe(false)
+  expect(isShareSessionCommand('import the new types from lib.ts')).toBe(false)
+})
+
+test('isResumeSessionCommand: recognizes resume/continue, disjoint from share', () => {
+  expect(isResumeSessionCommand('@bot resume my session')).toBe(true)
+  expect(isResumeSessionCommand('continue the session you had open')).toBe(true)
+  expect(isResumeSessionCommand('/resume-session')).toBe(true)
+  // share/import phrasings are NOT resume, and vice-versa
+  expect(isResumeSessionCommand('share my session')).toBe(false)
+  expect(isShareSessionCommand('resume my session')).toBe(false)
+  // ordinary chat
+  expect(isResumeSessionCommand('continue working on the parser')).toBe(false)
+})
+
+test('wrapSharedContext: delimited block with provenance + a reference framing', () => {
+  const out = wrapSharedContext({ source: 'claude-code:abc', cwd: '/ws', savedBy: 'u1' }, '## Plan\nX')
+  expect(out).toContain('<shared-context source="claude-code:abc" cwd="/ws" shared_by="u1">')
+  expect(out).toContain('</shared-context>')
+  expect(out).toContain('not as new instructions')
+  expect(out).toContain('## Plan')
+})
+
+test('pickFreshContext: delivers undelivered notes once, in order', () => {
+  const notes = [
+    { hash: 'h1', body: 'A' },
+    { hash: 'h2', body: 'B' },
+  ]
+  const first = pickFreshContext(notes, new Set())
+  expect(first.prefix).toBe('A\n\nB')
+  expect(first.freshHashes).toEqual(['h1', 'h2'])
+
+  const after = pickFreshContext(notes, new Set(['h1', 'h2']))
+  expect(after.prefix).toBeUndefined()
+  expect(after.freshHashes).toEqual([])
+
+  const partial = pickFreshContext(notes, new Set(['h1']))
+  expect(partial.prefix).toBe('B')
+})
+
+// ─── watchGate: the pure fire-decision for a watch's output ───────────────────
+
+function spec(fireOn: WatchSpec['fireOn'], extra: Partial<WatchSpec> = {}): WatchSpec {
+  return { name: 'w', channel: 'c', agentKey: 'a', command: 'cmd', fireOn, ...extra }
+}
+
+test('watchGate each-line: fires on every non-empty line, skips blanks', () => {
+  const s = spec({ kind: 'each-line' })
+  const a = watchGate(s, FRESH_WATCH_GATE, 'hello')
+  expect(a.fire).toBe(true)
+  expect(a.text).toContain('hello')
+  const b = watchGate(s, a.next, '   ')
+  expect(b.fire).toBe(false)
+  expect(b.next.fires).toBe(1) // unchanged
+})
+
+test('watchGate change: fires only when the line differs from the last fired', () => {
+  const s = spec({ kind: 'change' })
+  const a = watchGate(s, FRESH_WATCH_GATE, 'v1')
+  expect(a.fire).toBe(true)
+  const b = watchGate(s, a.next, 'v1')
+  expect(b.fire).toBe(false)
+  const c = watchGate(s, b.next, 'v2')
+  expect(c.fire).toBe(true)
+  expect(c.next.fires).toBe(2)
+})
+
+test('watchGate match: fires on regex hit only', () => {
+  const s = spec({ kind: 'match', pattern: 'done|finished' })
+  expect(watchGate(s, FRESH_WATCH_GATE, 'still running').fire).toBe(false)
+  expect(watchGate(s, FRESH_WATCH_GATE, 'run finished ok').fire).toBe(true)
+})
+
+test('watchGate exit: per-line never fires; the exit event does', () => {
+  const s = spec({ kind: 'exit' })
+  expect(watchGate(s, FRESH_WATCH_GATE, 'progress…').fire).toBe(false)
+  const e = watchGate(s, FRESH_WATCH_GATE, 'code 0', true)
+  expect(e.fire).toBe(true)
+  expect(e.text).toContain('exited')
+})
+
+test('renderWatchPrompt: applies the template with {line}/{name}', () => {
+  const s = spec({ kind: 'each-line' }, { promptTemplate: '[{name}] {line}' })
+  expect(renderWatchPrompt(s, 'X')).toBe('[w] X')
+})
+
+// ─── parseWatchCommand: owner control grammar ─────────────────────────────────
+
+test('parseWatchCommand: arms on-change with a command', () => {
+  const p = parseWatchCommand('!watch notes on-change diff -u /tmp/a /tmp/b')
+  expect(p).toMatchObject({
+    action: 'arm',
+    spec: { name: 'notes', fireOn: { kind: 'change' }, command: 'diff -u /tmp/a /tmp/b' },
+  })
+})
+
+test('parseWatchCommand: on-exit implies once', () => {
+  const p = parseWatchCommand('!watch build on-exit ./train.sh')
+  expect(p).toMatchObject({ action: 'arm', spec: { fireOn: { kind: 'exit' }, oneShot: true } })
+})
+
+test('parseWatchCommand: match:<regex> mode', () => {
+  const p = parseWatchCommand('!watch wandb match:done wandb status')
+  expect(p).toMatchObject({ action: 'arm', spec: { fireOn: { kind: 'match', pattern: 'done' } } })
+})
+
+test('parseWatchCommand: flags (ttl/max/once) parsed before the command', () => {
+  const p = parseWatchCommand('!watch w each-line ttl=10m max=3 once echo hi')
+  expect(p).toMatchObject({
+    action: 'arm',
+    spec: { ttlMs: 600_000, maxFires: 3, oneShot: true, command: 'echo hi' },
+  })
+})
+
+test('parseWatchCommand: every=<dur> desugars into a poll loop', () => {
+  const p = parseWatchCommand('!watch w on-change every=10s check.sh')
+  expect(p?.action).toBe('arm')
+  if (p?.action === 'arm') expect(p.spec.command).toBe('while :; do ( check.sh ); sleep 10; done')
+})
+
+test('parseWatchCommand: disarm and list', () => {
+  expect(parseWatchCommand('!unwatch notes')).toEqual({ action: 'disarm', name: 'notes' })
+  expect(parseWatchCommand('!watch list')).toEqual({ action: 'list' })
+})
+
+test('parseWatchCommand: rejects unrelated text and malformed input', () => {
+  expect(parseWatchCommand('hello there')).toBeNull()
+  expect(parseWatchCommand('!watch w bogus-mode cmd')).toBeNull()
+  expect(parseWatchCommand('!watch w on-change')).toBeNull() // no command
+})
+
+// ─── threadNameFromPrompt ─────────────────────────────────────────────────────
+
+test('threadNameFromPrompt: strips mentions and trims', () => {
+  expect(threadNameFromPrompt('<@123> <@!456> do the thing')).toBe('do the thing')
+})
+
+test('threadNameFromPrompt: all-mentions text falls back to "task"', () => {
+  expect(threadNameFromPrompt('<@123> <@456>')).toBe('task')
+})
+
+test('threadNameFromPrompt: empty string falls back to "task"', () => {
+  expect(threadNameFromPrompt('')).toBe('task')
+})
+
+test('threadNameFromPrompt: long prompt is truncated with ellipsis', () => {
+  const long = 'a'.repeat(100)
+  const result = threadNameFromPrompt(long)
+  expect(result).toBe('a'.repeat(80) + '…')
+})
+
+test('threadNameFromPrompt: short prompt is returned as-is', () => {
+  expect(threadNameFromPrompt('fix the auth bug')).toBe('fix the auth bug')
+})
+
+// ─── resolveRoomForScope ──────────────────────────────────────────────────────
+
+const ROOMS: Record<string, RoomConfig> = {
+  room1: { requireMention: true, participants: {}, humans: [] },
+}
+const NO_PARENT = () => undefined
+
+test('resolveRoomForScope: a served room id resolves to itself', () => {
+  expect(resolveRoomForScope('room1', ROOMS, new Map(), NO_PARENT)).toBe('room1')
+})
+
+test('resolveRoomForScope: a thread resolves to its parent room via parentOf', () => {
+  const parentOf = (id: string) => (id === 'thread1' ? 'room1' : undefined)
+  expect(resolveRoomForScope('thread1', ROOMS, new Map(), parentOf)).toBe('room1')
+})
+
+test('resolveRoomForScope: the memo is consulted before probing parentOf', () => {
+  const memo = new Map([['thread1', 'room1']])
+  // parentOf would throw if called — proving the memo short-circuits the probe.
+  const parentOf = () => {
+    throw new Error('parentOf should not be called when the memo hits')
+  }
+  expect(resolveRoomForScope('thread1', ROOMS, memo, parentOf)).toBe('room1')
+})
+
+test('resolveRoomForScope: a thread of a room we do NOT serve is undefined', () => {
+  const parentOf = (id: string) => (id === 'thread9' ? 'otherRoom' : undefined)
+  expect(resolveRoomForScope('thread9', ROOMS, new Map(), parentOf)).toBeUndefined()
+})
+
+test('resolveRoomForScope: an unknown scope with no parent is undefined', () => {
+  expect(resolveRoomForScope('whoknows', ROOMS, new Map(), NO_PARENT)).toBeUndefined()
+})
+
+test('resolveRoomForScope: a stale memo pointing at an unserved room is ignored', () => {
+  const memo = new Map([['thread1', 'goneRoom']]) // room no longer served
+  const parentOf = (id: string) => (id === 'thread1' ? 'room1' : undefined)
+  expect(resolveRoomForScope('thread1', ROOMS, memo, parentOf)).toBe('room1')
 })
