@@ -8,9 +8,21 @@ appendix at the bottom for the curious; if you only ever need to read one
 section, read **§2 Who goes first** and **§3 What you see today**.
 
 > Anything labelled **Shipping today** is in `main` and you can use it now.
-> Anything labelled **Designed, not yet shipped** is a proposal in this
-> document — it describes how the UX *will* surface what the ledger already
-> captures. The capture is in place; the surfacing is the next pass.
+> Anything labelled **Designed, not yet shipped** describes a further pass over
+> what the ledger already captures. (The whole §4 Discord surface — the
+> Workbench, conflict cards, attribution, override DMs, rewind reactions, the
+> stale-note flag — has since shipped; see
+> [`reactions-and-versioning.md`](reactions-and-versioning.md).)
+
+> **Room vs scope.** A task runs in its own Discord **thread**, opened from a
+> top-level `@mention`. An interaction's `channel` field is that task **scope**
+> (the thread, or a plain channel when there's no thread); everything task-bound
+> keys on it — turn lineage, approvals, watches, the knowledge fold, the
+> Workbench, the agent's session. The **room** is the parent channel, and it owns
+> what is *not* per-task: the permission profile, the roster, the allowlist, and
+> routing. `roomForScope` resolves a scope to its room, and permission
+> classification always does so — a threaded task is governed by the same deny
+> floor as a top-level one, never an empty profile.
 
 ---
 
@@ -168,19 +180,22 @@ DM unavailable: ...` so you know why the prompt landed publicly.
 
 ---
 
-## 4. What we're designing next
+## 4. The Discord surface (shipping today)
 
-Below are the visual cues we plan to add to surface ledger state that's
-already captured but doesn't yet have a UI. Each one is paired with the
-exact ledger fact it draws from — so when this ships, the data is
-already there.
+These visual cues surface ledger state that was always captured but used to have
+no UI — **they have all shipped.** Each is paired with the exact ledger fact it
+draws from. The operator-facing reference is
+[`reactions-and-versioning.md`](reactions-and-versioning.md); the design rationale
+below explains *why each cue draws from the fact it does*. (One thing changed
+since this was written: each task now runs in its own **thread**, so "per
+channel" below means **per task scope** — the thread.)
 
 ### 4.1 The "now working" pill (in-channel)
 
 **Problem:** When two bots are active at once in the same channel, it's
 hard to tell who's doing what.
 
-**Proposed:** A single short pinned message per channel that each bot
+**Shipped:** A single short pinned message per channel that each bot
 edits as it works. Each line shows *who* and *what stage*:
 
 ```
@@ -204,7 +219,7 @@ synchronization that already runs on `turn.prompted` / `turn.replied`.
 **Problem:** When two agents both edit the same paragraph or note at the
 same moment, today the ledger records a conflict but nobody is told.
 
-**Proposed:** When the merge step detects a same-anchor tie between two
+**Shipped:** When the merge step detects a same-anchor tie between two
 agents, the relay posts a single channel message:
 
 ```
@@ -237,7 +252,7 @@ one new piece.
 **Problem:** Long sessions become hard to trace. "Wait, why did the bot
 take *this* path?"
 
-**Proposed:** A small italic line under each agent reply, naming the
+**Shipped:** A small italic line under each agent reply, naming the
 upstream cause and the tools involved:
 
 ```
@@ -261,7 +276,7 @@ and every executed tool hash. Rendering is one line.
 **Problem:** If the owner overrides an agent's work, the agent's owner
 isn't told what changed.
 
-**Proposed:** When a `workspace.edit` or `knowledge.append` from agent
+**Shipped:** When a `workspace.edit` or `knowledge.append` from agent
 bot-B is superseded by a higher-role write, bot-B's owner gets a short
 DM:
 
@@ -289,7 +304,7 @@ synchronization that subscribes to that artifact.
 **Problem:** Sometimes you realise *after* approving that you wanted to
 ask the bot something different first.
 
-**Proposed:** A reaction vocabulary on any of the bot's messages:
+**Shipped:** A reaction vocabulary on any of the bot's messages:
 
 | React with | Effect |
 |---|---|
@@ -306,7 +321,7 @@ is purely a new synchronization and a small frontier-management routine.
 source was made up"), everything downstream that used it is silently
 stale until the bot stumbles into it.
 
-**Proposed:** The bot's next reply that touches stale knowledge carries
+**Shipped:** The bot's next reply that touches stale knowledge carries
 a visible flag:
 
 ```
@@ -497,15 +512,16 @@ regardless of approval.
 
 ## Appendix — under the hood
 
-For implementers and the very curious. The full architectural plan lives
-in `~/.claude/plans/knock-knock-architecture-design-scalable-swing.md`.
-This is the short version.
+For implementers and the very curious. `CLAUDE.md` at the repo root is the
+working architecture map; this is the short version.
 
 **The unit.** Each event is an *Interaction*: a record with `actor`,
 `role`, `channel`, `target` (artifact + anchor), `verb`, `patch`,
-`effect`, and `caused_by` (a list of parent interaction hashes). The
-hash is computed from the content — identical events have identical
-hashes, which gives deduplication for free.
+`effect`, and `caused_by` (a list of parent interaction hashes). `channel`
+is the task **scope** (a thread, or a plain channel); the parent **room** that
+owns permissions is resolved from it at the host boundary (`roomForScope`), not
+stored on the record. The hash is computed from the content — identical events
+have identical hashes, which gives deduplication for free.
 
 **Three kinds of artifact.** What you can patch:
 - **Versionable** — files, structured documents. Patches are CRDT
@@ -524,13 +540,15 @@ hashes, which gives deduplication for free.
   anchor.
 
 **Concept folds (shipping today).** Channel transcript, turn lifecycle,
-approval state, loop guard, knowledge with staleness annotation.
+approval state, loop guard, knowledge with staleness annotation, and the watch
+set (the deferred-continuation primitive).
 
-**Synchronizations (shipping today).** Four pure functions wired
-between the ledger and Discord: `prompt-on-message`, `classify-on-tool-
-request`, `drive-turn`, `post-on-reply`. Adding a new behaviour (critique,
-verify, summarise) is one new file in `ledger/synchronizations/` and
-zero edits to existing concepts.
+**Synchronizations (shipping today).** Pure functions wired between the ledger
+and Discord, one file each: `prompt-on-message`, `classify-on-tool-request`,
+`drive-turn`, `post-on-reply`, `dm-on-supersede`, `conflict-card`,
+`retry-on-reaction`, `resume-on-watch`. Adding a new behaviour (critique, verify,
+summarise) is one new file in `ledger/synchronizations/` and zero edits to
+existing concepts.
 
 **Storage.** `SqliteStore` (default, on disk) and `PgStore` (set
 `KNOCK_KNOCK_LEDGER_URL`) implement the same interface. Postgres uses

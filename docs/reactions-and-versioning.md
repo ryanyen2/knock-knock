@@ -14,6 +14,11 @@ The deep design of the log itself lives in
 [`knock-knock-ledger-model.md`](knock-knock-ledger-model.md); this doc is the
 operator's view.
 
+> A task runs in its own Discord **thread** (opened from a top-level `@mention`);
+> the reactions and cards below all appear there. An interaction's `channel` is
+> that task **scope** — the thread — while permissions and the roster stay keyed
+> to the parent **room**. See the room/scope note in the ledger model.
+
 ---
 
 ## 1. Reactions — the glyph vocabulary
@@ -40,7 +45,7 @@ succeeded.
 
 | React | Action |
 |---|---|
-| 🛑 | **Stop** the channel's in-flight turn — aborts it promptly via the turn's `AbortController`, posts a short "Stopped" note. Owner only. |
+| 🛑 | **Stop** the scope's in-flight turn — aborts it promptly via the turn's `AbortController`, posts a short "Stopped" note. Owner only. |
 | 🔁 | **Retry** — re-run the turn (`turn.retry`). |
 | ⏪ | **Rewind** the frontier — the next prompt starts from this point (`frontier.rewind`). |
 | 🧷 | **Checkpoint** — pin a named point in the conversation (`frontier.checkpoint`). |
@@ -112,8 +117,9 @@ so you learn what changed even though the draft was dropped, not deleted.
 
 The ledger **is** the version control system. It is an append-only,
 content-addressed DAG of Interactions — `{actor, role, channel, target, verb,
-patch, effect, caused_by, …}`, hashed over its immutable fields. Three
-properties make it a version control system rather than a log:
+patch, effect, caused_by, …}` (where `channel` is the task scope), hashed over
+its immutable fields. Three properties make it a version control system rather
+than a log:
 
 - **Nothing is deleted — only superseded.** A losing draft, a retracted note, a
   resolved conflict: all stay in the log with a `superseded` lifecycle. The audit

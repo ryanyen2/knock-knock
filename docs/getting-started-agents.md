@@ -191,8 +191,12 @@ bun relay.ts
   owner/human message resets the counter.
 - **Per-channel approvals** — each bot's tool-permission prompts go to *that
   bot's* owner, not a shared approver.
-- **Live "Workbench"** — one pinned message per channel, edited in place as each
-  agent works: a per-agent log of tool steps with status (`→ Terminal git
+- **Tasks run in threads** — a top-level `@mention` opens a Discord thread for
+  that task; the reply, tool steps, approvals, and activity log all live there.
+  The parent channel is the **room** (permissions, roster, allowlist); threads
+  inherit it. Each thread gets its own agent session, so tasks don't bleed.
+- **Live "Workbench"** — one pinned message per task thread, edited in place as
+  each agent works: a per-agent log of tool steps with status (`→ Terminal git
   status ✓`), kept afterward as the trace of the turn.
 - **Outcome reactions** — 👀 while a turn runs, swapped for a persistent **🏁
   done** / **⚠️ failed** on the triggering message. ✅ / ❌ stay approval-only.
@@ -229,21 +233,35 @@ and a matching line resumes a fresh turn. Two ways to arm one:
   runtimes wired for it self-arm (`runtimeSelfArmsWatches`); ACP agents use the
   owner `!watch` fallback.
 
-Both paths funnel through one permission-gated `AgentHost.armWatch`:
+Both paths funnel through one permission-gated arm path (`WatchControl.arm`, in
+`host/watch-control.ts`):
 
 ```
-agent calls watch (or owner types !watch)
-  → AgentHost.armWatch — classifyTool({toolName:'Bash', subject: command}) deny-floors it
+agent calls watch (or owner types !watch)   in a task scope (thread)
+  → WatchControl.arm — classifyTool({toolName:'Bash', subject: command}) against
+    the room's profile (resolved scope→room), three-way:
+       deny  → refused;  allow → armed;  ask → held for one owner ✅/❌
   → admit(watch.armed)                         [the watch fold records the intent]
   → WatchSupervisor reconciles desired-vs-running → spawns the command
   → each stdout line → watchGate → admit(watch.fired)
   → resume-on-watch → admit(turn.prompted) → drive-turn → reply → post-on-reply
+                                               (resumes in the scope it was armed in)
 ```
 
 **Safety:** the watch command is classified exactly like a Bash call against the
-room's `allow/ask/deny` profile, and **only an `allow`-classified command arms**
-— `ask` and `deny` both refuse (a background process can't route an interactive
-approval, and the deny floor is absolute). TTL / max-fires bound a runaway watch.
+room's `allow / ask / deny` profile (the floor resolves scope→room, never an
+empty profile):
+
+- **deny** → refused outright; the command never arms and never runs.
+- **allow** → armed immediately.
+- **ask** → *held*: the owner gets one ✅/❌ for the exact command (via the
+  `Approvals` flow, anchored on a `watch.requested` interaction), and the watch
+  arms only on approve. The owner's own `!watch` is pre-approved — typing the
+  command is the approval. This matters because a typical `ask: [Bash(*)]` profile
+  shadows every Bash `allow`, so approving the command once is the usable path.
+
+The `WatchSupervisor` then backstops the **deny floor** at spawn time regardless
+of how a watch got armed, and TTL / max-fires bound a runaway watch.
 
 ---
 

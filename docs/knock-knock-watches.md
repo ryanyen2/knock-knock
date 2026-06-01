@@ -88,9 +88,11 @@ the process. (Rubric #1 holds.)
 `ledger/concepts/watch.ts` folds `watch.armed` / `watch.disarmed` into the live
 set: `Map<watchKey, WatchSpec>`, keyed `${channel}:${name}` so a re-arm with the
 same `name` replaces rather than duplicates (the dedup key idea, borrowed from
-Claude Code Monitors — §3). This fold **is** the watch state; nothing else holds
-it. On relay boot it replays from the log, so still-armed watches survive a
-restart for free — same mechanism as every other fold.
+Claude Code Monitors — §3). `channel` here is the task **scope** (the thread the
+watch was armed in), so a fired watch resumes its turn right there. This fold
+**is** the watch state; nothing else holds it. On relay boot it replays from the
+log, so still-armed watches survive a restart for free — same mechanism as every
+other fold.
 
 ### 2.3 The `resume-on-watch` synchronization
 
@@ -185,8 +187,10 @@ This is the part to get right from day one, because a watch *runs a script,
 repeatedly, unattended.*
 
 - **Permission floor, three-way (non-negotiable).** The command is classified
-  via `classifyTool(readRoomSettings(agent, channel), {toolName:'Bash', subject:
-  command})` at arm time. The arm-gate is `AgentHost.armWatch`:
+  via `classifyTool(readRoomSettings(agent, room), {toolName:'Bash', subject:
+  command})` at arm time — the watch's `channel` is the task scope (a thread), so
+  the profile is read against the **room** it resolves to (`roomForScope`), never
+  an empty profile. The arm-gate is `WatchControl.arm` (`host/watch-control.ts`):
   - **`deny`** → refused outright (the hard floor — `rm -rf …` never arms,
     never runs).
   - **`allow`** → armed immediately.
@@ -268,26 +272,29 @@ requests in §4 work:
 4. `resume-on-watch` synchronization + test.
 5. `WatchSupervisor` (`watch-supervisor.ts`) with an injectable `spawn` seam +
    test using a fake process.
-6. Owner-only `!watch` / `!unwatch` arming in `AgentHost.handleInbound`, gated by
-   `classifyTool` + the deny floor; wired into `relay.ts`.
+6. Owner-only `!watch` / `!unwatch` — detected in `AgentHost.handleInbound` and
+   handled by `WatchControl` (`host/watch-control.ts`), gated by `classifyTool`
+   + the deny floor; wired into `relay.ts`.
 7. **Agent self-arming via an in-process MCP tool** (`adapters/watch-mcp.ts`):
    the SDK adapter exposes `watch` / `unwatch` / `watch_list` so the agent arms
    from natural language ("start watching the notes file"). Both paths — the
    owner `!watch` command and the agent tool — funnel through one
-   permission-gated `AgentHost.armWatch`, so the deny floor applies identically.
+   permission-gated arm path (`WatchControl.arm`), so the deny floor applies
+   identically.
    The tool calls auto-allow (the *command* is still classified); the agent is
    nudged toward the capability by a one-line preamble entry, shown only for
    runtimes that wire the tool (`runtimeSelfArmsWatches`).
-8. **Held-`ask` arm approval** (`AgentHost.requestWatchApproval`): an agent-armed
+8. **Held-`ask` arm approval** (`WatchControl.requestApproval`): an agent-armed
    command that classifies `ask` is posted to the owner for one ✅/❌ (reusing
    `Approvals` + `awaitVerdict`, anchored on a `watch.requested` verb); the watch
    arms only on approve. The supervisor's spawn gate relaxed to **deny-floor
    only**. This is what makes self-arming usable under a real `ask:[Bash(*)]`
    profile — see §5.
 9. **Robust profile loading** (`state.ts`/`readRoomSettings`): accepts both the
-   flat and `{"permissions":{…}}` shapes and the legacy `rooms/<channel>` path,
-   and warns on an empty-but-present profile — so a mis-located or mis-formatted
-   `settings.json` fails loudly instead of silently dropping the deny floor.
+   flat and `{"permissions":{…}}` shapes, and warns on an empty-but-present
+   profile — so a mis-formatted `settings.json` fails loudly instead of silently
+   dropping the deny floor. (Profiles are keyed by room; `roomForScope` resolves
+   a threaded turn's scope back to its room before the read.)
 
 ### How the agent self-arming works (§3 "imperative" path)
 
@@ -311,9 +318,10 @@ the universal fallback and works for every runtime.
 - Workbench rendering + reaction-to-cancel.
 - Loop-guard fold exempting watch-descended turns.
 - Cross-machine host affinity.
-- A `poll` sugar (`every 30s: <cmd>`) and a `file` specialization using native
-  `fs.watch` instead of a polling loop, as efficiency passes over the one
-  command-based kind.
+- A `file` specialization using native `fs.watch` instead of a polling loop, as
+  an efficiency pass over the one command-based kind. (The `every=<dur>` poll
+  sugar — which desugars a one-shot check into a `while … sleep` loop — already
+  ships in `parseWatchCommand`.)
 
 ---
 

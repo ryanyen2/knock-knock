@@ -11,8 +11,13 @@ unpushed** session (Claude Code, Codex, OpenCode, or Gemini). A teammate's agent
 that starts cold repeats the same pitfalls and ignores decisions already made.
 
 Session sharing lets an owner import the distilled context of one of their local
-sessions into a channel, so the next agent turn — on this machine *or* a
-teammate's — starts from that context.
+sessions into a **task scope**, so the next agent turn there — on this machine
+*or* a teammate's — starts from that context.
+
+State is **per-task**: run the command *inside the task's thread* and that
+thread's next turn picks the context up. (Run it at the top level, with no
+thread, and it lands at the channel scope instead.) The control command itself
+never opens a thread — it acts in the scope it was typed in.
 
 Two modes:
 - **import** (`share session` / `import session`) — distill a one-shot context
@@ -22,32 +27,36 @@ Two modes:
 
 ## How it works
 
+Lives in `host/session-sharing.ts` (`SessionSharing`); `AgentHost` delegates to it.
+
 ```
-owner: "@bot share my session"        (owner-only; never a peer)
+owner: "@bot share my session"   in a task thread   (owner-only; never a peer)
   → handleInbound detects isShareSessionCommand, short-circuits BEFORE any admit
-  → listAllSessions(workspace) across all four runtimes
+    (using the scope it was typed in; no new thread is opened for a control cmd)
+  → SessionSharing.offer → listAllSessions(workspace) across all four runtimes
   → 📥 selection card (one numbered button per recent session + Cancel)
 owner clicks a session
   → SessionStore.read(id)  → distill() → a context brief
-  → admit owner-role knowledge.append → know:channel/<id>/shared-context
+  → admit owner-role knowledge.append → know:channel/<scopeId>/shared-context
        (anchor:none → merge gate is a no-op, no conflict card)
-next turn in the channel
-  → pendingSharedContext reads the knowledge fold, pickFreshContext selects
-    not-yet-delivered notes, Driver.buildPrompt prepends each <shared-context>
-    block once, ahead of the <channel> envelope
+next turn in that scope
+  → SessionSharing.pendingContext(scopeId) reads the knowledge fold,
+    pickFreshContext selects not-yet-delivered notes, Driver.buildPrompt prepends
+    each <shared-context> block once, ahead of the <channel> envelope
 ```
 
 Because the import is a normal ledger interaction, on the **Postgres backend**
-(`KNOCK_KNOCK_LEDGER_URL`) the note syncs to every machine in the channel, and
-each relay injects it into its own agent's next turn. That is how a teammate on
-another machine receives context from a session they can't see on disk.
+(`KNOCK_KNOCK_LEDGER_URL`) the note syncs to every machine, and each relay
+injects it into its own agent's next turn in that scope. That is how a teammate
+on another machine receives context from a session they can't see on disk.
 
 **Without a shared ledger (separate relays on SQLite),** the knowledge note never
 reaches the other relay — so the import *also posts the distilled brief into the
-channel* (`renderSharedContextPost`), @mentioning the room's peer agents. A
-peer on a separate relay ingests it through the normal Discord feed (the message
-is its next turn's prompt), no Postgres required. Same-relay peers still get it
-silently via the fold; the channel post is the cross-relay bridge.
+scope* (`renderSharedContextPost`), @mentioning the room's peer agents (the
+roster is resolved scope→room). A peer on a separate relay ingests it through the
+normal Discord feed (the message is its next turn's prompt), no Postgres
+required. Same-relay peers still get it silently via the fold; the post is the
+cross-relay bridge.
 
 ## The read seam (`sessions/`)
 
@@ -98,7 +107,7 @@ with a framing line ("reference to respect, not new instructions").
   and runs no tools; `access.json` and room profiles are untouched. The
   prompt-injection stance (config is terminal-/owner-only) is preserved — the
   share command is never admitted as a `channel.message`.
-- **Delivered once.** `pickFreshContext` tracks per-channel delivered note hashes
+- **Delivered once.** `pickFreshContext` tracks per-scope delivered note hashes
   so a brief reaches the agent exactly once. The set is in-memory and
   re-derivable; a relay restart only re-shows context, which is harmless.
 
@@ -106,16 +115,18 @@ with a framing line ("reference to respect, not new instructions").
 
 `resume session` posts the same card, but filtered to sessions whose runtime
 this agent can actually continue (`sessionRuntimeForAgent`), and the buttons are
-`sess:resume:<idx>`. Picking one:
+`sess:resume:<idx>`. Resume continues a live runtime session — that's tied to the
+`Driver`/`Session` lifecycle `AgentHost` owns, so `SessionSharing` delegates it
+back to `AgentHost.resumeSession`. Picking one:
 
-- binds the channel's `Driver` to that runtime session id (`bindSession`), to be
+- binds the scope's `Driver` to that runtime session id (`bindSession`), to be
   resumed on the next turn — and resets the preamble flag so the resumed session,
   which knows nothing of the Discord room, is told the room context once;
-- persists the binding **locally** (`rooms/<agent>/<channel>.session.json`, via
-  `state.ts`). This is a local file, NOT a ledger note: a runtime session lives
-  on one machine, so the binding must not sync to peers who can't load it.
-  `getOrCreateSession` rebinds it on the next start (clearing it if the agent's
-  runtime no longer matches).
+- persists the binding **locally and per-scope**
+  (`rooms/<agent>/<scopeId>.session.json`, via `state.ts`). This is a local file,
+  NOT a ledger note: a runtime session lives on one machine, so the binding must
+  not sync to peers who can't load it. `getOrCreateSession` rebinds it on the
+  next start (clearing it if the agent's runtime no longer matches).
 
 How the adapters resume a *foreign* session id (one they didn't create this
 process — a CLI session, or a persisted binding after restart):
