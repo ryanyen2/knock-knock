@@ -576,3 +576,43 @@ export function parseWatchCommand(text: string): ParsedWatchCommand {
     },
   }
 }
+
+// ─── Discord threads ─────────────────────────────────────────────────────────
+
+/**
+ * Derive a Discord thread name from the raw message text.
+ * Strips @mention tokens, trims whitespace, and caps at 80 chars.
+ */
+export function threadNameFromPrompt(text: string): string {
+  const stripped = text.replace(/<@!?\d+>/g, '').replace(/\s+/g, ' ').trim()
+  const trimmed = stripped.slice(0, 80) || 'task'
+  return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
+}
+
+// ─── Room vs scope ───────────────────────────────────────────────────────────
+//
+// A Discord message lives in a *scope* — a thread, or a plain channel. The
+// permission profile, roster, and routing are keyed by the *room*: the parent
+// text channel. These were one id until threads landed; this is the single
+// decision that separates them. Pure, so it's unit-tested without a live
+// Discord client; the host wires `parentOf` to Discord's channel cache.
+
+/**
+ * Resolve a task scope (a thread id, or a plain channel id) to the room — the
+ * parent text channel — whose config governs it, or undefined if no served
+ * room owns it. A served room id resolves to itself; a thread resolves to its
+ * parent (via the `resolved` memo first, then the `parentOf` probe).
+ */
+export function resolveRoomForScope(
+  scopeId: string,
+  rooms: Record<string, RoomConfig>,
+  resolved: ReadonlyMap<string, string>,
+  parentOf: (scopeId: string) => string | undefined,
+): string | undefined {
+  if (rooms[scopeId]) return scopeId // already a room we serve
+  const memo = resolved.get(scopeId)
+  if (memo && rooms[memo]) return memo
+  const parent = parentOf(scopeId)
+  if (parent && rooms[parent]) return parent
+  return undefined
+}

@@ -41,46 +41,34 @@ export function parseProfile(raw: string): PermissionProfile {
 /**
  * Read a room's allow/ask/deny profile. Missing or unreadable → empty profile.
  *
- * Two footguns are handled loudly rather than silently degrading to "everything
- * asks" (which also drops the deny floor): a profile written in the
- * `{ "permissions": {…} }` wrapper is unwrapped, and a file left at the legacy
- * `rooms/<channelId>.settings.json` path (no agent dir) is read as a fallback
- * with a warning. An empty-but-present file also warns — that almost always
- * means the format/path is wrong, and an empty profile is unsafe.
+ * A profile written in the `{ "permissions": {…} }` wrapper is unwrapped (so a
+ * Claude-Code-style settings.json is honored). An empty-but-present file warns
+ * loudly rather than silently degrading to "everything asks" — that also drops
+ * the deny floor, which is almost never what an empty file is meant to do.
  */
 export function readRoomSettings(agentKey: string, channelId: string): PermissionProfile {
-  const primary = roomSettingsPath(agentKey, channelId)
-  const legacy = join(STATE_DIR, 'rooms', `${channelId}.settings.json`)
-  for (const path of [primary, legacy]) {
-    let raw: string
-    try {
-      raw = readFileSync(path, 'utf8')
-    } catch {
-      continue // not at this path — try the next
-    }
-    let profile: PermissionProfile
-    try {
-      profile = parseProfile(raw)
-    } catch {
-      process.stderr.write(`knock-knock: room profile at ${path} is not valid JSON — ignoring it.\n`)
-      return { allow: [], ask: [], deny: [] }
-    }
-    if (path === legacy) {
-      process.stderr.write(
-        `knock-knock: room profile found at legacy path ${legacy}; expected ${primary}. ` +
-          `Move it there (the path is per-agent) so it can't be missed.\n`,
-      )
-    }
-    if (profile.allow.length + profile.ask.length + profile.deny.length === 0) {
-      process.stderr.write(
-        `knock-knock: room profile at ${path} parsed to an EMPTY profile — every tool will ` +
-          `default to 'ask' and the deny floor will NOT apply. Use top-level allow/ask/deny ` +
-          `(a { "permissions": { … } } wrapper is also accepted).\n`,
-      )
-    }
-    return profile
+  const path = roomSettingsPath(agentKey, channelId)
+  let raw: string
+  try {
+    raw = readFileSync(path, 'utf8')
+  } catch {
+    return { allow: [], ask: [], deny: [] } // no profile at this path
   }
-  return { allow: [], ask: [], deny: [] }
+  let profile: PermissionProfile
+  try {
+    profile = parseProfile(raw)
+  } catch {
+    process.stderr.write(`knock-knock: room profile at ${path} is not valid JSON — ignoring it.\n`)
+    return { allow: [], ask: [], deny: [] }
+  }
+  if (profile.allow.length + profile.ask.length + profile.deny.length === 0) {
+    process.stderr.write(
+      `knock-knock: room profile at ${path} parsed to an EMPTY profile — every tool will ` +
+        `default to 'ask' and the deny floor will NOT apply. Use top-level allow/ask/deny ` +
+        `(a { "permissions": { … } } wrapper is also accepted).\n`,
+    )
+  }
+  return profile
 }
 
 /** Read the access file. Missing → defaults; corrupt → moved aside, then defaults. */

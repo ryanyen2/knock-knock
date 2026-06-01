@@ -12,6 +12,7 @@ import { Ledger } from '../capture.ts'
 import { FoldEngine } from '../fold.ts'
 import { TurnRecorder } from '../turn-recorder.ts'
 import { admit } from '../admit.ts'
+import { discordArtifact } from '../interaction.ts'
 import {
   LOOP_GUARD_FOLD,
   loopGuardFold,
@@ -38,7 +39,6 @@ const ctx = {
   agentKey: 'bot1',
   approverUserId: 'owner1',
   channelId: 'chan-A',
-  channelArtifactId: 'extp:discord/chan-A',
 }
 
 /** Phase 3 helper: mimics what Approvals.resolveInteraction does — admits
@@ -92,7 +92,7 @@ test('LoopGuard concept: owner channel.message resets the counter', async () => 
     actor: 'owner1',
     role: 'owner',
     channel: ctx.channelId,
-    target: { artifactId: ctx.channelArtifactId, anchor: { kind: 'none' } },
+    target: { artifactId: discordArtifact(ctx.channelId), anchor: { kind: 'none' } },
     verb: 'channel.message',
     patch: {
       kind: 'external',
@@ -146,7 +146,7 @@ test('LoopGuard concept: state is per-channel — channel B unaffected by channe
   }
   await TurnRecorder.beginTurn(
     ledger,
-    { ...ctx, channelId: 'chan-B', channelArtifactId: 'extp:discord/chan-B' },
+    { ...ctx, channelId: 'chan-B' },
     { senderId: 'peer-X', senderKind: 'agent', messageId: 'm-B', text: 'hi' },
   )
   const fold = engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)

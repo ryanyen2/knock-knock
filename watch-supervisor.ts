@@ -14,6 +14,7 @@
  */
 
 import { admit } from './ledger/admit.ts'
+import { discordArtifact } from './ledger/interaction.ts'
 import { WATCH_FOLD, type WatchFoldState } from './ledger/concepts/watch.ts'
 import { watchGate, FRESH_WATCH_GATE, type WatchSpec, type WatchGateState } from './lib.ts'
 import type { Store } from './ledger/store.ts'
@@ -48,9 +49,15 @@ function keyFor(spec: WatchSpec): string {
   return `${spec.channel}:${spec.name}`
 }
 
-/** Stable signature of the runnable shape — a change means restart the child. */
+/**
+ * Stable signature of the runnable shape — a change means restart the child.
+ * Everything EXCEPT the identity (name/channel/agentKey) is part of the shape,
+ * so any field added to WatchSpec is captured automatically rather than being
+ * silently excluded from the restart decision.
+ */
 function sig(spec: WatchSpec): string {
-  return JSON.stringify([spec.command, spec.fireOn, spec.ttlMs, spec.maxFires, spec.oneShot])
+  const { name: _n, channel: _c, agentKey: _a, ...runnable } = spec
+  return JSON.stringify(runnable, Object.keys(runnable).sort())
 }
 
 export class WatchSupervisor {
@@ -160,41 +167,40 @@ export class WatchSupervisor {
 
   // ─── Ledger writes (outside any wave, like AgentHost.handleInbound) ──────────
 
-  private async fire(spec: WatchSpec, text: string): Promise<void> {
+  /** One watch.* ledger write — fire and disarm share everything but the verb,
+   *  op, args, and effect (fire is an external-world trigger; disarm is pure). */
+  private async admitWatchEvent(
+    spec: WatchSpec,
+    verb: 'watch.fired' | 'watch.disarmed',
+    op: string,
+    args: Record<string, unknown>,
+    effect: 'pure' | 'external',
+  ): Promise<void> {
     await admit(this.opts.store, {
       actor: spec.agentKey,
       role: 'agent',
       channel: spec.channel,
-      target: { artifactId: `extp:discord/${spec.channel}`, anchor: { kind: 'none' } },
-      verb: 'watch.fired',
-      patch: {
-        kind: 'external',
-        intent: {
-          channel: 'tool',
-          op: 'watch.fire',
-          args: { name: spec.name, agentKey: spec.agentKey, text, messageId: `watch:${spec.name}` },
-        },
-      },
-      effect: 'external',
+      target: { artifactId: discordArtifact(spec.channel), anchor: { kind: 'none' } },
+      verb,
+      patch: { kind: 'external', intent: { channel: 'tool', op, args } },
+      effect,
       caused_by: [],
-    }).catch(err => this.opts.log?.(`watch «${spec.name}» fire admit failed: ${err}`))
+    }).catch(err => this.opts.log?.(`watch «${spec.name}» ${verb} admit failed: ${err}`))
+  }
+
+  private async fire(spec: WatchSpec, text: string): Promise<void> {
+    await this.admitWatchEvent(
+      spec,
+      'watch.fired',
+      'watch.fire',
+      { name: spec.name, agentKey: spec.agentKey, text, messageId: `watch:${spec.name}` },
+      'external',
+    )
   }
 
   private async disarm(spec: WatchSpec, reason: string): Promise<void> {
     this.kill(keyFor(spec)) // tear down the child before the fold reconciles
-    await admit(this.opts.store, {
-      actor: spec.agentKey,
-      role: 'agent',
-      channel: spec.channel,
-      target: { artifactId: `extp:discord/${spec.channel}`, anchor: { kind: 'none' } },
-      verb: 'watch.disarmed',
-      patch: {
-        kind: 'external',
-        intent: { channel: 'tool', op: 'watch.disarm', args: { name: spec.name, reason } },
-      },
-      effect: 'pure',
-      caused_by: [],
-    }).catch(err => this.opts.log?.(`watch «${spec.name}» disarm admit failed: ${err}`))
+    await this.admitWatchEvent(spec, 'watch.disarmed', 'watch.disarm', { name: spec.name, reason }, 'pure')
   }
 
   private kill(key: string): void {

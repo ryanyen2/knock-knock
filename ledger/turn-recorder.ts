@@ -9,14 +9,13 @@
 
 import type { AgentEvent } from '../agent-adapter.ts'
 import type { Ledger } from './capture.ts'
-import type { ChannelId, Hash, Interaction, Role } from './interaction.ts'
+import { discordArtifact, type ChannelId, type Hash, type Interaction, type Role } from './interaction.ts'
 import { stableJson } from './util.ts'
 
 export type TurnRecorderCtx = {
   agentKey: string
   approverUserId: string
   channelId: ChannelId
-  channelArtifactId: string
 }
 
 export type InboundMessage = {
@@ -62,7 +61,7 @@ export class TurnRecorder {
       actor: msg.senderId,
       role: roleFromKind(msg.senderKind),
       channel: ctx.channelId,
-      target: { artifactId: ctx.channelArtifactId, anchor: { kind: 'none' } },
+      target: { artifactId: discordArtifact(ctx.channelId), anchor: { kind: 'none' } },
       verb: 'channel.message',
       patch: {
         kind: 'external',
@@ -80,7 +79,7 @@ export class TurnRecorder {
       actor: ctx.agentKey,
       role: 'agent',
       channel: ctx.channelId,
-      target: { artifactId: ctx.channelArtifactId, anchor: { kind: 'none' } },
+      target: { artifactId: discordArtifact(ctx.channelId), anchor: { kind: 'none' } },
       verb: 'turn.prompted',
       patch: { kind: 'none' },
       effect: 'pure',
@@ -186,7 +185,7 @@ export class TurnRecorder {
       actor: this.ctx.agentKey,
       role: 'agent',
       channel: this.ctx.channelId,
-      target: { artifactId: this.ctx.channelArtifactId, anchor: { kind: 'none' } },
+      target: { artifactId: discordArtifact(this.ctx.channelId), anchor: { kind: 'none' } },
       verb: 'turn.replied',
       patch: {
         kind: 'external',

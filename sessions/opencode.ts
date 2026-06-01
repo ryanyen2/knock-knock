@@ -23,6 +23,7 @@ import {
   cwdMatchesWorkspace,
   deriveTitle,
 } from './session-store.ts'
+import { walkFiles } from './walk.ts'
 
 function storageDir(): string {
   const data = process.env.OPENCODE_DATA_DIR ?? join(homedir(), '.local', 'share', 'opencode')
@@ -42,24 +43,6 @@ async function readJson(path: string): Promise<Record<string, unknown> | undefin
   } catch {
     return undefined
   }
-}
-
-/** Recursively collect *.json under a root. */
-async function walkJson(root: string, depth = 0): Promise<string[]> {
-  if (depth > 5) return []
-  let entries: import('node:fs').Dirent[]
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const out: string[] = []
-  for (const e of entries) {
-    const path = join(root, e.name)
-    if (e.isDirectory()) out.push(...(await walkJson(path, depth + 1)))
-    else if (e.isFile() && e.name.endsWith('.json')) out.push(path)
-  }
-  return out
 }
 
 function metaCwd(meta: Record<string, unknown>): string {
@@ -99,7 +82,7 @@ export class OpenCodeSessionStore implements SessionStore {
 
   /** Map sessionID → its meta file path, by walking session/. */
   private async sessionMetaFiles(): Promise<Map<string, string>> {
-    const files = await walkJson(join(storageDir(), 'session'))
+    const files = await walkFiles(join(storageDir(), 'session'), '.json')
     const map = new Map<string, string>()
     for (const f of files) map.set(f.split('/').pop()!.replace(/\.json$/, ''), f)
     return map
@@ -158,7 +141,7 @@ export class OpenCodeSessionStore implements SessionStore {
       if (parts.length === 0) {
         const messageId = (msg.id as string | undefined) ?? file.replace(/\.json$/, '')
         for (const base of [join(storageDir(), 'part', id, messageId), join(storageDir(), 'part', messageId)]) {
-          const partFiles = await walkJson(base)
+          const partFiles = await walkFiles(base, '.json')
           for (const pf of partFiles.sort()) {
             const p = await readJson(pf)
             if (p) parts.push(p)

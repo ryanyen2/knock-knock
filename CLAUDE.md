@@ -33,11 +33,29 @@ as **synchronizations**, not imperative branches.
 Inbound/outbound flow is entirely ledger-driven:
 
 ```
-Discord → AgentHost.handleInbound (gate) → admit(channel.message)
+Discord → AgentHost.handleInbound (gate, resolve scope) → admit(channel.message)
   → prompt-on-message → admit(turn.prompted)         [loop-guard fold consulted here]
   → drive-turn → AgentAdapter.prompt → tool.* / turn.replied admissions
   → post-on-reply → Discord post (under an external_claim)
 ```
+
+### Room vs scope (the one distinction to internalize)
+
+A Discord message lives in a **scope** — a *thread*, or a plain channel. An
+interaction's `channel` field **is the scope**, and almost everything keyed on
+it is naturally per-task: turn lineage, approvals, watches, the knowledge fold,
+the Workbench, the agent's Driver session. A top-level @mention spawns a task
+thread (`threadNameFromPrompt`), so each task runs in its own scope; messages
+already in a thread use that thread; owner control commands (`!watch`, `share
+session`) never spawn a thread — they act in the scope they're typed in.
+
+The **room** is the parent text channel, and it owns what is *not* per-task:
+the permission profile (`rooms/<agentKey>/<roomId>.settings.json`), the roster,
+the allowlist, and routing. `AgentHost.roomForScope(scopeId)` is the single seam
+that resolves a scope to its room (pure core: `resolveRoomForScope` in `lib.ts`).
+**Permission classification always resolves scope→room**, so a threaded turn is
+governed by the same deny floor as a top-level one — it must never degrade to an
+empty profile. These were one id before threads; keep them distinct.
 
 The deep design (Interaction record, content addressing, role-ordered merge,
 fold engine, cutover phases, cross-machine) lives in
@@ -90,14 +108,23 @@ means writing a new adapter, nothing else. Implementations in `adapters/`:
 `adapters/index.ts` is the factory: `makeAdapter(runtime, {workspace})` selects
 the runtime from the agent's `runtime` field. `AgentHost` calls it per session.
 
-### `AgentHost` (`agent-host.ts`)
+### `AgentHost` (`agent-host.ts` + `host/`)
 
 A Discord ↔ ledger adapter. Inbound: `handleInbound` gates the message
-(`guildSenderAllowed`, rate cap, mention check) and admits a `channel.message`
-— the synchronizer chain does the rest. It also owns the per-channel `Driver`
-session (adapter instances are per-process) and the live `Approvals` service,
-and exposes callbacks the synchronizations call back into (`getDriveHandle`,
-`discordSend`, `postConflictCard`, `dmUser`, `updatePill`).
+(`guildSenderAllowed`, rate cap, mention check), resolves the **scope** (thread,
+or channel) and **room** (parent), and admits a `channel.message` under the
+scope — the synchronizer chain does the rest. It owns the per-scope `Driver`
+session (adapter instances are per-process), the live `Approvals` service, the
+`scopeToRoom` cache + `roomForScope`, and turn driving; it exposes callbacks the
+synchronizations call back into (`getDriveHandle`, `discordSend`,
+`postConflictCard`, `dmUser`, `updatePill`, `resolveWatch`).
+
+Its cohesive UI/feature clusters are separate collaborators in `host/`, each
+owning its own state and reaching shared host capabilities through the narrow
+`HostContext` (`host/context.ts`): `Workbench` (§4.1 pinned activity log),
+`ConflictUI` (§4.2 cards), `WatchControl` (arm/disarm/list + `resolveWatch`), and
+`SessionSharing` (import + per-scope context delivery; resume stays in the host,
+delegated via a callback because it's tied to the Driver/Session lifecycle).
 
 ### Permission model and `classifyTool` (`lib.ts`)
 
@@ -111,6 +138,13 @@ glob patterns. SDK adapter: `deny` → `disallowedTools`, `allow` →
    (the same `rm -rf` can arrive as both `execute` and `other`).
 2. **Unmatched tools default to `ask`** — an unknown tool must never silently
    auto-run.
+3. **Profiles are keyed by room, not scope.** A tool request's `channel` is the
+   task scope (a thread); the profile lives at `rooms/<agentKey>/<roomId>`. Both
+   enforcement paths resolve scope→room first — the adapter's `applyPolicy` (via
+   `getOrCreateSession` → `readRoomSettings(roomForScope(scope))`) and the
+   audit-only `classify-on-tool-request` (relay injects a scope→room
+   `readPolicy`). An unresolved room must fail restrictive, never to an empty
+   profile (which would drop the deny floor).
 
 ACP detail: a tool's subject (command / path) may arrive in `rawInput`, the
 `content` blocks, or `locations` — `AcpAdapter` probes all three and merges
@@ -126,10 +160,10 @@ synchronization or an `AgentHost` subscriber; Discord I/O is thin glue.
 
 - **Attribution line** (`reply-annotations.ts`) + **stale-note flag** — appended
   to outbound text in `post-on-reply` from `caused_by` and the knowledge fold.
-- **Workbench** (`renderWorkbench`/`workbenchEntries`) — one pinned per-channel
-  activity log, driven by a relay-level subscriber on `turn.*`/`tool.*` →
-  `AgentHost.updatePill` (throttled). A finished turn keeps its step log as a
-  trace (status `working|done|failed`).
+- **Workbench** (`host/workbench.ts`, `renderWorkbench`/`workbenchEntries`) — one
+  pinned per-scope (per-thread) activity log, driven by a relay-level subscriber
+  on `turn.*`/`tool.*` → `AgentHost.updatePill` (throttled). A finished turn
+  keeps its step log as a trace (status `working|done|failed`).
 - **Conflict card** (`conflict-card.ts`) — on a held equal-role conflict, posts a
   Take A / Take B / Write card; the `cflt:` button handler admits an owner
   `merge.resolve`.
@@ -169,16 +203,19 @@ prior plan, decisions, and pitfalls instead of cold. See
   `isResumeSessionCommand` (`kind==='owner'`) and short-circuits *before* any
   admit to post a 📥 selection card (the command is never admitted as a
   `channel.message`). The `sess:` button handler is owner-gated by `ownerUserId`.
+  All of this lives in `host/session-sharing.ts` (`SessionSharing`).
 - **Import (`sess:pick`)** — reads + distills the chosen session and admits an
-  **owner-role `knowledge.append`** to `know:channel/<id>/shared-context` (anchor
-  `none`, so the merge gate is a no-op and no conflict card fires) — the same
-  shape `surfaceToInbox` uses. On the Postgres backend it syncs to teammates.
-- **Delivery** — `pendingSharedContext` reads active shared-context notes from
-  the knowledge fold and, via the pure `pickFreshContext`, injects each one
-  **once** into the next turn as a `<shared-context>` block prepended (in
-  `Driver.buildPrompt`) ahead of the `<channel>` envelope. (Knowledge is
-  otherwise read only at reply-time, so this delivery wiring is what makes an
-  imported note actually reach the agent.)
+  **owner-role `knowledge.append`** to `know:channel/<scopeId>/shared-context`
+  (anchor `none`, so the merge gate is a no-op and no conflict card fires) — the
+  same shape `surfaceToInbox` uses. State is **per-task**: share *inside* the
+  thread you want it in, and that thread's next turn picks it up. On the Postgres
+  backend it syncs to teammates.
+- **Delivery** — `SessionSharing.pendingContext(scopeId)` reads active
+  shared-context notes from the knowledge fold and, via the pure
+  `pickFreshContext`, injects each one **once** into the next turn as a
+  `<shared-context>` block prepended (in `Driver.buildPrompt`) ahead of the
+  `<channel>` envelope. (Knowledge is otherwise read only at reply-time, so this
+  delivery wiring is what makes an imported note actually reach the agent.)
 - **Resume (`sess:resume`)** — continues a live session. Offered only for
   runtime-compatible sessions (`sessionRuntimeForAgent`); `Driver.bindSession`
   sets the runtime session id to resume on the next turn (and resets the
@@ -187,9 +224,11 @@ prior plan, decisions, and pitfalls instead of cold. See
   `conn.loadSession` for a foreign id (pure `planSessionAcquire` decides
   create/reuse/load; falls back to a fresh session if load is unsupported/fails);
   the Claude SDK adapter resumes via its `resume` option. The binding is
-  persisted **locally** (`state.ts` `*.session.json`, not a synced ledger note —
-  runtime sessions don't cross machines) and rebound on restart in
-  `getOrCreateSession`.
+  persisted **locally and per-scope** (`state.ts`
+  `rooms/<agentKey>/<scopeId>.session.json`, not a synced ledger note — runtime
+  sessions don't cross machines) and rebound on restart in `getOrCreateSession`.
+  Resume itself stays in `AgentHost` (Driver/Session lifecycle); `SessionSharing`
+  delegates to it.
 
 📥 is the session-sharing glyph (`GLYPHS.session`); like ✅/❌/🛑 it is reserved.
 

@@ -129,3 +129,10 @@ export type ProposedInteraction = Pick<
 
 /** Role ranking used by the merge gate (Phase 2). Owner > human > agent. */
 export const ROLE_RANK: Record<Role, number> = { owner: 3, human: 2, agent: 1 }
+
+/** The external-proxy artifact id for a Discord scope (a thread or channel).
+ *  channel.message / turn.* / the post-on-reply claim all target this — one
+ *  place so the `extp:discord/<scope>` scheme isn't spelled out across files. */
+export function discordArtifact(scopeId: ChannelId): ArtifactId {
+  return `extp:discord/${scopeId}`
+}

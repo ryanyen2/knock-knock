@@ -16,6 +16,8 @@ import {
   watchGate,
   renderWatchPrompt,
   parseWatchCommand,
+  threadNameFromPrompt,
+  resolveRoomForScope,
   FRESH_WATCH_GATE,
   type RoomConfig,
   type AgentConfig,
@@ -469,4 +471,68 @@ test('parseWatchCommand: rejects unrelated text and malformed input', () => {
   expect(parseWatchCommand('hello there')).toBeNull()
   expect(parseWatchCommand('!watch w bogus-mode cmd')).toBeNull()
   expect(parseWatchCommand('!watch w on-change')).toBeNull() // no command
+})
+
+// ─── threadNameFromPrompt ─────────────────────────────────────────────────────
+
+test('threadNameFromPrompt: strips mentions and trims', () => {
+  expect(threadNameFromPrompt('<@123> <@!456> do the thing')).toBe('do the thing')
+})
+
+test('threadNameFromPrompt: all-mentions text falls back to "task"', () => {
+  expect(threadNameFromPrompt('<@123> <@456>')).toBe('task')
+})
+
+test('threadNameFromPrompt: empty string falls back to "task"', () => {
+  expect(threadNameFromPrompt('')).toBe('task')
+})
+
+test('threadNameFromPrompt: long prompt is truncated with ellipsis', () => {
+  const long = 'a'.repeat(100)
+  const result = threadNameFromPrompt(long)
+  expect(result).toBe('a'.repeat(80) + '…')
+})
+
+test('threadNameFromPrompt: short prompt is returned as-is', () => {
+  expect(threadNameFromPrompt('fix the auth bug')).toBe('fix the auth bug')
+})
+
+// ─── resolveRoomForScope ──────────────────────────────────────────────────────
+
+const ROOMS: Record<string, RoomConfig> = {
+  room1: { requireMention: true, participants: {}, humans: [] },
+}
+const NO_PARENT = () => undefined
+
+test('resolveRoomForScope: a served room id resolves to itself', () => {
+  expect(resolveRoomForScope('room1', ROOMS, new Map(), NO_PARENT)).toBe('room1')
+})
+
+test('resolveRoomForScope: a thread resolves to its parent room via parentOf', () => {
+  const parentOf = (id: string) => (id === 'thread1' ? 'room1' : undefined)
+  expect(resolveRoomForScope('thread1', ROOMS, new Map(), parentOf)).toBe('room1')
+})
+
+test('resolveRoomForScope: the memo is consulted before probing parentOf', () => {
+  const memo = new Map([['thread1', 'room1']])
+  // parentOf would throw if called — proving the memo short-circuits the probe.
+  const parentOf = () => {
+    throw new Error('parentOf should not be called when the memo hits')
+  }
+  expect(resolveRoomForScope('thread1', ROOMS, memo, parentOf)).toBe('room1')
+})
+
+test('resolveRoomForScope: a thread of a room we do NOT serve is undefined', () => {
+  const parentOf = (id: string) => (id === 'thread9' ? 'otherRoom' : undefined)
+  expect(resolveRoomForScope('thread9', ROOMS, new Map(), parentOf)).toBeUndefined()
+})
+
+test('resolveRoomForScope: an unknown scope with no parent is undefined', () => {
+  expect(resolveRoomForScope('whoknows', ROOMS, new Map(), NO_PARENT)).toBeUndefined()
+})
+
+test('resolveRoomForScope: a stale memo pointing at an unserved room is ignored', () => {
+  const memo = new Map([['thread1', 'goneRoom']]) // room no longer served
+  const parentOf = (id: string) => (id === 'thread1' ? 'room1' : undefined)
+  expect(resolveRoomForScope('thread1', ROOMS, memo, parentOf)).toBe('room1')
 })

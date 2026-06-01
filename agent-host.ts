@@ -21,11 +21,9 @@ import {
   Client,
   GatewayIntentBits,
   Partials,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
   MessageFlags,
   type Message,
+  type ThreadChannel,
   type Interaction,
   type ButtonInteraction,
 } from 'discord.js'
@@ -45,10 +43,8 @@ import {
   approverForAgent,
   isShareSessionCommand,
   isResumeSessionCommand,
-  wrapSharedContext,
-  pickFreshContext,
-  classifyTool,
-  parseWatchCommand,
+  resolveRoomForScope,
+  threadNameFromPrompt,
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
@@ -56,49 +52,35 @@ import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
-import type { AgentEvent, WatchToolHandlers, WatchArmPartial } from './agent-adapter.ts'
+import type { AgentEvent } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
-import { admit, surfaceToInbox } from './ledger/admit.ts'
-import { awaitVerdict, DEFAULT_VERDICT_TIMEOUT_MS } from './ledger/await-verdict.ts'
+import { admit } from './ledger/admit.ts'
+import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
-import type { ChannelId, Hash } from './ledger/interaction.ts'
+import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
   GLYPHS,
-  LETTERS,
-  NUMBERS,
-  renderWorkbench,
-  workbenchEntries,
   rewindActionFor,
   renderRewindAck,
-  renderSessionCard,
-  renderSessionImported,
   renderSessionResumed,
-  renderSharedContextPost,
   type RewindAction,
 } from './ledger/render/surface.ts'
-import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
-import { WATCH_FOLD, liveWatches, type WatchFoldState } from './ledger/concepts/watch.ts'
 import type { WatchRunEnv } from './watch-supervisor.ts'
 import {
-  KNOWLEDGE_FOLD,
-  activeNotes,
-  type KnowledgeFoldState,
-} from './ledger/artifacts/knowledge.ts'
-import {
-  listAllSessions,
-  makeSessionStore,
   sessionRuntimeForAgent,
   type SessionSummary,
 } from './sessions/index.ts'
-import { distill } from './sessions/distill.ts'
+import type { HostContext } from './host/context.ts'
+import { Workbench } from './host/workbench.ts'
+import { ConflictUI } from './host/conflict-ui.ts'
+import { WatchControl } from './host/watch-control.ts'
+import { SessionSharing } from './host/session-sharing.ts'
 
 const RECENT_BOT_MSG_CAP = 200
-/** §4.1 max one Workbench edit per channel per this window (Discord rate limit). */
-const PILL_THROTTLE_MS = 1500
 
 /** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
@@ -134,22 +116,19 @@ export class AgentHost {
    *  turn.prompted subscriber (DmCourier kickoff) and the turn.replied
    *  subscriber (ack cleanup). */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
-  /** §4.2 conflict card messageId → its branch hashes, for button resolution. */
-  private readonly conflictCards = new Map<string, { branchHashes: Hash[]; channelId: ChannelId }>()
-  /** Share/resume card messageId → the offered sessions + mode, for resolution. */
-  private readonly sessionCards = new Map<
-    string,
-    { sessions: SessionSummary[]; channelId: ChannelId; mode: 'import' | 'resume' }
-  >()
-  /** Per-channel set of shared-context note hashes already injected into the
-   *  live session, so each imported brief is delivered to the agent exactly
-   *  once (re-derivable; resets on restart, which only re-shows context). */
-  private readonly deliveredContext = new Map<ChannelId, Set<Hash>>()
-  /** §4.1 per-channel pinned pill message id. */
-  private readonly pillMsgByChannel = new Map<ChannelId, string>()
-  /** §4.1 throttle: pending render timer + last render time per channel. */
-  private readonly pillTimers = new Map<ChannelId, ReturnType<typeof setTimeout>>()
-  private readonly pillLastRender = new Map<ChannelId, number>()
+  /** §4.2 conflict card post + button resolution. */
+  private readonly conflictUI: ConflictUI
+  /** Watch arm/disarm/list — owner `!watch` and the agent MCP tool. */
+  private readonly watchControl: WatchControl
+  /** Session sharing/resume — owner-only import + the per-scope context delivery. */
+  private readonly sessionSharing: SessionSharing
+  /** Scope (a thread id, or a plain channel id) → the room (parent channel) it
+   *  belongs to. The single seam between the task scope the ledger keys on and
+   *  the room that permission profiles / roster / routing key on. Populated on
+   *  inbound and on thread creation. */
+  private readonly scopeToRoom = new Map<ChannelId, ChannelId>()
+  /** §4.1 per-scope pinned activity log. */
+  private readonly workbench: Workbench
   private storeUnsub?: () => void
 
   constructor(
@@ -195,6 +174,28 @@ export class AgentHost {
       reason => this.ui.note(this.key, reason),
     )
 
+    // The shared capabilities the UI collaborators reach back into. Built once;
+    // bundles only what they need so none holds a back-reference to the host.
+    const ctx: HostContext = {
+      key: this.key,
+      client: this.client,
+      store: this.store,
+      engine: this.engine,
+      ledger: this.ledger,
+      ui: this.ui,
+      getAccess: () => this.getAccess(),
+      roomForScope: id => this.roomForScope(id),
+      getOwnerForChannel: id => this.getOwnerForChannel(id),
+      discordSend: (id, text) => this.discordSend(id, text),
+      noteBotMsg: id => this.noteBotMsg(id),
+    }
+    this.workbench = new Workbench(ctx)
+    this.conflictUI = new ConflictUI(ctx)
+    this.watchControl = new WatchControl(ctx, this.approvals)
+    this.sessionSharing = new SessionSharing(ctx, (interaction, scopeId, summary) =>
+      this.resumeSession(interaction, scopeId, summary),
+    )
+
     this.client.once('clientReady', c => {
       this.ui.connected(this.key, c.user.tag)
     })
@@ -211,12 +212,12 @@ export class AgentHost {
         this.approvals.resolveInteraction(interaction).catch(e =>
           this.ui.error(this.key, `interaction error: ${e}`),
         )
-      } else if (interaction.customId.startsWith('cflt:')) {
-        this.resolveConflict(interaction).catch(e =>
+      } else if (this.conflictUI.handles(interaction)) {
+        this.conflictUI.resolve(interaction).catch(e =>
           this.ui.error(this.key, `conflict resolve error: ${e}`),
         )
-      } else if (interaction.customId.startsWith('sess:')) {
-        this.handleSessionPick(interaction).catch(e =>
+      } else if (this.sessionSharing.handles(interaction)) {
+        this.sessionSharing.handlePick(interaction).catch(e =>
           this.ui.error(this.key, `session pick error: ${e}`),
         )
       }
@@ -266,18 +267,38 @@ export class AgentHost {
 
   async stop(): Promise<void> {
     this.storeUnsub?.()
-    for (const t of this.pillTimers.values()) clearTimeout(t)
-    this.pillTimers.clear()
+    this.workbench.stop()
     await this.client.destroy()
   }
 
   // ─── Synchronization callbacks (used by sync wiring in relay.ts) ──────────
 
-  /** prompt-on-message asks "who responds on this channel?" */
-  getAgentForChannel(channelId: ChannelId): { agentKey: string } | undefined {
-    const access = this.getAccess()
-    const agent = access.agents[this.key] ?? this.agent
-    return agent.rooms[channelId] ? { agentKey: this.key } : undefined
+  /**
+   * Resolve a scope (a thread id, or a plain channel id) to the room — the
+   * parent text channel — this host serves, or undefined if this host doesn't
+   * serve that room. A room id resolves to itself; a thread id resolves to its
+   * parent (cached on inbound / thread creation, with a live Discord-cache
+   * fallback for scopes seen for the first time after a restart).
+   *
+   * Every room-scoped lookup (routing, permission profile, roster, approver)
+   * goes through here, so a threaded turn resolves to the SAME permission floor
+   * as a top-level one — it must never silently degrade to an empty profile.
+   */
+  roomForScope(scopeId: ChannelId): ChannelId | undefined {
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const roomId = resolveRoomForScope(scopeId, liveAgent.rooms, this.scopeToRoom, id => {
+      const ch = this.client.channels.cache.get(id) as { parentId?: string | null } | undefined
+      return ch?.parentId ?? undefined
+    })
+    // Memoize a freshly-probed thread→parent mapping so the next lookup is cheap.
+    if (roomId && roomId !== scopeId) this.scopeToRoom.set(scopeId, roomId)
+    return roomId
+  }
+
+  /** prompt-on-message asks "who responds on this scope?" — yes iff this host
+   *  serves the room the scope belongs to. */
+  getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
+    return this.roomForScope(scopeId) ? { agentKey: this.key } : undefined
   }
 
   /** drive-turn asks "give me a handle to actually run the adapter here." */
@@ -297,78 +318,9 @@ export class AgentHost {
     return sent.id
   }
 
-  /**
-   * §4.1 — request a refresh of this channel's pinned Workbench. Throttled to
-   * at most one Discord edit per PILL_THROTTLE_MS per channel (tool events can
-   * burst); the trailing render always reads the latest Turn fold state, so the
-   * activity log stays current without tripping Discord's edit rate limit.
-   */
-  updatePill(channelId: ChannelId): void {
-    if (!this.getAgentForChannel(channelId)) return
-    if (this.pillTimers.has(channelId)) return // a render is already scheduled
-    const since = Date.now() - (this.pillLastRender.get(channelId) ?? 0)
-    const wait = Math.max(0, PILL_THROTTLE_MS - since)
-    const timer = setTimeout(() => {
-      this.pillTimers.delete(channelId)
-      this.pillLastRender.set(channelId, Date.now())
-      void this.renderWorkbenchNow(channelId)
-    }, wait)
-    this.pillTimers.set(channelId, timer)
-  }
-
-  /**
-   * Render and edit-in-place the Workbench from the Turn fold (shared across
-   * agents, so one host renders the whole channel). Created and pinned once;
-   * best-effort — a missing Manage-Messages permission just means no pin.
-   */
-  private async renderWorkbenchNow(channelId: ChannelId): Promise<void> {
-    let text: string
-    try {
-      const turns = this.engine.get<TurnFoldState>(TURN_FOLD)
-      // Prompt text lives on the inbound message, not the Turn fold — pre-fetch
-      // it for each agent's latest turn (working OR finished) so the workbench
-      // header shows what was asked, kept as the trace after the turn ends.
-      const latest = new Map<string, Hash>()
-      const startedAt = new Map<string, string>()
-      for (const t of turns.values()) {
-        if (t.channel !== channelId || !t.inboundHash) continue
-        const prev = startedAt.get(t.agentKey)
-        if (!prev || t.startedAt > prev) {
-          startedAt.set(t.agentKey, t.startedAt)
-          latest.set(t.agentKey, t.inboundHash)
-        }
-      }
-      const prompts = new Map<Hash, string>()
-      for (const inboundHash of new Set(latest.values())) {
-        const inbound = await this.store.getByHash(inboundHash)
-        const txt =
-          inbound?.patch.kind === 'external'
-            ? (inbound.patch.intent.args as { text?: string } | undefined)?.text
-            : undefined
-        if (txt) prompts.set(inboundHash, txt)
-      }
-      const entries = workbenchEntries(turns, channelId, h => (h ? prompts.get(h) : undefined))
-      text = renderWorkbench(entries, new Date().toISOString())
-    } catch {
-      return // Turn fold not registered — pill is off.
-    }
-    try {
-      const ch = await this.client.channels.fetch(channelId).catch(() => null)
-      if (!ch || !('send' in ch)) return
-      const sendable = ch as { send: Function; messages: { fetch: (id: string) => Promise<any> } }
-      const existing = this.pillMsgByChannel.get(channelId)
-      if (existing) {
-        const msg = await sendable.messages.fetch(existing).catch(() => null)
-        if (msg) {
-          await msg.edit(text).catch(() => {})
-          return
-        }
-      }
-      const sent = await sendable.send(text)
-      this.pillMsgByChannel.set(channelId, sent.id)
-      this.noteBotMsg(sent.id)
-      void sent.pin?.().catch(() => {})
-    } catch {}
+  /** Relay subscriber → refresh this scope's pinned Workbench (throttled). */
+  updatePill(scopeId: ChannelId): void {
+    this.workbench.updatePill(scopeId)
   }
 
   /**
@@ -381,8 +333,7 @@ export class AgentHost {
     if (!this.getAgentForChannel(channelId)) return
     const at = this.sessions.get(channelId)?.activeTurn
     if (!at) return
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const ownerId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    const ownerId = this.getOwnerForChannel(channelId)
     if (!ownerId || userId !== ownerId) return
     this.ui.note(this.key, `stop requested in ${channelId}`)
     at.abort.abort()
@@ -404,11 +355,10 @@ export class AgentHost {
     if (!this.recentBotMsgIds.has(messageId)) return // not our message / dedup
     const channelId = rawChannelId
     if (!this.getAgentForChannel(channelId)) return
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const ownerId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    const ownerId = this.getOwnerForChannel(channelId)
     if (!ownerId || userId !== ownerId) return
 
-    const channelArtifactId = `extp:discord/${channelId}`
+    const channelArtifactId = discordArtifact(channelId)
     const frontier = await this.store.channelFrontier(channelId)
 
     if (action === 'retry') {
@@ -455,276 +405,28 @@ export class AgentHost {
     }
   }
 
-  /**
-   * §4.2 — post a conflict card with Take A / Take B / … / Write buttons. The
-   * branch hashes are remembered against the message so a click resolves to a
-   * merge.resolve. Returns the posted message id.
-   */
+  /** §4.2 — the conflict-card synchronization posts a card for a held conflict. */
   async postConflictCard(post: ConflictCardPost): Promise<string | undefined> {
-    const ch = await this.client.channels.fetch(post.channelId).catch(() => null)
-    if (!ch || !('send' in ch)) return undefined
-
-    const buttons = post.branchHashes.slice(0, LETTERS.length).map((_, idx) =>
-      new ButtonBuilder()
-        .setCustomId(`cflt:take:${idx}`)
-        .setLabel(`Take ${String.fromCharCode(65 + idx)}`)
-        .setEmoji(LETTERS[idx]!)
-        .setStyle(ButtonStyle.Secondary),
-    )
-    buttons.push(
-      new ButtonBuilder()
-        .setCustomId('cflt:write')
-        .setLabel('Write my own')
-        .setEmoji('✏️')
-        .setStyle(ButtonStyle.Primary),
-    )
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)
-
-    const sent = await (ch as { send: Function }).send({ content: post.text, components: [row] })
-    this.conflictCards.set(sent.id, { branchHashes: post.branchHashes, channelId: post.channelId })
-    this.noteBotMsg(sent.id)
-    return sent.id
+    return this.conflictUI.postCard(post)
   }
 
-  /** Resolve a conflict-card button click into a merge.resolve (§4.2). */
-  private async resolveConflict(interaction: ButtonInteraction): Promise<void> {
-    const card = this.conflictCards.get(interaction.message.id)
-    if (!card) {
-      await interaction.reply({ content: 'This conflict is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
-      return
-    }
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const ownerId = approverForAgent(liveAgent, card.channelId) ?? liveAgent.ownerUserId
-    if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can resolve this.', flags: MessageFlags.Ephemeral }).catch(() => {})
-      return
-    }
-
-    if (interaction.customId === 'cflt:write') {
-      await interaction
-        .reply({ content: 'Reply in this channel with your merge — it supersedes both drafts.', flags: MessageFlags.Ephemeral })
-        .catch(() => {})
-      return
-    }
-
-    const m = /^cflt:take:(\d+)$/.exec(interaction.customId)
-    if (!m) return
-    const idx = Number(m[1])
-    const chosen = card.branchHashes[idx]
-    if (!chosen) return
-    const losers = card.branchHashes.filter(h => h !== chosen)
-
-    const winner = await this.store.getByHash(chosen)
-    if (!winner) return
-
-    // Journal the owner's decision, then flip lifecycles: chosen wins, the
-    // rest are superseded (kept in the ledger, surfaced back via the inbox).
-    const resolve = await this.ledger.record({
-      actor: ownerId,
-      role: 'owner',
-      channel: card.channelId,
-      target: winner.target,
-      verb: 'merge.resolve',
-      patch: { kind: 'none' },
-      effect: 'pure',
-      caused_by: [...card.branchHashes].sort(),
-    })
-    await this.store.updateLifecycle(chosen, 'applied')
-    await this.store.updateLifecycle(resolve.hash, 'applied', { supersedes: losers })
-    // Flip each loser to 'superseded' AND surface the drop to its inbox — same
-    // surface-back the admission gate uses (admit.ts), so a draft dropped by an
-    // owner *resolution* is no longer silent: the losing agent learns of it on
-    // its next "what do I know" fold, and `dm-on-supersede` DMs that agent's
-    // owner. caused_by links the loser to the owner's merge.resolve.
-    for (const loser of losers) {
-      await this.store.updateLifecycle(loser, 'superseded')
-      const peer = await this.store.getByHash(loser)
-      if (peer) {
-        await surfaceToInbox(this.store, peer, {
-          why: `superseded by owner conflict resolution ${resolve.hash.slice(0, 10)} (took ${LETTERS[idx]})`,
-          winner: resolve.hash,
-          channel: card.channelId,
-        })
-      }
-    }
-
-    this.conflictCards.delete(interaction.message.id)
-    await interaction
-      .update({ content: `${interaction.message.content}\n\n-# ✓ took ${LETTERS[idx]}`, components: [] })
-      .catch(() => {})
-  }
-
-  // ─── Session sharing & resume (owner-only) ─────────────────────────────────
-
-  /** Owner asked to share/resume a session: discover this agent's local sessions
-   *  (workspace-filtered). For resume, keep only sessions whose runtime this
-   *  agent can actually continue. Then post the selection card. */
-  private async offerSessionShare(
-    channelId: ChannelId,
-    liveAgent: AgentConfig,
-    ownerId: string | undefined,
-    mode: 'import' | 'resume',
-  ): Promise<void> {
-    let sessions = await listAllSessions(liveAgent.workspace, { limit: NUMBERS.length * 2 })
-    if (mode === 'resume') {
-      const compatible = sessionRuntimeForAgent(liveAgent.runtime)
-      sessions = sessions.filter(s => s.runtime === compatible)
-    }
-    await this.postSessionCard(channelId, sessions.slice(0, NUMBERS.length), ownerId, mode)
-  }
+  // ─── Session resume (owner-only) ───────────────────────────────────────────
 
   /**
-   * Post the share/resume card. With sessions, attaches one numbered button per
-   * entry (sess:pick:<idx> for import, sess:resume:<idx> for resume) plus a
-   * Cancel; empty posts the empty-state. The offered set + mode are remembered
-   * against the message id (analogue of postConflictCard / conflictCards).
-   */
-  private async postSessionCard(
-    channelId: ChannelId,
-    offered: SessionSummary[],
-    ownerId: string | undefined,
-    mode: 'import' | 'resume',
-  ): Promise<string | undefined> {
-    const ch = await this.client.channels.fetch(channelId).catch(() => null)
-    if (!ch || !('send' in ch)) return undefined
-    const text = renderSessionCard({
-      ownerId,
-      mode,
-      sessions: offered.map(s => ({
-        runtime: s.runtime,
-        title: s.title,
-        updatedAt: s.updatedAt,
-        messageCount: s.messageCount,
-      })),
-    })
-    if (offered.length === 0) {
-      const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
-      this.noteBotMsg(sent.id)
-      return sent.id
-    }
-    const action = mode === 'resume' ? 'resume' : 'pick'
-    const pickRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      ...offered.map((_, idx) =>
-        new ButtonBuilder()
-          .setCustomId(`sess:${action}:${idx}`)
-          .setLabel(`${idx + 1}`)
-          .setEmoji(NUMBERS[idx]!)
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    )
-    const cancelRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('sess:cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
-    )
-    const sent = await (ch as { send: Function }).send({ content: text, components: [pickRow, cancelRow] })
-    this.sessionCards.set(sent.id, { sessions: offered, channelId, mode })
-    this.noteBotMsg(sent.id)
-    return sent.id
-  }
-
-  /**
-   * Resolve a share/resume button: owner-only. Cancel closes the card. An
-   * 'import' pick reads + distills the session and admits an owner-role
-   * knowledge.append to know:channel/<id>/shared-context (anchor:none → no
-   * conflict card); the next turn injects it and on Postgres it syncs to peers.
-   * A 'resume' pick binds the channel's Driver to that runtime session id.
-   */
-  private async handleSessionPick(interaction: ButtonInteraction): Promise<void> {
-    const card = this.sessionCards.get(interaction.message.id)
-    if (!card) {
-      await interaction.reply({ content: 'This session menu is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
-      return
-    }
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    // Owner-only, by ownerUserId (not a delegated room approver): sharing/resuming
-    // your own local session is identity-bound, matching the trigger gate.
-    const ownerId = liveAgent.ownerUserId
-    if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can share or resume a session.', flags: MessageFlags.Ephemeral }).catch(() => {})
-      return
-    }
-
-    if (interaction.customId === 'sess:cancel') {
-      this.sessionCards.delete(interaction.message.id)
-      await interaction
-        .update({ content: `${interaction.message.content}\n\n-# ✖️ cancelled`, components: [] })
-        .catch(() => {})
-      return
-    }
-
-    const m = /^sess:(pick|resume):(\d+)$/.exec(interaction.customId)
-    if (!m) return
-    const summary = card.sessions[Number(m[2])]
-    if (!summary) return
-
-    if (card.mode === 'resume') {
-      await this.resumeSession(interaction, card.channelId, liveAgent, summary)
-      return
-    }
-
-    // import: read + distill the on-disk transcript (pure). File-based read is
-    // the robust path; nothing in the live session is mutated.
-    const store = makeSessionStore(summary.runtime)
-    const transcript = store ? await store.read(summary.id) : undefined
-    if (!transcript) {
-      await interaction.reply({ content: 'Could not read that session anymore.', flags: MessageFlags.Ephemeral }).catch(() => {})
-      return
-    }
-    const { brief, tags } = distill(transcript)
-    const cwd = transcript.cwd || summary.cwd
-    const body = wrapSharedContext(
-      { source: `${summary.runtime}:${summary.id.slice(0, 8)}`, cwd: cwd || undefined, savedBy: ownerId },
-      brief,
-    )
-
-    const noteId = `session-${summary.runtime}-${summary.id.slice(0, 8)}-${Date.now()}`
-    await admit(this.store, {
-      actor: ownerId,
-      role: 'owner',
-      channel: card.channelId,
-      target: {
-        artifactId: `know:channel/${card.channelId}/shared-context`,
-        anchor: { kind: 'none' },
-      },
-      verb: 'knowledge.append',
-      patch: { kind: 'knowledge', append: { id: noteId, body, tags } },
-      effect: 'pure',
-      caused_by: [],
-    }).catch(err => this.ui.error(this.key, `session import admit: ${err}`))
-
-    // Bridge to peers on a SEPARATE relay: their ledger never receives the
-    // knowledge note (no shared Postgres), but the Discord feed reaches them.
-    // Post the brief into the channel, mentioning the room's peer agents so they
-    // ingest it on their next turn. Same-relay peers also get it silently via
-    // the knowledge fold (pendingSharedContext); this is the cross-relay path.
-    const room = liveAgent.rooms[card.channelId]
-    const peerMentions = room ? Object.keys(room.participants).map(id => `<@${id}>`) : []
-    await this.discordSend(
-      card.channelId,
-      renderSharedContextPost({ runtime: summary.runtime, title: summary.title, brief, peerMentions }),
-    ).catch(err => this.ui.error(this.key, `shared-context post: ${err}`))
-
-    this.sessionCards.delete(interaction.message.id)
-    this.ui.note(
-      this.key,
-      `imported ${summary.runtime} session ${summary.id.slice(0, 8)} into ${card.channelId}`,
-    )
-    await interaction
-      .update({ content: renderSessionImported({ runtime: summary.runtime, title: summary.title }), components: [] })
-      .catch(() => {})
-  }
-
-  /**
-   * Bind a channel's Driver to an existing runtime session and persist it so the
+   * Bind a scope's Driver to an existing runtime session and persist it so the
    * resume survives a relay restart. Only valid when the agent's runtime can
    * continue that session's runtime; otherwise fall the owner back to import.
+   * Delegated to from SessionSharing because it's tied to the Session/Driver
+   * lifecycle this host owns.
    */
   private async resumeSession(
     interaction: ButtonInteraction,
-    channelId: ChannelId,
-    liveAgent: AgentConfig,
+    scopeId: ChannelId,
     summary: SessionSummary,
   ): Promise<void> {
-    const room = liveAgent.rooms[channelId]
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const roomId = this.roomForScope(scopeId)
+    const room = roomId ? liveAgent.rooms[roomId] : undefined
     if (!room || sessionRuntimeForAgent(liveAgent.runtime) !== summary.runtime) {
       await interaction
         .reply({
@@ -734,39 +436,13 @@ export class AgentHost {
         .catch(() => {})
       return
     }
-    const session = this.getOrCreateSession(channelId, liveAgent, room)
+    const session = this.getOrCreateSession(scopeId, liveAgent, room)
     session.driver.bindSession(summary.id)
-    writeSessionBinding(this.key, channelId, { runtime: summary.runtime, sessionId: summary.id })
-    this.sessionCards.delete(interaction.message.id)
-    this.ui.note(this.key, `resuming ${summary.runtime} session ${summary.id.slice(0, 8)} in ${channelId}`)
+    writeSessionBinding(this.key, scopeId, { runtime: summary.runtime, sessionId: summary.id })
+    this.ui.note(this.key, `resuming ${summary.runtime} session ${summary.id.slice(0, 8)} in ${scopeId}`)
     await interaction
       .update({ content: renderSessionResumed({ runtime: summary.runtime, title: summary.title }), components: [] })
       .catch(() => {})
-  }
-
-  /**
-   * Shared-context to inject on the next turn in a channel: active
-   * know:channel/<id>/shared-context notes not yet delivered to this host's live
-   * session. Each note's body is already the wrapped <shared-context> block.
-   * Marks them delivered so the agent sees each import exactly once.
-   */
-  private pendingSharedContext(channelId: ChannelId): string | undefined {
-    let state: KnowledgeFoldState
-    try {
-      state = this.engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD)
-    } catch {
-      return undefined // knowledge fold not registered
-    }
-    const notes = activeNotes(state, `know:channel/${channelId}/shared-context`)
-    const delivered = this.deliveredContext.get(channelId) ?? new Set<Hash>()
-    const { prefix, freshHashes } = pickFreshContext(
-      notes.map(n => ({ hash: n.hash, body: n.note.body })),
-      delivered,
-    )
-    if (!prefix) return undefined
-    for (const h of freshHashes) delivered.add(h)
-    this.deliveredContext.set(channelId, delivered)
-    return prefix
   }
 
   /** This host's agent key — relay uses it to map agentKey → owner. */
@@ -779,190 +455,52 @@ export class AgentHost {
     return (this.getAccess().agents[this.key] ?? this.agent).ownerUserId
   }
 
-  /** Owner/approver for a channel this host serves, else undefined (§4.2). */
-  getOwnerForChannel(channelId: ChannelId): string | undefined {
-    if (!this.getAgentForChannel(channelId)) return undefined
+  /** Owner/approver for a scope this host serves, else undefined (§4.2). The
+   *  approver is configured per room, so resolve scope→room first. */
+  getOwnerForChannel(scopeId: ChannelId): string | undefined {
+    const roomId = this.roomForScope(scopeId)
+    if (!roomId) return undefined
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    return approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    return approverForAgent(liveAgent, roomId) ?? liveAgent.ownerUserId
   }
 
-  /**
-   * Resolve workspace + permission for a watch the WatchSupervisor wants to run.
-   * The command is classified through the same `classifyTool` path (and deny
-   * floor) as any Bash call against this room's profile. Returns undefined if
-   * this host doesn't serve the watch's channel.
-   */
+  /** Relay's WatchSupervisor resolver: workspace + permission decision (room-resolved). */
   resolveWatch(spec: WatchSpec): WatchRunEnv | undefined {
-    if (!this.getAgentForChannel(spec.channel)) return undefined
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const profile = readRoomSettings(this.key, spec.channel)
-    const decision = classifyTool(profile, { toolName: 'Bash', subject: spec.command })
-    return { workspace: liveAgent.workspace, decision }
-  }
-
-  /**
-   * The watch tool surface, bound to a channel. Shared by the owner `!watch`
-   * command and the agent's `mcp__knock-knock__watch` tool (adapters/watch-mcp.ts),
-   * so both paths arm through one permission-gated implementation.
-   */
-  private watchToolsFor(channelId: ChannelId): WatchToolHandlers {
-    return {
-      // The agent (via the MCP tool) is a proposer: an `ask`-tier command is
-      // held for the owner's one-time approval, not auto-armed.
-      arm: spec => this.armWatch(channelId, spec, { preApproved: false }),
-      disarm: name => this.disarmWatch(channelId, name),
-      list: async () => this.listWatchesText(channelId),
-    }
-  }
-
-  /**
-   * Arm a watch. The command is classified exactly like a Bash call:
-   *   - `deny`  → refused (the hard floor — never armed, never run).
-   *   - `allow` → armed immediately.
-   *   - `ask`   → held: the owner gets one ✅/❌ for the exact command, and the
-   *               watch arms only on approve. `preApproved` (the owner's own
-   *               `!watch`) skips the prompt — typing the command IS the
-   *               approval. See docs/knock-knock-watches.md §5.
-   */
-  private async armWatch(
-    channelId: ChannelId,
-    partial: WatchArmPartial,
-    opts: { preApproved: boolean },
-  ): Promise<{ ok: boolean; message: string }> {
-    if (!this.getAgentForChannel(channelId)) {
-      return { ok: false, message: 'No agent serves this channel.' }
-    }
-    const spec: WatchSpec = { ...partial, channel: channelId, agentKey: this.key }
-    const decision = classifyTool(readRoomSettings(this.key, channelId), {
-      toolName: 'Bash',
-      subject: spec.command,
-    })
-
-    if (decision === 'deny') {
-      return {
-        ok: false,
-        message: `⛔ refused to arm «${spec.name}» — command \`${spec.command}\` hits the deny floor. Not armed.`,
-      }
-    }
-
-    if (decision === 'ask' && !opts.preApproved) {
-      const approved = await this.requestWatchApproval(channelId, spec)
-      if (!approved.ok) return approved // denied or timed out — surface the reason
-    }
-
-    await this.admitWatchArmed(channelId, spec)
-    return {
-      ok: true,
-      message: `⏳ watching «${spec.name}» — ${spec.fireOn.kind} on \`${spec.command}\``,
-    }
-  }
-
-  /** Post the exact watch command to the owner and block on one ✅/❌. */
-  private async requestWatchApproval(
-    channelId: ChannelId,
-    spec: WatchSpec,
-  ): Promise<{ ok: boolean; message: string }> {
-    // Anchor the approval on a `watch.requested` interaction (inert to the watch
-    // fold). The owner's verdict admits tool.approved/denied caused_by its hash.
-    const requested = await admit(this.store, {
-      actor: this.key,
-      role: 'agent',
-      channel: channelId,
-      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
-      verb: 'watch.requested',
-      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.request', args: spec } },
-      effect: 'pure',
-      caused_by: [],
-    })
-    const anchor = requested.interaction.hash
-
-    await this.approvals.postDiscord({
-      channelId,
-      toolRequestedHash: anchor,
-      toolName: `watch «${spec.name}» (${spec.fireOn.kind})`,
-      input: { command: spec.command },
-    })
-    const verdict = await awaitVerdict(this.store, anchor, DEFAULT_VERDICT_TIMEOUT_MS)
-    if (verdict.behavior === 'allow') return { ok: true, message: 'approved' }
-    return {
-      ok: false,
-      message: `⛔ watch «${spec.name}» not armed — ${verdict.message ?? 'denied'}.`,
-    }
-  }
-
-  private async admitWatchArmed(channelId: ChannelId, spec: WatchSpec): Promise<void> {
-    await admit(this.store, {
-      actor: this.key,
-      role: 'agent',
-      channel: channelId,
-      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
-      verb: 'watch.armed',
-      patch: { kind: 'external', intent: { channel: 'tool', op: 'watch.arm', args: spec } },
-      effect: 'pure',
-      caused_by: [],
-    })
-  }
-
-  private async disarmWatch(
-    channelId: ChannelId,
-    name: string,
-  ): Promise<{ ok: boolean; message: string }> {
-    await admit(this.store, {
-      actor: this.key,
-      role: 'agent',
-      channel: channelId,
-      target: { artifactId: `extp:discord/${channelId}`, anchor: { kind: 'none' } },
-      verb: 'watch.disarmed',
-      patch: {
-        kind: 'external',
-        intent: { channel: 'tool', op: 'watch.disarm', args: { name, reason: 'requested' } },
-      },
-      effect: 'pure',
-      caused_by: [],
-    })
-    return { ok: true, message: `${GLYPHS.checkpoint} unwatched «${name}»` }
-  }
-
-  private listWatchesText(channelId: ChannelId): string {
-    const state = this.engine.get<WatchFoldState>(WATCH_FOLD)
-    const mine = liveWatches(state).filter(w => w.channel === channelId)
-    return mine.length
-      ? mine.map(w => `• \`${w.name}\` — ${w.fireOn.kind} — \`${w.command}\``).join('\n')
-      : 'No active watches in this channel.'
-  }
-
-  /** Owner `!watch` / `!unwatch` / `!watch list` — the same core as the agent tool. */
-  private async handleWatchCommand(channelId: ChannelId, text: string): Promise<void> {
-    const parsed = parseWatchCommand(text)
-    if (!parsed) {
-      await this.discordSend(
-        channelId,
-        'Usage: `!watch <name> on-change|each-line|on-exit|match:<regex> [every=10s ttl=10m max=5 once] <command>`, `!watch list`, or `!unwatch <name>`',
-      )
-      return
-    }
-    if (parsed.action === 'list') {
-      await this.discordSend(channelId, this.listWatchesText(channelId))
-      return
-    }
-    const result =
-      parsed.action === 'disarm'
-        ? await this.disarmWatch(channelId, parsed.name)
-        : // The owner typed the command — that IS the approval; skip the prompt.
-          await this.armWatch(channelId, parsed.spec, { preApproved: true })
-    await this.discordSend(channelId, result.message)
+    return this.watchControl.resolveWatch(spec)
   }
 
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
+
+  /**
+   * Get or create the task thread for a top-level message. Race-tolerant: if a
+   * concurrent handler already started the thread, the loser catches and
+   * refetches the message to pick up the winner's thread. Returns null if a
+   * thread can't be created (e.g. missing permission), so the caller falls back
+   * to running the task at the channel level.
+   */
+  private async ensureTaskThread(msg: Message): Promise<ThreadChannel | null> {
+    if (msg.hasThread) return (msg.thread as ThreadChannel | null) ?? null
+    try {
+      return (await msg.startThread({
+        name: threadNameFromPrompt(msg.content),
+        autoArchiveDuration: 1440,
+      })) as ThreadChannel
+    } catch {
+      const fresh = await msg.fetch().catch(() => null)
+      return (fresh?.thread as ThreadChannel | null) ?? null
+    }
+  }
 
   private async handleInbound(msg: Message): Promise<void> {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
 
-    const channelId = msg.channel.isThread()
-      ? msg.channel.parentId ?? msg.channelId
+    // Room = the parent text channel: permission profile, roster, allowlist.
+    // A message in a thread inherits its parent's room.
+    const roomId = msg.channel.isThread()
+      ? (msg.channel.parentId ?? msg.channelId)
       : msg.channelId
-    const room = liveAgent.rooms[channelId]
+    const room = liveAgent.rooms[roomId]
     if (!room) return
 
     if (msg.author.id === this.client.user?.id) return
@@ -976,13 +514,19 @@ export class AgentHost {
     this.inboundRate.set(msg.author.id, [...recent, now])
 
     const requireMention = room.requireMention ?? true
-    if (requireMention && !(await this.isMentioned(msg, access.mentionPatterns))) return
+    const mentioned = await this.isMentioned(msg, access.mentionPatterns)
+    if (requireMention && !mentioned) return
 
     if ('sendTyping' in msg.channel) {
       void (msg.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
     }
 
     const kind = senderKind(room, msg.author.id, ownerId)
+
+    // Owner control commands operate at the scope they're TYPED in and never
+    // spawn a task thread (they're control, not work): a command typed inside a
+    // thread targets that thread; at top level it targets the channel itself.
+    const controlScope = msg.channel.isThread() ? msg.channelId : roomId
 
     // ─── Owner share/resume-session command — short-circuit before any admit ─
     // Owner-only (kind==='owner'): list this agent's local sessions and post a
@@ -992,8 +536,9 @@ export class AgentHost {
     // here — senderKind only returns 'owner' for the agent's owner. 'import'
     // distills context; 'resume' continues the live session.
     if (kind === 'owner' && (isShareSessionCommand(msg.content) || isResumeSessionCommand(msg.content))) {
+      this.scopeToRoom.set(controlScope, roomId)
       const mode = isResumeSessionCommand(msg.content) ? 'resume' : 'import'
-      await this.offerSessionShare(channelId, liveAgent, ownerId, mode).catch(e =>
+      await this.sessionSharing.offer(controlScope, mode).catch(e =>
         this.ui.error(this.key, `offer session ${mode}: ${e}`),
       )
       return
@@ -1005,19 +550,37 @@ export class AgentHost {
     // prompt-injection invariant). Arming a command is permission-gated the same
     // way a Bash call is. See docs/knock-knock-watches.md.
     if (kind === 'owner' && (msg.content.startsWith('!watch') || msg.content.startsWith('!unwatch'))) {
-      await this.handleWatchCommand(channelId, msg.content).catch(e =>
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.watchControl.handleCommand(controlScope, msg.content).catch(e =>
         this.ui.error(this.key, `watch command: ${e}`),
       )
       return
     }
 
+    // ─── Resolve the task scope ──────────────────────────────────────────────
+    // A message already in a thread runs in that thread. A top-level @mention
+    // spawns (or reuses) a task thread, so each task gets its own turn lineage,
+    // workbench, and agent session. A top-level non-mention (only reachable when
+    // requireMention is false) stays at the channel. Thread creation failing
+    // (e.g. missing permission) degrades to running at the channel.
+    let scopeId: ChannelId
+    if (msg.channel.isThread()) {
+      scopeId = msg.channelId
+    } else if (mentioned) {
+      const thread = await this.ensureTaskThread(msg)
+      scopeId = thread?.id ?? msg.channelId
+    } else {
+      scopeId = msg.channelId
+    }
+    this.scopeToRoom.set(scopeId, roomId)
+
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
-    const channelArtifactId = `extp:discord/${channelId}`
-    const prior = await this.store.latestInChannel(channelId)
+    const channelArtifactId = discordArtifact(scopeId)
+    const prior = await this.store.latestInChannel(scopeId)
     const inboundResult = await admit(this.store, {
       actor: msg.author.id,
       role: kind === 'unknown' ? 'agent' : kind,
-      channel: channelId,
+      channel: scopeId,
       target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
       verb: 'channel.message',
       patch: {
@@ -1035,7 +598,7 @@ export class AgentHost {
 
     // Side-table: stash Discord context so synchronization-driven UX can
     // use the live Message object (ack reaction, DmCourier header).
-    const channelLabel = await this.describeChannel(msg).catch(() => `#${channelId}`)
+    const channelLabel = await this.describeChannel(msg).catch(() => `#${roomId}`)
     const ackEmoji = access.ackReaction ?? '👀'
     this.inboundByHash.set(inboundResult.interaction.hash, {
       msg,
@@ -1134,19 +697,18 @@ export class AgentHost {
   ): Promise<{ chunks: string[]; error?: string }> {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
-    const room = liveAgent.rooms[channelId]
-    if (!room) return { chunks: [], error: 'no room' }
+    // channelId is the task scope (a thread). The roster/approver/profile come
+    // from the room — resolve scope→room (a turn always runs in a scope this
+    // host serves, so this resolves).
+    const roomId = this.roomForScope(channelId)
+    const room = roomId ? liveAgent.rooms[roomId] : undefined
+    if (!room || !roomId) return { chunks: [], error: 'no room' }
 
     const session = this.getOrCreateSession(channelId, liveAgent, room)
-    const approverUserId = approverForAgent(liveAgent, channelId) ?? liveAgent.ownerUserId
+    const approverUserId = approverForAgent(liveAgent, roomId) ?? liveAgent.ownerUserId
     const recorder = TurnRecorder.restore(
       this.ledger,
-      {
-        agentKey: this.key,
-        approverUserId,
-        channelId,
-        channelArtifactId: `extp:discord/${channelId}`,
-      },
+      { agentKey: this.key, approverUserId, channelId },
       opts.inboundHash,
       opts.promptHash,
     )
@@ -1163,7 +725,7 @@ export class AgentHost {
     }
 
     // Inject any freshly-imported session context once, ahead of this turn.
-    const contextPrefix = this.pendingSharedContext(channelId)
+    const contextPrefix = this.sessionSharing.pendingContext(channelId)
 
     let chunks: string[] = []
     let turnError: string | undefined
@@ -1190,11 +752,10 @@ export class AgentHost {
     session.activeTurn = undefined
 
     // Transition the inbound reaction to a persistent outcome marker.
-    const outcome: 'done' | 'failed' | 'stopped' = stopped
-      ? 'stopped'
-      : turnError || !replyText
-        ? 'failed'
-        : 'done'
+    let outcome: 'done' | 'failed' | 'stopped'
+    if (stopped) outcome = 'stopped'
+    else if (turnError || !replyText) outcome = 'failed'
+    else outcome = 'done'
     void this.markInboundOutcome(opts.inboundHash, outcome).catch(() => {})
 
     return { chunks, error: turnError }
@@ -1210,10 +771,13 @@ export class AgentHost {
     const existing = this.sessions.get(channelId)
     if (existing) return existing
 
-    const profile = readRoomSettings(this.key, channelId)
+    // The adapter's deny floor (applyPolicy) is the real enforcement point —
+    // read the ROOM's profile, resolving scope→room so a threaded session is
+    // governed by the same floor as a top-level one.
+    const profile = readRoomSettings(this.key, this.roomForScope(channelId) ?? channelId)
     const adapter = makeAdapter(liveAgent.runtime, {
       workspace: liveAgent.workspace,
-      watchTools: this.watchToolsFor(channelId),
+      watchTools: this.watchControl.toolsFor(channelId),
     })
     const ctx: PreambleContext = {
       identity: {

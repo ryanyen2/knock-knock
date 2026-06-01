@@ -17,7 +17,7 @@
 
 import { readFileSync, chmodSync } from 'fs'
 import { join } from 'path'
-import { STATE_DIR, readAccessFile } from './state.ts'
+import { STATE_DIR, readAccessFile, readRoomSettings } from './state.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { SqliteStore } from './ledger/store-sqlite.ts'
@@ -129,7 +129,23 @@ if (hosts.length === 0) {
 // The host-dependent ones close over the hosts array; the first host that
 // claims a channel handles it.
 const synchronizer = new Synchronizer(store, engine)
-synchronizer.register(classifyOnToolRequest())
+synchronizer.register(
+  classifyOnToolRequest({
+    // Permission profiles are keyed by ROOM (the parent channel); a tool
+    // request's channel is the task SCOPE (a thread). Resolve scope→room via
+    // the serving host so a threaded turn classifies against the same floor as
+    // a top-level one. No serving host ⇒ empty profile here, but this sync is
+    // audit only — the enforced deny floor is the adapter's applyPolicy, which
+    // reads the room profile via the same scope→room resolution.
+    readPolicy: (agentKey, scopeId) => {
+      for (const h of hosts) {
+        const roomId = h.roomForScope(scopeId)
+        if (roomId) return readRoomSettings(agentKey, roomId)
+      }
+      return { allow: [], ask: [], deny: [] }
+    },
+  }),
+)
 synchronizer.register(
   promptOnMessage({
     getAgentForChannel: channelId => {

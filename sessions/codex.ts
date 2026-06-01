@@ -13,7 +13,7 @@
  * listed (fallback) so Codex doesn't silently vanish from discovery.
  */
 
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import {
@@ -26,27 +26,10 @@ import {
   deriveTitle,
   parseJsonl,
 } from './session-store.ts'
+import { walkFiles } from './walk.ts'
 
 function sessionsDir(): string {
   return join(process.env.CODEX_HOME ?? join(homedir(), '.codex'), 'sessions')
-}
-
-/** Recursively collect *.jsonl under a root (YYYY/MM/DD nesting). */
-async function walkJsonl(root: string, depth = 0): Promise<string[]> {
-  if (depth > 5) return []
-  let entries: import('node:fs').Dirent[]
-  try {
-    entries = await readdir(root, { withFileTypes: true })
-  } catch {
-    return []
-  }
-  const out: string[] = []
-  for (const e of entries) {
-    const path = join(root, e.name)
-    if (e.isDirectory()) out.push(...(await walkJsonl(path, depth + 1)))
-    else if (e.isFile() && e.name.endsWith('.jsonl')) out.push(path)
-  }
-  return out
 }
 
 /** Unwrap a `{payload:{…}}` envelope, else return the object itself. */
@@ -116,7 +99,7 @@ export class CodexSessionStore implements SessionStore {
   readonly runtime = 'codex' as const
 
   async list(opts: { workspace: string; limit?: number }): Promise<SessionSummary[]> {
-    const files = await walkJsonl(sessionsDir())
+    const files = await walkFiles(sessionsDir(), '.jsonl')
     const out: SessionSummary[] = []
     for (const path of files) {
       try {
@@ -142,7 +125,7 @@ export class CodexSessionStore implements SessionStore {
   }
 
   async read(id: string): Promise<NormalizedTranscript | undefined> {
-    const files = await walkJsonl(sessionsDir())
+    const files = await walkFiles(sessionsDir(), '.jsonl')
     for (const path of files) {
       const stem = path.split('/').pop()!.replace(/\.jsonl$/, '')
       try {

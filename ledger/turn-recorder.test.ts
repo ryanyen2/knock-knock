@@ -23,7 +23,6 @@ function setup() {
       agentKey: 'bot1',
       approverUserId: 'owner1',
       channelId: 'chan-A',
-      channelArtifactId: 'extp:discord/chan-A',
     },
   }
 }
