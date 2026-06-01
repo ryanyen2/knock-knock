@@ -138,6 +138,15 @@ function rowToInteraction(r: Row): Interaction {
 
 export class PgStore implements Store {
   private readonly subscribers = new Set<(i: Interaction) => void>()
+  /**
+   * Hashes this process inserted locally and already delivered to subscribers in
+   * `append`. The AFTER-INSERT trigger NOTIFYs *every* insert — including our
+   * own, since `pg_notify` reaches all LISTENing sessions on the database — so
+   * without this guard the listener would deliver each local write a SECOND time
+   * (double turns, double posts). We skip a hash here exactly once when its own
+   * echo returns; genuine remote writes (never in this set) flow through.
+   */
+  private readonly locallyDelivered = new Set<Hash>()
   private listenClient?: Client
   private closed = false
   private reconnectTimer?: ReturnType<typeof setTimeout>
@@ -182,6 +191,9 @@ export class PgStore implements Store {
     const client = new Client({ connectionString: this.connStr, keepAlive: true })
     client.on('notification', async msg => {
       if (msg.channel !== 'interaction_inserted' || !msg.payload) return
+      // Skip the echo of our own local write — `append` already delivered it.
+      // (Genuine remote writes are never in this set, so they flow through.)
+      if (this.locallyDelivered.delete(msg.payload)) return
       const i = await this.getByHash(msg.payload)
       if (!i) return
       for (const cb of this.subscribers) {
@@ -248,8 +260,17 @@ export class PgStore implements Store {
       const inserted = (result.rowCount ?? 0) > 0
       if (inserted) {
         await this.writeParents(c, i)
-        // Local in-process subscribers fire immediately too — same
-        // semantics as SqliteStore for fold engines on this machine.
+        // Deliver to local in-process subscribers immediately — same semantics
+        // as SqliteStore for fold engines on this machine — and remember the
+        // hash so the trigger's NOTIFY echo of THIS write is skipped (above).
+        this.locallyDelivered.add(i.hash)
+        if (this.locallyDelivered.size > 8192) {
+          // Backstop: if the listener was down when we wrote, the echo never
+          // arrives to evict the hash. Drop the oldest so the set can't grow
+          // unbounded — a lingering hash is harmless (the row already exists).
+          const oldest = this.locallyDelivered.values().next().value
+          if (oldest) this.locallyDelivered.delete(oldest)
+        }
         for (const cb of this.subscribers) {
           try {
             cb(i)
