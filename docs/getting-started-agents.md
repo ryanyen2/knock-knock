@@ -247,6 +247,62 @@ approval, and the deny floor is absolute). TTL / max-fires bound a runaway watch
 
 ---
 
+## Cross-machine setup (shared Postgres ledger)
+
+By default each relay keeps a **local SQLite ledger**, so two relays on different
+machines only see each other through the Discord channel. That's enough for the
+agents to talk — but anything coordinated through *ledger state* (an imported
+session brief, cross-machine conflict detection, knowledge notes) stays on the
+relay that created it. To share that across machines, point **every** relay at
+one **shared Postgres** database via `KNOCK_KNOCK_LEDGER_URL`.
+
+> **What's shared vs. local.** Only the **ledger** (all Interactions, and the
+> folds derived from them) is shared in Postgres. Each machine keeps its own
+> `access.json` (its agent), `.env` (its bot token), room permission profiles,
+> and **runtime session files** (`~/.claude/projects`, …). So **resuming a live
+> session stays same-machine** — the session file isn't on the other host; use
+> `share session` (import) to carry *context* across machines. Don't merge
+> `access.json` between machines.
+
+### Setting it up with Neon (tested on Postgres 18)
+
+1. Create a Neon project on **Postgres 18** and a database (e.g. `neondb`).
+2. Copy the **direct** connection string — the host must **not** contain
+   `-pooler`. Neon's pooled endpoint runs PgBouncer in transaction mode, which
+   **drops `LISTEN`/`NOTIFY`** — cross-machine notifications would then silently
+   never arrive. Direct host looks like `ep-xxxx.REGION.aws.neon.tech`; pooled is
+   `ep-xxxx-pooler.REGION.aws.neon.tech` (do not use the pooled one here).
+3. Prefer `sslmode=verify-full` (Neon presents a valid cert, and it avoids a
+   `pg` deprecation warning that `sslmode=require` now triggers).
+4. Set the **same** URL on **both** machines — in
+   `~/.claude/channels/knock-knock/.env`:
+   ```
+   KNOCK_KNOCK_LEDGER_URL=postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=verify-full
+   ```
+   (or `export KNOCK_KNOCK_LEDGER_URL=…` before launching).
+5. `bun relay.ts` — you'll see `relay: ledger = postgres (…)` (password masked).
+   The schema (tables + the `NOTIFY` trigger) is **created automatically** on
+   first connect; there's no migration to run, and the second machine's connect
+   is a no-op.
+
+### Caveats (Neon free tier)
+
+- **Direct endpoint only** (no `-pooler`) — `LISTEN`/`NOTIFY` needs a real session.
+- **Autosuspend.** The free plan suspends the compute after ~5 min idle, which
+  severs the listener (its `LISTEN` is session state). The relay now
+  **reconnects and re-`LISTEN`s automatically**, so it recovers — but
+  interactions another host wrote *during* the gap aren't replayed to the live
+  listener. **Restart the relay to fully re-fold**, or disable scale-to-zero
+  (paid) for an always-on listener. Active back-and-forth keeps the compute warm.
+- **Fresh start.** Switching to Postgres begins from an empty ledger; existing
+  local SQLite history isn't migrated.
+
+> Cross-machine **conflict resolution** also requires this shared ledger — two
+> relays only compute identical conflict cards when their merge gates see the
+> same Interactions. See [reactions-and-versioning.md](reactions-and-versioning.md).
+
+---
+
 ## Verifying it works (T1 / T2 / T3)
 
 With the room profile `allow: ["Read(**)"]`, `ask: ["Bash(*)"]`,

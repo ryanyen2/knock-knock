@@ -139,6 +139,8 @@ function rowToInteraction(r: Row): Interaction {
 export class PgStore implements Store {
   private readonly subscribers = new Set<(i: Interaction) => void>()
   private listenClient?: Client
+  private closed = false
+  private reconnectTimer?: ReturnType<typeof setTimeout>
 
   private constructor(
     private readonly pool: Pool,
@@ -158,8 +160,26 @@ export class PgStore implements Store {
   }
 
   private async startListen(): Promise<void> {
-    const client = new Client({ connectionString: this.connStr })
-    await client.connect()
+    await this.openListener()
+  }
+
+  /**
+   * Open (or re-open) the dedicated LISTEN client and re-subscribe.
+   *
+   * A server with idle autosuspend (Neon scales to zero after ~5 min on the free
+   * plan) or any transient network drop SEVERS this session — and the `LISTEN`
+   * registration is session state, so it's gone on reconnect. Without
+   * re-LISTENing, cross-machine NOTIFY silently stops (the single most common
+   * "it just stopped syncing" failure). So we reconnect with a fixed backoff and
+   * re-issue `LISTEN` on every drop. Note: interactions written by other hosts
+   * DURING a disconnect are missed by this listener (they're in the DB, but no
+   * notification replays) — restart the relay to fully re-fold, or disable
+   * scale-to-zero for an always-on listener. Local in-process subscribers are
+   * unaffected; this only concerns cross-machine notifications.
+   */
+  private async openListener(): Promise<void> {
+    if (this.closed) return
+    const client = new Client({ connectionString: this.connStr, keepAlive: true })
     client.on('notification', async msg => {
       if (msg.channel !== 'interaction_inserted' || !msg.payload) return
       const i = await this.getByHash(msg.payload)
@@ -172,8 +192,29 @@ export class PgStore implements Store {
         }
       }
     })
-    await client.query('LISTEN interaction_inserted')
-    this.listenClient = client
+    client.on('error', err => {
+      process.stderr.write(`pg store: listen client error: ${err}; reconnecting\n`)
+      this.scheduleReconnect()
+    })
+    client.on('end', () => this.scheduleReconnect())
+    try {
+      await client.connect()
+      await client.query('LISTEN interaction_inserted')
+      this.listenClient = client
+    } catch (err) {
+      // Don't crash the relay over a transient listen failure — the query pool
+      // still works for local writes; retry the listener in the background.
+      process.stderr.write(`pg store: listen connect failed: ${err}; retrying\n`)
+      this.scheduleReconnect()
+    }
+  }
+
+  private scheduleReconnect(): void {
+    if (this.closed || this.reconnectTimer) return
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = undefined
+      void this.openListener()
+    }, 3000)
   }
 
   async append(i: Interaction): Promise<{ inserted: boolean }> {
@@ -401,6 +442,8 @@ export class PgStore implements Store {
   }
 
   close(): void {
+    this.closed = true
+    if (this.reconnectTimer) clearTimeout(this.reconnectTimer)
     void this.listenClient?.end()
     void this.pool.end()
   }

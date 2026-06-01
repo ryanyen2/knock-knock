@@ -16,6 +16,7 @@ import {
   renderSessionCard,
   renderSessionImported,
   renderSessionResumed,
+  renderSharedContextPost,
 } from './surface.ts'
 import type { TurnFoldState, TurnState } from '../concepts/turn.ts'
 
@@ -240,4 +241,22 @@ test('renderSessionResumed confirms continuation with full history', () => {
   expect(msg).toContain(GLYPHS.session)
   expect(msg).toContain('Resuming session')
   expect(msg).toContain('opencode')
+})
+
+test('renderSharedContextPost carries the brief and @mentions room peers, capped for Discord', () => {
+  const post = renderSharedContextPost({
+    runtime: 'claude-code',
+    title: 'wire the relay',
+    brief: '## Plan\nDo X then Y',
+    peerMentions: ['<@111>', '<@222>'],
+  })
+  expect(post).toContain('Shared session context')
+  expect(post).toContain('claude-code')
+  expect(post).toContain('Do X then Y')
+  expect(post).toContain('<@111>')
+  expect(post).toContain('<@222>')
+
+  // A long brief is truncated so the single Discord message stays under 2000.
+  const big = renderSharedContextPost({ runtime: 'codex', brief: 'x'.repeat(5000) })
+  expect(big.length).toBeLessThan(2000)
 })

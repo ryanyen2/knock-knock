@@ -77,6 +77,7 @@ import {
   renderSessionCard,
   renderSessionImported,
   renderSessionResumed,
+  renderSharedContextPost,
   type RewindAction,
 } from './ledger/render/surface.ts'
 import { TURN_FOLD, type TurnFoldState } from './ledger/concepts/turn.ts'
@@ -689,6 +690,18 @@ export class AgentHost {
       effect: 'pure',
       caused_by: [],
     }).catch(err => this.ui.error(this.key, `session import admit: ${err}`))
+
+    // Bridge to peers on a SEPARATE relay: their ledger never receives the
+    // knowledge note (no shared Postgres), but the Discord feed reaches them.
+    // Post the brief into the channel, mentioning the room's peer agents so they
+    // ingest it on their next turn. Same-relay peers also get it silently via
+    // the knowledge fold (pendingSharedContext); this is the cross-relay path.
+    const room = liveAgent.rooms[card.channelId]
+    const peerMentions = room ? Object.keys(room.participants).map(id => `<@${id}>`) : []
+    await this.discordSend(
+      card.channelId,
+      renderSharedContextPost({ runtime: summary.runtime, title: summary.title, brief, peerMentions }),
+    ).catch(err => this.ui.error(this.key, `shared-context post: ${err}`))
 
     this.sessionCards.delete(interaction.message.id)
     this.ui.note(

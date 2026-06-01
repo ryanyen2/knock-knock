@@ -42,6 +42,13 @@ Because the import is a normal ledger interaction, on the **Postgres backend**
 each relay injects it into its own agent's next turn. That is how a teammate on
 another machine receives context from a session they can't see on disk.
 
+**Without a shared ledger (separate relays on SQLite),** the knowledge note never
+reaches the other relay — so the import *also posts the distilled brief into the
+channel* (`renderSharedContextPost`), @mentioning the room's peer agents. A
+peer on a separate relay ingests it through the normal Discord feed (the message
+is its next turn's prompt), no Postgres required. Same-relay peers still get it
+silently via the fold; the channel post is the cross-relay bridge.
+
 ## The read seam (`sessions/`)
 
 Mirrors `adapters/`: one `SessionStore` per runtime, each knowing only its own

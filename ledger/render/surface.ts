@@ -293,6 +293,29 @@ export function renderSessionImported(facts: { runtime: string; title?: string }
   ].join('\n')
 }
 
+/** The distilled brief, posted into the channel on import so agents on a
+ *  SEPARATE relay (their own ledger never receives the knowledge note) can still
+ *  ingest it through the normal Discord feed. Mentioning the room's peers
+ *  prompts them to pick it up. One message (brief capped to fit Discord). */
+const POST_BRIEF_CAP = 1500
+
+export function renderSharedContextPost(facts: {
+  runtime: string
+  title?: string
+  brief: string
+  peerMentions?: string[]
+}): string {
+  const head = `${GLYPHS.session} **Shared session context** from \`${facts.runtime}\`${facts.title ? ` — ${quote(facts.title, 80)}` : ''}`
+  const brief =
+    facts.brief.length > POST_BRIEF_CAP ? facts.brief.slice(0, POST_BRIEF_CAP - 1).trimEnd() + '…' : facts.brief
+  const lines = [head, '', brief]
+  const peers = (facts.peerMentions ?? []).slice(0, 5)
+  if (peers.length > 0) {
+    lines.push('', `-# ${peers.join(' ')} — reference context for the room; build on it, no reply needed.`)
+  }
+  return lines.join('\n')
+}
+
 /** Terse confirmation after a channel is bound to resume a live session. */
 export function renderSessionResumed(facts: { runtime: string; title?: string }): string {
   return [
