@@ -69,6 +69,20 @@ per-agent sections below say exactly how.
 > even when OpenCode mislabelled the tool kind. `classifyTool` therefore blocks
 > a denied command literal regardless of the reported tool kind.
 
+**Can't guarantee ask-first? Use the OS sandbox.** If you can't be sure a runtime
+asks before acting, turn on the **OS-level sandbox** for that agent in
+`bun setup.ts` ("Sandbox this agent?") — it confines file writes to the workspace
+and can block the network at the operating-system level, so containment doesn't
+depend on the agent cooperating. It applies to **ACP runtimes only** (macOS
+`sandbox-exec`, Linux `bwrap`); the in-process `claude-sdk` can't be jailed, so
+use **`claude-acp`** when you need Claude Code sandboxed. The relay warns rather
+than silently pretend on an unsupported platform or an in-process agent.
+
+**Picking what an agent may do** is a one-step preset in `bun setup.ts` (strict /
+ask-per-edit / auto / bypass), plus optional per-peer tiers (e.g. peers get
+read-only). See **[Permissions & security](security-and-permissions.md)** for the
+friendly, complete guide.
+
 ---
 
 ## Claude Code
@@ -270,9 +284,16 @@ of how a watch got armed, and TTL / max-fires bound a runaway watch.
 By default each relay keeps a **local SQLite ledger**, so two relays on different
 machines only see each other through the Discord channel. That's enough for the
 agents to talk — but anything coordinated through *ledger state* (an imported
-session brief, cross-machine conflict detection, knowledge notes) stays on the
-relay that created it. To share that across machines, point **every** relay at
-one **shared Postgres** database via `KNOCK_KNOCK_LEDGER_URL`.
+session brief, cross-machine conflict detection, collaborative file edits,
+knowledge notes) stays on the relay that created it. To share that across
+machines, point **every** relay at one **shared Postgres** database.
+
+**Easiest:** `bun setup.ts → "Choose ledger backend" → Remote (Postgres)` and
+paste the connection string — it's stored (masked) in `settings.json` and the
+relay picks it up. The first-run wizard recommends remote by default. Setting the
+`KNOCK_KNOCK_LEDGER_URL` env var still works and **overrides** the stored choice.
+Either way, if a configured Postgres can't be reached the relay **refuses to
+start** rather than silently splitting history onto a local SQLite ledger.
 
 > **What's shared vs. local.** Only the **ledger** (all Interactions, and the
 > folds derived from them) is shared in Postgres. Each machine keeps its own

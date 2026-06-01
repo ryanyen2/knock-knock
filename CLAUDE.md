@@ -23,8 +23,11 @@ knows, a concept's runtime state, an artifact's current version — is a **fold*
 as **synchronizations**, not imperative branches.
 
 `relay.ts` boots, once per machine:
-- **one shared `Store`** — `ledger/store-sqlite.ts` by default, `ledger/store-pg.ts`
-  when `KNOCK_KNOCK_LEDGER_URL` is set (cross-machine via Postgres `LISTEN/NOTIFY`).
+- **one shared `Store`** — `ledger/store-sqlite.ts` or `ledger/store-pg.ts`
+  (cross-machine via Postgres `LISTEN/NOTIFY`), chosen by `resolveLedgerConfig`
+  (`lib.ts`): `KNOCK_KNOCK_LEDGER_URL` env wins, else the setup-managed
+  `settings.json` `ledger` block, else SQLite. The `Store` exposes `kind`
+  (`'sqlite'|'postgres'`) for the rare behavior that must branch cross-machine.
 - **one `FoldEngine`** with the concept + artifact folds registered.
 - **one `Synchronizer`** with the synchronizations registered.
 - **N `AgentHost`s** — one per entry in `access.agents`, each owning its Discord
@@ -84,14 +87,17 @@ fold engine, cutover phases, cross-machine) lives in
 ### Concepts, artifacts, synchronizations
 
 A **concept**'s state *is* its named fold; nothing else. Registered in
-`relay.ts`: `loop-guard`, `channel`, `turn`, `approval` (`ledger/concepts/`) and
-the `knowledge` artifact fold (`ledger/artifacts/`). Folds **reuse the pure
-functions in `lib.ts` verbatim** (e.g. `LoopGuard.step` calls `loopGuard(...)`).
+`relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`
+(`ledger/concepts/`) and the `knowledge` + `versionable` artifact folds
+(`ledger/artifacts/`). Folds **reuse the pure functions in `lib.ts` verbatim**
+(e.g. `LoopGuard.step` calls `loopGuard(...)`).
 
 Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 = one new synchronization, zero edits to concepts). Registered today:
 `classify-on-tool-request`, `prompt-on-message`, `drive-turn`, `post-on-reply`,
-`dm-on-supersede` (§4.4), `conflict-card` (§4.2), `retry-on-reaction` (§4.5).
+`dm-on-supersede` (§4.4), `conflict-card` (§4.2), `retry-on-reaction` (§4.5),
+`resume-on-watch`, and the file-edit pair `capture-workspace-edit` +
+`write-back-versionable` (see "File-edit sync" below).
 
 ### The AgentAdapter seam (`agent-adapter.ts`)
 
@@ -105,8 +111,11 @@ means writing a new adapter, nothing else. Implementations in `adapters/`:
   ACP-speaking agent and drives it over JSON-RPC on stdio. One file drives
   Claude Code, OpenCode, Codex, Gemini, Cursor.
 
-`adapters/index.ts` is the factory: `makeAdapter(runtime, {workspace})` selects
-the runtime from the agent's `runtime` field. `AgentHost` calls it per session.
+`adapters/index.ts` is the factory: `makeAdapter(runtime, {workspace, watchTools,
+sandbox})` selects the runtime from the agent's `runtime` field. `AgentHost`
+calls it per session. When `sandbox` is set on an agent, the factory wraps an
+**ACP** launch via `buildSandboxLaunch` (`sandbox.ts`, pure: macOS `sandbox-exec`,
+Linux `bwrap`); the in-process `claude-sdk` can't be OS-jailed (it warns).
 
 ### `AgentHost` (`agent-host.ts` + `host/`)
 
@@ -150,6 +159,63 @@ ACP detail: a tool's subject (command / path) may arrive in `rawInput`, the
 `content` blocks, or `locations` — `AcpAdapter` probes all three and merges
 across `tool_call_update`s so deny patterns match regardless of where the agent
 put it.
+
+**Presets (`lib.ts`).** `PRESET_MODES` (strict / ask-per-edit / auto / bypass)
+are named profiles `setup.ts` stamps into a room's settings via `expandPreset`,
+**expanded at write time** so `readRoomSettings`/`classifyTool` are unchanged.
+Every preset carries the `DENY_FLOOR` (so `deny` is never empty); `bypass` is
+wide-open *except* the floor. A `_mode` hint is written but ignored by `parseProfile`.
+
+**Per-actor tiers (`lib.ts` `resolveProfileForActor`).** The flat profile is the
+**owner floor**; an optional `tiers` map narrows it by the **prompting actor**
+(`agent` / `human` / `peer:<botId>`). Resolved **per turn** in
+`runTurnForChannel` (from the inbound `senderKind`/`senderId`) and re-applied via
+`Driver.runTurn(..., profile)` inside the serialized queue. Most-specific tier
+wins for allow/ask; **deny is always the UNION** (a tier only tightens); an absent
+tier falls back to the base, never empty. The audit `classify-on-tool-request`
+stays on the base profile — safe because tier deny ⊇ base deny.
+
+**OS sandbox (`sandbox.ts`).** `AgentConfig.sandbox = { fs: 'workspace', network }`
+confines an **ACP** runtime at the OS level (writes → workspace, optional network
+deny). Pure `buildSandboxLaunch` wraps the spawn in `adapters/index.ts`. Honest
+limit: in-process `claude-sdk` can't be jailed — use `claude-acp` for confinement.
+See **`docs/security-and-permissions.md`** for the user-facing guide.
+
+### File-edit sync (`workspace.edit` → versionable; walking skeleton)
+
+Two agents editing the same file converge over the ledger (no Discord
+conversation), conflicts resolved by the role-ordered merge gate:
+- `capture-workspace-edit` (sync) correlates a successful `tool.executed` with its
+  parent `tool.requested` (which carries the Edit/Write input), builds a Yjs
+  update against a live per-artifact `Y.Doc`, and admits a `workspace.edit` to
+  `vers:<scope>/<relpath>` with a stable whole-file anchor `{range,0,0}` (so
+  concurrent whole-file edits contend) and `caused_by` chained onto the artifact's
+  applied edits (so sequential edits don't). `effect: 'workspace'` → through the gate.
+- `versionableFold` + `projectVersionable` (`ledger/artifacts/versionable.ts`)
+  project the merged text via `applyEdits` (Yjs `applyUpdate` is a CRDT merge →
+  order-independent convergence).
+- `write-back-versionable` (sync) writes the merged text to disk under a
+  per-file `withClaim` + content-compare (idempotent; dedups multi-relay writes).
+- Conflicts surface the **existing** `conflict-card`; nothing new.
+- Skeleton scope: capture is reliable for Claude-Code-shaped Edit/Write tools
+  (`claude-sdk`, where the SDK emits real tool names); other ACP agents' edit
+  formats are deferred. Known limit: folds don't re-notify on lifecycle
+  supersession (admit.ts Phase 2.1), so a superseded edit still folds in —
+  convergence holds, owner-supersede projection deferred.
+
+### Headless control verbs (`ledger/` + thin Discord adapters)
+
+Conflict resolution and session import are **headless-capable ledger cores** so a
+non-Discord source could drive them later; Discord stays the human surface:
+- `ledger/resolve-conflict.ts` `resolveConflict()` — records `merge.resolve`, flips
+  lifecycles, surfaces drops to losers' inboxes. `ConflictUI.resolve` is a thin
+  adapter over it (the owner gate is the identity boundary it trusts).
+- `sessions/import.ts` `importSession()` — reads + distills a session + admits the
+  shared-context `knowledge.append`. `SessionSharing.handlePick` adapts it; its
+  Discord peer-bridge post is now **SQLite-only** (on Postgres the note syncs).
+- Cross-relay dedup uses the `external_claim` primitive: `conflict-card` posts are
+  claim-gated by a per-process `relayId` so exactly one relay posts. (Watches are
+  already deduped by per-agent `resolve()` ownership.)
 
 ### §4 Discord surface (`ledger/render/` + synchronizations + `AgentHost` glue)
 
@@ -235,9 +301,10 @@ prior plan, decisions, and pitfalls instead of cold. See
 ### State layout
 
 All persistent config lives in `~/.claude/channels/knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
-- `access.json` — `{ agents: Record<agentKey, AgentConfig>, mentionPatterns?, ackReaction? }`. Each `AgentConfig` carries `ownerUserId`, `blurb`, `runtime`, `workspace`, `tokenEnv` (the *name* of the env var holding the token, never the token), and `rooms`. Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
-- `rooms/<agentKey>/<channelId>.settings.json` — the permission profile for a room, written **flat** (top-level `allow`/`ask`/`deny`). Read fresh on each inbound message.
-- `ledger.sqlite` — the interaction DAG (when on the SQLite backend; override with `KNOCK_KNOCK_LEDGER_FILE`). Postgres is used instead when `KNOCK_KNOCK_LEDGER_URL` is set.
+- `access.json` — `{ agents: Record<agentKey, AgentConfig>, mentionPatterns?, ackReaction? }`. Each `AgentConfig` carries `ownerUserId`, `blurb`, `runtime`, `workspace`, `tokenEnv` (the *name* of the env var holding the token, never the token), `rooms`, and an optional `sandbox` (`{fs:'workspace', network}`). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
+- `rooms/<agentKey>/<channelId>.settings.json` — the permission profile for a room, written **flat** (top-level `allow`/`ask`/`deny`, plus an optional `_mode` preset hint and a `tiers` map for per-actor overrides). Read fresh on each inbound message.
+- `settings.json` — machine-global, setup-written: `ledger` backend (`{backend, url?}`) and any user-defined `presets`. Read by `relay.ts` via `resolveLedgerConfig`. Same prompt-injection invariant as `access.json`.
+- `ledger.sqlite` — the interaction DAG (SQLite backend; override path with `KNOCK_KNOCK_LEDGER_FILE`). Postgres is used instead when configured (settings.json or `KNOCK_KNOCK_LEDGER_URL`).
 - `.env` — bot tokens (one per agent, keyed by each agent's `tokenEnv`) and any other secrets.
 
 `state.ts` is the only module that reads/writes the config files; `lib.ts` holds
@@ -247,11 +314,13 @@ all pure decision logic and has no I/O; the ledger owns its own storage.
 
 `bun setup.ts` is the standalone, agent-agnostic setup CLI, built on
 `@clack/prompts` (+ `picocolors`). With no args it runs an interactive flow: a
-guided wizard on first run (agent → room → token), then an action menu once
-agents exist for adding agents, rooms, peers, humans, or updating bot tokens. It
-writes the `agents` shape and flat permission profiles via
-`readAccessFile`/`saveAccess`; tokens are masked on input and stored in `.env`
-under each agent's derived `tokenEnv`.
+guided wizard on first run (agent → sandbox → room → preset → token → ledger),
+then an action menu once agents exist (add agents, rooms, peers, humans, **set
+room permissions**, save tokens, **choose ledger backend**). It writes the
+`agents` shape, preset-expanded permission profiles (`collectPermissions` →
+`expandPreset`, + per-actor tiers), and `settings.json` (ledger) via
+`readAccessFile`/`saveAccess`/`saveSettings`; tokens and the Postgres URL are
+masked on input. Permission profiles are written **only** here — never from chat.
 
 ### The deny floor
 
@@ -269,7 +338,7 @@ the token value itself lives in `.env`.
 |---|---|---|
 | `<tokenEnv>` (e.g. `DISCORD_BOT_TOKEN`) | yes | Discord bot token; the env-var *name* is set per agent via `tokenEnv` |
 | `KNOCK_KNOCK_STATE_DIR` | no | Override the state directory (default `~/.claude/channels/knock-knock`) |
-| `KNOCK_KNOCK_LEDGER_URL` | no | Postgres connection string; switches the ledger to the Postgres backend (cross-machine). Unset → SQLite |
+| `KNOCK_KNOCK_LEDGER_URL` | no | Postgres connection string; **overrides** the setup-managed `settings.json` ledger choice. Neither set → SQLite. Prefer choosing the backend in `bun setup.ts`. |
 | `KNOCK_KNOCK_LEDGER_FILE` | no | Override the SQLite ledger path (default `<state-dir>/ledger.sqlite`) |
 | `KNOCK_KNOCK_ACP_COMMAND` | when `runtime=acp` | Spawn command for the ACP subprocess |
 | `KNOCK_KNOCK_ACP_ARGS` | no | Space-separated args for `KNOCK_KNOCK_ACP_COMMAND` |

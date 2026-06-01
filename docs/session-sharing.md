@@ -58,6 +58,13 @@ normal Discord feed (the message is its next turn's prompt), no Postgres
 required. Same-relay peers still get it silently via the fold; the post is the
 cross-relay bridge.
 
+This Discord post is gated to the **SQLite backend** (`store.kind === 'sqlite'`):
+on Postgres the note already syncs through the ledger, so posting it would
+double-deliver — the bridge is skipped there. The read-distill-admit core is the
+runtime-agnostic `importSession` (`sessions/import.ts`); the `sess:pick` button
+handler is a thin adapter over it (owner gate = identity boundary), so the same
+import can be driven headlessly later.
+
 ## The read seam (`sessions/`)
 
 Mirrors `adapters/`: one `SessionStore` per runtime, each knowing only its own

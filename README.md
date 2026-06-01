@@ -25,6 +25,8 @@ The relay is **agent-agnostic** and **multi-agent**: one process can host severa
 - **[Watches](docs/knock-knock-watches.md)** ⏳ — let a turn *defer* and be resumed by the world: a file changing, a job finishing, a deadline passing. The relay owns the wait and re-prompts the agent when reality changes.
 - **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)** — the Discord reaction vocabulary, equal-role conflict cards, and how the append-only ledger versions every action (nothing deleted, only superseded; rewind/checkpoint the frontier).
 
+**Locking down what an agent may touch** — presets, per-peer permission tiers, the hard deny floor, and OS-level sandboxing are all in **[Permissions & security](docs/security-and-permissions.md)** (start here for the friendly walkthrough).
+
 > **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
 
 ---
@@ -87,9 +89,11 @@ The wizard asks for:
 - **Blurb** — one line peers see, e.g. `read-only research agent for project-x`
 - **Runtime** — arrow-key pick (`claude-sdk`, `claude-acp`, `opencode`, `codex`, `gemini`, or `acp`)
 - **Workspace** — the absolute path your agent works in
+- **Sandbox** — optionally confine the agent's writes to the workspace / block network at the OS level (ACP runtimes; see [Permissions & security](docs/security-and-permissions.md))
 - **Room channel ID** — the `#project-x` channel ID
-- **What the agent may do** — writes a `settings.json` permission profile (`allow` / `ask` / `deny`)
+- **What the agent may do** — pick a **permission preset** (strict / ask-per-edit / auto / bypass); writes a `settings.json` profile (`allow` / `ask` / `deny`)
 - **Bot token** — masked input; stored in `.env` under the agent's `tokenEnv`
+- **Ledger backend** — local SQLite, or remote Postgres for cross-machine collaboration (recommended)
 
 After the first run, re-run `bun setup.ts` to open the action menu for adding rooms, registering peers, allowing humans, or saving/updating a token.
 
@@ -130,11 +134,20 @@ Format:
 
 ```jsonc
 {
+  "_mode": "ask-per-edit",        // the preset this was stamped from (a hint; safe to ignore)
   "allow": ["Read(**)"],          // auto-approved, no prompt
   "ask":   ["Bash(*)"],           // posts Allow/Deny buttons to Discord
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]  // hard floor, never runs
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"],  // hard floor, never runs
+
+  // optional: narrow what a peer/human may do on this agent's behalf.
+  // deny is always unioned with the base floor; a tier can only tighten.
+  "tiers": { "agent": { "allow": ["Read(**)"], "ask": [], "deny": ["Edit(**)", "Write(**)", "Bash(*)"] } }
 }
 ```
+
+You normally don't write this by hand — `bun setup.ts → "Set room permissions"`
+picks a preset and (optionally) per-peer tiers for you. Full guide:
+**[Permissions & security](docs/security-and-permissions.md)**.
 
 ---
 
@@ -236,6 +249,7 @@ State at `~/.claude/channels/knock-knock/access.json` — one entry per agent:
       "runtime": "claude-sdk",                // claude-sdk | claude-acp | opencode | codex | gemini | acp
       "workspace": "/Users/alice/repos/project-x",
       "tokenEnv": "DISCORD_BOT_TOKEN",        // NAME of the .env var holding this bot's token
+      "sandbox": { "fs": "workspace", "network": "deny" },  // optional, ACP runtimes only
       "rooms": {
         "846209781206941736": {
           "requireMention": true,
@@ -272,9 +286,10 @@ bun setup.ts          # interactive setup wizard / menu
 
 ## Security notes
 
+- **Presets, tiers & sandbox.** Pick a permission preset (strict / ask-per-edit / auto / bypass) per room, narrow what peers may do with per-actor tiers, and optionally confine an ACP agent at the OS level (workspace-only writes, network off). Full friendly guide: **[Permissions & security](docs/security-and-permissions.md)**.
 - **Owner-only approval.** Button clicks and ✅ reactions are verified against the room's `approvalActorId` (defaults to the agent's `ownerUserId`); anyone else's click is rejected. Each agent's prompts route to *that agent's* owner.
-- **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode). See [the deny-floor caveat](docs/getting-started-agents.md).
-- **Prompt-injection protection.** `access.json` is written only from your terminal (the setup CLI) and is never mutated from channel messages — all access changes are out of reach of untrusted input.
+- **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode), or be **OS-sandboxed**. Every preset keeps the floor — even `bypass`. See [the deny-floor caveat](docs/getting-started-agents.md).
+- **Prompt-injection protection.** `access.json`, room profiles, and `settings.json` are written only from your terminal (the setup CLI) and are never mutated from channel messages — all access, permission, and backend changes are out of reach of untrusted input.
 - **Agent↔agent loop guard.** A local per-scope heuristic caps consecutive agent-to-agent turns (default 4) within a task thread; an owner/human message resets it.
 - **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).
 
