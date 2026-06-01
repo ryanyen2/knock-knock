@@ -44,6 +44,7 @@ import {
   isShareSessionCommand,
   isResumeSessionCommand,
   resolveRoomForScope,
+  resolveProfileForActor,
   threadNameFromPrompt,
   type WatchSpec,
 } from './lib.ts'
@@ -60,6 +61,8 @@ import { admit } from './ledger/admit.ts'
 import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
+import { parseVersionableId } from './ledger/artifacts/versionable.ts'
+import { join, relative, resolve, isAbsolute } from 'path'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
@@ -299,6 +302,29 @@ export class AgentHost {
    *  serves the room the scope belongs to. */
   getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
     return this.roomForScope(scopeId) ? { agentKey: this.key } : undefined
+  }
+
+  /** capture-workspace-edit asks "make this absolute edit path workspace-relative."
+   *  Returns undefined when the scope is unserved or the file is outside the
+   *  workspace — so only in-workspace edits become versionable artifacts, and the
+   *  artifact id (vers:<scope>/<rel>) stays stable across machines. */
+  relativizeWorkspacePath(scope: ChannelId, absFilePath: string): string | undefined {
+    if (!this.roomForScope(scope)) return undefined
+    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    if (!ws) return undefined
+    const abs = isAbsolute(absFilePath) ? absFilePath : resolve(ws, absFilePath)
+    const rel = relative(ws, abs)
+    if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined
+    return rel
+  }
+
+  /** write-back-versionable asks "where on disk does this vers: artifact live?"
+   *  Undefined when this host doesn't serve the artifact's scope. */
+  resolveVersionablePath(artifactId: string): string | undefined {
+    const parsed = parseVersionableId(artifactId)
+    if (!parsed || !this.roomForScope(parsed.scope)) return undefined
+    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    return ws ? join(ws, parsed.relPath) : undefined
   }
 
   /** drive-turn asks "give me a handle to actually run the adapter here." */
@@ -706,6 +732,20 @@ export class AgentHost {
 
     const session = this.getOrCreateSession(channelId, liveAgent, room)
     const approverUserId = approverForAgent(liveAgent, roomId) ?? liveAgent.ownerUserId
+
+    // Per-actor permission floor: the room profile is the OWNER floor; a turn
+    // prompted by a peer/human is narrowed by its tier. Read fresh + resolve per
+    // turn (the requester can differ between turns on one cached session), then
+    // re-apply to the adapter inside the serialized runTurn. The audit-only
+    // classify-on-tool-request sync keeps reading the base floor — safe because
+    // tiers only ADD deny, so its pre-deny is always a subset of the enforced one.
+    const storedProfile = readRoomSettings(this.key, roomId)
+    const turnProfile = resolveProfileForActor(
+      storedProfile,
+      storedProfile.tiers,
+      opts.senderKindKind,
+      opts.senderId,
+    )
     const recorder = TurnRecorder.restore(
       this.ledger,
       { agentKey: this.key, approverUserId, channelId },
@@ -730,7 +770,7 @@ export class AgentHost {
     let chunks: string[] = []
     let turnError: string | undefined
     try {
-      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal, contextPrefix)
+      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal, contextPrefix, turnProfile)
     } catch (e) {
       turnError = e instanceof Error ? e.message : String(e)
       this.ui.error(this.key, `turn failed: ${turnError}`)
@@ -778,6 +818,7 @@ export class AgentHost {
     const adapter = makeAdapter(liveAgent.runtime, {
       workspace: liveAgent.workspace,
       watchTools: this.watchControl.toolsFor(channelId),
+      sandbox: liveAgent.sandbox,
     })
     const ctx: PreambleContext = {
       identity: {

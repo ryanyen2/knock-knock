@@ -19,6 +19,12 @@ import {
   threadNameFromPrompt,
   resolveRoomForScope,
   FRESH_WATCH_GATE,
+  PRESET_MODES,
+  DENY_FLOOR,
+  DEFAULT_PRESET,
+  expandPreset,
+  resolveProfileForActor,
+  resolveLedgerConfig,
   type RoomConfig,
   type AgentConfig,
   type LoopGuardState,
@@ -535,4 +541,137 @@ test('resolveRoomForScope: a stale memo pointing at an unserved room is ignored'
   const memo = new Map([['thread1', 'goneRoom']]) // room no longer served
   const parentOf = (id: string) => (id === 'thread1' ? 'room1' : undefined)
   expect(resolveRoomForScope('thread1', ROOMS, memo, parentOf)).toBe('room1')
+})
+
+// ─── Permission presets ───────────────────────────────────────────────────────
+
+test('every preset carries a non-empty deny floor (never drops the floor)', () => {
+  for (const [name, profile] of Object.entries(PRESET_MODES)) {
+    expect(profile.deny.length, `${name} deny`).toBeGreaterThan(0)
+    for (const pat of DENY_FLOOR) expect(profile.deny, `${name} includes floor`).toContain(pat)
+  }
+})
+
+test('DEFAULT_PRESET names a real preset', () => {
+  expect(PRESET_MODES[DEFAULT_PRESET]).toBeDefined()
+})
+
+test('preset decisions: strict is read-only', () => {
+  const p = PRESET_MODES.strict!
+  expect(classifyTool(p, { kind: 'read', subject: 'README.md' })).toBe('allow')
+  expect(classifyTool(p, { kind: 'edit', subject: 'a.ts' })).toBe('deny')
+  expect(classifyTool(p, { kind: 'execute', subject: 'ls' })).toBe('deny')
+})
+
+test('preset decisions: auto auto-accepts edits, still asks for shell', () => {
+  const p = PRESET_MODES.auto!
+  expect(classifyTool(p, { kind: 'edit', subject: 'a.ts' })).toBe('allow')
+  expect(classifyTool(p, { kind: 'execute', subject: 'bun test' })).toBe('ask')
+  expect(classifyTool(p, { kind: 'execute', subject: 'rm -rf /tmp/x' })).toBe('deny')
+})
+
+test('preset decisions: bypass is wide-open but the floor still wins', () => {
+  const p = PRESET_MODES.bypass!
+  expect(classifyTool(p, { kind: 'execute', subject: 'bun test' })).toBe('allow')
+  expect(classifyTool(p, { kind: 'execute', subject: 'sudo rm file' })).toBe('deny')
+})
+
+test('expandPreset unions extra patterns; deny can only tighten', () => {
+  const p = expandPreset('strict', { allow: ['WebFetch(**)'], deny: ['Bash(curl *)'] })
+  expect(p.allow).toContain('WebFetch(**)')
+  expect(p.deny).toContain('Bash(curl *)')
+  for (const pat of DENY_FLOOR) expect(p.deny).toContain(pat)
+})
+
+test('expandPreset on an unknown name falls back to the safe default', () => {
+  expect(expandPreset('nonsense')).toEqual(PRESET_MODES[DEFAULT_PRESET]!)
+})
+
+test('expandPreset de-duplicates merged patterns', () => {
+  const p = expandPreset('ask-per-edit', { deny: ['Bash(sudo *)'] }) // already in the floor
+  expect(p.deny.filter(d => d === 'Bash(sudo *)')).toHaveLength(1)
+})
+
+// ─── Per-actor permission tiers ───────────────────────────────────────────────
+
+const BASE = { allow: ['Read(**)', 'Edit(**)'], ask: ['Bash(*)'], deny: ['Bash(sudo *)'] }
+
+test('owner-prompted turns get the base floor unchanged', () => {
+  expect(resolveProfileForActor(BASE, { agent: { allow: ['Read(**)'] } }, 'owner', 'o')).toEqual(BASE)
+})
+
+test('no tiers → base profile (fresh object, never empty)', () => {
+  const r = resolveProfileForActor(BASE, undefined, 'agent', 'x')
+  expect(r).toEqual(BASE)
+  expect(r).not.toBe(BASE) // a clone, not the same reference
+})
+
+test('absent matching tier falls back to base (fail-restrictive, never empty)', () => {
+  // a 'human' tier exists but an agent prompted → base applies
+  expect(resolveProfileForActor(BASE, { human: { allow: [] } }, 'agent', 'x')).toEqual(BASE)
+})
+
+test('agent tier narrows allow/ask; base deny still applies', () => {
+  const tiers = { agent: { allow: ['Read(**)'], ask: [], deny: ['Edit(**)', 'Write(**)', 'Bash(*)'] } }
+  const r = resolveProfileForActor(BASE, tiers, 'agent', 'peerX')
+  expect(r.allow).toEqual(['Read(**)'])
+  expect(r.ask).toEqual([])
+  expect(r.deny).toContain('Bash(sudo *)') // base floor preserved
+  expect(r.deny).toContain('Edit(**)') // tier addition
+  expect(classifyTool(r, { kind: 'edit', subject: 'a.ts' })).toBe('deny') // peer is read-only
+})
+
+test('a specific peer tier overrides the generic agent tier (allow/ask)', () => {
+  const tiers = {
+    agent: { allow: ['Read(**)'], ask: [] },
+    'peer:bot1': { allow: ['Read(**)', 'Edit(**)'], ask: ['Bash(*)'] },
+  }
+  const r = resolveProfileForActor(BASE, tiers, 'agent', 'bot1')
+  expect(r.allow).toContain('Edit(**)') // specific peer beats generic agent
+  expect(r.ask).toEqual(['Bash(*)'])
+})
+
+test('deny is always the UNION of base + every applicable tier', () => {
+  const tiers = {
+    agent: { deny: ['Bash(curl *)'] },
+    'peer:bot1': { deny: ['Bash(git push *)'] },
+  }
+  const r = resolveProfileForActor(BASE, tiers, 'agent', 'bot1')
+  expect(r.deny).toEqual(expect.arrayContaining(['Bash(sudo *)', 'Bash(curl *)', 'Bash(git push *)']))
+})
+
+test('an empty base + an applicable tier never yields a weaker-than-base floor', () => {
+  const empty = { allow: [], ask: [], deny: [] }
+  const r = resolveProfileForActor(empty, { agent: { allow: ['Read(**)'], deny: ['Bash(*)'] } }, 'agent', 'x')
+  expect(r.deny).toContain('Bash(*)')
+})
+
+// ─── resolveLedgerConfig: backend precedence ──────────────────────────────────
+
+test('ledger: env URL wins over everything', () => {
+  expect(
+    resolveLedgerConfig(
+      { KNOCK_KNOCK_LEDGER_URL: 'postgres://env' },
+      { ledger: { backend: 'postgres', url: 'postgres://settings' } },
+    ),
+  ).toEqual({ backend: 'postgres', url: 'postgres://env' })
+})
+
+test('ledger: settings postgres is used when no env URL', () => {
+  expect(resolveLedgerConfig({}, { ledger: { backend: 'postgres', url: 'postgres://s' } })).toEqual({
+    backend: 'postgres',
+    url: 'postgres://s',
+  })
+})
+
+test('ledger: postgres settings without a url falls through to sqlite', () => {
+  expect(resolveLedgerConfig({}, { ledger: { backend: 'postgres' } })).toEqual({ backend: 'sqlite' })
+})
+
+test('ledger: no config → sqlite default; file override respected', () => {
+  expect(resolveLedgerConfig({}, {})).toEqual({ backend: 'sqlite' })
+  expect(resolveLedgerConfig({ KNOCK_KNOCK_LEDGER_FILE: '/tmp/l.sqlite' }, {})).toEqual({
+    backend: 'sqlite',
+    file: '/tmp/l.sqlite',
+  })
 })

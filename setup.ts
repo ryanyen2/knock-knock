@@ -17,8 +17,16 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'f
 import { isAbsolute, join } from 'path'
 import * as p from '@clack/prompts'
 import color from 'picocolors'
-import { STATE_DIR, readAccessFile, saveAccess } from './state.ts'
+import {
+  STATE_DIR,
+  readAccessFile,
+  saveAccess,
+  readSettings,
+  saveSettings,
+  type PermissionProfile,
+} from './state.ts'
 import type { Access, AgentConfig, RoomConfig } from './lib.ts'
+import { expandPreset, PRESET_MODES, PRESET_HINTS, DEFAULT_PRESET } from './lib.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -33,13 +41,33 @@ const RUNTIMES = [
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
-const DEFAULT_PROFILE = {
-  allow: ['Read(**)'],
-  ask: ['Edit(**)', 'Write(**)', 'Bash(*)'],
-  deny: ['Bash(rm -rf *)', 'Bash(sudo *)', 'Write(~/.claude/**)', 'Write(~/.ssh/**)'],
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/** Pick a named permission preset (strict / ask-per-edit / auto / bypass). */
+async function pickPreset(initial: string = DEFAULT_PRESET): Promise<string> {
+  return orCancel(
+    await p.select({
+      message: 'Permission preset',
+      options: Object.keys(PRESET_MODES).map(name => ({
+        value: name,
+        label: name,
+        hint: PRESET_HINTS[name],
+      })),
+      initialValue: initial,
+    }),
+  )
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+/** The on-disk profile object: the expanded allow/ask/deny plus a `_mode` hint
+ *  (ignored by parseProfile) so the chosen preset stays visible and re-pickable. */
+function profileForPreset(mode: string, overrides?: Partial<PermissionProfile>): Record<string, unknown> {
+  return { _mode: mode, ...expandPreset(mode, overrides) }
+}
+
+/** Split a comma-separated pattern list, trimming and dropping blanks. */
+function splitPatterns(raw: string): string[] {
+  return raw.split(',').map(s => s.trim()).filter(Boolean)
+}
 
 function orCancel<T>(value: T | symbol): T {
   if (p.isCancel(value)) {
@@ -194,8 +222,28 @@ async function collectAgent(access: Access): Promise<string | null> {
     p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
   }
 
+  // OS-level sandbox (ACP runtimes only — the in-process SDK can't be jailed).
+  let sandbox: AgentConfig['sandbox']
+  const inProcess = runtime === 'claude-sdk'
+  const sandboxOn = orCancel(await p.confirm({
+    message: inProcess
+      ? 'Sandbox this agent? (note: the in-process Claude SDK can NOT be OS-sandboxed — pick "Claude Code (ACP)" for confinement)'
+      : 'Sandbox this agent? Confine file writes to the workspace at the OS level.',
+    initialValue: !inProcess,
+  }))
+  if (sandboxOn) {
+    if (inProcess) {
+      p.log.warn('Runtime is in-process (claude-sdk) — the OS sandbox will be skipped; only the deny floor applies.')
+    }
+    const allowNet = orCancel(await p.confirm({
+      message: 'Allow network access inside the sandbox?',
+      initialValue: true,
+    }))
+    sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
+  }
+
   const tokenEnv = deriveTokenEnv(key)
-  access.agents[key] = { ownerUserId, blurb, runtime, workspace, tokenEnv, rooms: {} }
+  access.agents[key] = { ownerUserId, blurb, runtime, workspace, tokenEnv, rooms: {}, ...(sandbox ? { sandbox } : {}) }
   saveAccess(access)
   p.log.success(`Saved agent ${color.cyan(key)} ${color.dim(`· token env: ${tokenEnv}`)}`)
   return key
@@ -259,11 +307,120 @@ async function collectRoom(access: Access, agentKey: string): Promise<string | n
   if (existsSync(profilePath)) {
     p.log.message(color.dim(`Kept existing permission profile: ${profilePath}`))
   } else {
-    writeFileSync(profilePath, JSON.stringify(DEFAULT_PROFILE, null, 2) + '\n', { mode: 0o600 })
-    p.log.message(color.dim(`Permission profile written: ${profilePath}`))
+    const mode = await pickPreset()
+    writeFileSync(profilePath, JSON.stringify(profileForPreset(mode), null, 2) + '\n', { mode: 0o600 })
+    p.log.message(color.dim(`Permission profile (${mode}) written: ${profilePath}`))
   }
   p.log.success(`Room ${color.cyan(channelId)} added to ${color.cyan(agentKey)}`)
   return channelId
+}
+
+/** Re-stamp a room's permission profile from a preset (+ optional extra
+ *  patterns). Besides collectRoom, the only writer of these profile files —
+ *  so all permission edits stay terminal-only (prompt-injection safe). */
+async function collectPermissions(access: Access, agentKey?: string, channelId?: string): Promise<void> {
+  const key = agentKey ?? (await pickAgentKey(access))
+  if (!key) return
+  const agent = access.agents[key]!
+  const cid = channelId ?? (await pickRoomId(agent))
+  if (!cid) return
+
+  const mode = await pickPreset()
+
+  const extraAllow = orCancel(await p.text({
+    message: 'Extra allow patterns (comma-separated, optional)',
+    placeholder: 'e.g. Bash(bun *), WebFetch(**)',
+  })).trim()
+  const extraDeny = orCancel(await p.text({
+    message: 'Extra deny patterns (comma-separated, optional) — only tightens the floor',
+    placeholder: 'e.g. Bash(git push *)',
+  })).trim()
+
+  const overrides: Partial<PermissionProfile> = {
+    allow: splitPatterns(extraAllow),
+    deny: splitPatterns(extraDeny),
+  }
+
+  // Optional per-actor tiers: narrow what a peer/human may do on this agent's
+  // behalf (e.g. peers get read-only). Each tier is itself a preset expansion,
+  // stored under its actor key ('agent' | 'human' | 'peer:<botId>').
+  const tiers: Record<string, PermissionProfile> = {}
+  let addTier = orCancel(await p.confirm({
+    message: 'Add a per-actor permission tier (e.g. peers get read-only)?',
+    initialValue: false,
+  }))
+  while (addTier) {
+    const who = orCancel(await p.select({
+      message: 'Whose turns does this tier govern?',
+      options: [
+        { value: 'agent', label: 'All peer agents', hint: 'any registered peer bot' },
+        { value: 'human', label: 'Non-owner humans', hint: 'listed humans (not you)' },
+        { value: 'peer', label: 'A specific peer', hint: 'one bot by Discord user ID' },
+      ],
+    }))
+    let tierKey: string = who
+    if (who === 'peer') {
+      const peerId = orCancel(await p.text({
+        message: "Peer bot's Discord user ID",
+        validate: validateSnowflake,
+      })).trim()
+      tierKey = `peer:${peerId}`
+    }
+    const tierMode = await pickPreset('strict')
+    tiers[tierKey] = expandPreset(tierMode)
+    p.log.success(`Tier ${color.cyan(tierKey)} → ${color.cyan(tierMode)}`)
+    addTier = orCancel(await p.confirm({ message: 'Add another tier?', initialValue: false }))
+  }
+
+  const profileObj = profileForPreset(mode, overrides)
+  if (Object.keys(tiers).length > 0) profileObj.tiers = tiers
+
+  const dir = join(STATE_DIR, 'rooms', key)
+  mkdirSync(dir, { recursive: true, mode: 0o700 })
+  const profilePath = join(dir, `${cid}.settings.json`)
+  writeFileSync(profilePath, JSON.stringify(profileObj, null, 2) + '\n', { mode: 0o600 })
+  p.log.success(`Permissions for room ${color.cyan(cid)} set to ${color.cyan(mode)}`)
+  p.log.message(color.dim(profilePath))
+}
+
+/** Choose the ledger backend: local SQLite or remote Postgres. Remote is the
+ *  recommended default (cross-machine collaboration); a blank URL ⇒ local. The
+ *  connection string lives in settings.json (chmod 600), never from chat. */
+async function collectLedger(): Promise<void> {
+  const settings = readSettings()
+  const choice = orCancel(await p.select({
+    message: 'Where should the shared ledger live?',
+    options: [
+      { value: 'postgres', label: 'Remote (Postgres)', hint: 'recommended · cross-machine collaboration' },
+      { value: 'sqlite', label: 'Local (SQLite)', hint: 'single machine · no extra setup' },
+    ],
+    initialValue: settings.ledger?.backend ?? 'postgres',
+  }))
+
+  if (choice === 'sqlite') {
+    saveSettings({ ...settings, ledger: { backend: 'sqlite' } })
+    p.log.success('Ledger set to local SQLite.')
+    return
+  }
+
+  p.log.message(color.dim('Neon/Postgres connection string — get it from your provider dashboard.'))
+  const url = orCancel(await p.password({
+    message: 'Postgres connection string (blank to use local instead)',
+    validate: (v: string | undefined) => {
+      const s = (v ?? '').trim()
+      if (!s) return undefined // blank → fall back to local
+      if (!/^postgres(ql)?:\/\//.test(s)) return 'Must start with postgres:// or postgresql://'
+      return undefined
+    },
+  })).trim()
+
+  if (!url) {
+    saveSettings({ ...settings, ledger: { backend: 'sqlite' } })
+    p.log.info('No connection string given — using local SQLite for now.')
+    return
+  }
+  saveSettings({ ...settings, ledger: { backend: 'postgres', url } })
+  p.log.success(`Ledger set to remote Postgres ${color.dim(`· ${url.replace(/:[^:@]+@/, ':***@')}`)}`)
 }
 
 async function collectPeer(access: Access, agentKey?: string, channelId?: string): Promise<void> {
@@ -362,6 +519,9 @@ function statusReport(access: Access): string {
     lines.push(`  ${color.dim('blurb    ')} ${agent.blurb}`)
     lines.push(`  ${color.dim('runtime  ')} ${agent.runtime}`)
     lines.push(`  ${color.dim('workspace')} ${agent.workspace || color.yellow('not set')}`)
+    if (agent.sandbox) {
+      lines.push(`  ${color.dim('sandbox  ')} fs:${agent.sandbox.fs} · network:${agent.sandbox.network}`)
+    }
     lines.push(`  ${color.dim('token    ')} ${agent.tokenEnv} ${tokenMark}`)
     const rooms = Object.entries(agent.rooms)
     if (rooms.length === 0) {
@@ -375,6 +535,13 @@ function statusReport(access: Access): string {
     }
     lines.push('')
   }
+  const ledger = readSettings().ledger
+  const ledgerLabel = ledger?.backend === 'postgres'
+    ? `remote Postgres ${color.dim(`· ${(ledger.url ?? '').replace(/:[^:@]+@/, ':***@')}`)}`
+    : ledger?.backend === 'sqlite'
+      ? 'local SQLite'
+      : color.dim('local SQLite (default — run "Choose ledger backend" to use Postgres)')
+  lines.push(`${color.dim('ledger   ')} ${ledgerLabel}`)
   lines.push(color.dim(`State: ${STATE_DIR}`))
   return lines.join('\n')
 }
@@ -412,6 +579,12 @@ async function firstRunWizard(): Promise<void> {
   }))
   if (addToken) await collectToken(readAccessFile(), key)
 
+  const setupLedger = orCancel(await p.confirm({
+    message: 'Set up the shared ledger now? (recommended: remote Postgres for collaboration)',
+    initialValue: true,
+  }))
+  if (setupLedger) await collectLedger()
+
   finishWithNextSteps(readAccessFile())
 }
 
@@ -419,7 +592,7 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAccessFile()), 'Current setup')
 
-  const TASK_ORDER = ['agent', 'room', 'peer', 'human', 'token'] as const
+  const TASK_ORDER = ['agent', 'room', 'peer', 'human', 'permissions', 'token', 'ledger'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
@@ -431,7 +604,9 @@ async function interactiveMenu(): Promise<void> {
         { value: 'room', label: 'Add a room', hint: 'register a channel (peers + humans follow inline)' },
         { value: 'peer', label: 'Register a peer bot', hint: 'in an existing room' },
         { value: 'human', label: 'Allow humans', hint: 'comma-separated Discord user IDs' },
+        { value: 'permissions', label: 'Set room permissions', hint: 'pick a preset (strict/auto/bypass/…)' },
         { value: 'token', label: 'Save / update a bot token' },
+        { value: 'ledger', label: 'Choose ledger backend', hint: 'local SQLite or remote Postgres' },
       ],
       required: false,
     }))
@@ -451,8 +626,12 @@ async function interactiveMenu(): Promise<void> {
         await collectPeer(access)
       } else if (task === 'human') {
         await collectHumans(access)
+      } else if (task === 'permissions') {
+        await collectPermissions(access)
       } else if (task === 'token') {
         await collectToken(access)
+      } else if (task === 'ledger') {
+        await collectLedger()
       }
     }
   }

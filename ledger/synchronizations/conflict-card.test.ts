@@ -67,6 +67,32 @@ test('conflict-card: holds two equal-role drafts and posts one card', async () =
   store.close()
 })
 
+test('conflict-card: a relayId claim makes exactly one of two relays post', async () => {
+  // Two relays share one ledger; both see the held conflict and would post. The
+  // deterministic claim (lower-hash branch key) lets only the first acquire.
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+
+  const a = await admit(store, draft('bob-bot', 'A'))
+  const b = await admit(store, draft('charlie-bot', 'B'))
+  expect(a.kind).toBe('admitted')
+  expect(b.kind).toBe('conflict')
+
+  let posts = 0
+  const ctx = { store, engine, admit: (p: ProposedInteraction) => admit(store, p) }
+  const relayA = conflictCard({ relayId: 'relay-A', getOwnerForChannel: () => 'u', postCard: async () => void posts++ })
+  const relayB = conflictCard({ relayId: 'relay-B', getOwnerForChannel: () => 'u', postCard: async () => void posts++ })
+
+  if (b.kind === 'conflict') {
+    await relayA.fire(b.interaction, ctx)
+    await relayB.fire(b.interaction, ctx) // claim already held by relay-A → skips
+  }
+  expect(posts).toBe(1)
+
+  engine.close()
+  store.close()
+})
+
 test('conflict-card: ignores anchored non-conflicts (single draft)', async () => {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)

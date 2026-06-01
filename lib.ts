@@ -5,6 +5,8 @@
  * unit-tested in isolation. state.ts owns the I/O; this module owns the rules.
  */
 
+import type { PermissionProfile } from './agent-adapter.ts'
+
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
   name?: string // optional friendly label; the live Discord username is preferred
@@ -19,6 +21,15 @@ export type RoomConfig = {
   approvalActorId?: string // who approves this agent's work; defaults to the agent owner
 }
 
+/** OS-level sandbox for an agent's runtime. Confines filesystem writes to the
+ *  workspace and optionally blocks network, at the OS boundary — containment that
+ *  does not depend on the agent asking before it runs a tool. Only out-of-process
+ *  (ACP) runtimes can be sandboxed; the in-process SDK cannot (see `sandbox.ts`). */
+export type SandboxConfig = {
+  fs: 'workspace'
+  network: 'deny' | 'allow'
+}
+
 /** A single coding-agent identity. */
 export type AgentConfig = {
   name?: string // live Discord username; overwritten on connect
@@ -28,6 +39,7 @@ export type AgentConfig = {
   workspace: string // absolute path of the agent's working directory
   tokenEnv: string // NAME of the env var holding this bot's Discord token
   rooms: Record<string, RoomConfig>
+  sandbox?: SandboxConfig // OS-level confinement (ACP runtimes only)
 }
 
 /**
@@ -43,6 +55,60 @@ export type Access = {
 
 export function defaultAccess(): Access {
   return { agents: {} }
+}
+
+/**
+ * Machine-global settings, written ONLY by the setup CLI (same prompt-injection
+ * invariant as access.json). Kept in a separate `settings.json` because the
+ * ledger backend and named permission presets are machine-global, not keyed by
+ * agent identity — so the "terminal-written only" assertion stays per file and
+ * access.json's shape (and its corrupt-recovery) doesn't churn.
+ *
+ *  - `ledger` selects the store backend. `KNOCK_KNOCK_LEDGER_URL` still wins as
+ *    an env override (see `resolveLedgerConfig`); this is the setup-managed
+ *    default so users don't have to export an env var.
+ *  - `presets` are named permission modes (auto / ask-per-edit / bypass /
+ *    strict) a room profile can be stamped from. The built-ins live in
+ *    `PRESET_MODES`; this field is for user-defined additions/overrides.
+ */
+export type KnockSettings = {
+  ledger?: { backend: 'sqlite' | 'postgres'; url?: string }
+  presets?: Record<string, PermissionProfile>
+}
+
+export function defaultSettings(): KnockSettings {
+  return {}
+}
+
+/** The resolved ledger backend the relay should construct. */
+export type LedgerConfig =
+  | { backend: 'postgres'; url: string }
+  | { backend: 'sqlite'; file?: string }
+
+/**
+ * Decide which ledger backend to use, given the environment and setup-managed
+ * settings. Precedence (pure so relay.ts stays a thin constructor and this is
+ * unit-tested):
+ *   1. `KNOCK_KNOCK_LEDGER_URL` env var — always wins (back-compat override).
+ *   2. settings.ledger when backend is postgres AND a url is present.
+ *   3. SQLite default (honoring `KNOCK_KNOCK_LEDGER_FILE` if set).
+ * A postgres backend declared in settings WITHOUT a url falls through to SQLite
+ * rather than producing an unusable config.
+ */
+export function resolveLedgerConfig(
+  env: Record<string, string | undefined>,
+  settings: KnockSettings,
+): LedgerConfig {
+  if (env.KNOCK_KNOCK_LEDGER_URL) {
+    return { backend: 'postgres', url: env.KNOCK_KNOCK_LEDGER_URL }
+  }
+  if (settings.ledger?.backend === 'postgres' && settings.ledger.url) {
+    return { backend: 'postgres', url: settings.ledger.url }
+  }
+  return {
+    backend: 'sqlite',
+    ...(env.KNOCK_KNOCK_LEDGER_FILE ? { file: env.KNOCK_KNOCK_LEDGER_FILE } : {}),
+  }
 }
 
 /** Who may approve an agent's work in a specific channel. */
@@ -189,6 +255,146 @@ export function classifyTool(
   if (tierMatch(profile.ask, false)) return 'ask'
   if (tierMatch(profile.allow, false)) return 'allow'
   return 'ask'
+}
+
+// ─── Named permission presets (Claude-Code-style modes) ───────────────────────
+//
+// A room profile is tedious to hand-author and easy to get dangerously wrong
+// (an empty file silently drops the deny floor). Presets give the operator a
+// named starting point — strict / ask-per-edit / auto / bypass — that `setup.ts`
+// stamps into the room's settings.json. They are expanded to allow/ask/deny at
+// WRITE time, so `readRoomSettings` and `classifyTool` stay unchanged and the
+// deny-floor precedence keeps working byte-for-byte.
+
+/** The non-negotiable deny floor every preset carries: destructive shell and
+ *  writes to security-sensitive config. `classifyTool` denies over allow, so even
+ *  `bypass` cannot reach these. */
+export const DENY_FLOOR: string[] = [
+  'Bash(rm -rf *)',
+  'Bash(sudo *)',
+  'Write(~/.claude/**)',
+  'Write(~/.ssh/**)',
+]
+
+const READ_TOOLS = ['Read(**)', 'LS(**)', 'Glob(**)', 'Grep(**)']
+
+/** Named permission modes. Every one carries the DENY_FLOOR, so a preset's deny
+ *  is never empty (the invariant `state.ts` warns about). */
+export const PRESET_MODES: Record<string, PermissionProfile> = {
+  // Read-only: look but don't touch.
+  strict: {
+    allow: [...READ_TOOLS],
+    ask: [],
+    deny: ['Edit(**)', 'Write(**)', 'Bash(*)', ...DENY_FLOOR],
+  },
+  // Safe default: reads are free, every edit/write/command prompts the owner.
+  'ask-per-edit': {
+    allow: [...READ_TOOLS],
+    ask: ['Edit(**)', 'Write(**)', 'Bash(*)'],
+    deny: [...DENY_FLOOR],
+  },
+  // Auto-accept edits: edits/writes run unprompted, shell commands still ask.
+  auto: {
+    allow: [...READ_TOOLS, 'Edit(**)', 'Write(**)'],
+    ask: ['Bash(*)'],
+    deny: [...DENY_FLOOR],
+  },
+  // Wide-open but still floored: everything allowed except the deny floor.
+  bypass: {
+    allow: [...READ_TOOLS, 'Edit(**)', 'Write(**)', 'Bash(*)'],
+    ask: [],
+    deny: [...DENY_FLOOR],
+  },
+}
+
+/** The preset a brand-new room starts from (the historical default profile). */
+export const DEFAULT_PRESET = 'ask-per-edit'
+
+/** Human-facing one-liners for the setup picker. */
+export const PRESET_HINTS: Record<string, string> = {
+  strict: 'read-only — denies all edits, writes, and commands',
+  'ask-per-edit': 'reads free; every edit/write/command asks (safe default)',
+  auto: 'auto-accept edits/writes; shell commands still ask',
+  bypass: 'allow everything except the destructive deny floor',
+}
+
+/**
+ * Expand a named preset into a full allow/ask/deny profile, unioning optional
+ * extra patterns. An unknown name falls back to the safe DEFAULT_PRESET
+ * (fail-restrictive). `deny` is always a union — extra patterns can only tighten
+ * the floor, never weaken it.
+ */
+export function expandPreset(
+  name: string,
+  overrides?: Partial<PermissionProfile>,
+): PermissionProfile {
+  const base = PRESET_MODES[name] ?? PRESET_MODES[DEFAULT_PRESET]!
+  const uniq = (xs: string[]): string[] => [...new Set(xs)]
+  return {
+    allow: uniq([...base.allow, ...(overrides?.allow ?? [])]),
+    ask: uniq([...base.ask, ...(overrides?.ask ?? [])]),
+    deny: uniq([...base.deny, ...(overrides?.deny ?? [])]),
+  }
+}
+
+// ─── Per-actor permission tiers (actor → action) ──────────────────────────────
+//
+// A room's base allow/ask/deny is the OWNER floor. A tier narrows (or widens
+// allow/ask for) what an agent may do when the turn was prompted by a *less
+// trusted* relationship — a peer bot, a non-owner human. The governing actor is
+// whoever prompted the turn (the inbound message), not the agent running it.
+//
+// Recognized tier keys: 'human', 'agent', or 'peer:<discordBotId>' for one
+// specific peer. Resolution is fail-restrictive: an absent/unmatched tier falls
+// back to the base profile (never an empty one), and `deny` is ALWAYS the union
+// of base + every applicable tier — a tier can add restrictions to the floor but
+// never remove them.
+
+/** Permission overrides keyed by the relationship of the prompting actor. */
+export type ActorTiers = Record<string, Partial<PermissionProfile>>
+
+/** The on-disk room profile: the base floor plus optional per-actor tiers. A
+ *  structural superset of PermissionProfile, so every classifyTool consumer that
+ *  only reads allow/ask/deny keeps working unchanged. */
+export type RoomProfile = PermissionProfile & { tiers?: ActorTiers }
+
+/**
+ * Resolve the effective allow/ask/deny for a turn, given who prompted it.
+ * Owner-prompted turns get the base floor unchanged. For a peer/human, the most
+ * specific applicable tier (a `peer:<id>` over the generic `agent`) sets
+ * allow/ask; `deny` is the union of base + all applicable tiers. Always returns
+ * a fresh object — never the base reference, never empty when a tier is absent.
+ */
+export function resolveProfileForActor(
+  base: PermissionProfile,
+  tiers: ActorTiers | undefined,
+  requesterRole: 'owner' | 'human' | 'agent' | 'unknown',
+  requesterId?: string,
+): PermissionProfile {
+  const clone = (): PermissionProfile => ({ allow: base.allow, ask: base.ask, deny: base.deny })
+  if (!tiers || requesterRole === 'owner') return clone()
+
+  // Collect applicable tiers, generic → specific (later wins for allow/ask).
+  const applicable: Array<Partial<PermissionProfile>> = []
+  if (requesterRole === 'human') {
+    if (tiers.human) applicable.push(tiers.human)
+  } else {
+    // 'agent' or 'unknown' — the generic peer tier, then this peer's override.
+    if (tiers.agent) applicable.push(tiers.agent)
+    const specific = requesterId ? tiers[`peer:${requesterId}`] : undefined
+    if (specific) applicable.push(specific)
+  }
+  if (applicable.length === 0) return clone() // unresolved ⇒ base, never empty
+
+  let allow = base.allow
+  let ask = base.ask
+  for (const t of applicable) {
+    if (t.allow) allow = t.allow
+    if (t.ask) ask = t.ask
+  }
+  const denySet = new Set(base.deny)
+  for (const t of applicable) for (const d of t.deny ?? []) denySet.add(d)
+  return { allow, ask, deny: [...denySet] }
 }
 
 /**

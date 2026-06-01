@@ -31,7 +31,17 @@ export type ConflictCardOpts = {
   getOwnerForChannel: (channelId: string) => string | undefined
   /** Post the card; the glue attaches buttons keyed by branchHashes. */
   postCard: (post: ConflictCardPost) => Promise<void>
+  /** This relay's unique id, used as the claim holder so exactly one relay posts
+   *  a given conflict card. Two agents on two machines editing one file in one
+   *  scope both fire this sync; without the claim both would post. Omit for a
+   *  single-relay setup (the claim still works, harmlessly). */
+  relayId?: string
 }
+
+/** Window in which a posted conflict card is deduped across relays. Both relays
+ *  receive the synced 'proposed' interaction within milliseconds, so a short
+ *  window suffices; after it the conflict is typically already resolved. */
+const CONFLICT_CLAIM_TTL_MS = 60_000
 
 export function conflictCard(opts: ConflictCardOpts): Synchronization {
   return {
@@ -50,6 +60,17 @@ export function conflictCard(opts: ConflictCardOpts): Synchronization {
       // render byte-identical cards (and label the same buttons); do not
       // re-sort by timestamp. The card text carries a one-line hint saying so.
       const all = [i, ...peers].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+
+      // Dedup across relays: the branch set is deterministic (lower-hash sort),
+      // so both machines derive the same claim key; the first to acquire posts,
+      // the other skips. The holder is this relay's id (NOT the interaction hash,
+      // which is identical on both machines and would "renew" rather than block).
+      if (opts.relayId) {
+        const claimKey = `extp:discord/${i.channel}/conflict/${all[0]!.hash}`
+        const lock = await ctx.store.acquireClaim(claimKey, opts.relayId, CONFLICT_CLAIM_TTL_MS)
+        if (!lock.acquired) return
+      }
+
       const branches: ConflictBranch[] = all.map(b => ({
         author: `@${b.actor}`,
         body: bodyOf(b.patch),
@@ -70,10 +91,16 @@ export function conflictCard(opts: ConflictCardOpts): Synchronization {
   }
 }
 
-/** Human-readable draft body from a patch; placeholder for opaque kinds. */
+/** Human-readable draft body from a patch; placeholder for opaque kinds. The
+ *  contested file path is in the card header (targetLabel); for a versionable
+ *  edit we show the change magnitude rather than a misleading single-delta
+ *  preview (a true before/after diff is deferred past the walking skeleton). */
 function bodyOf(patch: Patch): string {
   if (patch.kind === 'knowledge' && patch.append) return patch.append.body
-  if (patch.kind === 'versionable') return '(versionable edit)'
+  if (patch.kind === 'versionable') {
+    const bytes = patch.ops ? Buffer.from(patch.ops, 'base64').length : 0
+    return `(file edit · ~${bytes} bytes changed)`
+  }
   return '(draft)'
 }
 
@@ -83,6 +110,7 @@ function targetLabel(i: Interaction): string {
   const short = id.includes('/') ? id.slice(id.indexOf('/') + 1) : id
   const a = i.target.anchor
   if (a.kind === 'key') return `${short} §${a.path}`
-  if (a.kind === 'range') return `${short} [${a.from}..${a.to}]`
+  // The whole-file sentinel (0..0) reads as the file itself, not a byte range.
+  if (a.kind === 'range' && !(a.from === 0 && a.to === 0)) return `${short} [${a.from}..${a.to}]`
   return short
 }

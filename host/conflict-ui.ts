@@ -13,7 +13,7 @@ import {
 } from 'discord.js'
 import type { HostContext } from './context.ts'
 import type { ChannelId, Hash } from '../ledger/interaction.ts'
-import { surfaceToInbox } from '../ledger/admit.ts'
+import { resolveConflict } from '../ledger/resolve-conflict.ts'
 import { LETTERS } from '../ledger/render/surface.ts'
 import type { ConflictCardPost } from '../ledger/synchronizations/conflict-card.ts'
 
@@ -84,41 +84,19 @@ export class ConflictUI {
     const idx = Number(m[1])
     const chosen = card.branchHashes[idx]
     if (!chosen) return
-    const losers = card.branchHashes.filter(h => h !== chosen)
 
-    const winner = await this.ctx.store.getByHash(chosen)
-    if (!winner) return
-
-    // Journal the owner's decision, then flip lifecycles: chosen wins, the
-    // rest are superseded (kept in the ledger, surfaced back via the inbox).
-    const resolve = await this.ctx.ledger.record({
-      actor: ownerId,
-      role: 'owner',
+    // The resolution itself is a headless ledger verb — record merge.resolve,
+    // flip lifecycles, surface the drop to each loser's inbox. This Discord
+    // handler is now a thin adapter over it (the owner gate above is the
+    // identity boundary the core trusts).
+    const result = await resolveConflict(this.ctx.store, this.ctx.ledger, {
+      ownerId,
       channel: card.channelId,
-      target: winner.target,
-      verb: 'merge.resolve',
-      patch: { kind: 'none' },
-      effect: 'pure',
-      caused_by: [...card.branchHashes].sort(),
+      branchHashes: card.branchHashes,
+      chosenHash: chosen,
+      label: `took ${LETTERS[idx]}`,
     })
-    await this.ctx.store.updateLifecycle(chosen, 'applied')
-    await this.ctx.store.updateLifecycle(resolve.hash, 'applied', { supersedes: losers })
-    // Flip each loser to 'superseded' AND surface the drop to its inbox — same
-    // surface-back the admission gate uses (admit.ts), so a draft dropped by an
-    // owner *resolution* is no longer silent: the losing agent learns of it on
-    // its next "what do I know" fold, and `dm-on-supersede` DMs that agent's
-    // owner. caused_by links the loser to the owner's merge.resolve.
-    for (const loser of losers) {
-      await this.ctx.store.updateLifecycle(loser, 'superseded')
-      const peer = await this.ctx.store.getByHash(loser)
-      if (peer) {
-        await surfaceToInbox(this.ctx.store, peer, {
-          why: `superseded by owner conflict resolution ${resolve.hash.slice(0, 10)} (took ${LETTERS[idx]})`,
-          winner: resolve.hash,
-          channel: card.channelId,
-        })
-      }
-    }
+    if (!result) return
 
     this.cards.delete(interaction.message.id)
     await interaction

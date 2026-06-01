@@ -137,6 +137,7 @@ function rowToInteraction(r: Row): Interaction {
 }
 
 export class PgStore implements Store {
+  readonly kind = 'postgres' as const
   private readonly subscribers = new Set<(i: Interaction) => void>()
   /**
    * Hashes this process inserted locally and already delivered to subscribers in

@@ -10,6 +10,11 @@
 import type { Interaction, Hash, ChannelId, ArtifactId, Verb, Lifecycle } from './interaction.ts'
 
 export interface Store {
+  /** Which backend this is. Lets a behavior that only matters cross-machine
+   *  (e.g. the SQLite-only session-import Discord bridge) branch without a
+   *  separate config lookup. Folds/merge/sync stay backend-agnostic. */
+  readonly kind: 'sqlite' | 'postgres'
+
   /** Append a fully-formed Interaction. Idempotent on hash collision. */
   append(i: Interaction): Promise<{ inserted: boolean }>
 

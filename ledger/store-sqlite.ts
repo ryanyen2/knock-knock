@@ -104,6 +104,7 @@ function rowToInteraction(r: Row): Interaction {
 }
 
 export class SqliteStore implements Store {
+  readonly kind = 'sqlite' as const
   private readonly db: Database
   private readonly subscribers = new Set<(i: Interaction) => void>()
 

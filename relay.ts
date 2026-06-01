@@ -15,9 +15,10 @@
  * in AgentHost, not off the inline pipeline.
  */
 
-import { readFileSync, chmodSync } from 'fs'
+import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
-import { STATE_DIR, readAccessFile, readRoomSettings } from './state.ts'
+import { STATE_DIR, readAccessFile, readRoomSettings, readSettings } from './state.ts'
+import { resolveLedgerConfig } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { SqliteStore } from './ledger/store-sqlite.ts'
@@ -40,6 +41,9 @@ import { dmOnSupersede } from './ledger/synchronizations/dm-on-supersede.ts'
 import { conflictCard } from './ledger/synchronizations/conflict-card.ts'
 import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
 import { resumeOnWatch } from './ledger/synchronizations/resume-on-watch.ts'
+import { captureWorkspaceEdit } from './ledger/synchronizations/capture-workspace-edit.ts'
+import { writeBackVersionable } from './ledger/synchronizations/write-back-versionable.ts'
+import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
@@ -69,15 +73,29 @@ const hosts: AgentHost[] = []
 const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
 
 // One ledger + one fold engine shared across every agent on this machine.
-// Phase 4: KNOCK_KNOCK_LEDGER_URL switches to Postgres for cross-machine.
-const pgUrl = process.env.KNOCK_KNOCK_LEDGER_URL
+// Backend is setup-managed (settings.json) with KNOCK_KNOCK_LEDGER_URL as an
+// env override; Postgres is the cross-machine collaboration backend.
+const ledgerConfig = resolveLedgerConfig(process.env, readSettings())
 let store: Store
-if (pgUrl) {
-  store = await PgStore.connect(pgUrl)
-  process.stderr.write(`relay: ledger = postgres (${pgUrl.replace(/:[^:@]+@/, ':***@')})\n`)
+if (ledgerConfig.backend === 'postgres') {
+  try {
+    store = await PgStore.connect(ledgerConfig.url)
+  } catch (err) {
+    // Refuse to silently fall back to SQLite — that would split the shared
+    // history across machines, which is worse than failing loudly.
+    process.stderr.write(
+      `relay: FATAL — could not connect to the Postgres ledger: ${err}\n` +
+        `  Backend is set to postgres (settings.json or KNOCK_KNOCK_LEDGER_URL).\n` +
+        `  Not starting on local SQLite. Fix the connection or run \`bun setup.ts\`\n` +
+        `  and choose the local backend.\n`,
+    )
+    process.exit(1)
+  }
+  process.stderr.write(
+    `relay: ledger = postgres (${ledgerConfig.url.replace(/:[^:@]+@/, ':***@')})\n`,
+  )
 } else {
-  const ledgerPath =
-    process.env.KNOCK_KNOCK_LEDGER_FILE ?? join(STATE_DIR, 'ledger.sqlite')
+  const ledgerPath = ledgerConfig.file ?? join(STATE_DIR, 'ledger.sqlite')
   store = new SqliteStore(ledgerPath)
   process.stderr.write(`relay: ledger = sqlite (${ledgerPath})\n`)
 }
@@ -96,6 +114,7 @@ await engine.register(turnFold)
 await engine.register(approvalFold)
 await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at reply time
 await engine.register(watchFold) // deferred-continuation primitive (docs/knock-knock-watches.md)
+await engine.register(versionableFold) // file-edit convergence (write-back reads this)
 
 // Create AgentHosts (Discord clients not yet connected).
 for (const [key, agent] of agentEntries) {
@@ -194,8 +213,12 @@ synchronizer.register(
     },
   }),
 )
+// A unique id for THIS relay process, used as a claim holder so cross-relay
+// side effects (conflict-card posts) are performed by exactly one relay.
+const relayId = `relay-${process.pid}-${Date.now()}`
 synchronizer.register(
   conflictCard({
+    relayId,
     getOwnerForChannel: channelId => {
       for (const h of hosts) {
         const o = h.getOwnerForChannel(channelId)
@@ -215,6 +238,44 @@ synchronizer.register(
 )
 synchronizer.register(retryOnReaction())
 synchronizer.register(resumeOnWatch())
+// File-edit sync: capture Edit/Write tool runs as workspace.edit (merge gate),
+// then project + write the merged file back to disk under a per-file claim so
+// relays sharing one Postgres ledger converge without Discord conversation.
+synchronizer.register(
+  captureWorkspaceEdit({
+    relativize: (scope, absPath) => {
+      for (const h of hosts) {
+        const rel = h.relativizeWorkspacePath(scope, absPath)
+        if (rel) return rel
+      }
+      return undefined
+    },
+  }),
+)
+synchronizer.register(
+  writeBackVersionable({
+    resolvePath: artifactId => {
+      for (const h of hosts) {
+        const abs = h.resolveVersionablePath(artifactId)
+        if (abs) return abs
+      }
+      return undefined
+    },
+    readFile: async absPath => {
+      try {
+        return readFileSync(absPath, 'utf8')
+      } catch {
+        return undefined
+      }
+    },
+    writeFile: async (absPath, content) => {
+      // Atomic temp+rename within the same directory (same pattern as state.ts).
+      const tmp = `${absPath}.knock-tmp-${process.pid}`
+      writeFileSync(tmp, content)
+      renameSync(tmp, absPath)
+    },
+  }),
+)
 synchronizer.start()
 
 // WatchSupervisor — owns the OS processes behind armed watches and admits a

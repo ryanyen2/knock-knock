@@ -57,11 +57,22 @@ export class Driver {
 
   /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state.
    *  `contextPrefix` (e.g. an imported <shared-context> block) is prepended once,
-   *  ahead of the <channel> envelope, on this turn only. */
-  runTurn(text: string, meta: TurnMeta, signal?: AbortSignal, contextPrefix?: string): Promise<string[]> {
+   *  ahead of the <channel> envelope, on this turn only.
+   *  `profile`, when given, is re-applied to the adapter BEFORE this turn runs —
+   *  this is the per-actor permission floor (resolved from who prompted the turn).
+   *  Applying it inside the serialized queue guarantees each turn enforces its own
+   *  requester's floor with no cross-turn race. */
+  runTurn(
+    text: string,
+    meta: TurnMeta,
+    signal?: AbortSignal,
+    contextPrefix?: string,
+    profile?: PermissionProfile,
+  ): Promise<string[]> {
     return new Promise<string[]>(resolve => {
       this.queue = this.queue.then(async () => {
         try {
+          if (profile) this.adapter.applyPolicy(profile)
           const prompt = this.buildPrompt(text, meta, contextPrefix)
           const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId, signal })
           this.sessionId = result.sessionId

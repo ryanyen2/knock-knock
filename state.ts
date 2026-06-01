@@ -7,14 +7,23 @@
 import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
-import { type Access, type AgentConfig, defaultAccess } from './lib.ts'
+import {
+  type Access,
+  type AgentConfig,
+  type KnockSettings,
+  type RoomProfile,
+  type ActorTiers,
+  defaultAccess,
+  defaultSettings,
+} from './lib.ts'
 import type { PermissionProfile } from './agent-adapter.ts'
 
-export type { PermissionProfile }
+export type { PermissionProfile, RoomProfile }
 
 export const STATE_DIR =
   process.env.KNOCK_KNOCK_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'knock-knock')
 export const ACCESS_FILE = join(STATE_DIR, 'access.json')
+export const SETTINGS_FILE = join(STATE_DIR, 'settings.json')
 
 /** The permission profile for a room: rooms/<agentKey>/<channelId>.settings.json. */
 export function roomSettingsPath(agentKey: string, channelId: string): string {
@@ -24,18 +33,38 @@ export function roomSettingsPath(agentKey: string, channelId: string): string {
 /** Pull allow/ask/deny out of either the flat shape or a Claude-Code-style
  *  `{ "permissions": { … } }` wrapper, so a profile written in either form is
  *  honored rather than silently ignored. Exported for unit testing. */
-export function parseProfile(raw: string): PermissionProfile {
+export function parseProfile(raw: string): RoomProfile {
   const parsed = JSON.parse(raw) as Record<string, unknown>
   const src = (
     parsed && typeof parsed.permissions === 'object' && parsed.permissions
       ? parsed.permissions
       : parsed
-  ) as Partial<PermissionProfile>
-  return {
+  ) as Partial<RoomProfile> & Record<string, unknown>
+  const profile: RoomProfile = {
     allow: Array.isArray(src.allow) ? src.allow : [],
     ask: Array.isArray(src.ask) ? src.ask : [],
     deny: Array.isArray(src.deny) ? src.deny : [],
   }
+  const tiers = parseTiers(src.tiers)
+  if (tiers) profile.tiers = tiers
+  return profile
+}
+
+/** Parse the optional per-actor `tiers` map, keeping only well-formed entries
+ *  (a tier is a partial allow/ask/deny). Unknown/malformed entries are dropped. */
+function parseTiers(raw: unknown): ActorTiers | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
+  const out: ActorTiers = {}
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!val || typeof val !== 'object') continue
+    const v = val as Record<string, unknown>
+    const tier: Partial<PermissionProfile> = {}
+    if (Array.isArray(v.allow)) tier.allow = v.allow as string[]
+    if (Array.isArray(v.ask)) tier.ask = v.ask as string[]
+    if (Array.isArray(v.deny)) tier.deny = v.deny as string[]
+    if (tier.allow || tier.ask || tier.deny) out[key] = tier
+  }
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 /**
@@ -46,7 +75,7 @@ export function parseProfile(raw: string): PermissionProfile {
  * loudly rather than silently degrading to "everything asks" — that also drops
  * the deny floor, which is almost never what an empty file is meant to do.
  */
-export function readRoomSettings(agentKey: string, channelId: string): PermissionProfile {
+export function readRoomSettings(agentKey: string, channelId: string): RoomProfile {
   const path = roomSettingsPath(agentKey, channelId)
   let raw: string
   try {
@@ -54,7 +83,7 @@ export function readRoomSettings(agentKey: string, channelId: string): Permissio
   } catch {
     return { allow: [], ask: [], deny: [] } // no profile at this path
   }
-  let profile: PermissionProfile
+  let profile: RoomProfile
   try {
     profile = parseProfile(raw)
   } catch {
@@ -97,6 +126,61 @@ export function saveAccess(a: Access): void {
   const tmp = ACCESS_FILE + '.tmp'
   writeFileSync(tmp, JSON.stringify(a, null, 2) + '\n', { mode: 0o600 })
   renameSync(tmp, ACCESS_FILE)
+}
+
+// ─── Machine-global settings (settings.json) ───────────────────────────────────
+//
+// Ledger backend + named permission presets. Written only by the setup CLI, so
+// it carries the same prompt-injection invariant as access.json. Sibling file,
+// kept separate because this config is machine-global, not agent-identity keyed.
+
+/** Pull a well-typed KnockSettings out of raw JSON, dropping anything malformed.
+ *  Pure (like parseProfile) so it can be unit-tested without touching disk. */
+export function parseSettings(raw: string): KnockSettings {
+  const parsed = JSON.parse(raw) as Record<string, unknown>
+  const out: KnockSettings = {}
+  const ledger = parsed.ledger
+  if (ledger && typeof ledger === 'object') {
+    const l = ledger as Record<string, unknown>
+    if (l.backend === 'sqlite' || l.backend === 'postgres') {
+      out.ledger = {
+        backend: l.backend,
+        ...(typeof l.url === 'string' && l.url ? { url: l.url } : {}),
+      }
+    }
+  }
+  const presets = parsed.presets
+  if (presets && typeof presets === 'object' && !Array.isArray(presets)) {
+    out.presets = presets as KnockSettings['presets']
+  }
+  return out
+}
+
+/** Read settings.json. Missing → defaults; corrupt → moved aside, then defaults. */
+export function readSettings(): KnockSettings {
+  let raw: string
+  try {
+    raw = readFileSync(SETTINGS_FILE, 'utf8')
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultSettings()
+    return defaultSettings()
+  }
+  try {
+    return parseSettings(raw)
+  } catch {
+    try {
+      renameSync(SETTINGS_FILE, `${SETTINGS_FILE}.corrupt-${Date.now()}`)
+    } catch {}
+    process.stderr.write('knock-knock: settings.json is corrupt, moved aside. Using defaults.\n')
+    return defaultSettings()
+  }
+}
+
+export function saveSettings(s: KnockSettings): void {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  const tmp = SETTINGS_FILE + '.tmp'
+  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 })
+  renameSync(tmp, SETTINGS_FILE)
 }
 
 // ─── Resume bindings ─────────────────────────────────────────────────────────

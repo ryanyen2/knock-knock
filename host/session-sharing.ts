@@ -19,8 +19,8 @@ import {
 } from 'discord.js'
 import type { HostContext } from './context.ts'
 import type { ChannelId, Hash } from '../ledger/interaction.ts'
-import { admit } from '../ledger/admit.ts'
-import { wrapSharedContext, pickFreshContext } from '../lib.ts'
+import { importSession } from '../sessions/import.ts'
+import { pickFreshContext } from '../lib.ts'
 import {
   KNOWLEDGE_FOLD,
   activeNotes,
@@ -28,11 +28,9 @@ import {
 } from '../ledger/artifacts/knowledge.ts'
 import {
   listAllSessions,
-  makeSessionStore,
   sessionRuntimeForAgent,
   type SessionSummary,
 } from '../sessions/index.ts'
-import { distill } from '../sessions/distill.ts'
 import {
   NUMBERS,
   renderSessionCard,
@@ -170,49 +168,38 @@ export class SessionSharing {
       return
     }
 
-    // import: read + distill the on-disk transcript (pure). File-based read is
-    // the robust path; nothing in the live session is mutated.
-    const store = makeSessionStore(summary.runtime)
-    const transcript = store ? await store.read(summary.id) : undefined
-    if (!transcript) {
+    // import: read + distill the on-disk transcript and admit it as shared
+    // context. This is now a headless ledger verb (sessions/import.ts) — the
+    // owner gate above is the identity boundary it trusts. File-based read is
+    // robust; nothing in the live session is mutated.
+    const result = await importSession(this.ctx.store, {
+      runtime: summary.runtime,
+      sessionId: summary.id,
+      scopeId: card.channelId,
+      ownerId,
+      fallbackCwd: summary.cwd,
+    }).catch(err => {
+      this.ctx.ui.error(this.ctx.key, `session import: ${err}`)
+      return { ok: false, reason: 'unreadable' } as const
+    })
+    if (!result.ok) {
       await interaction.reply({ content: 'Could not read that session anymore.', flags: MessageFlags.Ephemeral }).catch(() => {})
       return
     }
-    const { brief, tags } = distill(transcript)
-    const cwd = transcript.cwd || summary.cwd
-    const body = wrapSharedContext(
-      { source: `${summary.runtime}:${summary.id.slice(0, 8)}`, cwd: cwd || undefined, savedBy: ownerId },
-      brief,
-    )
 
-    const noteId = `session-${summary.runtime}-${summary.id.slice(0, 8)}-${Date.now()}`
-    await admit(this.ctx.store, {
-      actor: ownerId,
-      role: 'owner',
-      channel: card.channelId,
-      target: {
-        artifactId: `know:channel/${card.channelId}/shared-context`,
-        anchor: { kind: 'none' },
-      },
-      verb: 'knowledge.append',
-      patch: { kind: 'knowledge', append: { id: noteId, body, tags } },
-      effect: 'pure',
-      caused_by: [],
-    }).catch(err => this.ctx.ui.error(this.ctx.key, `session import admit: ${err}`))
-
-    // Bridge to peers on a SEPARATE relay: their ledger never receives the
-    // knowledge note (no shared Postgres), but the Discord feed reaches them.
-    // Post the brief into the scope, mentioning the room's peer agents so they
-    // ingest it on their next turn. Same-relay peers also get it silently via
-    // the knowledge fold (pendingContext); this is the cross-relay path.
-    // The roster lives on the room, so resolve scope→room for the peer list.
-    const roomId = this.ctx.roomForScope(card.channelId)
-    const room = roomId ? this.ctx.getAccess().agents[this.ctx.key]?.rooms[roomId] : undefined
-    const peerMentions = room ? Object.keys(room.participants).map(id => `<@${id}>`) : []
-    await this.ctx.discordSend(
-      card.channelId,
-      renderSharedContextPost({ runtime: summary.runtime, title: summary.title, brief, peerMentions }),
-    ).catch(err => this.ctx.ui.error(this.ctx.key, `shared-context post: ${err}`))
+    // Cross-relay bridge — only needed on SQLite, where a teammate's SEPARATE
+    // ledger never receives the knowledge note. On Postgres the note syncs to
+    // peers automatically, so posting it to Discord too would double-deliver;
+    // skip it there. (Same-relay peers always get it silently via pendingContext.)
+    if (this.ctx.store.kind === 'sqlite') {
+      const roomId = this.ctx.roomForScope(card.channelId)
+      const room = roomId ? this.ctx.getAccess().agents[this.ctx.key]?.rooms[roomId] : undefined
+      const peerMentions = room ? Object.keys(room.participants).map(id => `<@${id}>`) : []
+      await this.ctx.discordSend(
+        card.channelId,
+        renderSharedContextPost({ runtime: summary.runtime, title: summary.title, brief: result.brief, peerMentions }),
+      ).catch(err => this.ctx.ui.error(this.ctx.key, `shared-context post: ${err}`))
+    }
 
     this.cards.delete(interaction.message.id)
     this.ctx.ui.note(
