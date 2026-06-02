@@ -41,6 +41,33 @@ const RUNTIMES = [
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
+/** Messaging platforms an agent can speak. Discord is production-tested; the
+ *  rest are walking skeletons pending live verification (docs/messaging-platforms.md). */
+const PLATFORMS = [
+  { value: 'discord', label: 'Discord', hint: 'production · threads, reactions, buttons, DMs' },
+  { value: 'slack', label: 'Slack', hint: 'skeleton · xoxb- token + SLACK_APP_TOKEN (Socket Mode)' },
+  { value: 'telegram', label: 'Telegram', hint: 'skeleton · BotFather token · whitelist reactions + inline keyboards' },
+  { value: 'whatsapp', label: 'WhatsApp', hint: 'skeleton · Cloud API · phone-id + verify-token + public webhook' },
+  { value: 'imessage', label: 'iMessage', hint: 'skeleton · macOS only · Full Disk Access · no token' },
+]
+
+/** Extra env vars a platform's adapter reads beyond the bot token (the token
+ *  itself uses the agent's tokenEnv). Printed as a setup hint. */
+const PLATFORM_EXTRA_ENV: Record<string, string[]> = {
+  slack: ['SLACK_APP_TOKEN (xapp-… for Socket Mode)'],
+  whatsapp: ['WHATSAPP_PHONE_NUMBER_ID', 'WHATSAPP_VERIFY_TOKEN', 'WHATSAPP_WEBHOOK_PORT (default 8787)'],
+}
+
+/** What a "room channel id" is on each platform — so the prompt + validation fit
+ *  the platform (only Discord uses numeric snowflakes). */
+const ROOM_ID_PROMPT: Record<string, { message: string; placeholder: string }> = {
+  discord: { message: 'Room channel ID (right-click channel → Copy Channel ID)', placeholder: '846209781206941736' },
+  slack: { message: 'Room Slack channel ID (channel → View details, e.g. C0123ABC)', placeholder: 'C0123ABC456' },
+  telegram: { message: 'Room Telegram chat ID (negative for groups, e.g. -1001234567890)', placeholder: '-1001234567890' },
+  whatsapp: { message: "Room = a contact's WhatsApp number in E.164", placeholder: '+15551234567' },
+  imessage: { message: 'Room iMessage chat GUID', placeholder: 'iMessage;+;chat1234567890' },
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /** Pick a named permission preset (strict / ask-per-edit / auto / bypass). */
@@ -194,10 +221,22 @@ async function collectAgent(access: Access): Promise<string | null> {
     if (!overwrite) { p.log.info('Left existing agent unchanged.'); return null }
   }
 
+  const platform = orCancel(await p.select({
+    message: 'Which messaging platform does this bot speak?',
+    options: PLATFORMS,
+    initialValue: 'discord',
+  }))
+  if (platform !== 'discord') {
+    p.log.warn(`"${platform}" is a walking-skeleton adapter — verify it live with real credentials before relying on it.`)
+  }
+
   const ownerUserId = orCancel(await p.text({
-    message: 'Your Discord user ID (you own this agent — approval prompts ping you)',
-    placeholder: '184695080709324800',
-    validate: validateSnowflake,
+    message:
+      platform === 'discord'
+        ? 'Your Discord user ID (you own this agent — approval prompts ping you)'
+        : `Your ${platform} user id / handle (you own this agent — approval prompts ping you)`,
+    placeholder: platform === 'discord' ? '184695080709324800' : '',
+    validate: platform === 'discord' ? validateSnowflake : required,
   })).trim()
 
   const blurb = orCancel(await p.text({
@@ -243,10 +282,142 @@ async function collectAgent(access: Access): Promise<string | null> {
   }
 
   const tokenEnv = deriveTokenEnv(key)
-  access.agents[key] = { ownerUserId, blurb, runtime, workspace, tokenEnv, rooms: {}, ...(sandbox ? { sandbox } : {}) }
+  access.agents[key] = {
+    ownerUserId,
+    blurb,
+    runtime,
+    workspace,
+    tokenEnv,
+    rooms: {},
+    // Omit when discord (the default) so access.json stays clean for the common case.
+    ...(platform !== 'discord' ? { platform } : {}),
+    ...(sandbox ? { sandbox } : {}),
+  }
   saveAccess(access)
   p.log.success(`Saved agent ${color.cyan(key)} ${color.dim(`· token env: ${tokenEnv}`)}`)
+  const extraEnv = PLATFORM_EXTRA_ENV[platform]
+  if (extraEnv?.length) {
+    p.log.info(`${platform} also reads from .env: ${extraEnv.join(', ')}`)
+  }
   return key
+}
+
+/**
+ * Edit an existing agent's fields in place — platform / owner / blurb / runtime /
+ * workspace / sandbox — without re-adding it (which would wipe its rooms). The
+ * agent key and its `tokenEnv` are immutable here; changing those is effectively
+ * a new agent. Only the fields you pick are prompted, each pre-filled with the
+ * current value.
+ */
+async function collectReconfigure(access: Access): Promise<void> {
+  const key = await pickAgentKey(access)
+  if (!key) return
+  const agent = access.agents[key]!
+  const curPlatform = agent.platform ?? 'discord'
+
+  type Field = 'platform' | 'owner' | 'blurb' | 'runtime' | 'workspace' | 'sandbox'
+  const fields = orCancel(await p.multiselect<Field>({
+    message: `Reconfigure ${color.cyan(key)} — pick fields to change (space to toggle, enter to apply; none = cancel)`,
+    options: [
+      { value: 'platform', label: 'Messaging platform', hint: curPlatform },
+      { value: 'owner', label: 'Owner user id / handle', hint: agent.ownerUserId },
+      { value: 'blurb', label: 'Blurb', hint: agent.blurb },
+      { value: 'runtime', label: 'Runtime', hint: agent.runtime },
+      { value: 'workspace', label: 'Workspace', hint: agent.workspace },
+      {
+        value: 'sandbox',
+        label: 'Sandbox',
+        hint: agent.sandbox ? `fs:${agent.sandbox.fs} · net:${agent.sandbox.network}` : 'off',
+      },
+    ],
+    required: false,
+  }))
+  if (fields.length === 0) { p.log.info('No changes.'); return }
+  const set = new Set<Field>(fields)
+
+  // Platform first, so owner validation knows the effective platform.
+  let platform = curPlatform
+  if (set.has('platform')) {
+    platform = orCancel(await p.select({
+      message: 'Which messaging platform does this bot speak?',
+      options: PLATFORMS,
+      initialValue: curPlatform,
+    }))
+    if (platform !== 'discord') {
+      p.log.warn(`"${platform}" is a walking-skeleton adapter — verify it live before relying on it.`)
+    }
+  }
+
+  if (set.has('owner')) {
+    agent.ownerUserId = orCancel(await p.text({
+      message: platform === 'discord' ? 'Owner Discord user ID' : `Owner ${platform} user id / handle`,
+      initialValue: agent.ownerUserId,
+      validate: platform === 'discord' ? validateSnowflake : required,
+    })).trim()
+  }
+
+  if (set.has('blurb')) {
+    agent.blurb = orCancel(await p.text({
+      message: 'One-line description peers will see',
+      initialValue: agent.blurb,
+      validate: required,
+    })).trim()
+  }
+
+  if (set.has('runtime')) {
+    agent.runtime = orCancel(await p.select({
+      message: 'Which coding agent runs this bot?',
+      options: RUNTIMES,
+      initialValue: agent.runtime,
+    }))
+  }
+
+  if (set.has('workspace')) {
+    agent.workspace = orCancel(await p.text({
+      message: 'Workspace path (absolute)',
+      initialValue: agent.workspace,
+      validate: validateAbsPath,
+    })).trim()
+    if (!existsSync(agent.workspace)) {
+      p.log.warn(`${agent.workspace} doesn't exist yet — create it before launching the relay.`)
+    }
+  }
+
+  if (set.has('sandbox')) {
+    const inProcess = agent.runtime === 'claude-sdk'
+    const sandboxOn = orCancel(await p.confirm({
+      message: inProcess
+        ? 'Sandbox this agent? (the in-process Claude SDK can NOT be OS-sandboxed — pick "Claude Code (ACP)" for confinement)'
+        : 'Sandbox this agent? Confine file writes to the workspace at the OS level.',
+      initialValue: !!agent.sandbox,
+    }))
+    if (sandboxOn) {
+      const allowNet = orCancel(await p.confirm({
+        message: 'Allow network access inside the sandbox?',
+        initialValue: agent.sandbox?.network !== 'deny',
+      }))
+      agent.sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
+    } else {
+      delete agent.sandbox
+    }
+  }
+
+  // Apply platform last; omit the field when discord so access.json stays clean.
+  if (set.has('platform')) {
+    if (platform === 'discord') delete agent.platform
+    else agent.platform = platform
+  }
+
+  saveAccess(access)
+  p.log.success(`Updated agent ${color.cyan(key)}`)
+  if (set.has('platform') && platform !== curPlatform) {
+    p.log.warn(
+      `Platform changed ${curPlatform} → ${platform}. The bot token differs per platform — ` +
+        `run "Save / update a bot token" to set it.`,
+    )
+    const extraEnv = PLATFORM_EXTRA_ENV[platform]
+    if (extraEnv?.length) p.log.info(`${platform} also reads from .env: ${extraEnv.join(', ')}`)
+  }
 }
 
 /** Collect a room, then chain inline peer registration + bulk human add. */
@@ -272,11 +443,15 @@ async function collectRoomFlow(access: Access, agentKey: string): Promise<void> 
 
 async function collectRoom(access: Access, agentKey: string): Promise<string | null> {
   const agent = access.agents[agentKey]!
+  const platform = agent.platform ?? 'discord'
+  const prompt = ROOM_ID_PROMPT[platform] ?? { message: 'Room channel ID', placeholder: '' }
 
   const channelId = orCancel(await p.text({
-    message: 'Room channel ID (right-click channel → Copy Channel ID)',
-    placeholder: '846209781206941736',
-    validate: validateSnowflake,
+    message: prompt.message,
+    placeholder: prompt.placeholder,
+    // Only Discord ids are numeric snowflakes; other platforms use letters,
+    // negative numbers, GUIDs, or phone numbers — accept any non-empty id.
+    validate: platform === 'discord' ? validateSnowflake : required,
   })).trim()
 
   if (agent.rooms[channelId]) {
@@ -360,9 +535,10 @@ async function collectPermissions(access: Access, agentKey?: string, channelId?:
     }))
     let tierKey: string = who
     if (who === 'peer') {
+      const tierPlatform = agent.platform ?? 'discord'
       const peerId = orCancel(await p.text({
-        message: "Peer bot's Discord user ID",
-        validate: validateSnowflake,
+        message: tierPlatform === 'discord' ? "Peer bot's Discord user ID" : `Peer bot's ${tierPlatform} user id`,
+        validate: tierPlatform === 'discord' ? validateSnowflake : required,
       })).trim()
       tierKey = `peer:${peerId}`
     }
@@ -430,10 +606,14 @@ async function collectPeer(access: Access, agentKey?: string, channelId?: string
   const cid = channelId ?? (await pickRoomId(agent))
   if (!cid) return
 
+  const peerPlatform = agent.platform ?? 'discord'
   const peerBotId = orCancel(await p.text({
-    message: "Peer bot's Discord user ID (right-click their bot → Copy User ID)",
-    placeholder: '987654321098765432',
-    validate: validateSnowflake,
+    message:
+      peerPlatform === 'discord'
+        ? "Peer bot's Discord user ID (right-click their bot → Copy User ID)"
+        : `Peer bot's ${peerPlatform} user id`,
+    placeholder: peerPlatform === 'discord' ? '987654321098765432' : '',
+    validate: peerPlatform === 'discord' ? validateSnowflake : required,
   })).trim()
 
   const peerName = orCancel(await p.text({
@@ -465,16 +645,22 @@ async function collectHumans(access: Access, agentKey?: string, channelId?: stri
   const cid = channelId ?? (await pickRoomId(agent))
   if (!cid) return
 
+  const platform = agent.platform ?? 'discord'
   const raw = orCancel(await p.text({
-    message: 'Allow humans to drive this agent? Discord user IDs, comma-separated (leave blank to skip)',
+    message:
+      platform === 'discord'
+        ? 'Allow humans to drive this agent? Discord user IDs, comma-separated (leave blank to skip)'
+        : `Allow humans to drive this agent? ${platform} user ids / handles, comma-separated (leave blank to skip)`,
     placeholder: 'leave blank to skip',
   })).trim()
   if (!raw) return
 
-  const isSnowflake = (id: string): boolean => /^\d{17,20}$/.test(id)
+  // Only Discord ids are numeric snowflakes; other platforms use letters, phones,
+  // or emails — accept any non-empty id there.
+  const isValidId = (id: string): boolean => (platform === 'discord' ? /^\d{17,20}$/.test(id) : id.length > 0)
   const all = raw.split(',').map(s => s.trim()).filter(Boolean)
-  const valid = all.filter(isSnowflake)
-  const invalid = all.filter(id => !isSnowflake(id))
+  const valid = all.filter(isValidId)
+  const invalid = all.filter(id => !isValidId(id))
   if (invalid.length) p.log.warn(`Skipped invalid IDs: ${invalid.join(', ')}`)
   if (!valid.length) return
 
@@ -517,6 +703,9 @@ function statusReport(access: Access): string {
     const tokenMark = isTokenSet(agent.tokenEnv) ? color.green('✓') : color.red('✗ missing')
     lines.push(`${color.cyan(color.bold(key))}  ${agent.name ?? color.dim('(not connected yet)')}`)
     lines.push(`  ${color.dim('blurb    ')} ${agent.blurb}`)
+    if (agent.platform && agent.platform !== 'discord') {
+      lines.push(`  ${color.dim('platform ')} ${color.yellow(agent.platform)} ${color.dim('(skeleton)')}`)
+    }
     lines.push(`  ${color.dim('runtime  ')} ${agent.runtime}`)
     lines.push(`  ${color.dim('workspace')} ${agent.workspace || color.yellow('not set')}`)
     if (agent.sandbox) {
@@ -592,7 +781,7 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAccessFile()), 'Current setup')
 
-  const TASK_ORDER = ['agent', 'room', 'peer', 'human', 'permissions', 'token', 'ledger'] as const
+  const TASK_ORDER = ['agent', 'reconfigure', 'room', 'peer', 'human', 'permissions', 'token', 'ledger'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
@@ -601,6 +790,7 @@ async function interactiveMenu(): Promise<void> {
       message: 'What would you like to do? (space to toggle, enter to run — nothing selected = done)',
       options: [
         { value: 'agent', label: 'Add another agent', hint: 'a second bot identity' },
+        { value: 'reconfigure', label: 'Reconfigure an agent', hint: 'change platform / runtime / workspace / blurb / owner' },
         { value: 'room', label: 'Add a room', hint: 'register a channel (peers + humans follow inline)' },
         { value: 'peer', label: 'Register a peer bot', hint: 'in an existing room' },
         { value: 'human', label: 'Allow humans', hint: 'comma-separated Discord user IDs' },
@@ -619,6 +809,8 @@ async function interactiveMenu(): Promise<void> {
       const access = readAccessFile()
       if (task === 'agent') {
         await collectAgent(access)
+      } else if (task === 'reconfigure') {
+        await collectReconfigure(access)
       } else if (task === 'room') {
         const key = await pickAgentKey(access)
         if (key) await collectRoomFlow(access, key)

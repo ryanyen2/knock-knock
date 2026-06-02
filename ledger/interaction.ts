@@ -80,10 +80,18 @@ export type Patch =
       append?: KnowledgeNote
       invalidate?: { hash: Hash }
     }
-  /** External-proxy: declared intent, optional later result, optional reverse pair. */
+  /** External-proxy: declared intent, optional later result, optional reverse pair.
+   *  `channel` is the source surface: an internal proxy (`shell`/`http`/`tool`) or
+   *  a messaging platform name (`discord`, `slack`, …, from
+   *  `MessagingAdapter.platform`). `(string & {})` keeps the named values as
+   *  autocomplete hints while admitting any platform key. */
   | {
       kind: 'external'
-      intent: { channel: 'discord' | 'shell' | 'http' | 'tool'; op: string; args: unknown }
+      intent: {
+        channel: 'discord' | 'shell' | 'http' | 'tool' | (string & {})
+        op: string
+        args: unknown
+      }
       result?: { ok: true; ref: string } | { ok: false; error: string }
       compensates?: Hash
     }

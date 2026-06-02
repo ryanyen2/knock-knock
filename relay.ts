@@ -116,7 +116,7 @@ await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at repl
 await engine.register(watchFold) // deferred-continuation primitive (docs/knock-knock-watches.md)
 await engine.register(versionableFold) // file-edit convergence (write-back reads this)
 
-// Create AgentHosts (Discord clients not yet connected).
+// Create AgentHosts (each builds its messaging adapter; not yet connected).
 for (const [key, agent] of agentEntries) {
   const token = process.env[agent.tokenEnv]
   if (!token) {
@@ -316,8 +316,8 @@ store.subscribe(i => {
   host?.updatePill(i.channel)
 })
 
-// Now connect the Discord clients — messages will start flowing into the
-// ledger-driven pipeline.
+// Now connect each host's messaging adapter — messages will start flowing into
+// the ledger-driven pipeline.
 for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
   const token = process.env[access.agents[entry.key]!.tokenEnv]!

@@ -85,22 +85,19 @@ export class Workbench {
     } catch {
       return // Turn fold not registered — pill is off.
     }
-    try {
-      const ch = await this.ctx.client.channels.fetch(scopeId).catch(() => null)
-      if (!ch || !('send' in ch)) return
-      const sendable = ch as { send: Function; messages: { fetch: (id: string) => Promise<any> } }
-      const existing = this.pillMsgByChannel.get(scopeId)
-      if (existing) {
-        const msg = await sendable.messages.fetch(existing).catch(() => null)
-        if (msg) {
-          await msg.edit(text).catch(() => {})
-          return
-        }
-      }
-      const sent = await sendable.send(text)
-      this.pillMsgByChannel.set(scopeId, sent.id)
-      this.ctx.noteBotMsg(sent.id)
-      void sent.pin?.().catch(() => {})
-    } catch {}
+    const caps = this.ctx.messaging.capabilities()
+    const existing = this.pillMsgByChannel.get(scopeId)
+    // Edit the existing pill in place where the platform supports it (Discord
+    // does). If the edit can't land (pill deleted), fall through to re-post —
+    // matching the original fetch-then-edit-or-send behavior exactly.
+    if (existing && caps.edit) {
+      const ok = await this.ctx.messaging.edit({ id: existing, scope: scopeId }, text).catch(() => false)
+      if (ok) return
+    }
+    const ref = await this.ctx.messaging.send(scopeId, text).catch(() => undefined)
+    if (!ref) return
+    this.pillMsgByChannel.set(scopeId, ref.id)
+    this.ctx.noteBotMsg(ref.id)
+    if (caps.pin) void this.ctx.messaging.pin(ref).catch(() => {})
   }
 }

@@ -17,16 +17,14 @@
  * `awaitVerdict` instead of an in-process Promise.
  */
 
-import {
-  Client,
-  GatewayIntentBits,
-  Partials,
-  MessageFlags,
-  type Message,
-  type ThreadChannel,
-  type Interaction,
-  type ButtonInteraction,
-} from 'discord.js'
+import { makeMessagingAdapter } from './adapters-msg/index.ts'
+import type {
+  MessagingAdapter,
+  MessageRef,
+  IncomingMessage,
+  IncomingAction,
+  IncomingReaction,
+} from './messaging-adapter.ts'
 import {
   readRoomSettings,
   readSessionBinding,
@@ -46,6 +44,7 @@ import {
   resolveRoomForScope,
   resolveProfileForActor,
   threadNameFromPrompt,
+  matchesMentionPattern,
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
@@ -99,9 +98,10 @@ type Session = {
 }
 
 /** Side-table the host owns so synchronization callbacks can resolve
- *  inbound-related Discord state (ack reactions, DmCourier headers). */
+ *  inbound-related messaging state (ack reactions, DmCourier headers). */
 type InboundSideTable = {
-  msg: Message
+  /** Ref of the inbound message (for the ack reaction + outcome glyph). */
+  ref: MessageRef
   ackEmoji: string
   senderLabel: string
   channelLabel: string
@@ -109,7 +109,7 @@ type InboundSideTable = {
 }
 
 export class AgentHost {
-  private readonly client: Client
+  private readonly messaging: MessagingAdapter
   private readonly approvals: Approvals
   private readonly courier: DmCourier
   private readonly sessions = new Map<ChannelId, Session>()
@@ -143,22 +143,14 @@ export class AgentHost {
     private readonly store: Store,
     private readonly engine: FoldEngine,
   ) {
-    this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.GuildMessageReactions,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.DirectMessageReactions,
-      ],
-      partials: [Partials.Message, Partials.Reaction, Partials.Channel],
-    })
+    // Build the messaging adapter for this agent's platform (Discord today). The
+    // host speaks only the MessagingAdapter seam from here on — no platform SDK.
+    this.messaging = makeMessagingAdapter(agent.platform ?? 'discord')
 
     const liveAgentGetter = () => getAccess().agents[this.key] ?? this.agent
 
     this.approvals = new Approvals(
-      this.client,
+      this.messaging,
       liveAgentGetter,
       this.store,
       info => {
@@ -171,7 +163,7 @@ export class AgentHost {
     )
 
     this.courier = new DmCourier(
-      this.client,
+      this.messaging,
       this.engine,
       () => liveAgentGetter().ownerUserId,
       reason => this.ui.note(this.key, reason),
@@ -181,7 +173,7 @@ export class AgentHost {
     // bundles only what they need so none holds a back-reference to the host.
     const ctx: HostContext = {
       key: this.key,
-      client: this.client,
+      messaging: this.messaging,
       store: this.store,
       engine: this.engine,
       ledger: this.ledger,
@@ -195,69 +187,59 @@ export class AgentHost {
     this.workbench = new Workbench(ctx)
     this.conflictUI = new ConflictUI(ctx)
     this.watchControl = new WatchControl(ctx, this.approvals)
-    this.sessionSharing = new SessionSharing(ctx, (interaction, scopeId, summary) =>
-      this.resumeSession(interaction, scopeId, summary),
+    this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
+      this.resumeSession(action, scopeId, summary),
     )
 
-    this.client.once('clientReady', c => {
-      this.ui.connected(this.key, c.user.tag)
-    })
-
-    this.client.on('messageCreate', (msg: Message) => {
-      this.handleInbound(msg).catch(e =>
+    // Inbound: the adapter normalizes platform events into these three handlers.
+    this.messaging.onMessage(m => {
+      this.handleInbound(m).catch(e =>
         this.ui.error(this.key, `handleInbound error: ${e}`),
       )
     })
 
-    this.client.on('interactionCreate', (interaction: Interaction) => {
-      if (!interaction.isButton()) return
-      if (interaction.customId.startsWith('appr:')) {
-        this.approvals.resolveInteraction(interaction).catch(e =>
+    this.messaging.onAction(action => {
+      if (action.actionId.startsWith('appr:')) {
+        this.approvals.resolve(action).catch(e =>
           this.ui.error(this.key, `interaction error: ${e}`),
         )
-      } else if (this.conflictUI.handles(interaction)) {
-        this.conflictUI.resolve(interaction).catch(e =>
+      } else if (this.conflictUI.handles(action)) {
+        this.conflictUI.resolve(action).catch(e =>
           this.ui.error(this.key, `conflict resolve error: ${e}`),
         )
-      } else if (this.sessionSharing.handles(interaction)) {
-        this.sessionSharing.handlePick(interaction).catch(e =>
+      } else if (this.sessionSharing.handles(action)) {
+        this.sessionSharing.handlePick(action).catch(e =>
           this.ui.error(this.key, `session pick error: ${e}`),
         )
       }
     })
 
-    this.client.on('messageReactionAdd', (reaction, user) => {
-      if (user.bot) return
-      const emoji = reaction.emoji.name
-      if (!emoji) return
+    this.messaging.onReaction(reaction => {
+      const emoji = reaction.glyph
       if (emoji === '✅' || emoji === '❌') {
-        this.approvals.resolveReaction(reaction.message.id, emoji, user.id).catch(e =>
+        this.approvals.resolveReaction(reaction.ref.id, emoji, reaction.userId).catch(e =>
           this.ui.error(this.key, `reaction error: ${e}`),
         )
         return
       }
       if (emoji === GLYPHS.stop) {
-        this.handleStop(reaction.message.channelId, user.id).catch(e =>
+        this.handleStop(reaction.ref.scope, reaction.userId).catch(e =>
           this.ui.error(this.key, `stop error: ${e}`),
         )
         return
       }
       const action = rewindActionFor(emoji)
       if (action) {
-        this.handleRewind(reaction.message.id, reaction.message.channelId, user.id, action).catch(
+        this.handleRewind(reaction.ref.id, reaction.ref.scope, reaction.userId, action).catch(
           e => this.ui.error(this.key, `rewind error: ${e}`),
         )
       }
     })
 
-    this.client.on('error', err => {
-      this.ui.error(this.key, `client error: ${err}`)
-    })
-
     // Side-effect subscriber: turn.prompted → start the DmCourier. The
     // 👀→done/failed reaction transition is owned by runTurnForChannel (it
     // knows the turn's outcome, including failures that never reach
-    // turn.replied). Ledger-driven work; only Discord bookkeeping lives here.
+    // turn.replied). Ledger-driven work; only messaging bookkeeping lives here.
     this.storeUnsub = this.store.subscribe(i => {
       if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
       if (i.verb === 'turn.prompted') void this.onTurnPrompted(i.hash, i.caused_by[0])
@@ -265,13 +247,15 @@ export class AgentHost {
   }
 
   async start(token: string): Promise<void> {
-    await this.client.login(token)
+    await this.messaging.connect(token)
+    // connect resolves once the gateway is ready, so the bot label is populated.
+    this.ui.connected(this.key, this.messaging.botLabel ?? this.messaging.botUserId ?? this.key)
   }
 
   async stop(): Promise<void> {
     this.storeUnsub?.()
     this.workbench.stop()
-    await this.client.destroy()
+    await this.messaging.disconnect()
   }
 
   // ─── Synchronization callbacks (used by sync wiring in relay.ts) ──────────
@@ -289,10 +273,9 @@ export class AgentHost {
    */
   roomForScope(scopeId: ChannelId): ChannelId | undefined {
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const roomId = resolveRoomForScope(scopeId, liveAgent.rooms, this.scopeToRoom, id => {
-      const ch = this.client.channels.cache.get(id) as { parentId?: string | null } | undefined
-      return ch?.parentId ?? undefined
-    })
+    const roomId = resolveRoomForScope(scopeId, liveAgent.rooms, this.scopeToRoom, id =>
+      this.messaging.parentOfSync(id),
+    )
     // Memoize a freshly-probed thread→parent mapping so the next lookup is cheap.
     if (roomId && roomId !== scopeId) this.scopeToRoom.set(scopeId, roomId)
     return roomId
@@ -335,13 +318,15 @@ export class AgentHost {
     }
   }
 
-  /** post-on-reply sends a chunk; we return the resulting Discord message id. */
+  /** post-on-reply sends a chunk; we return the resulting message id. A failed
+   *  send throws (matching the original `ch.send` rejection) so post-on-reply
+   *  aborts the remaining chunks and the synchronizer's per-sync error isolation
+   *  logs it, rather than silently continuing past a dropped chunk. */
   async discordSend(channelId: ChannelId, text: string): Promise<string | undefined> {
-    const ch = await this.client.channels.fetch(channelId).catch(() => null)
-    if (!ch || !('send' in ch)) return undefined
-    const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
-    this.noteBotMsg(sent.id)
-    return sent.id
+    const ref = await this.messaging.send(channelId, text)
+    if (!ref) throw new Error(`messaging.send failed for ${channelId}`)
+    this.noteBotMsg(ref.id)
+    return ref.id
   }
 
   /** Relay subscriber → refresh this scope's pinned Workbench (throttled). */
@@ -421,14 +406,8 @@ export class AgentHost {
 
   /** dm-on-supersede (§4.4) sends an owner a short override note. */
   async dmUser(userId: string, text: string): Promise<string | undefined> {
-    try {
-      const user = await this.client.users.fetch(userId)
-      const dm = await user.createDM()
-      const sent = await dm.send(text)
-      return sent.id
-    } catch {
-      return undefined
-    }
+    const ref = await this.messaging.dm(userId, text)
+    return ref?.id
   }
 
   /** §4.2 — the conflict-card synchronization posts a card for a held conflict. */
@@ -446,7 +425,7 @@ export class AgentHost {
    * lifecycle this host owns.
    */
   private async resumeSession(
-    interaction: ButtonInteraction,
+    action: IncomingAction,
     scopeId: ChannelId,
     summary: SessionSummary,
   ): Promise<void> {
@@ -454,21 +433,17 @@ export class AgentHost {
     const roomId = this.roomForScope(scopeId)
     const room = roomId ? liveAgent.rooms[roomId] : undefined
     if (!room || sessionRuntimeForAgent(liveAgent.runtime) !== summary.runtime) {
-      await interaction
-        .reply({
-          content: `This agent (${liveAgent.runtime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
-          flags: MessageFlags.Ephemeral,
-        })
-        .catch(() => {})
+      await action.respond(
+        `This agent (${liveAgent.runtime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
+        { ephemeral: true },
+      )
       return
     }
     const session = this.getOrCreateSession(scopeId, liveAgent, room)
     session.driver.bindSession(summary.id)
     writeSessionBinding(this.key, scopeId, { runtime: summary.runtime, sessionId: summary.id })
     this.ui.note(this.key, `resuming ${summary.runtime} session ${summary.id.slice(0, 8)} in ${scopeId}`)
-    await interaction
-      .update({ content: renderSessionResumed({ runtime: summary.runtime, title: summary.title }), components: [] })
-      .catch(() => {})
+    await action.update(renderSessionResumed({ runtime: summary.runtime, title: summary.title }))
   }
 
   /** This host's agent key — relay uses it to map agentKey → owner. */
@@ -498,61 +473,50 @@ export class AgentHost {
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
   /**
-   * Get or create the task thread for a top-level message. Race-tolerant: if a
-   * concurrent handler already started the thread, the loser catches and
-   * refetches the message to pick up the winner's thread. Returns null if a
-   * thread can't be created (e.g. missing permission), so the caller falls back
-   * to running the task at the channel level.
+   * Get or create the task thread for a top-level message. The adapter is
+   * race-tolerant (a concurrent starter wins and it adopts that thread). Returns
+   * undefined if a thread can't be created (e.g. missing permission), so the
+   * caller falls back to running the task at the channel level.
    */
-  private async ensureTaskThread(msg: Message): Promise<ThreadChannel | null> {
-    if (msg.hasThread) return (msg.thread as ThreadChannel | null) ?? null
-    try {
-      return (await msg.startThread({
-        name: threadNameFromPrompt(msg.content),
-        autoArchiveDuration: 1440,
-      })) as ThreadChannel
-    } catch {
-      const fresh = await msg.fetch().catch(() => null)
-      return (fresh?.thread as ThreadChannel | null) ?? null
-    }
+  private async ensureTaskThread(m: IncomingMessage): Promise<ChannelId | undefined> {
+    return this.messaging.startThread(m.ref, threadNameFromPrompt(m.text))
   }
 
-  private async handleInbound(msg: Message): Promise<void> {
+  private async handleInbound(m: IncomingMessage): Promise<void> {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
+    const botId = this.messaging.botUserId
 
     // Room = the parent text channel: permission profile, roster, allowlist.
     // A message in a thread inherits its parent's room.
-    const roomId = msg.channel.isThread()
-      ? (msg.channel.parentId ?? msg.channelId)
-      : msg.channelId
+    const roomId = m.isThread
+      ? (this.messaging.parentOfSync(m.scope) ?? m.scope)
+      : m.scope
     const room = liveAgent.rooms[roomId]
     if (!room) return
 
-    if (msg.author.id === this.client.user?.id) return
+    if (m.authorId === botId) return
 
     const ownerId = liveAgent.ownerUserId
-    if (!guildSenderAllowed(room, msg.author.id, this.client.user?.id, ownerId)) return
+    if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
 
     const now = Date.now()
-    const recent = (this.inboundRate.get(msg.author.id) ?? []).filter(t => now - t < 60_000)
+    const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < 60_000)
     if (recent.length >= 10) return
-    this.inboundRate.set(msg.author.id, [...recent, now])
+    this.inboundRate.set(m.authorId, [...recent, now])
 
     const requireMention = room.requireMention ?? true
-    const mentioned = await this.isMentioned(msg, access.mentionPatterns)
+    const mentioned = await this.isMentioned(m, access.mentionPatterns)
     if (requireMention && !mentioned) return
 
-    if ('sendTyping' in msg.channel) {
-      void (msg.channel as { sendTyping: () => Promise<void> }).sendTyping().catch(() => {})
-    }
+    this.messaging.typing(m.scope)
 
-    const kind = senderKind(room, msg.author.id, ownerId)
+    const kind = senderKind(room, m.authorId, ownerId)
 
     // Owner control commands operate at the scope they're TYPED in and never
     // spawn a task thread (they're control, not work): a command typed inside a
     // thread targets that thread; at top level it targets the channel itself.
-    const controlScope = msg.channel.isThread() ? msg.channelId : roomId
+    const controlScope = m.isThread ? m.scope : roomId
 
     // ─── Owner share/resume-session command — short-circuit before any admit ─
     // Owner-only (kind==='owner'): list this agent's local sessions and post a
@@ -561,9 +525,9 @@ export class AgentHost {
     // and owner-driven (the prompt-injection invariant). A peer can't reach
     // here — senderKind only returns 'owner' for the agent's owner. 'import'
     // distills context; 'resume' continues the live session.
-    if (kind === 'owner' && (isShareSessionCommand(msg.content) || isResumeSessionCommand(msg.content))) {
+    if (kind === 'owner' && (isShareSessionCommand(m.text) || isResumeSessionCommand(m.text))) {
       this.scopeToRoom.set(controlScope, roomId)
-      const mode = isResumeSessionCommand(msg.content) ? 'resume' : 'import'
+      const mode = isResumeSessionCommand(m.text) ? 'resume' : 'import'
       await this.sessionSharing.offer(controlScope, mode).catch(e =>
         this.ui.error(this.key, `offer session ${mode}: ${e}`),
       )
@@ -575,9 +539,9 @@ export class AgentHost {
     // channel.message, so a watch can't be armed by a peer talking (the
     // prompt-injection invariant). Arming a command is permission-gated the same
     // way a Bash call is. See docs/knock-knock-watches.md.
-    if (kind === 'owner' && (msg.content.startsWith('!watch') || msg.content.startsWith('!unwatch'))) {
+    if (kind === 'owner' && (m.text.startsWith('!watch') || m.text.startsWith('!unwatch'))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.watchControl.handleCommand(controlScope, msg.content).catch(e =>
+      await this.watchControl.handleCommand(controlScope, m.text).catch(e =>
         this.ui.error(this.key, `watch command: ${e}`),
       )
       return
@@ -590,13 +554,12 @@ export class AgentHost {
     // requireMention is false) stays at the channel. Thread creation failing
     // (e.g. missing permission) degrades to running at the channel.
     let scopeId: ChannelId
-    if (msg.channel.isThread()) {
-      scopeId = msg.channelId
+    if (m.isThread) {
+      scopeId = m.scope
     } else if (mentioned) {
-      const thread = await this.ensureTaskThread(msg)
-      scopeId = thread?.id ?? msg.channelId
+      scopeId = (await this.ensureTaskThread(m)) ?? m.scope
     } else {
-      scopeId = msg.channelId
+      scopeId = m.scope
     }
     this.scopeToRoom.set(scopeId, roomId)
 
@@ -604,7 +567,7 @@ export class AgentHost {
     const channelArtifactId = discordArtifact(scopeId)
     const prior = await this.store.latestInChannel(scopeId)
     const inboundResult = await admit(this.store, {
-      actor: msg.author.id,
+      actor: m.authorId,
       role: kind === 'unknown' ? 'agent' : kind,
       channel: scopeId,
       target: { artifactId: channelArtifactId, anchor: { kind: 'none' } },
@@ -612,9 +575,9 @@ export class AgentHost {
       patch: {
         kind: 'external',
         intent: {
-          channel: 'discord',
+          channel: this.messaging.platform,
           op: 'received',
-          args: { text: msg.content, messageId: msg.id },
+          args: { text: m.text, messageId: m.ref.id },
         },
       },
       effect: 'external',
@@ -622,28 +585,28 @@ export class AgentHost {
     })
     if (inboundResult.kind !== 'admitted') return
 
-    // Side-table: stash Discord context so synchronization-driven UX can
-    // use the live Message object (ack reaction, DmCourier header).
-    const channelLabel = await this.describeChannel(msg).catch(() => `#${roomId}`)
+    // Side-table: stash messaging context so synchronization-driven UX can
+    // react/edit the inbound message later (ack reaction, DmCourier header).
+    const channelLabel = m.scopeLabel ?? `#${roomId}`
     const ackEmoji = access.ackReaction ?? '👀'
     this.inboundByHash.set(inboundResult.interaction.hash, {
-      msg,
+      ref: m.ref,
       ackEmoji,
-      senderLabel: msg.author.username ?? msg.author.id,
+      senderLabel: m.authorName,
       channelLabel,
-      userPrompt: msg.content,
+      userPrompt: m.text,
     })
 
     this.ui.turnStart(this.key, {
       channel: { label: channelLabel },
-      sender: { label: msg.author.username ?? msg.author.id, kind },
-      text: msg.content,
+      sender: { label: m.authorName, kind },
+      text: m.text,
     })
 
     // Ack reaction (👀 = received/working). Swapped for a persistent 🏁 done /
     // 🛑 failed by markInboundOutcome when the turn ends. If the loop-guard
     // denies the turn, the ack stays until a TTL sweep (Phase 3.1).
-    void msg.react(ackEmoji).catch(() => {})
+    void this.messaging.react(m.ref, ackEmoji).catch(() => {})
   }
 
   // ─── Ledger-driven side effects (subscribed in constructor) ───────────────
@@ -683,11 +646,10 @@ export class AgentHost {
     const side = this.inboundByHash.get(inboundHash)
     if (!side) return
     this.inboundByHash.delete(inboundHash)
-    const botId = this.client.user?.id ?? ''
-    void side.msg.reactions.cache.get(side.ackEmoji)?.users.remove(botId).catch(() => {})
+    void this.messaging.unreact(side.ref, side.ackEmoji).catch(() => {})
     const glyph =
       outcome === 'stopped' ? GLYPHS.stopped : outcome === 'failed' ? GLYPHS.failed : GLYPHS.done
-    void side.msg.react(glyph).catch(() => {})
+    void this.messaging.react(side.ref, glyph).catch(() => {})
   }
 
   /** Looking up a session's channel from a promptHash; usually it's just
@@ -889,34 +851,24 @@ export class AgentHost {
     }
   }
 
-  private async isMentioned(msg: Message, mentionPatterns?: string[]): Promise<boolean> {
-    if (this.client.user && msg.mentions.has(this.client.user)) return true
+  /**
+   * Mention POLICY (platform-agnostic, lives here): a message is "directed at us"
+   * if the platform natively addressed us (m.mentionsBot), if a configured
+   * mention pattern matches the text, or if it replies to one of THIS host's
+   * recent messages. The reply check first consults the in-process recent-bot-id
+   * set (the dedup cache), then asks the adapter whether the referenced message
+   * was authored by the bot (the old fetchReference fallback).
+   */
+  private async isMentioned(m: IncomingMessage, mentionPatterns?: string[]): Promise<boolean> {
+    if (m.mentionsBot) return true
 
-    const refId = msg.reference?.messageId
+    const refId = m.replyToMessageId
     if (refId) {
       if (this.recentBotMsgIds.has(refId)) return true
-      try {
-        const ref = await msg.fetchReference()
-        if (ref.author.id === this.client.user?.id) return true
-      } catch {}
+      if (await this.messaging.authoredByBot(m.scope, refId)) return true
     }
 
-    for (const pat of mentionPatterns ?? []) {
-      try {
-        if (new RegExp(pat, 'i').test(msg.content)) return true
-      } catch {}
-    }
-    return false
-  }
-
-  private async describeChannel(msg: Message): Promise<string> {
-    const ch = msg.channel as { name?: string; isThread?: () => boolean; parent?: { name?: string } }
-    if (msg.channel.isThread?.() && ch.parent?.name) {
-      return `#${ch.parent.name} › ${ch.name ?? 'thread'}`
-    }
-    if (ch.name) return `#${ch.name}`
-    if (msg.channel.isDMBased?.()) return 'DM'
-    return `#${msg.channelId}`
+    return matchesMentionPattern(m.text, mentionPatterns)
   }
 }
 

@@ -10,14 +10,8 @@
  * `onResume`.
  */
 
-import {
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  MessageFlags,
-  type ButtonInteraction,
-} from 'discord.js'
 import type { HostContext } from './context.ts'
+import type { IncomingAction, Choice } from '../messaging-adapter.ts'
 import type { ChannelId, Hash } from '../ledger/interaction.ts'
 import { importSession } from '../sessions/import.ts'
 import { pickFreshContext } from '../lib.ts'
@@ -40,7 +34,7 @@ import {
 
 /** Continue a live runtime session in a scope — bind the Driver + persist it. */
 export type ResumeHandler = (
-  interaction: ButtonInteraction,
+  action: IncomingAction,
   scopeId: ChannelId,
   summary: SessionSummary,
 ) => Promise<void>
@@ -61,9 +55,9 @@ export class SessionSharing {
     private readonly onResume: ResumeHandler,
   ) {}
 
-  /** Does this button click target one of our open session cards? */
-  handles(interaction: ButtonInteraction): boolean {
-    return interaction.customId.startsWith('sess:')
+  /** Does this action target one of our open session cards? */
+  handles(action: IncomingAction): boolean {
+    return action.actionId.startsWith('sess:')
   }
 
   /** Owner asked to share/resume a session: discover this agent's local sessions
@@ -92,8 +86,6 @@ export class SessionSharing {
     ownerId: string | undefined,
     mode: 'import' | 'resume',
   ): Promise<string | undefined> {
-    const ch = await this.ctx.client.channels.fetch(scopeId).catch(() => null)
-    if (!ch || !('send' in ch)) return undefined
     const text = renderSessionCard({
       ownerId,
       mode,
@@ -105,27 +97,26 @@ export class SessionSharing {
       })),
     })
     if (offered.length === 0) {
-      const sent = await (ch as { send: (t: string) => Promise<{ id: string }> }).send(text)
-      this.ctx.noteBotMsg(sent.id)
-      return sent.id
+      const ref = await this.ctx.messaging.send(scopeId, text)
+      if (ref) this.ctx.noteBotMsg(ref.id)
+      return ref?.id
     }
+    // The numbered picks (up to 5 = NUMBERS.length) + a trailing Cancel become
+    // the choice list; the adapter packs them into rows of 5, reproducing the
+    // original "picks in one row, Cancel below" layout exactly.
     const action = mode === 'resume' ? 'resume' : 'pick'
-    const pickRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      ...offered.map((_, idx) =>
-        new ButtonBuilder()
-          .setCustomId(`sess:${action}:${idx}`)
-          .setLabel(`${idx + 1}`)
-          .setEmoji(NUMBERS[idx]!)
-          .setStyle(ButtonStyle.Secondary),
-      ),
-    )
-    const cancelRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder().setCustomId('sess:cancel').setLabel('Cancel').setStyle(ButtonStyle.Secondary),
-    )
-    const sent = await (ch as { send: Function }).send({ content: text, components: [pickRow, cancelRow] })
-    this.cards.set(sent.id, { sessions: offered, channelId: scopeId, mode })
-    this.ctx.noteBotMsg(sent.id)
-    return sent.id
+    const choices: Choice[] = offered.map((_, idx) => ({
+      id: `sess:${action}:${idx}`,
+      label: `${idx + 1}`,
+      glyph: NUMBERS[idx]!,
+      style: 'neutral',
+    }))
+    choices.push({ id: 'sess:cancel', label: 'Cancel', style: 'neutral' })
+    const ref = await this.ctx.messaging.send(scopeId, text, { choices })
+    if (!ref) return undefined
+    this.cards.set(ref.id, { sessions: offered, channelId: scopeId, mode })
+    this.ctx.noteBotMsg(ref.id)
+    return ref.id
   }
 
   /**
@@ -135,36 +126,34 @@ export class SessionSharing {
    * conflict card); the next turn in that scope injects it and on Postgres it
    * syncs to peers. A 'resume' pick is delegated to the host's Driver binding.
    */
-  async handlePick(interaction: ButtonInteraction): Promise<void> {
-    const card = this.cards.get(interaction.message.id)
+  async handlePick(action: IncomingAction): Promise<void> {
+    const card = this.cards.get(action.ref.id)
     if (!card) {
-      await interaction.reply({ content: 'This session menu is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
+      await action.respond('This session menu is no longer open.', { ephemeral: true })
       return
     }
     // Owner-only, by ownerUserId (not a delegated room approver): sharing/resuming
     // your own local session is identity-bound, matching the trigger gate.
     const ownerId = this.ctx.getAccess().agents[this.ctx.key]?.ownerUserId
-    if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can share or resume a session.', flags: MessageFlags.Ephemeral }).catch(() => {})
+    if (!ownerId || action.userId !== ownerId) {
+      await action.respond('Only the owner can share or resume a session.', { ephemeral: true })
       return
     }
 
-    if (interaction.customId === 'sess:cancel') {
-      this.cards.delete(interaction.message.id)
-      await interaction
-        .update({ content: `${interaction.message.content}\n\n-# ✖️ cancelled`, components: [] })
-        .catch(() => {})
+    if (action.actionId === 'sess:cancel') {
+      this.cards.delete(action.ref.id)
+      await action.update(`${action.message}\n\n-# ✖️ cancelled`)
       return
     }
 
-    const m = /^sess:(pick|resume):(\d+)$/.exec(interaction.customId)
+    const m = /^sess:(pick|resume):(\d+)$/.exec(action.actionId)
     if (!m) return
     const summary = card.sessions[Number(m[2])]
     if (!summary) return
 
     if (card.mode === 'resume') {
-      this.cards.delete(interaction.message.id)
-      await this.onResume(interaction, card.channelId, summary)
+      this.cards.delete(action.ref.id)
+      await this.onResume(action, card.channelId, summary)
       return
     }
 
@@ -183,7 +172,7 @@ export class SessionSharing {
       return { ok: false, reason: 'unreadable' } as const
     })
     if (!result.ok) {
-      await interaction.reply({ content: 'Could not read that session anymore.', flags: MessageFlags.Ephemeral }).catch(() => {})
+      await action.respond('Could not read that session anymore.', { ephemeral: true })
       return
     }
 
@@ -201,14 +190,12 @@ export class SessionSharing {
       ).catch(err => this.ctx.ui.error(this.ctx.key, `shared-context post: ${err}`))
     }
 
-    this.cards.delete(interaction.message.id)
+    this.cards.delete(action.ref.id)
     this.ctx.ui.note(
       this.ctx.key,
       `imported ${summary.runtime} session ${summary.id.slice(0, 8)} into ${card.channelId}`,
     )
-    await interaction
-      .update({ content: renderSessionImported({ runtime: summary.runtime, title: summary.title }), components: [] })
-      .catch(() => {})
+    await action.update(renderSessionImported({ runtime: summary.runtime, title: summary.title }))
   }
 
   /**

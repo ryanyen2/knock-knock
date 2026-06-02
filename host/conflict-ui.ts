@@ -4,14 +4,8 @@
  * drop back to each loser's inbox. Owns the open-card bookkeeping.
  */
 
-import {
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  MessageFlags,
-  type ButtonInteraction,
-} from 'discord.js'
 import type { HostContext } from './context.ts'
+import type { IncomingAction, Choice } from '../messaging-adapter.ts'
 import type { ChannelId, Hash } from '../ledger/interaction.ts'
 import { resolveConflict } from '../ledger/resolve-conflict.ts'
 import { LETTERS } from '../ledger/render/surface.ts'
@@ -23,72 +17,62 @@ export class ConflictUI {
 
   constructor(private readonly ctx: HostContext) {}
 
-  /** Does this button click target one of our open conflict cards? */
-  handles(interaction: ButtonInteraction): boolean {
-    return interaction.customId.startsWith('cflt:')
+  /** Does this action target one of our open conflict cards? */
+  handles(action: IncomingAction): boolean {
+    return action.actionId.startsWith('cflt:')
   }
 
   /**
-   * Post a conflict card with Take A / Take B / … / Write buttons. The branch
+   * Post a conflict card with Take A / Take B / … / Write choices. The branch
    * hashes are remembered against the message so a click resolves to a
    * merge.resolve. Returns the posted message id.
    */
   async postCard(post: ConflictCardPost): Promise<string | undefined> {
-    const ch = await this.ctx.client.channels.fetch(post.channelId).catch(() => null)
-    if (!ch || !('send' in ch)) return undefined
+    const choices: Choice[] = post.branchHashes.slice(0, LETTERS.length).map((_, idx) => ({
+      id: `cflt:take:${idx}`,
+      label: `Take ${String.fromCharCode(65 + idx)}`,
+      glyph: LETTERS[idx]!,
+      style: 'neutral',
+    }))
+    choices.push({ id: 'cflt:write', label: 'Write my own', glyph: '✏️', style: 'primary' })
 
-    const buttons = post.branchHashes.slice(0, LETTERS.length).map((_, idx) =>
-      new ButtonBuilder()
-        .setCustomId(`cflt:take:${idx}`)
-        .setLabel(`Take ${String.fromCharCode(65 + idx)}`)
-        .setEmoji(LETTERS[idx]!)
-        .setStyle(ButtonStyle.Secondary),
-    )
-    buttons.push(
-      new ButtonBuilder()
-        .setCustomId('cflt:write')
-        .setLabel('Write my own')
-        .setEmoji('✏️')
-        .setStyle(ButtonStyle.Primary),
-    )
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(...buttons)
-
-    const sent = await (ch as { send: Function }).send({ content: post.text, components: [row] })
-    this.cards.set(sent.id, { branchHashes: post.branchHashes, channelId: post.channelId })
-    this.ctx.noteBotMsg(sent.id)
-    return sent.id
+    const ref = await this.ctx.messaging.send(post.channelId, post.text, { choices })
+    if (!ref) return undefined
+    this.cards.set(ref.id, { branchHashes: post.branchHashes, channelId: post.channelId })
+    this.ctx.noteBotMsg(ref.id)
+    return ref.id
   }
 
-  /** Resolve a conflict-card button click into a merge.resolve. */
-  async resolve(interaction: ButtonInteraction): Promise<void> {
-    const card = this.cards.get(interaction.message.id)
+  /** Resolve a conflict-card action into a merge.resolve. */
+  async resolve(action: IncomingAction): Promise<void> {
+    const card = this.cards.get(action.ref.id)
     if (!card) {
-      await interaction.reply({ content: 'This conflict is no longer open.', flags: MessageFlags.Ephemeral }).catch(() => {})
+      await action.respond('This conflict is no longer open.', { ephemeral: true })
       return
     }
     const ownerId = this.ctx.getOwnerForChannel(card.channelId)
-    if (!ownerId || interaction.user.id !== ownerId) {
-      await interaction.reply({ content: 'Only the owner can resolve this.', flags: MessageFlags.Ephemeral }).catch(() => {})
+    if (!ownerId || action.userId !== ownerId) {
+      await action.respond('Only the owner can resolve this.', { ephemeral: true })
       return
     }
 
-    if (interaction.customId === 'cflt:write') {
-      await interaction
-        .reply({ content: 'Reply in this channel with your merge — it supersedes both drafts.', flags: MessageFlags.Ephemeral })
-        .catch(() => {})
+    if (action.actionId === 'cflt:write') {
+      await action.respond('Reply in this channel with your merge — it supersedes both drafts.', {
+        ephemeral: true,
+      })
       return
     }
 
-    const m = /^cflt:take:(\d+)$/.exec(interaction.customId)
+    const m = /^cflt:take:(\d+)$/.exec(action.actionId)
     if (!m) return
     const idx = Number(m[1])
     const chosen = card.branchHashes[idx]
     if (!chosen) return
 
     // The resolution itself is a headless ledger verb — record merge.resolve,
-    // flip lifecycles, surface the drop to each loser's inbox. This Discord
-    // handler is now a thin adapter over it (the owner gate above is the
-    // identity boundary the core trusts).
+    // flip lifecycles, surface the drop to each loser's inbox. This handler is
+    // now a thin adapter over it (the owner gate above is the identity boundary
+    // the core trusts).
     const result = await resolveConflict(this.ctx.store, this.ctx.ledger, {
       ownerId,
       channel: card.channelId,
@@ -98,9 +82,7 @@ export class ConflictUI {
     })
     if (!result) return
 
-    this.cards.delete(interaction.message.id)
-    await interaction
-      .update({ content: `${interaction.message.content}\n\n-# ✓ took ${LETTERS[idx]}`, components: [] })
-      .catch(() => {})
+    this.cards.delete(action.ref.id)
+    await action.update(`${action.message}\n\n-# ✓ took ${LETTERS[idx]}`)
   }
 }

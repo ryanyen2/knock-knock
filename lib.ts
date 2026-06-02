@@ -32,12 +32,15 @@ export type SandboxConfig = {
 
 /** A single coding-agent identity. */
 export type AgentConfig = {
-  name?: string // live Discord username; overwritten on connect
-  ownerUserId: string // Discord user ID of the human owner
+  name?: string // live messaging-platform username; overwritten on connect
+  ownerUserId: string // platform user id of the human owner
   blurb: string
   runtime: string // 'claude-sdk' | 'opencode' | 'codex' | 'gemini' | 'acp' | …
   workspace: string // absolute path of the agent's working directory
-  tokenEnv: string // NAME of the env var holding this bot's Discord token
+  tokenEnv: string // NAME of the env var holding this bot's platform token
+  /** Messaging platform this agent speaks (the MessagingAdapter to build).
+   *  Defaults to 'discord' when absent — today's only platform. */
+  platform?: string
   rooms: Record<string, RoomConfig>
   sandbox?: SandboxConfig // OS-level confinement (ACP runtimes only)
 }
@@ -793,6 +796,21 @@ export function threadNameFromPrompt(text: string): string {
   const stripped = text.replace(/<@!?\d+>/g, '').replace(/\s+/g, ' ').trim()
   const trimmed = stripped.slice(0, 80) || 'task'
   return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
+}
+
+/**
+ * Does any of the configured mention patterns (case-insensitive regex) match the
+ * message text? Pure (so it's unit-testable and platform-agnostic): the host's
+ * mention POLICY combines this with the platform's native-mention signal and the
+ * reply-to-recent-bot check. Malformed patterns are skipped, never thrown.
+ */
+export function matchesMentionPattern(text: string, patterns?: string[]): boolean {
+  for (const pat of patterns ?? []) {
+    try {
+      if (new RegExp(pat, 'i').test(text)) return true
+    } catch {}
+  }
+  return false
 }
 
 // ─── Room vs scope ───────────────────────────────────────────────────────────

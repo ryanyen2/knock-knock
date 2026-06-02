@@ -55,6 +55,8 @@ bun relay.ts                  # start the relay
 
 This walkthrough uses two people, **Alice** and **Bob**, collaborating in a channel called `#project-x`. **Both** people do steps 1–7 on their own machines.
 
+> **Prefer Slack, Telegram, WhatsApp, or iMessage?** knock-knock is multi-platform behind one `MessagingAdapter` seam. Discord is the production-tested path below; the others are walking skeletons with their own setup guide — see **[Messaging platform setup](docs/messaging-platform-setup.md)** (create the bot/app, the Slack manifest, tokens, and per-platform limits) and **[the architecture](docs/messaging-platforms.md)**.
+
 ## 1. Create your Discord bot
 
 At [discord.com/developers/applications](https://discord.com/developers/applications):

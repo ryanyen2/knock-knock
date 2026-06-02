@@ -1,35 +1,25 @@
 /**
- * Approvals — Discord UX for ask-tier tool permission requests.
+ * Approvals — messaging UX for ask-tier tool permission requests.
  *
- * Phase 3 collapses this service to its UX role: it posts Discord prompts,
- * routes button clicks and reactions to ledger admissions. The Promise-
- * resolving `pending: Map` from Phase 0 is gone — the adapter's permission
- * handler now waits via `await-verdict.ts`, which subscribes to the store
- * and resolves on any admitted tool.approved/tool.denied caused_by the
- * tool.requested hash.
+ * Phase 3 collapses this service to its UX role: it posts prompts via the
+ * MessagingAdapter (Allow/Deny choices), routes the actor's choice + ✅/❌
+ * reactions to ledger admissions. The Promise-resolving `pending: Map` from
+ * Phase 0 is gone — the adapter's permission handler now waits via
+ * `await-verdict.ts`, which subscribes to the store and resolves on any
+ * admitted tool.approved/tool.denied caused_by the tool.requested hash.
  *
- * Only state held here is an in-memory `messageToHash: Map<string, Hash>`
- * so a ✅/❌ reaction can find the interaction that the Discord message
- * was prompting for. The map IS recoverable from the ledger (an
- * `approval.posted` verb in Phase 3.1 would journal it), but for Phase 3
- * we keep it in-process and document the gap.
+ * Only state held here is an in-memory map keyed by message id / hash prefix
+ * so a ✅/❌ reaction or button can find the interaction the prompt was for.
+ * The map IS recoverable from the ledger (an `approval.posted` verb in Phase
+ * 3.1 would journal it), but for Phase 3 we keep it in-process.
  *
- * The button customId embeds a 10-char prefix of the tool.requested hash —
- * Discord caps customId at 100 chars and `appr:allow:<10-hex>` fits with
- * room to spare. Cross-host approval flow (Phase 4) resolves the full hash
- * via fold lookup over the approval concept.
+ * The choice id embeds a 10-char prefix of the tool.requested hash — platforms
+ * cap interactive-component ids (Discord 100 chars) and `appr:allow:<10-hex>`
+ * fits with room to spare. Cross-host approval flow (Phase 4) resolves the full
+ * hash via fold lookup over the approval concept.
  */
 
-import {
-  type Client,
-  type ButtonInteraction,
-  type TextBasedChannel,
-  type GuildTextBasedChannel,
-  ButtonBuilder,
-  ButtonStyle,
-  ActionRowBuilder,
-  MessageFlags,
-} from 'discord.js'
+import type { MessagingAdapter, IncomingAction, Choice } from './messaging-adapter.ts'
 import type { AgentConfig } from './lib.ts'
 import { approverForAgent } from './lib.ts'
 import type { ChannelId, Hash } from './ledger/interaction.ts'
@@ -50,6 +40,10 @@ type PostedPrompt = {
   /** Where the prompt landed (DM channel id or origin channel id). */
   promptChannelId: string
   discordMessageId: string
+  /** The prompt body as posted, so a ✅/❌ reaction can re-render it with the
+   *  verdict line appended (the old reaction path refetched the message to do
+   *  the same; we keep the text in-process instead of fetching it back). */
+  body: string
 }
 
 export class Approvals {
@@ -61,7 +55,7 @@ export class Approvals {
   private readonly recencyOrder: string[] = []
 
   constructor(
-    private readonly client: Client,
+    private readonly messaging: MessagingAdapter,
     /** Re-read on each resolution so owner changes take effect without restart. */
     private readonly getAgent: () => AgentConfig,
     /** The shared ledger store; verdicts admit through admit() here. */
@@ -89,77 +83,61 @@ export class Approvals {
     const shortPreview = preview.length > 280 ? preview.slice(0, 280) + '…' : preview
     const body = `🔐 Permission request: **${opts.toolName}**\n\`\`\`\n${shortPreview}\n\`\`\``
 
-    const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`appr:allow:${prefix}`)
-        .setLabel('Allow')
-        .setEmoji('✅')
-        .setStyle(ButtonStyle.Success),
-      new ButtonBuilder()
-        .setCustomId(`appr:deny:${prefix}`)
-        .setLabel('Deny')
-        .setEmoji('❌')
-        .setStyle(ButtonStyle.Danger),
-    )
+    const choices: Choice[] = [
+      { id: `appr:allow:${prefix}`, label: 'Allow', glyph: '✅', style: 'primary' },
+      { id: `appr:deny:${prefix}`, label: 'Deny', glyph: '❌', style: 'danger' },
+    ]
 
-    const target = await this._resolveTarget(approverId, opts.channelId)
-    if (!target) {
+    // DM the approver first; fall back to the origin channel (with the approver
+    // pinged) if a DM is impossible — preserving the old _resolveTarget semantics.
+    let destination: 'dm' | 'channel' | undefined
+    let reason: string | undefined
+    let ref = approverId ? await this.messaging.dm(approverId, body, { choices }) : undefined
+    if (ref) {
+      destination = 'dm'
+    } else {
+      if (approverId) reason = 'DM unavailable'
+      ref = await this.messaging.send(opts.channelId, body, { choices, mentionUser: approverId })
+      if (ref) destination = 'channel'
+    }
+
+    if (!ref || !destination) {
       // Can't reach a channel — emit a `tool.denied` so the awaiter resolves.
       await this._emitVerdict(opts, 'system:approvals', 'deny', 'Cannot reach a channel for approval prompt.')
       return
     }
 
-    try {
-      const content =
-        target.kind === 'dm'
-          ? body
-          : (approverId ? `<@${approverId}> ` : '') + body
-      const trimmed = content.length > 1900 ? content.slice(0, 1899) + '…' : content
-      const sent = await (target.channel as TextBasedChannel & { send: Function }).send({
-        content: trimmed,
-        components: [row],
-      })
-      const posted: PostedPrompt = {
-        hash: opts.toolRequestedHash,
-        originChannelId: opts.channelId,
-        promptChannelId: target.channel.id,
-        discordMessageId: sent.id,
-      }
-      this._remember(posted, prefix)
-      this.onDelivery?.({ destination: target.kind, reason: target.reason })
-    } catch (e) {
-      // Posting failed — admit a synthetic deny so the awaiter doesn't hang.
-      await this._emitVerdict(
-        opts,
-        'system:approvals',
-        'deny',
-        `Failed to post approval request: ${e}`,
-      )
+    const posted: PostedPrompt = {
+      hash: opts.toolRequestedHash,
+      originChannelId: opts.channelId,
+      promptChannelId: ref.scope,
+      discordMessageId: ref.id,
+      body,
     }
+    this._remember(posted, prefix)
+    this.onDelivery?.({ destination, reason })
   }
 
-  async resolveInteraction(interaction: ButtonInteraction): Promise<void> {
-    const m = /^appr:(allow|deny):(\w+)$/.exec(interaction.customId)
+  async resolve(action: IncomingAction): Promise<void> {
+    const m = /^appr:(allow|deny):(\w+)$/.exec(action.actionId)
     if (!m) return
     const [, behavior, prefix] = m
     const posted = this.byHashPrefix.get(prefix!)
     if (!posted) {
-      await interaction.reply({ content: 'Request no longer pending.', flags: MessageFlags.Ephemeral }).catch(() => {})
+      await action.respond('Request no longer pending.', { ephemeral: true })
       return
     }
 
     const agent = this.getAgent()
     const approverId = approverForAgent(agent, posted.originChannelId)
-    if (!approverId || interaction.user.id !== approverId) {
-      await interaction.reply({ content: 'Not authorized.', flags: MessageFlags.Ephemeral }).catch(() => {})
+    if (!approverId || action.userId !== approverId) {
+      await action.respond('Not authorized.', { ephemeral: true })
       return
     }
 
     // Update the prompt message to reflect the decision.
     const label = behavior === 'allow' ? '✅ Allowed' : '❌ Denied'
-    await interaction
-      .update({ content: `${interaction.message.content}\n\n${label}`, components: [] })
-      .catch(() => {})
+    await action.update(`${action.message}\n\n${label}`)
 
     await this._emitVerdict(
       { channelId: posted.originChannelId, toolRequestedHash: posted.hash },
@@ -178,14 +156,13 @@ export class Approvals {
     const approverId = approverForAgent(agent, posted.originChannelId)
     if (!approverId || userId !== approverId) return
 
-    try {
-      const ch = await this.client.channels.fetch(posted.promptChannelId)
-      if (ch && ch.isTextBased()) {
-        const msg = await (ch as GuildTextBasedChannel).messages.fetch(messageId)
-        const label = emoji === '✅' ? '✅ Allowed' : '❌ Denied'
-        await msg.edit({ content: `${msg.content}\n\n${label}`, components: [] })
-      }
-    } catch {}
+    const label = emoji === '✅' ? '✅ Allowed' : '❌ Denied'
+    // Edit the prompt to append the verdict and drop its controls — the same
+    // `${body}\n\n${label}` the old reaction path produced by refetching the
+    // message (best-effort; the ledger verdict below is the truth).
+    await this.messaging
+      .edit({ id: messageId, scope: posted.promptChannelId }, `${posted.body}\n\n${label}`)
+      .catch(() => {})
 
     const behavior: 'allow' | 'deny' = emoji === '✅' ? 'allow' : 'deny'
     await this._emitVerdict(
@@ -246,35 +223,5 @@ export class Approvals {
       effect: 'external',
       caused_by: [opts.toolRequestedHash],
     })
-  }
-
-  /** Try DM first; on failure, return the origin channel so the agent isn't stuck. */
-  private async _resolveTarget(
-    approverId: string | undefined,
-    originChannelId: string,
-  ): Promise<
-    | { kind: 'dm'; channel: TextBasedChannel & { id: string }; reason?: string }
-    | { kind: 'channel'; channel: TextBasedChannel & { id: string }; reason?: string }
-    | undefined
-  > {
-    if (approverId) {
-      try {
-        const user = await this.client.users.fetch(approverId)
-        const dm = await user.createDM()
-        return { kind: 'dm', channel: dm }
-      } catch (e) {
-        const reason = `DM unavailable: ${e instanceof Error ? e.message : String(e)}`
-        const ch = await this.client.channels.fetch(originChannelId).catch(() => null)
-        if (ch && 'send' in ch) {
-          return { kind: 'channel', channel: ch as TextBasedChannel & { id: string }, reason }
-        }
-        return undefined
-      }
-    }
-    const ch = await this.client.channels.fetch(originChannelId).catch(() => null)
-    if (ch && 'send' in ch) {
-      return { kind: 'channel', channel: ch as TextBasedChannel & { id: string } }
-    }
-    return undefined
   }
 }

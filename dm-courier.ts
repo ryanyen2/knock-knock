@@ -14,7 +14,7 @@
  * error is sticky.
  */
 
-import type { Client, Message, DMChannel } from 'discord.js'
+import type { MessagingAdapter, MessageRef } from './messaging-adapter.ts'
 import type { FoldEngine } from './ledger/fold.ts'
 import {
   TURN_FOLD,
@@ -43,11 +43,10 @@ export interface TurnHandle {
 }
 
 export class DmCourier {
-  private dmCache = new Map<string, DMChannel>()
   private disabled = new Set<string>()
 
   constructor(
-    private readonly client: Client,
+    private readonly messaging: MessagingAdapter,
     private readonly engine: FoldEngine,
     /** Re-read on each turn so owner changes take effect without a restart. */
     private readonly getOwnerId: () => string | undefined,
@@ -60,32 +59,15 @@ export class DmCourier {
     const ownerId = this.getOwnerId()
     if (!ownerId || this.disabled.has(ownerId)) return noopHandle
 
-    const dm = await this.openDm(ownerId).catch(err => {
-      this.disabled.add(ownerId)
-      this.onDeliveryFailure?.(`DM unavailable: ${err}`)
-      return undefined
-    })
-    if (!dm) return noopHandle
-
-    return new LiveTurn(dm, ctx, this.engine, () => {
+    return new LiveTurn(this.messaging, ownerId, ctx, this.engine, () => {
       this.disabled.add(ownerId)
       this.onDeliveryFailure?.('DM send failed mid-turn; disabling for this owner.')
     })
   }
-
-  /** Fetch (and cache) the owner's DM channel. */
-  private async openDm(ownerId: string): Promise<DMChannel> {
-    const cached = this.dmCache.get(ownerId)
-    if (cached) return cached
-    const user = await this.client.users.fetch(ownerId)
-    const dm = await user.createDM()
-    this.dmCache.set(ownerId, dm)
-    return dm
-  }
 }
 
 class LiveTurn implements TurnHandle {
-  private message?: Message
+  private ref?: MessageRef
   private debounceTimer?: ReturnType<typeof setTimeout>
   private rendering: Promise<void> = Promise.resolve()
   private errorText?: string
@@ -94,7 +76,8 @@ class LiveTurn implements TurnHandle {
   private latestState?: TurnState
 
   constructor(
-    private readonly dm: DMChannel,
+    private readonly messaging: MessagingAdapter,
+    private readonly ownerId: string,
     private readonly ctx: DmTurnContext,
     private readonly engine: FoldEngine,
     private readonly onSendFailure: () => void,
@@ -135,15 +118,17 @@ class LiveTurn implements TurnHandle {
 
   private async doRender(): Promise<void> {
     const body = this.render()
-    try {
-      if (!this.message) {
-        this.message = await this.dm.send(body)
-      } else {
-        await this.message.edit(body)
-      }
-    } catch {
-      this.onSendFailure()
+    if (!this.ref) {
+      // First render opens the DM. A missing ref means the owner can't be DM'd
+      // (closed DMs) — disable for this owner, exactly as the old openDm failure
+      // path did, just deferred to the first actual send.
+      const ref = await this.messaging.dm(this.ownerId, body)
+      if (ref) this.ref = ref
+      else this.onSendFailure()
+      return
     }
+    const ok = await this.messaging.edit(this.ref, body)
+    if (!ok) this.onSendFailure()
   }
 
   private render(): string {

@@ -8,7 +8,7 @@
  * back-reference to the whole host. AgentHost implements it.
  */
 
-import type { Client } from 'discord.js'
+import type { MessagingAdapter } from '../messaging-adapter.ts'
 import type { Access } from '../lib.ts'
 import type { ChannelId } from '../ledger/interaction.ts'
 import type { Store } from '../ledger/store.ts'
@@ -18,7 +18,10 @@ import type { ConsoleUI } from '../console-ui.ts'
 
 export type HostContext = {
   readonly key: string
-  readonly client: Client
+  /** The messaging platform this host talks to (Discord today). All chat I/O —
+   *  send/edit/react/pin/dm/thread — goes through here; no collaborator imports a
+   *  platform SDK. */
+  readonly messaging: MessagingAdapter
   readonly store: Store
   readonly engine: FoldEngine
   readonly ledger: Ledger
@@ -29,7 +32,8 @@ export type HostContext = {
   roomForScope(scopeId: ChannelId): ChannelId | undefined
   /** Owner/approver for a scope this host serves (room-resolved), else undefined. */
   getOwnerForChannel(scopeId: ChannelId): string | undefined
-  /** Send a chunk to a scope's Discord channel; returns the posted message id. */
+  /** Send a chunk to a scope's channel; returns the posted message id. Thin host
+   *  wrapper over `messaging.send` that also records the id for self-reply dedup. */
   discordSend(scopeId: ChannelId, text: string): Promise<string | undefined>
   /** Remember a message this host posted (dedup for self-reply / reaction gating). */
   noteBotMsg(id: string): void
