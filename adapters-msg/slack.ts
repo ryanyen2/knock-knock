@@ -141,8 +141,14 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   private closing = false
 
   /** ts values we recently posted, so authoredByBot can answer without a
-   *  history scope (best-effort; bounded). */
+   *  history scope (best-effort; bounded). Also the reliable self-echo filter:
+   *  Slack re-delivers our own posts as message events (see dispatch). */
   private readonly ourMessageIds = new Set<string>()
+
+  /** ts values already ingested as inbound, so a message delivered twice — one
+   *  @mention arrives as BOTH app_mention AND message when subscribed to both,
+   *  and Socket Mode may redeliver — is handled exactly once. Bounded. */
+  private readonly seenInboundTs = new Set<string>()
 
   private onMessageHandler?: (m: IncomingMessage) => void
   private onActionHandler?: (a: IncomingAction) => void
@@ -259,10 +265,23 @@ export class SlackMessagingAdapter implements MessagingAdapter {
     if (!event) return
 
     if (event.type === 'message' || event.type === 'app_mention') {
-      // Ignore our own messages, other bots, and edit/delete/system subtypes.
+      // Ignore other bots and edit/delete/system subtypes.
       if (event.bot_id) return
       if (this._botUserId && event.user === this._botUserId) return
       if (event.subtype) return // edits/deletes/joins etc.
+      // SELF-ECHO GUARD — the one that stops the bot replying to itself.
+      // With `message.channels` subscribed, Slack echoes our own posts back as
+      // message events, and those echoes can arrive with `user` ABSENT (only
+      // `bot_id`), so the checks above are not sufficient on their own. If we
+      // posted this ts, never re-ingest it.
+      if (event.ts && this.ourMessageIds.has(event.ts)) return
+      // DE-DUPE — one @mention is delivered as BOTH an app_mention AND a message
+      // event when the app subscribes to both (and Socket Mode may redeliver);
+      // handle each message ts exactly once.
+      if (event.ts) {
+        if (this.seenInboundTs.has(event.ts)) return
+        this.rememberInbound(event.ts)
+      }
       const h = this.onMessageHandler
       if (h) h(this.toIncoming(event))
       return
@@ -542,13 +561,23 @@ export class SlackMessagingAdapter implements MessagingAdapter {
     ]
   }
 
-  /** Remember a ts we posted so authoredByBot can answer (bounded to avoid an
-   *  unbounded set in a long-lived relay). */
+  /** Remember a ts we posted so authoredByBot can answer + the self-echo guard
+   *  can drop the echoed copy (bounded to avoid an unbounded set in a long-lived
+   *  relay). */
   private remember(ts: string): void {
     this.ourMessageIds.add(ts)
     if (this.ourMessageIds.size > 500) {
       const first = this.ourMessageIds.values().next().value
       if (first !== undefined) this.ourMessageIds.delete(first)
+    }
+  }
+
+  /** Bounded record of inbound ts already handled (see seenInboundTs). */
+  private rememberInbound(ts: string): void {
+    this.seenInboundTs.add(ts)
+    if (this.seenInboundTs.size > 500) {
+      const first = this.seenInboundTs.values().next().value
+      if (first !== undefined) this.seenInboundTs.delete(first)
     }
   }
 
@@ -576,16 +605,15 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       })
       const json = (await res.json()) as { ok?: boolean } & Record<string, unknown>
       if (!json?.ok) {
-        if (process.env.KNOCK_KNOCK_DEBUG === '1') {
-          console.warn(`knock-knock(slack): ${method} failed:`, json?.error ?? json)
-        }
+        // A failed Web API call is actionable (e.g. `not_in_channel`,
+        // `missing_scope`, `channel_not_found`) — surface the reason ALWAYS, not
+        // only under KNOCK_KNOCK_DEBUG, so a swallowed post failure is diagnosable.
+        console.warn(`knock-knock(slack): ${method} failed: ${json?.error ?? JSON.stringify(json)}`)
         return undefined
       }
       return json as unknown as T
     } catch (err) {
-      if (process.env.KNOCK_KNOCK_DEBUG === '1') {
-        console.warn(`knock-knock(slack): ${method} threw:`, err)
-      }
+      console.warn(`knock-knock(slack): ${method} threw: ${err instanceof Error ? err.message : String(err)}`)
       return undefined
     }
   }

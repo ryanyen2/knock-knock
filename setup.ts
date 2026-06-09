@@ -26,11 +26,23 @@ import {
   type PermissionProfile,
 } from './state.ts'
 import type { Access, AgentConfig, RoomConfig } from './lib.ts'
-import { expandPreset, PRESET_MODES, PRESET_HINTS, DEFAULT_PRESET } from './lib.ts'
+import { expandPreset, PRESET_MODES, PRESET_HINTS, DEFAULT_PRESET, resolveLedgerConfig } from './lib.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ENV_FILE = join(STATE_DIR, '.env')
+
+// Mirror the relay: load the state-dir .env into process.env (without clobbering
+// vars Bun already auto-loaded from the repo-cwd .env or the shell). This makes
+// setup's token + ledger status reflect exactly what the relay will see at
+// runtime — otherwise a token saved in STATE_DIR/.env, or a KNOCK_KNOCK_LEDGER_URL
+// set there, is invisible to setup and reads as "missing" / the wrong backend.
+try {
+  for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    const m = line.match(/^(\w+)=(.*)$/)
+    if (m && process.env[m[1]!] === undefined) process.env[m[1]!] = m[2]!
+  }
+} catch {}
 
 const RUNTIMES = [
   { value: 'claude-sdk', label: 'Claude Code', hint: 'in-process SDK · no install · needs ANTHROPIC_API_KEY' },
@@ -108,10 +120,27 @@ function banner(): string {
   return `${color.bgCyan(color.black(' knock-knock '))} ${color.dim('setup')}`
 }
 
-function deriveTokenEnv(key: string): string {
-  return key === 'default'
-    ? 'DISCORD_BOT_TOKEN'
-    : `DISCORD_BOT_TOKEN_${key.toUpperCase().replace(/-/g, '_')}`
+/** Env-var name prefix that holds a platform's bot token. The full name is the
+ *  prefix for the `default` agent, else `<PREFIX>_<KEY>` — so the var name is
+ *  self-describing (`SLACK_BOT_TOKEN_RESEARCH_BOT`, not a misleading Discord one). */
+const TOKEN_ENV_PREFIX: Record<string, string> = {
+  discord: 'DISCORD_BOT_TOKEN',
+  slack: 'SLACK_BOT_TOKEN',
+  telegram: 'TELEGRAM_BOT_TOKEN',
+  whatsapp: 'WHATSAPP_TOKEN',
+  imessage: 'IMESSAGE_TOKEN', // unused (iMessage needs no token) — kept for a consistent shape
+}
+
+function deriveTokenEnv(key: string, platform = 'discord', access?: Access): string {
+  const prefix = TOKEN_ENV_PREFIX[platform] ?? 'BOT_TOKEN'
+  const suffixed = `${prefix}_${key.toUpperCase().replace(/-/g, '_')}`
+  // Prefer the bare, friendly name (DISCORD_BOT_TOKEN, SLACK_BOT_TOKEN). Only
+  // suffix with the agent key when ANOTHER agent already claims the bare name
+  // for this platform, so two same-platform bots still get distinct vars. This
+  // keeps the common single-bot-per-platform case matching the obvious .env name.
+  if (!access) return key === 'default' ? prefix : suffixed
+  const bareTaken = Object.entries(access.agents).some(([k, a]) => k !== key && a.tokenEnv === prefix)
+  return bareTaken ? suffixed : prefix
 }
 
 // ─── Validators (accept string | undefined per clack's validate signature) ───
@@ -163,8 +192,13 @@ function writeEnvVars(vars: Map<string, string>): void {
 }
 
 function isTokenSet(tokenEnv: string): boolean {
-  const v = readEnvVars().get(tokenEnv)
-  return v !== undefined && v !== ''
+  const fromFile = readEnvVars().get(tokenEnv)
+  if (fromFile !== undefined && fromFile !== '') return true
+  // Match what the relay will actually see at runtime, not just the state-dir
+  // .env: Bun auto-loads the repo-cwd .env into process.env, and a token may be
+  // shell-exported. Otherwise a token that works at runtime reads "✗ missing".
+  const fromProc = process.env[tokenEnv]
+  return fromProc !== undefined && fromProc !== ''
 }
 
 function setToken(tokenEnv: string, token: string): void {
@@ -281,7 +315,7 @@ async function collectAgent(access: Access): Promise<string | null> {
     sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
   }
 
-  const tokenEnv = deriveTokenEnv(key)
+  const tokenEnv = deriveTokenEnv(key, platform, access)
   access.agents[key] = {
     ownerUserId,
     blurb,
@@ -315,12 +349,13 @@ async function collectReconfigure(access: Access): Promise<void> {
   const agent = access.agents[key]!
   const curPlatform = agent.platform ?? 'discord'
 
-  type Field = 'platform' | 'owner' | 'blurb' | 'runtime' | 'workspace' | 'sandbox'
+  type Field = 'platform' | 'owner' | 'blurb' | 'runtime' | 'workspace' | 'sandbox' | 'token-env'
   const fields = orCancel(await p.multiselect<Field>({
     message: `Reconfigure ${color.cyan(key)} — pick fields to change (space to toggle, enter to apply; none = cancel)`,
     options: [
       { value: 'platform', label: 'Messaging platform', hint: curPlatform },
       { value: 'owner', label: 'Owner user id / handle', hint: agent.ownerUserId },
+      { value: 'token-env', label: 'Token env var name', hint: `${agent.tokenEnv}${isTokenSet(agent.tokenEnv) ? ' ✓' : ' ✗ missing'}` },
       { value: 'blurb', label: 'Blurb', hint: agent.blurb },
       { value: 'runtime', label: 'Runtime', hint: agent.runtime },
       { value: 'workspace', label: 'Workspace', hint: agent.workspace },
@@ -408,16 +443,80 @@ async function collectReconfigure(access: Access): Promise<void> {
     else agent.platform = platform
   }
 
+  // Explicit token-env edit wins over the platform-change auto-rename below, so
+  // a user can point an agent back at an existing var (e.g. the bare
+  // DISCORD_BOT_TOKEN) instead of an orphaned suffixed name.
+  if (set.has('token-env')) {
+    agent.tokenEnv = orCancel(await p.text({
+      message: "Env var name holding this bot's token (in .env or your shell)",
+      initialValue: agent.tokenEnv || deriveTokenEnv(key, platform, access),
+      validate: v => (/^\w+$/.test((v ?? '').trim()) ? undefined : 'Letters, digits, and underscores only.'),
+    })).trim()
+  }
+
+  // The token differs per platform, so on a platform change retarget the token
+  // env var to that platform's default name (the old var is left in .env,
+  // unused) — unless the user just set it explicitly above.
+  const platformChanged = set.has('platform') && platform !== curPlatform
+  if (platformChanged && !set.has('token-env')) agent.tokenEnv = deriveTokenEnv(key, platform, access)
+
   saveAccess(access)
   p.log.success(`Updated agent ${color.cyan(key)}`)
-  if (set.has('platform') && platform !== curPlatform) {
-    p.log.warn(
-      `Platform changed ${curPlatform} → ${platform}. The bot token differs per platform — ` +
-        `run "Save / update a bot token" to set it.`,
+  if (set.has('token-env')) {
+    p.log.info(
+      `Token var is now ${color.cyan(agent.tokenEnv)} — ` +
+        (isTokenSet(agent.tokenEnv) ? color.green('found ✓') : color.red('not set yet ✗ (save it via "Save / update a bot token")')),
     )
+  }
+  if (platformChanged) {
+    if (platform === 'imessage') {
+      p.log.info('iMessage needs no token — grant Full Disk Access + Automation instead (see docs/messaging-platform-setup.md).')
+    } else {
+      p.log.warn(
+        `Platform changed ${curPlatform} → ${platform}. Set the new token via ` +
+          `"Save / update a bot token" — now stored as ${color.cyan(agent.tokenEnv)}.`,
+      )
+    }
     const extraEnv = PLATFORM_EXTRA_ENV[platform]
     if (extraEnv?.length) p.log.info(`${platform} also reads from .env: ${extraEnv.join(', ')}`)
   }
+}
+
+/** Remove an agent from access.json. Its `.env` token and room permission-profile
+ *  files are left on disk (delete them by hand if you want them gone) — this just
+ *  stops the relay from starting that bot. */
+async function collectRemoveAgent(access: Access): Promise<void> {
+  const key = await pickAgentKey(access)
+  if (!key) return
+  const confirm = orCancel(await p.confirm({
+    message: `Remove agent ${color.cyan(key)}? (its .env token + room profiles stay on disk)`,
+    initialValue: false,
+  }))
+  if (!confirm) { p.log.info('Kept.'); return }
+  delete access.agents[key]
+  saveAccess(access)
+  p.log.success(`Removed agent ${color.cyan(key)}`)
+}
+
+/** Remove a room from an agent. Its permission-profile file under
+ *  rooms/<agent>/<room>.settings.json is left on disk (delete by hand if you
+ *  want it gone) — this just unregisters the channel so the agent stops serving
+ *  it. Useful when an agent switches platform and a stale, wrong-platform room
+ *  id lingers. */
+async function collectRemoveRoom(access: Access): Promise<void> {
+  const key = await pickAgentKey(access)
+  if (!key) return
+  const agent = access.agents[key]!
+  const cid = await pickRoomId(agent)
+  if (!cid) return
+  const confirm = orCancel(await p.confirm({
+    message: `Remove room ${color.cyan(cid)} from ${color.cyan(key)}? (its permission profile stays on disk)`,
+    initialValue: false,
+  }))
+  if (!confirm) { p.log.info('Kept.'); return }
+  delete agent.rooms[cid]
+  saveAccess(access)
+  p.log.success(`Removed room ${color.cyan(cid)} from ${color.cyan(key)}`)
 }
 
 /** Collect a room, then chain inline peer registration + bulk human add. */
@@ -724,12 +823,21 @@ function statusReport(access: Access): string {
     }
     lines.push('')
   }
-  const ledger = readSettings().ledger
-  const ledgerLabel = ledger?.backend === 'postgres'
-    ? `remote Postgres ${color.dim(`· ${(ledger.url ?? '').replace(/:[^:@]+@/, ':***@')}`)}`
-    : ledger?.backend === 'sqlite'
-      ? 'local SQLite'
-      : color.dim('local SQLite (default — run "Choose ledger backend" to use Postgres)')
+  // Report the backend the RELAY will actually use: resolveLedgerConfig honors a
+  // KNOCK_KNOCK_LEDGER_URL env override (now loaded above) over settings.json,
+  // so we don't claim "SQLite" while the relay quietly runs on Postgres.
+  const settingsLedger = readSettings().ledger
+  const resolved = resolveLedgerConfig(process.env, readSettings())
+  const envOverride = resolved.backend === 'postgres' && settingsLedger?.backend !== 'postgres'
+  let ledgerLabel: string
+  if (resolved.backend === 'postgres') {
+    const masked = (resolved.url ?? '').replace(/:[^:@]+@/, ':***@')
+    ledgerLabel = `remote Postgres ${color.dim(`· ${masked}`)}` + (envOverride ? color.yellow(' (from KNOCK_KNOCK_LEDGER_URL)') : '')
+  } else if (settingsLedger?.backend === 'sqlite') {
+    ledgerLabel = 'local SQLite'
+  } else {
+    ledgerLabel = color.dim('local SQLite (default — run "Choose ledger backend" to use Postgres)')
+  }
   lines.push(`${color.dim('ledger   ')} ${ledgerLabel}`)
   lines.push(color.dim(`State: ${STATE_DIR}`))
   return lines.join('\n')
@@ -781,7 +889,7 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAccessFile()), 'Current setup')
 
-  const TASK_ORDER = ['agent', 'reconfigure', 'room', 'peer', 'human', 'permissions', 'token', 'ledger'] as const
+  const TASK_ORDER = ['agent', 'reconfigure', 'room', 'room-remove', 'peer', 'human', 'permissions', 'token', 'ledger', 'remove'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
@@ -791,7 +899,9 @@ async function interactiveMenu(): Promise<void> {
       options: [
         { value: 'agent', label: 'Add another agent', hint: 'a second bot identity' },
         { value: 'reconfigure', label: 'Reconfigure an agent', hint: 'change platform / runtime / workspace / blurb / owner' },
+        { value: 'remove', label: 'Remove an agent', hint: 'delete a bot identity from access.json' },
         { value: 'room', label: 'Add a room', hint: 'register a channel (peers + humans follow inline)' },
+        { value: 'room-remove', label: 'Remove a room', hint: 'unregister a channel from an agent' },
         { value: 'peer', label: 'Register a peer bot', hint: 'in an existing room' },
         { value: 'human', label: 'Allow humans', hint: 'comma-separated Discord user IDs' },
         { value: 'permissions', label: 'Set room permissions', hint: 'pick a preset (strict/auto/bypass/…)' },
@@ -811,9 +921,13 @@ async function interactiveMenu(): Promise<void> {
         await collectAgent(access)
       } else if (task === 'reconfigure') {
         await collectReconfigure(access)
+      } else if (task === 'remove') {
+        await collectRemoveAgent(access)
       } else if (task === 'room') {
         const key = await pickAgentKey(access)
         if (key) await collectRoomFlow(access, key)
+      } else if (task === 'room-remove') {
+        await collectRemoveRoom(access)
       } else if (task === 'peer') {
         await collectPeer(access)
       } else if (task === 'human') {

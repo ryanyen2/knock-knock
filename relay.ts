@@ -3,8 +3,14 @@
  * relay.ts — multi-agent supervisor.
  *
  * Reads the access file and spawns one AgentHost per configured agent. Each
- * AgentHost owns its own Discord bot identity, token, runtime, and rooms.
+ * AgentHost owns its own bot identity, token, runtime, and rooms (the platform
+ * — Discord/Slack/… — is the agent's MessagingAdapter).
  * Configure agents with `bun setup.ts`, then start with `bun relay.ts`.
+ *
+ * Start a subset instead of every agent:
+ *   bun relay.ts <key> [<key> …]   start only the named agents (scriptable)
+ *   bun relay.ts --pick            interactive multi-select (TTY only)
+ * No args (non-interactive) starts all configured agents.
  *
  * Phase 3 architecture: the ledger drives the flow.
  *   Discord inbound → AgentHost gate → admit(channel.message)
@@ -17,6 +23,7 @@
 
 import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
+import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readRoomSettings, readSettings } from './state.ts'
 import { resolveLedgerConfig } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
@@ -68,6 +75,57 @@ if (agentEntries.length === 0) {
   process.exit(1)
 }
 
+// ─── Agent selection ────────────────────────────────────────────────────────
+// Default: start every configured agent. Narrow it with positional keys (for
+// scripts) or `--pick` for an interactive multi-select. Done before the heavy
+// ledger/store boot so a cancel exits cheaply.
+const argv = process.argv.slice(2)
+const wantPick = argv.includes('--pick') || argv.includes('-p')
+const requestedKeys = argv.filter(a => !a.startsWith('-'))
+
+let selectedEntries = agentEntries
+if (requestedKeys.length > 0) {
+  const known = new Set(agentEntries.map(([k]) => k))
+  for (const k of requestedKeys) {
+    if (!known.has(k)) {
+      process.stderr.write(`relay: unknown agent "${k}" — ignoring (run \`bun setup.ts\` to list agents).\n`)
+    }
+  }
+  selectedEntries = agentEntries.filter(([k]) => requestedKeys.includes(k))
+} else if (wantPick) {
+  if (!process.stdin.isTTY) {
+    process.stderr.write('relay: --pick needs an interactive terminal; starting all agents.\n')
+  } else {
+    const picked = await multiselect({
+      message: 'Which agents should this relay start? (space to toggle, enter to confirm)',
+      options: agentEntries.map(([k, a]) => ({
+        value: k,
+        label: k,
+        hint: `${a.platform ?? 'discord'} · ${a.runtime}`,
+      })),
+      initialValues: agentEntries.map(([k]) => k),
+      required: true,
+    })
+    if (isCancel(picked)) {
+      process.stderr.write('relay: cancelled.\n')
+      process.exit(0)
+    }
+    const set = new Set(picked as string[])
+    selectedEntries = agentEntries.filter(([k]) => set.has(k))
+  }
+}
+
+if (selectedEntries.length === 0) {
+  process.stderr.write('relay: no agents selected — nothing to start.\n')
+  process.exit(1)
+}
+if (selectedEntries.length !== agentEntries.length) {
+  process.stderr.write(
+    `relay: starting ${selectedEntries.length}/${agentEntries.length} agents: ` +
+      `${selectedEntries.map(([k]) => k).join(', ')}\n`,
+  )
+}
+
 const ui = new ConsoleUI()
 const hosts: AgentHost[] = []
 const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
@@ -117,9 +175,12 @@ await engine.register(watchFold) // deferred-continuation primitive (docs/knock-
 await engine.register(versionableFold) // file-edit convergence (write-back reads this)
 
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
-for (const [key, agent] of agentEntries) {
+for (const [key, agent] of selectedEntries) {
+  // iMessage is local (no token) — it authenticates via macOS permissions, not a
+  // bot token, so don't gate it on a token env var.
+  const tokenless = agent.platform === 'imessage'
   const token = process.env[agent.tokenEnv]
-  if (!token) {
+  if (!token && !tokenless) {
     process.stderr.write(
       `relay: agent "${key}" skipped — ${agent.tokenEnv} is not set.\n` +
         `  Run \`bun setup.ts\` to save its bot token.\n`,
@@ -320,7 +381,8 @@ store.subscribe(i => {
 // the ledger-driven pipeline.
 for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
-  const token = process.env[access.agents[entry.key]!.tokenEnv]!
+  // Token-less platforms (iMessage) pass an empty string; their adapter ignores it.
+  const token = process.env[access.agents[entry.key]!.tokenEnv] ?? ''
   void hosts[n]!.start(token).catch(err => {
     ui.error(entry.key, `login failed: ${err}`)
   })
