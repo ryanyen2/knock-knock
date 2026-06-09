@@ -109,6 +109,34 @@ test('admit: a superseded loser leaves the LIVE knowledge fold immediately (== f
   store.close()
 })
 
+test('admit: re-fold rebuilds only the changed artifact slice, leaving other artifacts intact', async () => {
+  const { store, engine } = await setupEngine()
+  // A note in a DIFFERENT knowledge artifact — it must survive a supersede that
+  // happens elsewhere (the slice rebuild strips only the changed artifact).
+  const other: ProposedInteraction = {
+    ...knowledgePatch('bot2', 'agent', 'unrelated'),
+    target: { artifactId: 'know:scratch/other', anchor: { kind: 'key', path: 'x' } },
+  }
+  await admit(store, other)
+
+  await admit(store, knowledgePatch('bot1', 'agent', 'my finding'))
+  await admit(store, knowledgePatch('owner1', 'owner', 'actually no')) // supersedes agent in ARTIFACT
+
+  const live = engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD)
+  expect(activeNotes(live, ARTIFACT).map(n => n.note.body)).toEqual(['actually no'])
+  expect(activeNotes(live, 'know:scratch/other').map(n => n.note.body)).toEqual(['unrelated'])
+
+  const fresh = new FoldEngine(store)
+  await fresh.register(knowledgeFold)
+  const replay = fresh.get<KnowledgeFoldState>(KNOWLEDGE_FOLD)
+  expect(activeNotes(replay, ARTIFACT).map(n => n.note.body)).toEqual(['actually no'])
+  expect(activeNotes(replay, 'know:scratch/other').map(n => n.note.body)).toEqual(['unrelated'])
+
+  fresh.close()
+  engine.close()
+  store.close()
+})
+
 test('admit: lower-role proposal AFTER owner is rejected with reason', async () => {
   const { store, engine } = await setupEngine()
   const owner = await admit(store, knowledgePatch('owner1', 'owner', 'truth'))

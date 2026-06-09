@@ -19,7 +19,7 @@
  * (e.g. cloning a Map before set); never mutate an Interaction passed in.
  */
 
-import type { Interaction, Hash, Lifecycle } from './interaction.ts'
+import type { Interaction, Hash, Lifecycle, ArtifactId } from './interaction.ts'
 import type { Store } from './store.ts'
 
 export interface Fold<S> {
@@ -48,11 +48,26 @@ export class FoldEngine {
   >()
   private readonly storeUnsubscribe: () => void
   private readonly lifecycleUnsubscribe: () => void
+  /** Serializes re-folds so the per-rebuild window bookkeeping stays consistent
+   *  under concurrent lifecycle changes. Each re-fold is O(artifact), so this is
+   *  cheap. */
+  private refoldChain: Promise<void> = Promise.resolve()
+  /** The artifact whose slice the in-flight re-fold is rebuilding, or null. */
+  private refoldArtifact: ArtifactId | null = null
+  /** Inserts to `refoldArtifact` that arrived during the rebuild's await window,
+   *  so the rebuild can re-apply them instead of dropping them. */
+  private refoldWindow: Interaction[] = []
 
   constructor(private readonly store: Store) {
     // One shared store subscription fans out to every registered fold so a
     // single SQLite insert triggers at most one notification path.
     this.storeUnsubscribe = this.store.subscribe(i => {
+      // While a re-fold is rebuilding an artifact's slice, capture inserts to
+      // that artifact so the rebuild re-applies any that land in its await
+      // window — otherwise the snapshot would drop them (the live-stale race).
+      if (this.refoldArtifact !== null && i.target.artifactId === this.refoldArtifact) {
+        this.refoldWindow.push(i)
+      }
       for (const entry of this.folds.values()) this.applyTo(entry, i)
     })
     // A lifecycle change (supersede / deny / resolve) is an UPDATE, not an
@@ -139,17 +154,19 @@ export class FoldEngine {
   /**
    * Re-fold the folds whose membership of `hash` depends on its lifecycle, after
    * its lifecycle changed (applied↔superseded/denied, or proposed→applied for a
-   * resolved conflict branch). Affected folds are rebuilt from the store — the
-   * same path `register` trusts — WITHOUT firing per-step subscribers, then each
-   * fires its subscribers once with the new state. Folds whose verdict for this
-   * interaction is lifecycle-independent are left untouched, so unrelated
-   * subscribers (e.g. the Workbench on `turn.*`) are not re-notified.
+   * resolved conflict branch). Serialized via `refoldChain` so concurrent
+   * lifecycle changes don't interleave the window bookkeeping.
    *
    * Re-fold only reads and recomputes — it appends nothing — so it cannot
    * recurse into admission or the synchronizer, even when triggered
    * synchronously from inside `admit` / `resolveConflict`.
    */
-  private async refold(hash: Hash): Promise<void> {
+  private refold(hash: Hash): Promise<void> {
+    this.refoldChain = this.refoldChain.then(() => this.doRefold(hash))
+    return this.refoldChain
+  }
+
+  private async doRefold(hash: Hash): Promise<void> {
     const updated = await this.store.getByHash(hash)
     if (!updated) return
     // A fold is affected iff its key verdict for this interaction depends on the
@@ -170,19 +187,44 @@ export class FoldEngine {
     }
     if (affected.length === 0) return
 
-    const all = await this.store.listAllSince(0, Number.MAX_SAFE_INTEGER)
-    // The reset + replay below is synchronous (no await), so nothing interleaves
-    // a half-rebuilt fold. KNOWN RACE: an insert that lands in the getByHash →
-    // listAllSince await window above already fanned out to the pre-reset state
-    // but is absent from `all`, so the reset drops it from the live view until
-    // the next refold or a restart. Narrow, recoverable, and wider on Postgres
-    // (real I/O). Closing it needs a race-safe rebuild (re-apply window inserts)
-    // or incremental per-fold eviction — deferred; see the plan's Risks.
-    for (const entry of affected) {
-      entry.state = entry.fold.init()
-      entry.seen = new Set()
-      for (const i of all) this.applyTo(entry, i, false)
+    const artifactId = updated.target.artifactId
+    // Affected folds key their state by artifactId, and only this artifact's
+    // slice changed — so rebuild just that slice by replaying the artifact's own
+    // interactions (O(artifact), not O(all-time)) into a state stripped of the
+    // slice. That is exactly what a fresh replay produces. A future affected fold
+    // whose state isn't an artifact map falls back to a full rebuild.
+    if (affected.every(e => e.state instanceof Map)) {
+      this.refoldArtifact = artifactId
+      this.refoldWindow = []
+      try {
+        const slice = await this.store.listByArtifact(artifactId)
+        const sliceHashes = new Set(slice.map(i => i.hash))
+        // Synchronous from here. Any insert to this artifact that raced the
+        // await above was captured in refoldWindow and is re-applied below, so
+        // none is dropped.
+        for (const entry of affected) {
+          const stripped = new Map(entry.state as ReadonlyMap<ArtifactId, unknown>)
+          stripped.delete(artifactId)
+          let state: unknown = stripped
+          for (const i of slice) state = this.rebuildStep(entry, state, i)
+          for (const i of this.refoldWindow) {
+            if (!sliceHashes.has(i.hash)) state = this.rebuildStep(entry, state, i)
+          }
+          entry.state = state
+        }
+      } finally {
+        this.refoldArtifact = null
+        this.refoldWindow = []
+      }
+    } else {
+      const all = await this.store.listAllSince(0, Number.MAX_SAFE_INTEGER)
+      for (const entry of affected) {
+        entry.state = entry.fold.init()
+        entry.seen = new Set()
+        for (const i of all) this.applyTo(entry, i, false)
+      }
     }
+
     for (const entry of affected) {
       const subs = this.subscribers.get(entry.fold.name)
       if (!subs) continue
@@ -193,6 +235,18 @@ export class FoldEngine {
           process.stderr.write(`fold ${entry.fold.name} subscriber threw: ${err}\n`)
         }
       }
+    }
+  }
+
+  /** Apply one interaction through key + step for a slice rebuild — no `seen`
+   *  guard, no subscriber notification (those are the live-insert path's job). */
+  private rebuildStep(entry: FoldEntry, state: unknown, i: Interaction): unknown {
+    if (entry.fold.key && !entry.fold.key(i)) return state
+    try {
+      return entry.fold.step(state, i)
+    } catch (err) {
+      process.stderr.write(`fold ${entry.fold.name} step threw: ${err}\n`)
+      return state
     }
   }
 }
