@@ -5,6 +5,8 @@ topic: anchored-patch-category-conflict-layer
 
 # Anchored patch-category for the conflict layer
 
+> **Phase 1 re-scoped after planning + review (2026-06-09).** R6 (lifecycle) ships via a **fold re-notify** fix, not the dominance-deriving projection — see `docs/plans/2026-06-09-002-fix-fold-renotify-on-lifecycle-plan.md`. R5 (interval-overlap anchors) is **sent back to brainstorm**: review found correct cross-machine overlap needs its own determinism design (the fold engine does not topo-sort by `caused_by`; the resolution base must be replica-deterministic; capture coordinates must hash identically across relays). R5 is therefore closer in difficulty to the deferred pushout-confluence work than to a low-risk Phase-1 increment. Re-open this doc to design R5 before re-planning it.
+
 ## Summary
 
 Rework knock-knock's version-control/conflict layer into an **anchored patch-category** — a rigorous algebra (lattice anchors, role-priority pushout, typed patch ops, a coordination frontier) delivered alongside a sequenced build plan. The first slice ships the two net-simplifying legs: replace strict-equality anchor matching with interval-overlap, and make lifecycle a derived fold. Conflict resolution becomes room-configurable — owner-in-the-loop by default, autonomous pushout opt-in.
