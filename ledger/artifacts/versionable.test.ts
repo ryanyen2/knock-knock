@@ -12,8 +12,17 @@ import {
   applyEdits,
   mutateAndEncode,
   encodeUpdate,
+  versionableArtifactId,
+  projectVersionable,
+  versionableFold,
+  VERSIONABLE_FOLD,
+  WHOLE_FILE_ANCHOR,
+  type VersionableFoldState,
 } from './versionable.ts'
 import { hashInteraction } from '../canonical.ts'
+import { SqliteStore } from '../store-sqlite.ts'
+import { FoldEngine } from '../fold.ts'
+import { admit } from '../admit.ts'
 import type { Interaction, ProposedInteraction } from '../interaction.ts'
 
 function editFromOps(opsBase64: string, parents: string[] = []): Interaction {
@@ -137,4 +146,49 @@ test('versionable: concurrent edits to non-overlapping ranges Yjs-merge naturall
   base.destroy()
   writerA.destroy()
   writerB.destroy()
+})
+
+test('versionable: a superseded edit leaves the live projection immediately (== fresh replay)', async () => {
+  // The motivating case for the lifecycle re-fold: two concurrent whole-file
+  // edits contend at WHOLE_FILE_ANCHOR; the owner's edit supersedes the agent's,
+  // and the agent's edit must drop from the LIVE projection without a restart.
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(versionableFold)
+
+  const artifactId = versionableArtifactId('chan', 'foo.ts')
+  const versProposal = (actor: string, role: 'owner' | 'agent', ops: string): ProposedInteraction => ({
+    actor,
+    role,
+    channel: 'chan',
+    target: { artifactId, anchor: WHOLE_FILE_ANCHOR },
+    verb: 'workspace.edit',
+    patch: { kind: 'versionable', ops },
+    effect: 'workspace',
+    caused_by: [], // concurrent — neither is the other's ancestor
+  })
+
+  const docA = new Y.Doc()
+  const opsA = mutateAndEncode(docA, t => t.insert(0, 'AAA'))
+  docA.destroy()
+  const docB = new Y.Doc()
+  const opsB = mutateAndEncode(docB, t => t.insert(0, 'BBB'))
+  docB.destroy()
+
+  await admit(store, versProposal('bot1', 'agent', opsA)) // applied
+  const owner = await admit(store, versProposal('owner1', 'owner', opsB)) // owner > agent → supersedes
+  expect(owner.kind).toBe('admitted')
+
+  // Live: only the owner's edit remains; the agent's superseded edit is gone now.
+  const live = projectVersionable(engine.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
+  expect(live.text).toBe('BBB')
+
+  const fresh = new FoldEngine(store)
+  await fresh.register(versionableFold)
+  const replay = projectVersionable(fresh.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
+  expect(replay.text).toBe('BBB')
+
+  fresh.close()
+  engine.close()
+  store.close()
 })

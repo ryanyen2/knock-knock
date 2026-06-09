@@ -11,7 +11,9 @@
  * `get(name)` is synchronous after `register` resolves — bootstrap (replay
  * existing data) is the only async step.
  *
- * Folds MUST be deterministic and order-independent under topological order.
+ * Folds MUST be deterministic and order-independent. The engine replays in
+ * store-insertion (`seq`) order, NOT `caused_by`-topological order, so a fold's
+ * projected state must not depend on the order interactions arrive in.
  * The engine does not enforce determinism — that's a property the fold author
  * carries. Mutation of `state` is fine when it's a fresh value the fold owns
  * (e.g. cloning a Map before set); never mutate an Interaction passed in.
@@ -154,6 +156,10 @@ export class FoldEngine {
     // lifecycle — i.e. differs between a live (applied) and a held (proposed)
     // snapshot. That captures both removal (now superseded/denied) and addition
     // (a resolved branch flipping proposed→applied), regardless of direction.
+    // INVARIANT this relies on: a lifecycle-keyed fold gates on the
+    // admitted|applied set inside its `key`. A future fold that encodes
+    // lifecycle-sensitivity only in `step`, or keys on some other lifecycle
+    // value, would be missed here and stay stale.
     const liveSnap: Interaction = { ...updated, lifecycle: 'applied' as Lifecycle }
     const heldSnap: Interaction = { ...updated, lifecycle: 'proposed' as Lifecycle }
     const affected: FoldEntry[] = []
@@ -165,10 +171,13 @@ export class FoldEngine {
     if (affected.length === 0) return
 
     const all = await this.store.listAllSince(0, Number.MAX_SAFE_INTEGER)
-    // Synchronous from here (no await) so a concurrent insert cannot interleave a
-    // half-rebuilt fold. On SQLite the snapshot already reflects the UPDATE that
-    // triggered this; on Postgres a same-artifact insert racing this await window
-    // is corrected by its own subsequent fanout.
+    // The reset + replay below is synchronous (no await), so nothing interleaves
+    // a half-rebuilt fold. KNOWN RACE: an insert that lands in the getByHash →
+    // listAllSince await window above already fanned out to the pre-reset state
+    // but is absent from `all`, so the reset drops it from the live view until
+    // the next refold or a restart. Narrow, recoverable, and wider on Postgres
+    // (real I/O). Closing it needs a race-safe rebuild (re-apply window inserts)
+    // or incremental per-fold eviction — deferred; see the plan's Risks.
     for (const entry of affected) {
       entry.state = entry.fold.init()
       entry.seen = new Set()

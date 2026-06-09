@@ -93,9 +93,9 @@ export async function admit(
 
   switch (outcome.kind) {
     case 'admit': {
-      // Peer lifecycle updates. NOTE: these do NOT re-notify fold subscribers
-      // in Phase 2 — folds keep showing the now-superseded peer as active.
-      // The store reflects truth; folds get supersession-aware in Phase 2.1.
+      // Peer lifecycle updates. updateLifecycle fires the store's awaited
+      // lifecycle signal, so the FoldEngine re-folds and live folds drop the
+      // superseded peer immediately (matching a fresh replay) — no restart.
       for (const loser of outcome.supersede) {
         await store.updateLifecycle(loser, 'superseded')
         const peer = await store.getByHash(loser)
