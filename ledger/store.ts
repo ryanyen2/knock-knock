@@ -45,6 +45,20 @@ export interface Store {
   /** In-process fanout for fold subscribers and the synchronizer. */
   subscribe(cb: (i: Interaction) => void): () => void
 
+  /**
+   * In-process fanout when an interaction's lifecycle changes via
+   * `updateLifecycle` (supersede / deny / resolve). The fold engine subscribes
+   * to re-fold affected folds so live state matches a fresh replay instead of
+   * keeping a now-superseded interaction in the live view. `updateLifecycle`
+   * awaits these callbacks, so live state is consistent when it returns.
+   *
+   * Cross-machine propagation is a separate, pre-existing gap: the Postgres
+   * NOTIFY trigger fires only on INSERT, not UPDATE, so this signal is local.
+   */
+  subscribeLifecycle(
+    cb: (hash: Hash, lifecycle: Lifecycle) => void | Promise<void>,
+  ): () => void
+
   /** Last assigned seq — for paging cursors. */
   maxSeq(): Promise<number>
 

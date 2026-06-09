@@ -7,6 +7,7 @@
 import { test, expect } from 'bun:test'
 import { SqliteStore } from './store-sqlite.ts'
 import { Ledger } from './capture.ts'
+import { hashInteraction } from './canonical.ts'
 import { FoldEngine, type Fold } from './fold.ts'
 import type { Interaction, ProposedInteraction } from './interaction.ts'
 
@@ -118,6 +119,119 @@ test('FoldEngine: re-registering the same fold name throws (rubric #2 sanity)', 
   const engine = new FoldEngine(store)
   await engine.register(COUNT_FOLD)
   await expect(engine.register(COUNT_FOLD)).rejects.toThrow()
+  engine.close()
+  store.close()
+})
+
+// ─── Re-fold on lifecycle change (close the live-stale gap) ──────────────────
+
+/** A lifecycle-keyed fold that collects the hashes it has folded in. */
+const HASHES_FOLD: Fold<{ hashes: string[] }> = {
+  name: 'lc-hashes',
+  init: () => ({ hashes: [] }),
+  key: i =>
+    (i.lifecycle === 'admitted' || i.lifecycle === 'applied') && i.verb === 'knowledge.append',
+  step: (s, i) => ({ hashes: [...s.hashes, i.hash] }),
+}
+
+function note(id: string): ProposedInteraction {
+  return proposal({
+    verb: 'knowledge.append',
+    patch: { kind: 'knowledge', append: { id, body: id } },
+    target: { artifactId: 'know:x/y', anchor: { kind: 'key', path: 'k' } },
+  })
+}
+
+test('FoldEngine: a superseded interaction leaves the live fold immediately (== fresh replay)', async () => {
+  const store = new SqliteStore(':memory:')
+  const ledger = new Ledger(store)
+  const engine = new FoldEngine(store)
+  await engine.register(HASHES_FOLD)
+
+  const p = note('n1')
+  await ledger.record(p)
+  const h = hashInteraction(p)
+  expect(engine.get<{ hashes: string[] }>('lc-hashes').hashes).toEqual([h])
+
+  await store.updateLifecycle(h, 'superseded')
+  // Live fold drops it without a restart — the bug this fix closes.
+  expect(engine.get<{ hashes: string[] }>('lc-hashes').hashes).toEqual([])
+
+  // And it matches a fresh engine bootstrapped from the same store.
+  const fresh = new FoldEngine(store)
+  await fresh.register(HASHES_FOLD)
+  expect(fresh.get<{ hashes: string[] }>('lc-hashes').hashes).toEqual([])
+
+  fresh.close()
+  engine.close()
+  store.close()
+})
+
+test('FoldEngine: a proposed→applied flip enters the live fold immediately', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(HASHES_FOLD)
+
+  // Append directly as a held (proposed) interaction — excluded by the key.
+  const p = note('n1')
+  const h = hashInteraction(p)
+  await store.append({ ...p, hash: h, lifecycle: 'proposed', createdAt: '2026-06-09T00:00:00Z' })
+  expect(engine.get<{ hashes: string[] }>('lc-hashes').hashes).toEqual([])
+
+  // Resolve it live → it enters the live fold.
+  await store.updateLifecycle(h, 'applied')
+  expect(engine.get<{ hashes: string[] }>('lc-hashes').hashes).toEqual([h])
+
+  engine.close()
+  store.close()
+})
+
+test('FoldEngine: re-fold fires the affected fold subscribers exactly once', async () => {
+  const store = new SqliteStore(':memory:')
+  const ledger = new Ledger(store)
+  const engine = new FoldEngine(store)
+  await engine.register(HASHES_FOLD)
+
+  const p = note('n1')
+  await ledger.record(p)
+  const h = hashInteraction(p)
+
+  const sizes: number[] = []
+  engine.subscribe<{ hashes: string[] }>('lc-hashes', s => sizes.push(s.hashes.length))
+  expect(sizes).toEqual([1]) // initial delivery
+
+  await store.updateLifecycle(h, 'superseded')
+  expect(sizes).toEqual([1, 0]) // exactly one more call, with the rebuilt state
+
+  engine.close()
+  store.close()
+})
+
+test('FoldEngine: a lifecycle change does not re-notify folds whose verdict is lifecycle-independent for it', async () => {
+  const store = new SqliteStore(':memory:')
+  const ledger = new Ledger(store)
+  const engine = new FoldEngine(store)
+  await engine.register(HASHES_FOLD)
+  await engine.register({
+    name: 'prompts',
+    init: () => ({ count: 0 }),
+    key: i => i.verb === 'turn.prompted',
+    step: s => ({ count: s.count + 1 }),
+  })
+
+  await ledger.record(proposal({ verb: 'turn.prompted' })) // feeds 'prompts' only
+  const p = note('n1')
+  await ledger.record(p)
+  const h = hashInteraction(p)
+
+  const promptFires: number[] = []
+  engine.subscribe<{ count: number }>('prompts', s => promptFires.push(s.count))
+  expect(promptFires).toEqual([1]) // initial only
+
+  // Superseding a knowledge.append must not refold (or re-notify) the prompts fold.
+  await store.updateLifecycle(h, 'superseded')
+  expect(promptFires).toEqual([1]) // no extra fire
+
   engine.close()
   store.close()
 })

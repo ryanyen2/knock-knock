@@ -139,6 +139,9 @@ function rowToInteraction(r: Row): Interaction {
 export class PgStore implements Store {
   readonly kind = 'postgres' as const
   private readonly subscribers = new Set<(i: Interaction) => void>()
+  private readonly lifecycleSubscribers = new Set<
+    (hash: Hash, lifecycle: Lifecycle) => void | Promise<void>
+  >()
   /**
    * Hashes this process inserted locally and already delivered to subscribers in
    * `append`. The AFTER-INSERT trigger NOTIFYs *every* insert — including our
@@ -352,6 +355,17 @@ export class PgStore implements Store {
       'UPDATE interaction SET lifecycle = $1, supersedes = $2, denied_reason = $3 WHERE hash = $4',
       [lifecycle, extra?.supersedes ?? null, extra?.deniedReason ?? null, hash],
     )
+    // Awaited in-process fanout: live folds re-fold so a superseded/denied
+    // interaction leaves the live view immediately. NOTE: this is local-only —
+    // the NOTIFY trigger fires on INSERT, not UPDATE, so a peer relay's folds do
+    // not yet learn of a remote lifecycle change (pre-existing cross-machine gap).
+    for (const cb of this.lifecycleSubscribers) {
+      try {
+        await cb(hash, lifecycle)
+      } catch (err) {
+        process.stderr.write(`store: lifecycle subscriber threw: ${err}\n`)
+      }
+    }
   }
 
   async isAncestor(maybeAncestor: Hash, of: Hash, maxDepth = 64): Promise<boolean> {
@@ -392,6 +406,13 @@ export class PgStore implements Store {
   subscribe(cb: (i: Interaction) => void): () => void {
     this.subscribers.add(cb)
     return () => this.subscribers.delete(cb)
+  }
+
+  subscribeLifecycle(
+    cb: (hash: Hash, lifecycle: Lifecycle) => void | Promise<void>,
+  ): () => void {
+    this.lifecycleSubscribers.add(cb)
+    return () => this.lifecycleSubscribers.delete(cb)
   }
 
   async maxSeq(): Promise<number> {

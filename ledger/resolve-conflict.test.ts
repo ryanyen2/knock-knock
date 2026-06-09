@@ -10,6 +10,13 @@ import { SqliteStore } from './store-sqlite.ts'
 import { Ledger } from './capture.ts'
 import { admit } from './admit.ts'
 import { resolveConflict } from './resolve-conflict.ts'
+import { FoldEngine } from './fold.ts'
+import {
+  KNOWLEDGE_FOLD,
+  knowledgeFold,
+  activeNotes,
+  type KnowledgeFoldState,
+} from './artifacts/knowledge.ts'
 import type { ProposedInteraction } from './interaction.ts'
 
 const CH = 'chan-1'
@@ -74,6 +81,39 @@ test('resolveConflict: surfaces the drop to the loser inbox (so dm-on-supersede 
   const inbox = await store.listByArtifact('know:actor/botA/inbox')
   const notes = inbox.filter(i => i.verb === 'knowledge.append' && i.actor === 'system:merge-gate')
   expect(notes.length).toBe(1)
+})
+
+test('resolveConflict: live knowledge fold shows only the chosen branch immediately (== fresh replay)', async () => {
+  const store = new SqliteStore(':memory:')
+  const ledger = new Ledger(store)
+  const engine = new FoldEngine(store)
+  await engine.register(knowledgeFold)
+
+  const r1 = await admit(store, note('botA', 'n1')) // applied → in the live fold
+  const r2 = await admit(store, note('botB', 'n2')) // conflict → proposed, not in the live fold
+  expect(r1.kind).toBe('admitted')
+  expect(r2.kind).toBe('conflict')
+
+  await resolveConflict(store, ledger, {
+    ownerId: 'owner1',
+    channel: CH,
+    branchHashes: [r1.interaction.hash, r2.interaction.hash],
+    chosenHash: r2.interaction.hash, // keep the held branch
+  })
+
+  // Both directions fire: n2 enters the live fold (proposed→applied), n1 leaves
+  // it (applied→superseded) — without a restart.
+  const live = activeNotes(engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD), ART)
+  expect(live.map(n => n.note.id)).toEqual(['n2'])
+
+  const fresh = new FoldEngine(store)
+  await fresh.register(knowledgeFold)
+  const replay = activeNotes(fresh.get<KnowledgeFoldState>(KNOWLEDGE_FOLD), ART)
+  expect(replay.map(n => n.note.id)).toEqual(['n2'])
+
+  fresh.close()
+  engine.close()
+  store.close()
 })
 
 test('resolveConflict: an unknown chosen branch is a no-op', async () => {

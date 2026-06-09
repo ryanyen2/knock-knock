@@ -107,6 +107,9 @@ export class SqliteStore implements Store {
   readonly kind = 'sqlite' as const
   private readonly db: Database
   private readonly subscribers = new Set<(i: Interaction) => void>()
+  private readonly lifecycleSubscribers = new Set<
+    (hash: Hash, lifecycle: Lifecycle) => void | Promise<void>
+  >()
 
   constructor(path: string) {
     if (path !== ':memory:') {
@@ -231,6 +234,15 @@ export class SqliteStore implements Store {
         extra?.deniedReason ?? null,
         hash,
       )
+    // Awaited fanout: live folds re-fold so a superseded/denied interaction
+    // leaves the live view immediately, matching a fresh replay.
+    for (const cb of this.lifecycleSubscribers) {
+      try {
+        await cb(hash, lifecycle)
+      } catch (err) {
+        process.stderr.write(`store: lifecycle subscriber threw: ${err}\n`)
+      }
+    }
   }
 
   /**
@@ -288,6 +300,13 @@ export class SqliteStore implements Store {
   subscribe(cb: (i: Interaction) => void): () => void {
     this.subscribers.add(cb)
     return () => this.subscribers.delete(cb)
+  }
+
+  subscribeLifecycle(
+    cb: (hash: Hash, lifecycle: Lifecycle) => void | Promise<void>,
+  ): () => void {
+    this.lifecycleSubscribers.add(cb)
+    return () => this.lifecycleSubscribers.delete(cb)
   }
 
   async maxSeq(): Promise<number> {

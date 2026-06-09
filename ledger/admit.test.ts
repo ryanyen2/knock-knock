@@ -88,6 +88,27 @@ test('admit: owner overrides agent — agent superseded + receives inbox note', 
   store.close()
 })
 
+test('admit: a superseded loser leaves the LIVE knowledge fold immediately (== fresh replay)', async () => {
+  const { store, engine } = await setupEngine()
+  await admit(store, knowledgePatch('bot1', 'agent', 'my finding'))
+  await admit(store, knowledgePatch('owner1', 'owner', 'actually no'))
+
+  // The artifact's live active notes show only the owner's note — the agent's
+  // superseded note left the live fold without a restart (the live-stale fix).
+  const live = activeNotes(engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD), ARTIFACT)
+  expect(live.map(n => n.note.body)).toEqual(['actually no'])
+
+  // Reconstructability: a fresh engine bootstrapped from the same store agrees.
+  const fresh = new FoldEngine(store)
+  await fresh.register(knowledgeFold)
+  const replay = activeNotes(fresh.get<KnowledgeFoldState>(KNOWLEDGE_FOLD), ARTIFACT)
+  expect(replay.map(n => n.note.body)).toEqual(['actually no'])
+
+  fresh.close()
+  engine.close()
+  store.close()
+})
+
 test('admit: lower-role proposal AFTER owner is rejected with reason', async () => {
   const { store, engine } = await setupEngine()
   const owner = await admit(store, knowledgePatch('owner1', 'owner', 'truth'))
