@@ -128,7 +128,11 @@ than a log:
 - **State is a fold, not a mutation.** A channel's transcript, what an agent
   knows, a concept's runtime state — each is a *projection* over a slice of the
   log (`ledger/fold.ts`). Re-folding the log reproduces the exact same state:
-  replay is deterministic, so a relay restart loses nothing.
+  replay is deterministic, so a relay restart loses nothing. A supersession
+  shows up in the **live** view immediately too — the store signals the fold
+  engine, which re-folds the affected artifact, so a dropped draft leaves the
+  projection without waiting for a restart. (Across machines on Postgres, a
+  remote supersession still reaches a peer relay's folds only on its restart.)
 - **The frontier is the head.** The current set of live interactions is the
   frontier. The rewind/checkpoint/retry reactions (§1) are **frontier control**:
 

@@ -199,9 +199,12 @@ conversation), conflicts resolved by the role-ordered merge gate:
 - Conflicts surface the **existing** `conflict-card`; nothing new.
 - Skeleton scope: capture is reliable for Claude-Code-shaped Edit/Write tools
   (`claude-sdk`, where the SDK emits real tool names); other ACP agents' edit
-  formats are deferred. Known limit: folds don't re-notify on lifecycle
-  supersession (admit.ts Phase 2.1), so a superseded edit still folds in —
-  convergence holds, owner-supersede projection deferred.
+  formats are deferred. On a lifecycle supersession the store fires an awaited
+  `subscribeLifecycle` signal and the `FoldEngine` re-folds the affected
+  artifact's slice (`ledger/fold.ts`), so a superseded edit leaves the live view
+  immediately — matching a fresh replay, no restart. Remaining gap: cross-machine
+  lifecycle propagation (Postgres `NOTIFY` fires on INSERT, not UPDATE), so a
+  peer relay's folds learn of a remote supersession only on restart.
 
 ### Headless control verbs (`ledger/` + thin Discord adapters)
 

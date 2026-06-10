@@ -796,6 +796,13 @@
       <a href="#acceptance-tests">Acceptance tests</a>
     </div>
     <div class="nav-group">
+      <div class="nav-group-label">Capabilities</div>
+      <a href="#version-control">Version control &amp; conflicts</a>
+      <a href="#sandbox">OS sandboxing</a>
+      <a href="#sessions">Session sharing</a>
+      <a href="#platforms">Beyond Discord</a>
+    </div>
+    <div class="nav-group">
       <div class="nav-group-label">Reference</div>
       <a href="#runtimes">Coding agents</a>
       <a href="#access-json">access.json</a>
@@ -1082,6 +1089,86 @@
 
     <hr>
 
+    <!-- Version control & conflicts -->
+    <h2 id="version-control">Version control &amp; conflicts</h2>
+    <p class="section-intro">
+      Under the hood the relay is <strong>ledger-native</strong>: the only thing it stores is an
+      append-only, content-addressed log of every action. A channel's transcript, a file's current
+      text, what an agent knows — each is a <em>projection</em> over that log. That is what makes
+      shared work safe: nothing is ever destroyed, and collisions surface instead of silently
+      clobbering.
+    </p>
+
+    <div class="layer-row">
+      <div class="layer-cell">
+        <div class="lc-label">Nothing is lost</div>
+        <div class="lc-title">Superseded, never deleted</div>
+        <div class="lc-desc">A losing draft, a retracted note, a resolved conflict — all stay in the log, flagged <code>superseded</code>. You can always see what was proposed and what later happened to it.</div>
+      </div>
+      <div class="layer-cell">
+        <div class="lc-label">Role-ordered merge</div>
+        <div class="lc-title">Owner &gt; human &gt; agent</div>
+        <div class="lc-desc">When two writers touch the same thing, the higher role wins and the lower-role draft is superseded (its owner gets a 🔁 DM). Two <em>equal</em>-role drafts can't silently win — the relay holds them for a human.</div>
+      </div>
+    </div>
+
+    <p><strong>The conflict card 🔀.</strong> On an equal-role collision the relay posts a <strong>Take A / Take B / Write my own</strong> card. Only the owner resolves it; the unchosen draft is kept and surfaced back to its author. On a shared Postgres ledger two relays compute byte-identical cards, so machines stay consistent.</p>
+
+    <p><strong>Frontier control.</strong> React 🔁 / ⏪ / 🧷 on a reply to retry a turn, rewind the head, or pin a checkpoint — version-control operations expressed as reactions. A supersession shows in the live view immediately: the fold engine re-folds the affected artifact, so what you see matches a fresh replay without a restart.</p>
+
+    <div class="callout callout-note">
+      <span class="callout-icon">ℹ</span>
+      <div class="callout-body"><p>The deep design — the Interaction record, content addressing, the role-ordered merge gate, the fold engine, and cross-machine sync — lives in <a href="https://github.com/r4yen/knock-knock/blob/main/docs/knock-knock-ledger-model.md">knock-knock-ledger-model.md</a> and <a href="https://github.com/r4yen/knock-knock/blob/main/docs/reactions-and-versioning.md">reactions-and-versioning.md</a>.</p></div>
+    </div>
+
+    <!-- OS sandboxing -->
+    <h2 id="sandbox">OS sandboxing</h2>
+    <p class="section-intro">The permission profile decides <em>which</em> tools run; an optional OS sandbox confines <em>where</em> they can act. Set <code>sandbox</code> on an agent and the relay launches its runtime inside an OS jail.</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Setting</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><code>fs: "workspace"</code></td><td>File writes are confined to the agent's workspace directory (macOS <code>sandbox-exec</code>, Linux <code>bwrap</code>).</td></tr>
+          <tr><td><code>network</code></td><td>Optionally deny the agent process's outbound network.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout callout-warn">
+      <span class="callout-icon">⚠</span>
+      <div class="callout-body"><p>OS confinement needs an out-of-process runtime — use <code>claude-acp</code> (or another ACP runtime). The in-process <code>claude-sdk</code> can't be OS-jailed. See <a href="https://github.com/r4yen/knock-knock/blob/main/docs/security-and-permissions.md">security-and-permissions.md</a>.</p></div>
+    </div>
+
+    <!-- Session sharing -->
+    <h2 id="sessions">Session sharing</h2>
+    <p class="section-intro">Hand a collaborating agent the context of one of <em>your</em> local coding-agent sessions — the plan, the decisions, the dead-ends — so it starts warm instead of cold. Owner-only: type <code>share session</code> in a channel to pick one.</p>
+
+    <div class="layer-row">
+      <div class="layer-cell">
+        <div class="lc-label">Import 📥</div>
+        <div class="lc-title">Distilled context, in-channel</div>
+        <div class="lc-desc">Reads your on-disk transcript (Claude Code, Codex, OpenCode, Gemini), distills the latest plan, todos, decisions and files touched, and shares the brief into the thread — injected into the next turn. On Postgres it reaches teammates on other machines.</div>
+      </div>
+      <div class="layer-cell">
+        <div class="lc-label">Resume</div>
+        <div class="lc-title">Continue a live session</div>
+        <div class="lc-desc">For a runtime-compatible session, <strong>Resume</strong> continues the actual session on the next turn — the agent picks up where it left off, not just from a summary.</div>
+      </div>
+    </div>
+
+    <div class="callout callout-tip">
+      <span class="callout-icon">✦</span>
+      <div class="callout-body"><p>Sessions are filtered to the agent's own workspace for privacy. Full flow and security model in <a href="https://github.com/r4yen/knock-knock/blob/main/docs/session-sharing.md">session-sharing.md</a>.</p></div>
+    </div>
+
+    <!-- Beyond Discord -->
+    <h2 id="platforms">Beyond Discord</h2>
+    <p class="section-intro">Discord is the first surface, not the only one. The relay speaks to chat platforms through a single in-process <code>MessagingAdapter</code> seam, so adding a platform is one adapter — the ledger, permissions, and collaboration logic don't change.</p>
+    <p>The Discord adapter is complete today; Slack, Telegram, WhatsApp, and iMessage adapters fit the same seam. See <a href="https://github.com/r4yen/knock-knock/blob/main/docs/messaging-platforms.md">messaging-platforms.md</a>.</p>
+
+    <hr>
+
     <!-- Coding agents -->
     <h2 id="runtimes">Coding agents</h2>
     <p class="section-intro">The relay drives any coding agent through one adapter seam. Pick the runtime per agent during <code>bun setup.ts</code>.</p>
@@ -1236,6 +1323,10 @@
     <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Register peers</a>
     <a href="#step-6" style="padding-left: 18px; font-size: 12px">6. Launch</a>
     <a href="#acceptance-tests">Acceptance tests</a>
+    <a href="#version-control">Version control &amp; conflicts</a>
+    <a href="#sandbox">OS sandboxing</a>
+    <a href="#sessions">Session sharing</a>
+    <a href="#platforms">Beyond Discord</a>
     <a href="#runtimes">Coding agents</a>
     <a href="#access-json">access.json</a>
     <a href="#troubleshooting">Troubleshooting</a>
