@@ -138,15 +138,20 @@ export class FoldEngine {
       process.stderr.write(`fold ${entry.fold.name} step threw: ${err}\n`)
       return
     }
-    if (!notify) return
+    if (notify) this.notify(entry, i)
+  }
+
+  /** Fire a fold's subscribers with the current state and the given delta
+   *  (`undefined` for the initial push and post-rebuild re-folds). Per-subscriber
+   *  errors are isolated so one bad subscriber can't starve the rest. */
+  private notify(entry: FoldEntry, delta: Interaction | undefined): void {
     const subs = this.subscribers.get(entry.fold.name)
-    if (subs) {
-      for (const cb of subs) {
-        try {
-          cb(entry.state, i)
-        } catch (err) {
-          process.stderr.write(`fold ${entry.fold.name} subscriber threw: ${err}\n`)
-        }
+    if (!subs) return
+    for (const cb of subs) {
+      try {
+        cb(entry.state, delta)
+      } catch (err) {
+        process.stderr.write(`fold ${entry.fold.name} subscriber threw: ${err}\n`)
       }
     }
   }
@@ -169,22 +174,7 @@ export class FoldEngine {
   private async doRefold(hash: Hash): Promise<void> {
     const updated = await this.store.getByHash(hash)
     if (!updated) return
-    // A fold is affected iff its key verdict for this interaction depends on the
-    // lifecycle — i.e. differs between a live (applied) and a held (proposed)
-    // snapshot. That captures both removal (now superseded/denied) and addition
-    // (a resolved branch flipping proposed→applied), regardless of direction.
-    // INVARIANT this relies on: a lifecycle-keyed fold gates on the
-    // admitted|applied set inside its `key`. A future fold that encodes
-    // lifecycle-sensitivity only in `step`, or keys on some other lifecycle
-    // value, would be missed here and stay stale.
-    const liveSnap: Interaction = { ...updated, lifecycle: 'applied' as Lifecycle }
-    const heldSnap: Interaction = { ...updated, lifecycle: 'proposed' as Lifecycle }
-    const affected: FoldEntry[] = []
-    for (const entry of this.folds.values()) {
-      const key = entry.fold.key
-      if (!key) continue // keyless folds see everything; lifecycle never excludes
-      if (key(liveSnap) !== key(heldSnap)) affected.push(entry)
-    }
+    const affected = this.affectedFolds(updated)
     if (affected.length === 0) return
 
     const artifactId = updated.target.artifactId
@@ -225,17 +215,29 @@ export class FoldEngine {
       }
     }
 
-    for (const entry of affected) {
-      const subs = this.subscribers.get(entry.fold.name)
-      if (!subs) continue
-      for (const cb of subs) {
-        try {
-          cb(entry.state, undefined)
-        } catch (err) {
-          process.stderr.write(`fold ${entry.fold.name} subscriber threw: ${err}\n`)
-        }
-      }
+    for (const entry of affected) this.notify(entry, undefined)
+  }
+
+  /**
+   * The folds whose membership of `updated` depends on its lifecycle — those whose
+   * `key` verdict differs between a live (applied) and a held (proposed) snapshot.
+   * That captures both removal (now superseded/denied) and addition (a resolved
+   * branch flipping proposed→applied), regardless of direction.
+   *
+   * INVARIANT this relies on: a lifecycle-keyed fold gates on the admitted|applied
+   * set inside its `key`. A future fold that encodes lifecycle-sensitivity only in
+   * `step`, or keys on some other lifecycle value, would be missed and stay stale.
+   */
+  private affectedFolds(updated: Interaction): FoldEntry[] {
+    const liveSnap: Interaction = { ...updated, lifecycle: 'applied' as Lifecycle }
+    const heldSnap: Interaction = { ...updated, lifecycle: 'proposed' as Lifecycle }
+    const affected: FoldEntry[] = []
+    for (const entry of this.folds.values()) {
+      const key = entry.fold.key
+      if (!key) continue // keyless folds see everything; lifecycle never excludes
+      if (key(liveSnap) !== key(heldSnap)) affected.push(entry)
     }
+    return affected
   }
 
   /** Apply one interaction through key + step for a slice rebuild — no `seen`
