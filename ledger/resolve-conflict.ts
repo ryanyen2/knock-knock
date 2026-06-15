@@ -40,8 +40,9 @@ export type ResolveConflictInput = {
 
 export type ResolveConflictResult = { resolveHash: Hash; losers: Hash[] } | undefined
 
-/** Apply an owner's conflict resolution. Returns the merge.resolve hash + the
- *  superseded losers, or undefined when the chosen branch can't be found. */
+/** Apply an owner's conflict resolution. Returns the hash of the resolving
+ *  owner-role edit + the dominated losers, or undefined when the chosen branch
+ *  can't be found (or isn't a versionable edit). */
 export async function resolveConflict(
   store: Store,
   ledger: Ledger,

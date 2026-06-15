@@ -1,17 +1,20 @@
 /**
- * Versionable artifact — Yjs-backed CRDT for file/text patches.
+ * Versionable artifact — Yjs-backed CRDT for file/text patches, under AOCM.
  *
- * A versionable artifact (`vers:<scope>/<key>`) is a Y.Doc whose state is
- * computed by applying every admitted `workspace.edit` interaction's Y.update
- * in causal (`caused_by`-topological) order. Concurrent edits at
- * non-overlapping anchors merge automatically via Yjs; overlapping
- * different-role edits are arbitrated by `mergeProposal` BEFORE they reach
- * the doc (the lower-role op is `superseded` and never applied here).
+ * A versionable artifact (`vers:<scope>/<key>`) is a Y.Doc whose state is a
+ * pure fold over the artifact's immutable `workspace.edit` operations. Every
+ * edit is admitted `applied` (admit.ts does NOT lifecycle-arbitrate versionable
+ * edits); dominance, exclusion, and conflict are DERIVED in `projectVersionable`
+ * from a deterministic total order `(role_rank DESC, content_hash ASC)`:
+ * concurrent edits whose regions interfere are resolved by authority (the
+ * higher-role op excludes the lower from the folded set) or, when roles are
+ * equal, surfaced as a first-class conflict. Dominance is realized by EXCLUSION
+ * from the set Yjs folds — never by reordering the (order-independent) CRDT.
  *
- * Phase 2 scope: the algorithm exists and is tested. Integration with the
- * relay's file-edit flow comes when TurnRecorder learns to diff `Edit`/
- * `Write` tool outputs into Y.updates; for now this module is consumed by
- * tests and by future synchronizations.
+ * See `docs/authority-ordered-convergent-merge.md` for the concept and algebra.
+ * v1 retains the whole-file anchor, so different-role exclusion is whole-op
+ * (interval-scoped exclusion is deferred); the interference test is already
+ * region-aware, so disjoint edits still merge.
  */
 
 import * as Y from 'yjs'
@@ -59,10 +62,10 @@ export function encodeUpdate(update: Uint8Array): string {
  * we mutate it in place, return the update bytes, and the caller appends them
  * as a `workspace.edit` patch.
  *
- * This shape is the realistic integration point — Yjs updates encode
- * operations relative to *the same doc instance's* client IDs, so a portable
- * stateless `before → after → update` helper isn't possible without a shared
- * doc. Phase 2+ wires this up; the Phase 2 module ships the algorithm only.
+ * This shape is the integration point `capture-workspace-edit` uses — Yjs
+ * updates encode operations relative to *the same doc instance's* client IDs,
+ * so a portable stateless `before → after → update` helper isn't possible
+ * without a shared doc (hence the per-artifact live doc kept in the capture sync).
  */
 export function mutateAndEncode(
   doc: Y.Doc,
@@ -105,9 +108,10 @@ export function parseVersionableId(artifactId: ArtifactId): { scope: string; rel
   return { scope: rest.slice(0, slash), relPath: rest.slice(slash + 1) }
 }
 
-/** The stable "whole file" anchor. Every whole-file edit shares it, so two
- *  concurrent whole-file edits contend at the merge gate (anchorMatches is strict
- *  equality, so a content-length-dependent `to` would never match). */
+/** The stable "whole file" anchor (v1). Every edit shares it; AOCM decides
+ *  contention by the region-overlap interference test in the projection, not by
+ *  the anchor. A fixed sentinel (not a content-length-dependent `to`) keeps the
+ *  artifact id stable across edits. Interval anchors are the deferred refinement. */
 export const WHOLE_FILE_ANCHOR: Anchor = { kind: 'range', from: 0, to: 0 }
 
 /** The edit a tool call expresses, normalized across Edit/Write shapes. */

@@ -1,19 +1,22 @@
 /**
  * capture-workspace-edit — turn an agent's Edit/Write tool execution into a
- * `workspace.edit` interaction, so file edits flow through the role-ordered merge
- * gate and converge over the ledger (no Discord conversation).
+ * `workspace.edit` interaction, so concurrent file edits converge over the ledger
+ * under AOCM (no Discord conversation): the edit is admitted `applied`, and the
+ * versionable projection derives dominance/exclusion/conflict from the immutable
+ * ops (see ledger/artifacts/versionable.ts).
  *
  * Fires on a successful `tool.executed`. Its parent `tool.requested` carries the
  * Edit/Write input (file path + content) — `tool.executed` itself carries empty
  * args, so we read the input from the correlated request. The edit is captured
  * against a per-artifact live Y.Doc (Yjs updates are relative to a doc instance,
  * so the doc is kept alive across edits and primed from the ledger on first use),
- * then admitted through the gate.
+ * then admitted. The normalized path-free intent rides along on the patch for the
+ * projection's interference test.
  *
  * Walking-skeleton scope (rubric #2: one new behavior, zero edits to concepts):
  * whole-file replace/append, one stable whole-file anchor. The capture is wired
  * for any runtime whose Edit/Write tool calls surface as tool.requested; the
- * convergence story is proven by versionable.test.ts.
+ * convergence story is proven by versionable.test.ts and aocm.test.ts.
  */
 
 import * as Y from 'yjs'

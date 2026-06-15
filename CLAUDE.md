@@ -181,30 +181,44 @@ deny). Pure `buildSandboxLaunch` wraps the spawn in `adapters/index.ts`. Honest
 limit: in-process `claude-sdk` can't be jailed — use `claude-acp` for confinement.
 See **`docs/security-and-permissions.md`** for the user-facing guide.
 
-### File-edit sync (`workspace.edit` → versionable; walking skeleton)
+### File-edit sync (`workspace.edit` → versionable; AOCM)
 
 Two agents editing the same file converge over the ledger (no Discord
-conversation), conflicts resolved by the role-ordered merge gate:
+conversation) under **Authority-Ordered Convergent Merge** — dominance, exclusion,
+and conflict are **derived** from the immutable ops at projection time, never from
+a mutated lifecycle column. Full concept + algebra in
+**`docs/authority-ordered-convergent-merge.md`**.
 - `capture-workspace-edit` (sync) correlates a successful `tool.executed` with its
   parent `tool.requested` (which carries the Edit/Write input), builds a Yjs
   update against a live per-artifact `Y.Doc`, and admits a `workspace.edit` to
-  `vers:<scope>/<relpath>` with a stable whole-file anchor `{range,0,0}` (so
-  concurrent whole-file edits contend) and `caused_by` chained onto the artifact's
-  applied edits (so sequential edits don't). `effect: 'workspace'` → through the gate.
+  `vers:<scope>/<relpath>` with a stable whole-file anchor `{range,0,0}` and
+  `caused_by` chained onto the artifact's applied edits (so sequential edits don't
+  contend; concurrent ones do). It also carries the normalized path-free
+  `intent` for the interference test.
+- `admit.ts` admits versionable edits (`verb: 'workspace.edit', effect: 'workspace'`)
+  **`applied`**, bypassing the role-ordered lifecycle gate — the whole contended set
+  reaches the fold. (Non-versionable verbs keep the gate.)
 - `versionableFold` + `projectVersionable` (`ledger/artifacts/versionable.ts`)
-  project the merged text via `applyEdits` (Yjs `applyUpdate` is a CRDT merge →
-  order-independent convergence).
+  derive the live set by the total order `(role_rank DESC, content_hash ASC)`:
+  greedily keep edits, **exclude** any concurrent op an already-kept higher-or-equal
+  op interferes with (region-overlap on the common base), then fold the live set via
+  `applyEdits` (Yjs `applyUpdate` is order-independent). Different-role interference
+  excludes silently; equal-role interference records a first-class `ConflictRegion`.
+- `conflict-card` (sync) fires on each admitted versionable edit and posts when the
+  edit joins a derived conflict region (cross-relay claim-deduped on the sorted
+  branch set). `resolve-conflict.ts` resolves by admitting an **owner-role copy of
+  the chosen branch** (concurrent → dominates both branches → conflict clears); it
+  still emits a `surfaceToInbox` INSERT so `dm-on-supersede` fires.
 - `write-back-versionable` (sync) writes the merged text to disk under a
   per-file `withClaim` + content-compare (idempotent; dedups multi-relay writes).
-- Conflicts surface the **existing** `conflict-card`; nothing new.
-- Skeleton scope: capture is reliable for Claude-Code-shaped Edit/Write tools
-  (`claude-sdk`, where the SDK emits real tool names); other ACP agents' edit
-  formats are deferred. On a lifecycle supersession the store fires an awaited
-  `subscribeLifecycle` signal and the `FoldEngine` re-folds the affected
-  artifact's slice (`ledger/fold.ts`), so a superseded edit leaves the live view
-  immediately — matching a fresh replay, no restart. Remaining gap: cross-machine
-  lifecycle propagation (Postgres `NOTIFY` fires on INSERT, not UPDATE), so a
-  peer relay's folds learn of a remote supersession only on restart.
+- **Cross-machine:** because dominance is derived from immutable ops and the merge
+  emits only INSERTs (no lifecycle UPDATE), replicas converge from the operations
+  alone — closing the old gap where a `superseded` UPDATE never crossed via Postgres
+  `NOTIFY`. The R9 ship gate is the property battery in `ledger/aocm.test.ts`
+  (hand-authored AE corpus + separate-store skew fuzz + role-blind teeth check).
+- v1 scope: whole-file anchor retained (different-role exclusion is whole-op;
+  interval anchors deferred). Capture is reliable for Claude-Code-shaped Edit/Write
+  tools (`claude-sdk`); other ACP agents' edit formats are deferred.
 
 ### Headless control verbs (`ledger/` + thin Discord adapters)
 
