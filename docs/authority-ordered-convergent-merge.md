@@ -145,17 +145,7 @@ o₁ ⋈ o₂   ⟺   both are Write          (two whole-file rewrites are irrec
 
 A picture, on the base `"hello world"`:
 
-```
-            0    5 6    11
-   base:    hello world
-   A edits "hello":   [0,5)  ███████
-   B edits "world":         [6,11)        ███████
-                            ↑ disjoint — no overlap → A and B do NOT interfere
-
-   A edits "hello":   [0,5)  ███████
-   C edits "hello":   [0,5)  ███████
-                            ↑ same region → A and C interfere
-```
+![Interference is region-overlap on the common base: disjoint regions do not interfere; same-region edits do](assets/aocm-interference.svg)
 
 Interference is a **pure function of immutable intents and the common base**, so
 it too is replica-identical. (Adjacent regions that merely touch at a boundary —
@@ -204,6 +194,20 @@ Three outcomes fall out of this single rule, with no policy knob:
 | Same region, **different** role | lower-role op excluded | higher role wins, silently |
 | Same region, **equal** role | one kept, pair recorded in `conflicts` | a **conflict card** to resolve |
 
+The whole pipeline, end to end:
+
+```mermaid
+flowchart TB
+  E["operation admitted<br/>(created locally or arrived from a peer)"] --> S["sort all ops by ≺<br/>(role desc, hash asc)"]
+  S --> L["derive live set:<br/>exclude each op a kept,<br/>concurrent, interfering op dominates"]
+  L --> F["CRDT folds the live set<br/>(order-independent)"]
+  F --> Q{"equal-role interference<br/>survives?"}
+  Q -->|"no — disjoint, or<br/>resolved by authority"| D["converged state<br/>(identical on every replica)"]
+  Q -->|"yes — same region,<br/>equal role"| C["first-class conflict<br/>→ conflict card"]
+  C --> R["owner resolves =<br/>ordinary higher-authority op<br/>the order floats to the top"]
+  R --> L
+```
+
 ---
 
 ## 4. The one subtle move: exclude, don't reorder
@@ -222,10 +226,7 @@ So authority cannot be expressed as an *ordering* of the CRDT. It has to be
 expressed as **membership**: the dominated operation is *left out of the set the
 CRDT folds at all*.
 
-```
-   ✗ reorder:   fold_CRDT( [agentEdit, ownerEdit] )  →  still merges BOTH
-   ✓ exclude:   fold_CRDT( [ownerEdit] )             →  owner's text, cleanly
-```
+![Reordering a commutative CRDT keeps both edits; excluding the dominated edit from the input set is what makes the owner win](assets/aocm-exclude-vs-reorder.svg)
 
 This is why the total order ≺ and the CRDT fold order are **two different
 orders** that must never be conflated. ≺ decides *who is in the live set*; the
