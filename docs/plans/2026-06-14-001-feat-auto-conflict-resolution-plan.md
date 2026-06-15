@@ -1,7 +1,8 @@
 ---
 title: "feat: Auto v1 — autonomous conflict resolution for the ledger merge gate"
 type: feat
-status: active
+status: superseded
+superseded_by: docs/plans/2026-06-15-001-feat-authority-ordered-convergent-merge-plan.md
 date: 2026-06-14
 origin: docs/brainstorms/2026-06-09-anchored-patch-category-conflict-layer-requirements.md
 deepened: 2026-06-14
@@ -9,14 +10,15 @@ deepened: 2026-06-14
 
 # feat: Auto v1 — autonomous conflict resolution for the ledger merge gate
 
-> **On hold — approach under reconsideration (2026-06-15).** A second document-review round found
-> the cross-machine containment lattice is not yet sound: maximal sets can form an antichain (no
-> convergence), the dominance rules are self-contradictory (sticky vs re-converge), owner-precedence
-> still rides a non-propagating lifecycle UPDATE, `write-back-versionable` is never wired to the
-> auto-merge verb, widening the fold `key` disables the supersede re-fold, and the "scoped re-fold"
-> seam doesn't exist. The core question — single-relay v1 vs. a properly-specified lattice vs.
-> shipping R5 interval anchors first — is back in `ce-brainstorm`. **Do not implement this plan until
-> the brainstorm resolves the approach.**
+> **Superseded (2026-06-15) by [docs/plans/2026-06-15-001-feat-authority-ordered-convergent-merge-plan.md](2026-06-15-001-feat-authority-ordered-convergent-merge-plan.md).**
+> This plan's cross-machine containment-lattice + hold/auto-policy approach was found unsound across
+> three review rounds: maximal sets can form an antichain (no convergence), the dominance rules are
+> self-contradictory (sticky vs re-converge), and owner-precedence still rode a non-propagating
+> lifecycle UPDATE. The approach was re-decided to **Authority-Ordered Convergent Merge (AOCM)** —
+> derived dominance by EXCLUSION over a `(role DESC, hash ASC)` total order, region-overlap
+> interference, and no hold/auto policy. See the AOCM plan and
+> `docs/brainstorms/2026-06-09-anchored-patch-category-conflict-layer-requirements.md` (rewritten to
+> AOCM). **Do not implement this plan; it is kept for historical context only.**
 
 ## Summary
 
