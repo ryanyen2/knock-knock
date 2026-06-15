@@ -5,11 +5,21 @@
  */
 
 import { test, expect } from 'bun:test'
+import * as Y from 'yjs'
 import { SqliteStore } from './store-sqlite.ts'
 import { Ledger } from './capture.ts'
 import { hashInteraction } from './canonical.ts'
 import { FoldEngine, type Fold } from './fold.ts'
 import type { Interaction, ProposedInteraction } from './interaction.ts'
+import {
+  mutateAndEncode,
+  projectVersionable,
+  versionableArtifactId,
+  versionableFold,
+  VERSIONABLE_FOLD,
+  WHOLE_FILE_ANCHOR,
+  type VersionableFoldState,
+} from './artifacts/versionable.ts'
 
 const COUNT_FOLD: Fold<{ count: number }> = {
   name: 'count',
@@ -234,4 +244,70 @@ test('FoldEngine: a lifecycle change does not re-notify folds whose verdict is l
 
   engine.close()
   store.close()
+})
+
+test('AOCM (U7): separate stores converge to identical projection under shuffled INSERT delivery', async () => {
+  // R6: the merge re-projects from INSERTs alone — no lifecycle UPDATE. Build a
+  // fixed op-set, deliver it to two independent stores in DIFFERENT orders, and
+  // assert both engines project byte-identical text + identical derived conflicts.
+  // (Convergence is by construction: projectVersionable orders by (role,hash), so
+  // insertion order cannot change the result. This pins that property in-process.)
+  const seedDoc = new Y.Doc()
+  const seedOps = mutateAndEncode(seedDoc, t => t.insert(0, 'hello world'))
+  seedDoc.destroy()
+  const mkOps = (mutate: (t: Y.Text) => void) => {
+    const d = new Y.Doc()
+    Y.applyUpdate(d, Buffer.from(seedOps, 'base64'))
+    const ops = mutateAndEncode(d, mutate)
+    d.destroy()
+    return ops
+  }
+  const artifactId = versionableArtifactId('chan', 'foo.ts')
+  const mk = (
+    actor: string,
+    role: 'owner' | 'agent',
+    ops: string,
+    intent: { kind: 'edit'; oldString: string; newString: string },
+    parents: string[],
+  ): Interaction => {
+    const p: ProposedInteraction = {
+      actor, role, channel: 'chan',
+      target: { artifactId, anchor: WHOLE_FILE_ANCHOR }, verb: 'workspace.edit',
+      patch: { kind: 'versionable', ops, intent },
+      effect: 'workspace', caused_by: parents,
+    }
+    return { ...p, hash: hashInteraction(p), lifecycle: 'applied', createdAt: new Date().toISOString() }
+  }
+  const seed: Interaction = (() => {
+    const p: ProposedInteraction = {
+      actor: 'seedbot', role: 'agent', channel: 'chan',
+      target: { artifactId, anchor: WHOLE_FILE_ANCHOR }, verb: 'workspace.edit',
+      patch: { kind: 'versionable', ops: seedOps, intent: { kind: 'write', content: 'hello world' } },
+      effect: 'workspace', caused_by: [],
+    }
+    return { ...p, hash: hashInteraction(p), lifecycle: 'applied', createdAt: new Date().toISOString() }
+  })()
+  const a = mk('botA', 'agent', mkOps(t => { t.delete(0, 5); t.insert(0, 'HI') }), { kind: 'edit', oldString: 'hello', newString: 'HI' }, [seed.hash])
+  const b = mk('botB', 'agent', mkOps(t => { t.delete(0, 5); t.insert(0, 'YO') }), { kind: 'edit', oldString: 'hello', newString: 'YO' }, [seed.hash])
+  // An owner edit that dominates both (concurrent sibling, owner role) → resolves.
+  const owner = mk('owner1', 'owner', mkOps(t => { t.delete(0, 5); t.insert(0, 'HI') }), { kind: 'edit', oldString: 'hello', newString: 'HI' }, [seed.hash])
+
+  const ops = [seed, a, b, owner]
+  const project = async (order: Interaction[]) => {
+    const store = new SqliteStore(':memory:')
+    const engine = new FoldEngine(store)
+    await engine.register(versionableFold)
+    for (const i of order) await store.append(i)
+    const r = projectVersionable(engine.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
+    engine.close()
+    store.close()
+    return r
+  }
+
+  const forward = await project(ops)
+  const shuffled = await project([owner, b, seed, a]) // different store, different order
+  expect(shuffled.text).toBe(forward.text)
+  expect(shuffled.conflicts).toEqual(forward.conflicts)
+  expect(forward.conflicts).toEqual([]) // owner dominates both agents silently → no surviving conflict
+  expect(forward.text).toContain('HI')
 })
