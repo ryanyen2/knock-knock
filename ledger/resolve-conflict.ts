@@ -1,13 +1,21 @@
 /**
  * resolveConflict — the headless core of a conflict-card resolution.
  *
- * Records the owner's `merge.resolve`, flips lifecycles (chosen → applied, the
- * rest → superseded), and surfaces the drop to each loser's inbox (the same
- * surface-back the admission gate uses, so `dm-on-supersede` DMs the losing
- * agent's owner). This logic used to live inside the Discord button handler
- * (`host/conflict-ui.ts`); extracting it makes resolution a ledger verb that any
- * source — a Discord click, a CLI, a future API — can drive, while Discord stays
- * the human surface (the handler is now a thin adapter over this).
+ * AOCM: resolution is NOT a lifecycle flip. A versionable conflict is derived by
+ * `projectVersionable` from the immutable ops; to resolve it the owner admits an
+ * ORDINARY higher-authority op that the total order `(role DESC, hash ASC)` floats
+ * to the top. We admit an owner-role COPY of the chosen branch (same ops/intent/
+ * target, same parents → concurrent with the agent branches): being owner-role and
+ * interfering, it excludes both agent branches from the projection's live set, so
+ * the live text becomes the chosen branch's text and the equal-role conflict clears
+ * — all DERIVED, with no UPDATE to propagate across replicas. We still surface the
+ * drop to each loser's inbox (the same surface-back the admission gate uses, so
+ * `dm-on-supersede` DMs the losing agent's owner).
+ *
+ * This logic used to live inside the Discord button handler (`host/conflict-ui.ts`);
+ * extracting it makes resolution a ledger verb that any source — a Discord click, a
+ * CLI, a future API — can drive, while Discord stays the human surface (the handler
+ * is now a thin adapter over this).
  *
  * Identity boundary: the caller must pass an `ownerId` that is a real owner for
  * the scope; this function does not authenticate. The Discord handler gates on
@@ -42,27 +50,30 @@ export async function resolveConflict(
   const { ownerId, channel, branchHashes, chosenHash } = input
   const losers = branchHashes.filter(h => h !== chosenHash)
 
-  const winner = await store.getByHash(chosenHash)
-  if (!winner) return undefined
+  const chosen = await store.getByHash(chosenHash)
+  if (!chosen || chosen.patch.kind !== 'versionable') return undefined
 
-  // Journal the owner's decision, then flip lifecycles. The merge.resolve targets
-  // the winning branch's artifact; caused_by links all branches so the audit
-  // trail is "branches → resolve".
+  // Admit an owner-role COPY of the chosen branch: same ops/intent/target, and the
+  // SAME parents (`caused_by`) so it stays concurrent with — rather than a descendant
+  // of — the agent branches. The projection then floats it above both (owner role)
+  // and, being concurrent + interfering, excludes them: the live text becomes the
+  // chosen branch's text and the equal-role conflict clears. No lifecycle UPDATE; the
+  // dominance is derived, so it converges on every replica from this one INSERT.
   const resolve = await ledger.record({
     actor: ownerId,
     role: 'owner',
     channel,
-    target: winner.target,
-    verb: 'merge.resolve',
-    patch: { kind: 'none' },
-    effect: 'pure',
-    caused_by: [...branchHashes].sort(),
+    target: chosen.target,
+    verb: 'workspace.edit',
+    patch: chosen.patch,
+    effect: 'workspace',
+    caused_by: chosen.caused_by,
   })
-  await store.updateLifecycle(chosenHash, 'applied')
-  await store.updateLifecycle(resolve.hash, 'applied', { supersedes: losers })
 
+  // Surface the drop to each non-chosen branch's author. The note is an INSERT
+  // (knowledge.append), so it crosses replicas and `dm-on-supersede` fires — the
+  // human-facing half of the override that the derived exclusion does not carry.
   for (const loser of losers) {
-    await store.updateLifecycle(loser, 'superseded')
     const peer = await store.getByHash(loser)
     if (peer) {
       await surfaceToInbox(store, peer, {
