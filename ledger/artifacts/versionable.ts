@@ -16,7 +16,7 @@
 
 import * as Y from 'yjs'
 import type { Fold } from '../fold.ts'
-import type { Anchor, ArtifactId, Hash, Interaction, Patch } from '../interaction.ts'
+import type { Anchor, ArtifactId, Hash, Interaction, Patch, VersionableIntent } from '../interaction.ts'
 
 export type VersionableText = {
   /** Current text. */
@@ -149,6 +149,36 @@ export function applyEditIntent(currentText: string, intent: EditIntent): string
   const idx = currentText.indexOf(intent.oldString)
   if (idx < 0) return currentText
   return currentText.slice(0, idx) + intent.newString + currentText.slice(idx + intent.oldString.length)
+}
+
+// ─── AOCM interference test (U3) ──────────────────────────────────────────────
+//
+// Two concurrent edits INTERFERE iff the regions they touch in their common base
+// overlap. Disjoint regions merge cleanly via the CRDT; overlapping regions are
+// arbitrated by authority (higher role excludes lower) or surfaced as a conflict.
+// The test is pure — a function of the immutable intents and the common-base text
+// — so every replica computes the same verdict (the basis of AOCM convergence).
+
+/** The half-open byte region a versionable intent touches in `base`. A `write`
+ *  spans the whole file; an `edit` spans where its `oldString` sits; an absent
+ *  `oldString` fails safe to the whole file (so it interferes with everything,
+ *  never silently merges). Pure. */
+export function regionOf(intent: VersionableIntent, base: string): { lo: number; hi: number } {
+  if (intent.kind === 'write') return { lo: 0, hi: base.length }
+  const idx = intent.oldString ? base.indexOf(intent.oldString) : -1
+  if (idx < 0) return { lo: 0, hi: base.length }
+  return { lo: idx, hi: idx + intent.oldString.length }
+}
+
+/** Whether two concurrent intents interfere in their common base. Two whole-file
+ *  `write`s always interfere (two whole-file replaces are irreconcilable, even on
+ *  an empty base); otherwise it is half-open interval intersection of their regions.
+ *  Pure and replica-identical. */
+export function interferes(a: VersionableIntent, b: VersionableIntent, base: string): boolean {
+  if (a.kind === 'write' && b.kind === 'write') return true
+  const ra = regionOf(a, base)
+  const rb = regionOf(b, base)
+  return ra.lo < rb.hi && rb.lo < ra.hi
 }
 
 export type VersionableFoldState = ReadonlyMap<ArtifactId, ReadonlyMap<Hash, Interaction>>

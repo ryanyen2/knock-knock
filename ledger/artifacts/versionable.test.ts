@@ -17,8 +17,11 @@ import {
   versionableFold,
   VERSIONABLE_FOLD,
   WHOLE_FILE_ANCHOR,
+  interferes,
+  regionOf,
   type VersionableFoldState,
 } from './versionable.ts'
+import type { VersionableIntent } from '../interaction.ts'
 import { hashInteraction } from '../canonical.ts'
 import { SqliteStore } from '../store-sqlite.ts'
 import { FoldEngine } from '../fold.ts'
@@ -146,6 +149,34 @@ test('versionable: concurrent edits to non-overlapping ranges Yjs-merge naturall
   base.destroy()
   writerA.destroy()
   writerB.destroy()
+})
+
+test('versionable (U3): interference is region-overlap on the common base', () => {
+  const base = 'the quick brown fox jumps'
+  const editFox: VersionableIntent = { kind: 'edit', oldString: 'fox', newString: 'cat' } // region [16,19]
+  const editFox2: VersionableIntent = { kind: 'edit', oldString: 'fox', newString: 'dog' } // same region [16,19]
+  const editThe: VersionableIntent = { kind: 'edit', oldString: 'the', newString: 'a' } // region [0,3]
+  const write: VersionableIntent = { kind: 'write', content: 'totally new' }
+  const writeB: VersionableIntent = { kind: 'write', content: 'other new' }
+
+  // Same region → interfere.
+  expect(interferes(editFox, editFox2, base)).toBe(true)
+  // Disjoint regions → no interference.
+  expect(interferes(editFox, editThe, base)).toBe(false)
+  // Write spans the whole file → interferes with any edit.
+  expect(interferes(write, editFox, base)).toBe(true)
+  expect(interferes(editThe, write, base)).toBe(true)
+  // Two whole-file writes always interfere (irreconcilable) — even on an empty base.
+  expect(interferes(write, writeB, base)).toBe(true)
+  expect(interferes(write, writeB, '')).toBe(true)
+  // Absent oldString fails safe to the whole file → interferes.
+  const editMissing: VersionableIntent = { kind: 'edit', oldString: 'zzz', newString: 'q' }
+  expect(regionOf(editMissing, base)).toEqual({ lo: 0, hi: base.length })
+  expect(interferes(editMissing, editThe, base)).toBe(true)
+  // Adjacent regions that only touch at a boundary do not interfere (half-open).
+  const editQuick: VersionableIntent = { kind: 'edit', oldString: 'quick', newString: 'slow' } // [4,9]
+  const editSpace: VersionableIntent = { kind: 'edit', oldString: ' brown', newString: '' } // [9,15]
+  expect(interferes(editQuick, editSpace, base)).toBe(false)
 })
 
 test('versionable (U2): the normalized intent round-trips and participates in the content hash', () => {
