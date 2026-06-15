@@ -1,7 +1,7 @@
 ---
 title: "feat: Authority-Ordered Convergent Merge (AOCM) for the conflict layer"
 type: feat
-status: active
+status: completed
 date: 2026-06-15
 origin: docs/brainstorms/2026-06-09-anchored-patch-category-conflict-layer-requirements.md
 ---
