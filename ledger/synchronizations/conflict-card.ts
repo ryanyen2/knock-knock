@@ -15,7 +15,7 @@
 
 import type { Synchronization } from '../sync.ts'
 import type { Interaction, Patch } from '../interaction.ts'
-import { findConcurrentAtAnchor } from '../concurrency.ts'
+import { projectVersionable, VERSIONABLE_FOLD, type VersionableFoldState } from '../artifacts/versionable.ts'
 import { renderConflictCard, type ConflictBranch } from '../render/surface.ts'
 
 export type ConflictCardPost = {
@@ -46,47 +46,45 @@ const CONFLICT_CLAIM_TTL_MS = 60_000
 export function conflictCard(opts: ConflictCardOpts): Synchronization {
   return {
     name: 'conflict-card',
-    // A 'proposed' lifecycle is only ever a held equal-role conflict.
-    matches: i => i.lifecycle === 'proposed' && i.target.anchor.kind !== 'none',
+    // AOCM: a conflict is no longer a 'proposed' lifecycle — it is DERIVED by the
+    // versionable projection (equal-role interfering edits). Fire on each admitted
+    // versionable edit and consult the projection; post when the just-admitted edit
+    // participates in a derived conflict region.
+    matches: i =>
+      i.verb === 'workspace.edit' &&
+      i.lifecycle === 'applied' &&
+      i.patch.kind === 'versionable' &&
+      i.target.artifactId.startsWith('vers:'),
     fire: async (i, ctx) => {
-      const peers = await findConcurrentAtAnchor(ctx.store, i)
-      if (peers.length === 0) return // nothing to choose between — not a real card
+      const state = ctx.engine.get<VersionableFoldState>(VERSIONABLE_FOLD)
+      const region = projectVersionable(state, i.target.artifactId).conflicts.find(c =>
+        c.branches.includes(i.hash),
+      )
+      if (!region) return // this edit created no conflict
 
-      // Deterministic order so the letters are stable across machines:
-      // sort the whole branch set (proposed + peers) by hash, matching the
-      // merge gate's lower-hash tiebreak. This is intentional and is NOT
-      // arrival order — the second writer to land can take 🅰 if its hash
-      // sorts lower. The hash tiebreak is precisely what lets two machines
-      // render byte-identical cards (and label the same buttons); do not
-      // re-sort by timestamp. The card text carries a one-line hint saying so.
-      const all = [i, ...peers].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+      const slice = state.get(i.target.artifactId)
+      const branchEdits = region.branches
+        .map(h => slice?.get(h))
+        .filter((e): e is Interaction => !!e)
+      if (branchEdits.length < 2) return
 
-      // Dedup across relays: the branch set is deterministic (lower-hash sort),
-      // so both machines derive the same claim key; the first to acquire posts,
-      // the other skips. The holder is this relay's id (NOT the interaction hash,
-      // which is identical on both machines and would "renew" rather than block).
+      // Dedup across relays: the branch set is deterministic (the projection sorts
+      // it), so both machines derive the same claim key; the first to acquire posts,
+      // the other skips. The holder is this relay's id (NOT a per-op hash, which is
+      // identical on both machines and would "renew" rather than block).
       if (opts.relayId) {
-        const claimKey = `extp:discord/${i.channel}/conflict/${all[0]!.hash}`
+        const claimKey = `extp:discord/${i.channel}/conflict/${region.branches.join('-')}`
         const lock = await ctx.store.acquireClaim(claimKey, opts.relayId, CONFLICT_CLAIM_TTL_MS)
         if (!lock.acquired) return
       }
 
-      const branches: ConflictBranch[] = all.map(b => ({
+      const branches: ConflictBranch[] = branchEdits.map(b => ({
         author: `@${b.actor}`,
         body: bodyOf(b.patch),
       }))
       const ownerId = opts.getOwnerForChannel(i.channel)
-      const text = renderConflictCard({
-        target: targetLabel(i),
-        ownerId,
-        branches,
-      })
-      await opts.postCard({
-        channelId: i.channel,
-        text,
-        branchHashes: all.map(b => b.hash),
-        ownerId,
-      })
+      const text = renderConflictCard({ target: targetLabel(i), ownerId, branches })
+      await opts.postCard({ channelId: i.channel, text, branchHashes: region.branches, ownerId })
     },
   }
 }
