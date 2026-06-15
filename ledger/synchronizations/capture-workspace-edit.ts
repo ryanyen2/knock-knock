@@ -97,7 +97,17 @@ export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchroniz
         channel: i.channel,
         target: { artifactId, anchor: WHOLE_FILE_ANCHOR },
         verb: 'workspace.edit',
-        patch: { kind: 'versionable', ops },
+        // Retain the normalized (path-free) intent alongside the Yjs ops — AOCM's
+        // interference test reads it; it is plain JSON so it hashes identically
+        // across replicas. (Previously the parsed intent was discarded here.)
+        patch: {
+          kind: 'versionable',
+          ops,
+          intent:
+            intent.kind === 'write'
+              ? { kind: 'write', content: intent.content }
+              : { kind: 'edit', oldString: intent.oldString, newString: intent.newString },
+        },
         effect: 'workspace',
         caused_by,
       })

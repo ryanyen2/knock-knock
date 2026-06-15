@@ -71,9 +71,19 @@ export type Verb =
 
 export type KnowledgeNote = { id: string; body: string; tags?: string[] }
 
+/** The normalized, path-free edit intent retained on a versionable patch (the
+ *  artifactId already carries the path). AOCM's interference test (region-overlap
+ *  on the common base) reads this — it is plain JSON so it hashes identically on
+ *  every replica. An `edit` replaces the first occurrence of `oldString`; a `write`
+ *  replaces the whole file. */
+export type VersionableIntent =
+  | { kind: 'write'; content: string }
+  | { kind: 'edit'; oldString: string; newString: string }
+
 export type Patch =
-  /** Versionable: base64 Yjs update (Phase 2). */
-  | { kind: 'versionable'; ops: string; baseSnapshot?: string }
+  /** Versionable: base64 Yjs update. `intent` is the normalized edit intent
+   *  retained for AOCM's interference test (path-free; see VersionableIntent). */
+  | { kind: 'versionable'; ops: string; baseSnapshot?: string; intent?: VersionableIntent }
   /** Knowledge: append or invalidate. */
   | {
       kind: 'knowledge'

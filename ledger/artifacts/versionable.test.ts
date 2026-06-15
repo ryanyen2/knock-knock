@@ -148,6 +148,33 @@ test('versionable: concurrent edits to non-overlapping ranges Yjs-merge naturall
   writerB.destroy()
 })
 
+test('versionable (U2): the normalized intent round-trips and participates in the content hash', () => {
+  // AOCM retains the path-free EditIntent on the patch for the interference test.
+  // It must be in the hash (so two replicas building the same edit agree) and
+  // distinct intents must hash distinctly.
+  const withEdit: ProposedInteraction = {
+    actor: 'bot1',
+    role: 'agent',
+    channel: 'chan',
+    target: { artifactId: 'vers:repo/foo.ts', anchor: WHOLE_FILE_ANCHOR },
+    verb: 'workspace.edit',
+    patch: { kind: 'versionable', ops: 'AA==', intent: { kind: 'edit', oldString: 'a', newString: 'b' } },
+    effect: 'workspace',
+    caused_by: [],
+  }
+  // Identical content → identical hash (deterministic, plain-JSON intent).
+  expect(hashInteraction(withEdit)).toBe(hashInteraction({ ...withEdit }))
+  // Different intent → different hash (intent is in the hashed patch).
+  const withOtherIntent: ProposedInteraction = {
+    ...withEdit,
+    patch: { kind: 'versionable', ops: 'AA==', intent: { kind: 'edit', oldString: 'a', newString: 'c' } },
+  }
+  expect(hashInteraction(withOtherIntent)).not.toBe(hashInteraction(withEdit))
+  // Intent present vs absent → different hash (the field is part of identity).
+  const withoutIntent: ProposedInteraction = { ...withEdit, patch: { kind: 'versionable', ops: 'AA==' } }
+  expect(hashInteraction(withoutIntent)).not.toBe(hashInteraction(withEdit))
+})
+
 test('versionable: a superseded edit leaves the live projection immediately (== fresh replay)', async () => {
   // The motivating case for the lifecycle re-fold: two concurrent whole-file
   // edits contend at WHOLE_FILE_ANCHOR; the owner's edit supersedes the agent's,
