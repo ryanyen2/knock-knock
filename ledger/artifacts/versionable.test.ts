@@ -151,6 +151,79 @@ test('versionable: concurrent edits to non-overlapping ranges Yjs-merge naturall
   writerB.destroy()
 })
 
+async function aocmSetup() {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(versionableFold)
+  const artifactId = versionableArtifactId('chan', 'foo.ts')
+  // Seed base text "hello world".
+  const seedDoc = new Y.Doc()
+  const seedOps = mutateAndEncode(seedDoc, t => t.insert(0, 'hello world'))
+  seedDoc.destroy()
+  const seed = await admit(store, {
+    actor: 'seedbot', role: 'agent', channel: 'chan',
+    target: { artifactId, anchor: WHOLE_FILE_ANCHOR }, verb: 'workspace.edit',
+    patch: { kind: 'versionable', ops: seedOps, intent: { kind: 'write', content: 'hello world' } },
+    effect: 'workspace', caused_by: [],
+  })
+  const seedHash = (seed as { interaction: { hash: string } }).interaction.hash
+  // Build a delta edit against the seed state (concurrent edits share seedHash as parent).
+  const mkOps = (mutate: (t: Y.Text) => void) => {
+    const d = new Y.Doc()
+    Y.applyUpdate(d, Buffer.from(seedOps, 'base64'))
+    const ops = mutateAndEncode(d, mutate)
+    d.destroy()
+    return ops
+  }
+  const proj = () => projectVersionable(engine.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
+  const cleanup = () => { engine.close(); store.close() }
+  return { store, engine, artifactId, seedHash, mkOps, proj, cleanup }
+}
+
+test('versionable (U4): disjoint equal-role edits both survive, no conflict', async () => {
+  const { store, artifactId, seedHash, mkOps, proj, cleanup } = await aocmSetup()
+  // A edits "hello" → "HELLO" (region [0,5]); B edits "world" → "WORLD" (region [6,11]) — disjoint.
+  const mkEdit = (actor: string, ops: string, oldString: string, newString: string) =>
+    admit(store, {
+      actor, role: 'agent' as const, channel: 'chan',
+      target: { artifactId, anchor: WHOLE_FILE_ANCHOR }, verb: 'workspace.edit' as const,
+      patch: { kind: 'versionable' as const, ops, intent: { kind: 'edit' as const, oldString, newString } },
+      effect: 'workspace' as const, caused_by: [seedHash],
+    })
+  await mkEdit('botA', mkOps(t => { t.delete(0, 5); t.insert(0, 'HELLO') }), 'hello', 'HELLO')
+  await mkEdit('botB', mkOps(t => { t.delete(6, 5); t.insert(6, 'WORLD') }), 'world', 'WORLD')
+  const r = proj()
+  expect(r.conflicts).toEqual([]) // disjoint regions → no interference
+  expect(r.text).toContain('HELLO')
+  expect(r.text).toContain('WORLD')
+  cleanup()
+})
+
+test('versionable (U4): same-region equal-role edits record a conflict (deterministic live text)', async () => {
+  const { store, artifactId, seedHash, mkOps, proj, cleanup } = await aocmSetup()
+  // Both edit "hello" → interference; equal role → first-class conflict, lower-hash kept.
+  const mkEdit = (actor: string, ops: string, newString: string) =>
+    admit(store, {
+      actor, role: 'agent' as const, channel: 'chan',
+      target: { artifactId, anchor: WHOLE_FILE_ANCHOR }, verb: 'workspace.edit' as const,
+      patch: { kind: 'versionable' as const, ops, intent: { kind: 'edit' as const, oldString: 'hello', newString } },
+      effect: 'workspace' as const, caused_by: [seedHash],
+    })
+  const a = await mkEdit('botA', mkOps(t => { t.delete(0, 5); t.insert(0, 'HI') }), 'HI')
+  const b = await mkEdit('botB', mkOps(t => { t.delete(0, 5); t.insert(0, 'YO') }), 'YO')
+  const aHash = (a as { interaction: { hash: string } }).interaction.hash
+  const bHash = (b as { interaction: { hash: string } }).interaction.hash
+  const r = proj()
+  expect(r.conflicts.length).toBe(1)
+  expect(r.conflicts[0]!.branches.slice().sort()).toEqual([aHash, bHash].sort())
+  // Live text reflects exactly one branch (deterministic lower-hash winner), never an interleave.
+  const winner = aHash < bHash ? 'HI' : 'YO'
+  const loser = aHash < bHash ? 'YO' : 'HI'
+  expect(r.text).toContain(winner)
+  expect(r.text).not.toContain(loser)
+  cleanup()
+})
+
 test('versionable (U3): interference is region-overlap on the common base', () => {
   const base = 'the quick brown fox jumps'
   const editFox: VersionableIntent = { kind: 'edit', oldString: 'fox', newString: 'cat' } // region [16,19]

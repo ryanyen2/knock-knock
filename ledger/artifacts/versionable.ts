@@ -16,6 +16,7 @@
 
 import * as Y from 'yjs'
 import type { Fold } from '../fold.ts'
+import { ROLE_RANK } from '../interaction.ts'
 import type { Anchor, ArtifactId, Hash, Interaction, Patch, VersionableIntent } from '../interaction.ts'
 
 export type VersionableText = {
@@ -185,10 +186,11 @@ export type VersionableFoldState = ReadonlyMap<ArtifactId, ReadonlyMap<Hash, Int
 
 export const VERSIONABLE_FOLD = 'versionable:edits'
 
-/** Accumulates admitted `workspace.edit`s per artifact. The projection
- *  (`projectVersionable`) folds them through `applyEdits`; superseded/proposed
- *  edits never reach here (the key filters to admitted|applied), so the merge
- *  gate's arbitration is honored automatically. */
+/** Accumulates `workspace.edit`s per artifact. Under AOCM every versionable edit
+ *  is admitted `applied` (admit.ts does not lifecycle-arbitrate them), so the whole
+ *  contended set reaches the slice; dominance/exclusion/conflict is then DERIVED in
+ *  `projectVersionable`, not encoded in the lifecycle. The key only gates slice
+ *  membership (the per-interaction predicate cannot consult other ops). */
 export const versionableFold: Fold<VersionableFoldState> = {
   name: VERSIONABLE_FOLD,
   init: () => new Map(),
@@ -208,13 +210,110 @@ export const versionableFold: Fold<VersionableFoldState> = {
   },
 }
 
-/** Project the merged text for one artifact. Edits are applied in hash order for
- *  determinism; Yjs convergence makes the final text order-independent anyway. */
-export function projectVersionable(state: VersionableFoldState, artifactId: ArtifactId): VersionableText {
-  const edits = state.get(artifactId)
-  if (!edits || edits.size === 0) return { text: '', ops: 0 }
-  const ordered = [...edits.values()].sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
-  return applyEdits(ordered)
+/** A derived equal-role conflict: concurrent edits whose regions interfere but
+ *  whose authors are the same role, so authority cannot decide. Surfaced as a
+ *  first-class conflict (U5). `branches` are the contending edit hashes, sorted
+ *  (deterministic across replicas). */
+export type ConflictRegion = { branches: Hash[] }
+
+export type VersionableProjection = VersionableText & { conflicts: ConflictRegion[] }
+
+/** The normalized intent an edit carries, or a whole-file fallback when absent
+ *  (pre-intent edits / non-intent fixtures). The fallback fails safe to whole-file,
+ *  so such edits always interfere — matching the legacy whole-file-anchor behavior. */
+function intentOf(edit: Interaction): VersionableIntent {
+  if (edit.patch.kind === 'versionable' && edit.patch.intent) return edit.patch.intent
+  return { kind: 'write', content: '' }
+}
+
+/** Transitive ancestors of `hash` within the slice (caused_by edges, restricted to
+ *  edits present in the slice — tool.executed parents and the like fall outside). */
+function ancestorsInSlice(hash: Hash, byHash: ReadonlyMap<Hash, Interaction>): Set<Hash> {
+  const seen = new Set<Hash>()
+  const walk = (h: Hash) => {
+    const e = byHash.get(h)
+    if (!e) return
+    for (const p of e.caused_by) {
+      if (byHash.has(p) && !seen.has(p)) {
+        seen.add(p)
+        walk(p)
+      }
+    }
+  }
+  walk(hash)
+  return seen
+}
+
+/**
+ * AOCM derived-dominance projection (U4). The live text is computed by:
+ *   1. ordering edits by the total order `(role_rank DESC, content_hash ASC)`;
+ *   2. greedily keeping edits, excluding any `x` for which a higher-or-equal-priority
+ *      KEPT edit `y` is both CONCURRENT with `x` (neither causally precedes the other)
+ *      and INTERFERES with it (region-overlap on their common base);
+ *   3. folding the kept (live) set through Yjs.
+ * Different-role interference excludes the lower-role edit silently; equal-role
+ * interference keeps the lower-hash edit (it sorts first) and records a first-class
+ * conflict. Dominance is realized by EXCLUSION from the folded set, never by
+ * reordering the (order-independent) CRDT. Pure over the immutable slice → the text
+ * and the conflict set are byte-identical on every replica.
+ *
+ * v1 simplifications (the whole-file anchor era): a missing intent fails safe to
+ * whole-file; the common base is the fold of two edits' shared ancestor edits; an
+ * edit chained onto a dominated concurrent edit is handled greedily (deep
+ * chain-on-dominated cases are a deferred edge — see the plan's Open Questions).
+ */
+export function projectVersionable(state: VersionableFoldState, artifactId: ArtifactId): VersionableProjection {
+  const editsMap = state.get(artifactId)
+  if (!editsMap || editsMap.size === 0) return { text: '', ops: 0, conflicts: [] }
+
+  const ancestorCache = new Map<Hash, Set<Hash>>()
+  const ancestorsOf = (h: Hash): Set<Hash> => {
+    let a = ancestorCache.get(h)
+    if (!a) {
+      a = ancestorsInSlice(h, editsMap)
+      ancestorCache.set(h, a)
+    }
+    return a
+  }
+  const concurrent = (x: Interaction, y: Interaction): boolean =>
+    !ancestorsOf(x.hash).has(y.hash) && !ancestorsOf(y.hash).has(x.hash)
+  const commonBase = (x: Interaction, y: Interaction): string => {
+    const ax = ancestorsOf(x.hash)
+    const shared = [...ancestorsOf(y.hash)].filter(h => ax.has(h))
+    if (shared.length === 0) return ''
+    const baseEdits = shared
+      .map(h => editsMap.get(h)!)
+      .sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+    return applyEdits(baseEdits).text
+  }
+
+  const ordered = [...editsMap.values()].sort(
+    (a, b) => ROLE_RANK[b.role] - ROLE_RANK[a.role] || (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0),
+  )
+  const kept: Interaction[] = []
+  const conflicts: ConflictRegion[] = []
+  for (const x of ordered) {
+    let dominator: Interaction | undefined
+    for (const y of kept) {
+      if (concurrent(x, y) && interferes(intentOf(y), intentOf(x), commonBase(x, y))) {
+        dominator = y
+        break
+      }
+    }
+    if (!dominator) {
+      kept.push(x)
+      continue
+    }
+    if (ROLE_RANK[dominator.role] === ROLE_RANK[x.role]) {
+      conflicts.push({ branches: [dominator.hash, x.hash].sort() })
+    }
+    // x is excluded from the live set (dominated by a kept higher-or-equal edit).
+  }
+
+  // Fold the live set deterministically (hash order; Yjs is order-independent).
+  const live = kept.slice().sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
+  const folded = applyEdits(live)
+  return { text: folded.text, ops: folded.ops, conflicts }
 }
 
 /** The hashes of the artifact's currently-applied edits — used as `caused_by`

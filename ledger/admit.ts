@@ -57,6 +57,23 @@ export async function admit(
   const existing = await store.getByHash(hash)
   if (existing) return toResult(existing)
 
+  // AOCM (U4): versionable workspace edits are NOT arbitrated by the mutable
+  // lifecycle gate. They are admitted `applied`, so the whole contended set
+  // reaches the versionable fold; dominance/exclusion/conflict is then DERIVED in
+  // `projectVersionable` from the immutable operations. This is what makes the
+  // merge converge across replicas with no lifecycle UPDATE to propagate.
+  // (All other verbs keep the role-ordered gate below.)
+  if (proposal.verb === 'workspace.edit' && proposal.effect === 'workspace') {
+    const applied: Interaction = {
+      ...proposal,
+      hash,
+      lifecycle: 'applied',
+      createdAt: new Date().toISOString(),
+    }
+    await store.append(applied)
+    return { kind: 'admitted', interaction: applied, superseded: [] }
+  }
+
   // Build a "shell" Interaction for the concurrency query — its caused_by is
   // what feeds the ancestor check; its hash is needed for isAncestor in the
   // reverse direction (no row exists yet, so the SQL walk simply returns
