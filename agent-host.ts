@@ -137,6 +137,11 @@ export class AgentHost {
    *  scope its turn actually runs in. In-memory and FIFO-bounded — lost on
    *  restart, which is fine (no turn is in flight after a restart). */
   private readonly taskScopeByMessage = new Map<string, ChannelId>()
+  /** DM-courier handles awaiting their turn's activeTurn. `onTurnPrompted` (a
+   *  store subscriber) and `runTurnForChannel` (the drive-turn path) fire on the
+   *  same `turn.prompted` in nondeterministic order; whichever runs second
+   *  reconciles here, so the per-turn DM handle attaches regardless of ordering. */
+  private readonly pendingDmByPrompt = new Map<Hash, DmTurnHandle>()
   /** §4.1 per-scope pinned activity log. */
   private readonly workbench: Workbench
   private storeUnsub?: () => void
@@ -645,10 +650,17 @@ export class AgentHost {
         userPrompt: side.userPrompt,
         promptHash,
       })
-      // Attach to the active turn so drive-turn can finalize the DM later.
-      const session = this.sessions.get(this.channelOfPrompt(promptHash, inboundHash))
+      // Reconcile with runTurnForChannel without depending on ordering: if it
+      // has already created the activeTurn, attach directly; otherwise stash the
+      // handle for it to pick up when it does. This whole block is synchronous
+      // after the await, so it can't interleave with runTurnForChannel's own
+      // synchronous get-pending-then-set-activeTurn block — exactly one of the
+      // two paths attaches the handle.
+      const session = this.sessionForPrompt(promptHash)
       if (session?.activeTurn?.promptHash === promptHash) {
         session.activeTurn.dmHandle = dmHandle
+      } else {
+        this.rememberPendingDm(promptHash, dmHandle)
       }
     } catch (err) {
       this.ui.error(this.key, `dm courier begin: ${err}`)
@@ -675,21 +687,25 @@ export class AgentHost {
     void this.messaging.react(side.ref, glyph).catch(() => {})
   }
 
-  /** Looking up a session's channel from a promptHash; usually it's just
-   *  the prompted interaction's `channel` field, but we may not have that
-   *  in scope. Resolve via the store and fall back if needed. */
-  private channelOfPrompt(_promptHash: Hash, inboundHash: Hash): ChannelId {
-    // The inbound side-table is per-channel.message; we don't actually need
-    // a separate lookup — the session for the same channel is what holds
-    // the active turn. Resolve by scanning sessions for the matching hash.
-    for (const [chanId, sess] of this.sessions.entries()) {
-      if (sess.activeTurn?.promptHash === _promptHash) return chanId
+  /** The session whose active turn matches this promptHash, if one exists yet.
+   *  Used by onTurnPrompted to attach the DM handle when runTurnForChannel has
+   *  already created the activeTurn; returns undefined when it hasn't, in which
+   *  case the handle is stashed in pendingDmByPrompt instead. */
+  private sessionForPrompt(promptHash: Hash): Session | undefined {
+    for (const sess of this.sessions.values()) {
+      if (sess.activeTurn?.promptHash === promptHash) return sess
     }
-    // Fall back: any session whose recorder.inboundHash matches.
-    for (const [chanId, sess] of this.sessions.entries()) {
-      if (sess.activeTurn?.recorder.inboundHash === inboundHash) return chanId
+    return undefined
+  }
+
+  /** Stash a DM handle for runTurnForChannel to claim, FIFO-bounded so an
+   *  admitted-but-never-driven prompt can't leak handles unbounded. */
+  private rememberPendingDm(promptHash: Hash, handle: DmTurnHandle): void {
+    this.pendingDmByPrompt.set(promptHash, handle)
+    if (this.pendingDmByPrompt.size > 256) {
+      const oldest = this.pendingDmByPrompt.keys().next().value
+      if (oldest !== undefined) this.pendingDmByPrompt.delete(oldest)
     }
-    return '' // No active turn yet — the DmCourier attach is a best-effort no-op.
   }
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
@@ -737,9 +753,14 @@ export class AgentHost {
       opts.inboundHash,
       opts.promptHash,
     )
-    // No-op DM handle as a placeholder; replaced by onTurnPrompted's call.
+    // Claim the DM handle onTurnPrompted opened for this prompt, if it ran
+    // first; otherwise it will attach to this activeTurn when it resumes. The
+    // get+delete and the activeTurn assignment are one synchronous block, so the
+    // reconciliation with onTurnPrompted is race-free (see pendingDmByPrompt).
     const abort = new AbortController()
-    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: noopDm(), abort }
+    const pendingDm = this.pendingDmByPrompt.get(opts.promptHash)
+    this.pendingDmByPrompt.delete(opts.promptHash)
+    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: pendingDm ?? noopDm(), abort }
 
     const meta: TurnMeta = {
       senderId: opts.senderId,
