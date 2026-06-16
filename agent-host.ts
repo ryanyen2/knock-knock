@@ -296,6 +296,24 @@ export class AgentHost {
     return roomId
   }
 
+  /**
+   * Async cache-warming variant of `roomForScope`. On a cold-cache miss — e.g. a
+   * cross-machine-synced conflict card for a thread this host hasn't seen an
+   * inbound message in since restart — pay the async `parentOf` probe once,
+   * memoize it, and resolve; only then declare the scope unserved. Keeps the hot
+   * sync path untouched while closing the silent-drop gap for synced events.
+   */
+  async ensureRoomForScope(scopeId: ChannelId): Promise<ChannelId | undefined> {
+    const sync = this.roomForScope(scopeId)
+    if (sync) return sync
+    const parent = await this.messaging.parentOf(scopeId).catch(() => undefined)
+    if (!parent) return undefined
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    if (!liveAgent.rooms[parent]) return undefined
+    this.scopeToRoom.set(scopeId, parent) // warm so later sync lookups hit
+    return parent
+  }
+
   /** prompt-on-message asks "who responds on this scope?" — yes iff this host
    *  serves the room the scope belongs to. */
   getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
@@ -437,6 +455,10 @@ export class AgentHost {
 
   /** §4.2 — the conflict-card synchronization posts a card for a held conflict. */
   async postConflictCard(post: ConflictCardPost): Promise<string | undefined> {
+    // Warm the scope→room cache first: a conflict on a synced edit can arrive
+    // for a thread this host hasn't seen since restart, where the sync owner
+    // lookup inside ConflictUI would otherwise miss and silently drop the card.
+    await this.ensureRoomForScope(post.channelId)
     return this.conflictUI.postCard(post)
   }
 
@@ -624,6 +646,12 @@ export class AgentHost {
       channelLabel,
       userPrompt: m.text,
     })
+    // Bounded: markInboundOutcome no longer deletes entries (a 🔁 retry re-marks
+    // the same inbound), so evict the oldest to keep this from growing forever.
+    if (this.inboundByHash.size > 500) {
+      const oldest = this.inboundByHash.keys().next().value
+      if (oldest !== undefined) this.inboundByHash.delete(oldest)
+    }
 
     this.ui.turnStart(this.key, {
       channel: { label: channelLabel },
@@ -680,10 +708,16 @@ export class AgentHost {
   ): Promise<void> {
     const side = this.inboundByHash.get(inboundHash)
     if (!side) return
-    this.inboundByHash.delete(inboundHash)
-    void this.messaging.unreact(side.ref, side.ackEmoji).catch(() => {})
+    // Keep the side-table (FIFO-bounded at the set site): a 🔁 retry re-runs this
+    // same inbound message and must be able to re-mark its outcome.
     const glyph =
       outcome === 'stopped' ? GLYPHS.stopped : outcome === 'failed' ? GLYPHS.failed : GLYPHS.done
+    // Drop the transient ack and any *prior* outcome glyph before applying the
+    // new one, so a retried-then-resolved message never stacks two outcomes.
+    void this.messaging.unreact(side.ref, side.ackEmoji).catch(() => {})
+    for (const g of [GLYPHS.done, GLYPHS.failed, GLYPHS.stopped]) {
+      if (g !== glyph) void this.messaging.unreact(side.ref, g).catch(() => {})
+    }
     void this.messaging.react(side.ref, glyph).catch(() => {})
   }
 
