@@ -41,6 +41,11 @@ export type AgentConfig = {
   /** Messaging platform this agent speaks (the MessagingAdapter to build).
    *  Defaults to 'discord' when absent — today's only platform. */
   platform?: string
+  /** NAME of the env var holding a second platform token, when the platform
+   *  needs one (Slack's app-level `xapp-…` token for Socket Mode). Per-agent so
+   *  two same-platform agents don't collide on a single global env var; falls
+   *  back to the platform's conventional global name when absent. */
+  appTokenEnv?: string
   rooms: Record<string, RoomConfig>
   sandbox?: SandboxConfig // OS-level confinement (ACP runtimes only)
 }

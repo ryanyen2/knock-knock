@@ -36,6 +36,11 @@ export type PostOnReplyOpts = {
    * Failures throw — the claim is released on throw via withClaim's finally.
    */
   discordSend: (channelId: string, text: string) => Promise<string | undefined>
+  /** The platform's hard message-length cap for a channel, so chunking matches
+   *  the platform (Discord 2000, Telegram 4096, Slack 3000, …) instead of
+   *  assuming Discord's. A small safety margin is applied below; omitted/unknown
+   *  falls back to the safe default. */
+  maxMessageLength?: (channelId: string) => number | undefined
   /** TTL for the claim while we're posting. */
   claimTtlMs?: number
   /**
@@ -45,8 +50,17 @@ export type PostOnReplyOpts = {
   resolveActorName?: ResolveName
 }
 
-/** Discord's hard message cap is 2000; stay a little under for safety. */
-const DISCORD_LIMIT = 1900
+/** Fallback when the platform cap is unknown — Discord's 2000, less a margin. */
+const DEFAULT_LIMIT = 1900
+/** Stay this far under the platform's hard cap (annotations are appended). */
+const SAFETY_MARGIN = 100
+
+/** Effective chunk width for a channel: the platform's hard cap minus a small
+ *  margin, floored so a tiny declared cap can't produce zero-length chunks. */
+export function chunkLimitFor(cap: number | undefined): number {
+  if (!cap || cap <= 0) return DEFAULT_LIMIT
+  return Math.max(280, cap - SAFETY_MARGIN)
+}
 
 export function postOnReply(opts: PostOnReplyOpts): Synchronization {
   const ttl = opts.claimTtlMs ?? 30_000
@@ -86,9 +100,10 @@ export function postOnReply(opts: PostOnReplyOpts): Synchronization {
         async () => {
           // The turn.replied carries the full reply (the Driver's chunks were
           // re-joined for the ledger record), and we append annotations on top,
-          // so split here to stay under Discord's 2000-char hard limit. Sent
+          // so split here to stay under the platform's hard limit. Sent
           // sequentially under the held claim, preferring paragraph/newline cuts.
-          for (const part of chunk(finalText, DISCORD_LIMIT, 'newline')) {
+          const limit = chunkLimitFor(opts.maxMessageLength?.(i.channel))
+          for (const part of chunk(finalText, limit, 'newline')) {
             await opts.discordSend(i.channel, part)
           }
         },

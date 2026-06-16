@@ -157,7 +157,10 @@ export class AgentHost {
   ) {
     // Build the messaging adapter for this agent's platform (Discord today). The
     // host speaks only the MessagingAdapter seam from here on — no platform SDK.
-    this.messaging = makeMessagingAdapter(agent.platform ?? 'discord')
+    // Resolve any per-agent secondary token (Slack's app token) by env-var name,
+    // falling back to the platform's global convention inside the adapter.
+    const appToken = agent.appTokenEnv ? process.env[agent.appTokenEnv] : undefined
+    this.messaging = makeMessagingAdapter(agent.platform ?? 'discord', { appToken })
 
     const liveAgentGetter = () => getAccess().agents[this.key] ?? this.agent
 
@@ -370,6 +373,12 @@ export class AgentHost {
     if (!ref) throw new Error(`messaging.send failed for ${channelId}`)
     this.noteBotMsg(ref.id)
     return ref.id
+  }
+
+  /** The platform's max message length, so post-on-reply chunks at the right
+   *  width instead of assuming Discord's. */
+  get maxMessageLength(): number {
+    return this.messaging.capabilities().maxMessageLength
   }
 
   /** Relay subscriber → refresh this scope's pinned Workbench (throttled). */

@@ -259,6 +259,8 @@ synchronizer.register(
       }
       return undefined
     },
+    maxMessageLength: channelId =>
+      hosts.find(h => h.getAgentForChannel(channelId))?.maxMessageLength,
   }),
 )
 synchronizer.register(

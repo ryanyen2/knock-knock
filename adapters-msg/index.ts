@@ -20,12 +20,20 @@ import { iMessageMessagingAdapter } from './imessage.ts'
  *  (see docs/messaging-platforms.md §7 and each adapter's header). */
 export const MESSAGING_PLATFORMS = ['discord', 'slack', 'telegram', 'whatsapp', 'imessage'] as const
 
-export function makeMessagingAdapter(platform: string, _opts?: Record<string, unknown>): MessagingAdapter {
+/** Per-agent construction options forwarded to platform adapters. Discord and
+ *  Telegram ignore it; Slack uses `appToken`, and webhook/db adapters can take
+ *  per-agent ports/paths so two same-platform agents don't collide. */
+export type MessagingAdapterOpts = {
+  /** Slack app-level token (`xapp-…`) for Socket Mode, resolved per-agent. */
+  appToken?: string
+}
+
+export function makeMessagingAdapter(platform: string, opts?: MessagingAdapterOpts): MessagingAdapter {
   switch (platform) {
     case 'discord':
       return new DiscordMessagingAdapter()
     case 'slack':
-      return new SlackMessagingAdapter()
+      return new SlackMessagingAdapter(opts)
     case 'telegram':
       return new TelegramMessagingAdapter()
     case 'whatsapp':

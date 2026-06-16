@@ -154,10 +154,14 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   private onActionHandler?: (a: IncomingAction) => void
   private onReactionHandler?: (r: IncomingReaction) => void
 
-  constructor() {
+  /** App-level token resolved per-agent (preferred over the global env var). */
+  private readonly _ctorAppToken: string | undefined
+
+  constructor(opts?: { appToken?: string }) {
     // Handlers are registered eagerly via on* so they're live the instant the
     // socket connects — mirrors the Discord adapter. No client to build here:
     // the WebSocket is opened in connect() once we have the Socket Mode URL.
+    this._ctorAppToken = opts?.appToken
   }
 
   // ─── lifecycle ──────────────────────────────────────────────────────────────
@@ -171,9 +175,10 @@ export class SlackMessagingAdapter implements MessagingAdapter {
     if (auth?.user_id) this._botUserId = auth.user_id
     this._botLabel = auth?.user ?? auth?.user_id
 
-    // (2) Socket Mode: the app-level token is read from the env because the seam
-    //     hands us only the bot token. SKELETON LIMITATION (see header).
-    this._appToken = process.env.SLACK_APP_TOKEN
+    // (2) Socket Mode needs the app-level token. Prefer the per-agent token
+    //     (resolved by the host from the agent's appTokenEnv); fall back to the
+    //     conventional global env var for single-Slack-agent setups.
+    this._appToken = this._ctorAppToken ?? process.env.SLACK_APP_TOKEN
     if (!this._appToken) {
       // Without an app token we can authenticate + post but receive nothing.
       // Surface it loudly; outbound still works for live verification.
