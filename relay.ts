@@ -300,7 +300,7 @@ synchronizer.register(
   }),
 )
 synchronizer.register(retryOnReaction())
-synchronizer.register(resumeOnWatch())
+synchronizer.register(resumeOnWatch({ relayId }))
 // File-edit sync: capture Edit/Write tool runs as workspace.edit (merge gate),
 // then project + write the merged file back to disk under a per-file claim so
 // relays sharing one Postgres ledger converge without Discord conversation.
@@ -357,6 +357,7 @@ const watchSupervisor = new WatchSupervisor({
   },
   spawn: bunSpawn,
   log: msg => ui.note('watch', msg),
+  relayId,
 })
 watchSupervisor.start()
 

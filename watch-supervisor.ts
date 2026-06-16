@@ -41,9 +41,23 @@ export type WatchSupervisorOpts = {
   /** Spawn the command as a long-running process. Injectable for tests. */
   spawn: (command: string, cwd: string) => WatchProcess
   log?: (msg: string) => void
+  /** This relay's unique id. With several relays sharing one (Postgres) ledger
+   *  and serving the same agent, each would otherwise spawn the watch command —
+   *  running it N times with N output streams. When set, a relay must win a
+   *  cross-relay claim on the watch's identity before spawning, so the command
+   *  runs on exactly one machine (with failover when the owner's claim lapses).
+   *  Omit for a single-relay setup. */
+  relayId?: string
+  /** TTL for the single-owner spawn claim; renewed at half-TTL while running. */
+  claimTtlMs?: number
 }
 
-type Running = { spec: WatchSpec; proc: WatchProcess; ttlTimer?: ReturnType<typeof setTimeout> }
+type Running = {
+  spec: WatchSpec
+  proc: WatchProcess
+  ttlTimer?: ReturnType<typeof setTimeout>
+  claimTimer?: ReturnType<typeof setInterval>
+}
 
 function keyFor(spec: WatchSpec): string {
   return `${spec.channel}:${spec.name}`
@@ -62,6 +76,10 @@ function sig(spec: WatchSpec): string {
 
 export class WatchSupervisor {
   private readonly running = new Map<string, Running>()
+  /** Keys whose async startWatch (claim acquisition) is in flight, so a second
+   *  reconcile tick doesn't try to start the same watch twice before it lands
+   *  in `running`. */
+  private readonly starting = new Set<string>()
   private unsubscribe?: () => void
 
   constructor(private readonly opts: WatchSupervisorOpts) {}
@@ -94,11 +112,11 @@ export class WatchSupervisor {
     for (const [key, spec] of state) {
       const run = this.running.get(key)
       if (run && sig(run.spec) !== sig(spec)) this.kill(key)
-      if (!this.running.has(key)) this.startWatch(key, spec)
+      if (!this.running.has(key) && !this.starting.has(key)) void this.startWatch(key, spec)
     }
   }
 
-  private startWatch(key: string, spec: WatchSpec): void {
+  private async startWatch(key: string, spec: WatchSpec): Promise<void> {
     const env = this.opts.resolve(spec)
     if (!env) {
       this.opts.log?.(`watch «${spec.name}»: no host owns ${spec.channel} here — not started`)
@@ -113,6 +131,30 @@ export class WatchSupervisor {
       return
     }
 
+    // Single-owner election: across relays sharing the ledger, exactly one runs
+    // the command. The claim key is the watch's stable identity (same on every
+    // relay), so the first to acquire spawns; the others stand by and a later
+    // reconcile retries — taking over if the owner's claim lapses (failover).
+    const claimKey = `watch-run/${spec.agentKey}/${spec.channel}/${spec.name}`
+    const ttl = this.opts.claimTtlMs ?? 30_000
+    if (this.opts.relayId) {
+      this.starting.add(key)
+      try {
+        const lock = await this.opts.store.acquireClaim(claimKey, this.opts.relayId, ttl)
+        if (!lock.acquired) {
+          this.opts.log?.(`watch «${spec.name}»: another relay owns the run — standing by`)
+          return
+        }
+      } catch (err) {
+        this.opts.log?.(`watch «${spec.name}»: claim failed: ${err}`)
+        return
+      } finally {
+        this.starting.delete(key)
+      }
+      // Re-check: a kill/disarm may have landed while we awaited the claim.
+      if (this.running.has(key)) return
+    }
+
     let proc: WatchProcess
     try {
       proc = this.opts.spawn(spec.command, env.workspace)
@@ -125,6 +167,13 @@ export class WatchSupervisor {
     const run: Running = { spec, proc }
     if (spec.ttlMs !== undefined) {
       run.ttlTimer = setTimeout(() => void this.disarm(spec, 'ttl expired'), spec.ttlMs)
+    }
+    // Renew the spawn claim at half-TTL so ownership survives a long-running
+    // watch; on kill the timer is cleared and the claim lapses, enabling failover.
+    if (this.opts.relayId) {
+      run.claimTimer = setInterval(() => {
+        void this.opts.store.acquireClaim(claimKey, this.opts.relayId!, ttl).catch(() => {})
+      }, Math.max(1_000, Math.floor(ttl / 2)))
     }
     this.running.set(key, run)
     this.opts.log?.(`watch «${spec.name}» armed: ${spec.fireOn.kind} on \`${spec.command}\``)
@@ -208,6 +257,9 @@ export class WatchSupervisor {
     if (!run) return
     this.running.delete(key)
     if (run.ttlTimer) clearTimeout(run.ttlTimer)
+    // Stop renewing the single-owner claim so it lapses and another relay can
+    // take over the run (failover); no explicit release — TTL hands it off.
+    if (run.claimTimer) clearInterval(run.claimTimer)
     try {
       run.proc.kill()
     } catch {}

@@ -18,7 +18,19 @@
 
 import type { Synchronization } from '../sync.ts'
 
-export function resumeOnWatch(): Synchronization {
+/** Claim TTL for the cross-relay resume dedup — short, since resuming is fast. */
+const WATCH_RESUME_CLAIM_TTL_MS = 30_000
+
+export type ResumeOnWatchOpts = {
+  /** This relay's unique id. With multiple relays sharing one (Postgres) ledger,
+   *  a replicated `watch.fired` is seen by every relay's synchronizer; without a
+   *  claim each would resume the agent. The fire's hash is identical on every
+   *  relay, so they derive the same claim key and exactly one wins. Omit for a
+   *  single-relay setup (the claim still works, harmlessly). */
+  relayId?: string
+}
+
+export function resumeOnWatch(opts: ResumeOnWatchOpts = {}): Synchronization {
   return {
     name: 'resume-on-watch',
     matches: i =>
@@ -27,6 +39,12 @@ export function resumeOnWatch(): Synchronization {
       const args = fired.patch.kind === 'external' ? (fired.patch.intent.args as { agentKey?: string }) : undefined
       const agentKey = args?.agentKey
       if (!agentKey) return // ill-formed fire — no agent to resume
+
+      // Dedup across relays: exactly one relay resumes a given fire.
+      if (opts.relayId) {
+        const lock = await ctx.store.acquireClaim(`watchfire/${fired.hash}`, opts.relayId, WATCH_RESUME_CLAIM_TTL_MS)
+        if (!lock.acquired) return
+      }
 
       await ctx.admit({
         actor: agentKey,
