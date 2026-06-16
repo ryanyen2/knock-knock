@@ -41,12 +41,25 @@ export type ImportSessionResult =
 
 export async function importSession(store: Store, input: ImportSessionInput): Promise<ImportSessionResult> {
   const sstore = makeSessionStore(input.runtime)
-  const transcript = sstore ? await sstore.read(input.sessionId) : undefined
+  if (!sstore) return { ok: false, reason: 'unreadable' }
+
+  // Privacy boundary (primary gate). read(id) scans by bare file stem and is NOT
+  // workspace-filtered (only list() is), so a same-stem session in another
+  // project could be returned — and some readers (Gemini, Codex without
+  // session_meta) report no cwd, which would slip past the cwd check below.
+  // Confirm the id is in this workspace via the workspace-filtered list() first.
+  if (input.workspace) {
+    const inWorkspace = (await sstore.list({ workspace: input.workspace })).some(
+      s => s.id === input.sessionId,
+    )
+    if (!inWorkspace) return { ok: false, reason: 'outside-workspace' }
+  }
+
+  const transcript = await sstore.read(input.sessionId)
   if (!transcript) return { ok: false, reason: 'unreadable' }
 
-  // Privacy boundary: if the session records a cwd and a workspace was supplied,
-  // the cwd must be within it. A cwd-less transcript degrades to fallbackCwd (the
-  // agent's own workspace), so it can't leak another project.
+  // Defense in depth: if the transcript does record a cwd, it must also be within
+  // the workspace (catches a reader whose list/read disagree).
   if (input.workspace && transcript.cwd && !cwdMatchesWorkspace(transcript.cwd, input.workspace)) {
     return { ok: false, reason: 'outside-workspace' }
   }

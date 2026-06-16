@@ -40,10 +40,18 @@ export function resumeOnWatch(opts: ResumeOnWatchOpts = {}): Synchronization {
       const agentKey = args?.agentKey
       if (!agentKey) return // ill-formed fire — no agent to resume
 
-      // Dedup across relays: exactly one relay resumes a given fire.
+      // Dedup across relays: exactly one relay resumes a given fire. A claim
+      // failure must not throw the wave away silently — on a single relay it
+      // would drop the resume entirely; log and proceed (better a possible
+      // duplicate than a missed fire — the turn.prompted is content-addressed
+      // and dedups anyway).
       if (opts.relayId) {
-        const lock = await ctx.store.acquireClaim(`watchfire/${fired.hash}`, opts.relayId, WATCH_RESUME_CLAIM_TTL_MS)
-        if (!lock.acquired) return
+        try {
+          const lock = await ctx.store.acquireClaim(`watchfire/${fired.hash}`, opts.relayId, WATCH_RESUME_CLAIM_TTL_MS)
+          if (!lock.acquired) return
+        } catch (err) {
+          process.stderr.write(`resume-on-watch: claim failed for ${fired.hash.slice(0, 10)}: ${err}\n`)
+        }
       }
 
       await ctx.admit({

@@ -146,13 +146,19 @@ export class ClaudeSdkAdapter implements AgentAdapter {
       // A resume that produced nothing is almost certainly an invalid/expired
       // session id (the binding outlived the session). Degrade gracefully to a
       // fresh session — matching the ACP adapter's load-failure fallback —
-      // rather than failing the turn.
-      if (input.sessionId && !sessionId && !text) {
+      // rather than failing the turn. Skip if the owner aborted (don't start a
+      // fresh session just to cancel it), and don't let the retry's own failure
+      // escape unlabeled.
+      if (input.sessionId && !sessionId && !text && !abortController.signal.aborted) {
         process.stderr.write(
           `claude-sdk: resume ${input.sessionId.slice(0, 8)} failed (${err}); starting a fresh session\n`,
         )
-        await runOnce(undefined)
-      } else {
+        try {
+          await runOnce(undefined)
+        } catch (freshErr) {
+          if (!abortController.signal.aborted) throw freshErr
+        }
+      } else if (!abortController.signal.aborted) {
         throw err
       }
     }

@@ -33,14 +33,21 @@ export function applySupersession(): Synchronization {
       i.supersedes.length > 0,
     fire: async (winner, ctx) => {
       for (const loser of winner.supersedes ?? []) {
-        const peer = await ctx.store.getByHash(loser)
-        // Idempotent: the originating relay already applied this directly, and a
-        // loser that's already superseded/denied needs no change. Skipping keeps
-        // the SQLite local-delivery case a no-op and avoids redundant refolds.
-        if (!peer || peer.lifecycle === 'superseded' || peer.lifecycle === 'denied') continue
-        // Match admit.ts's originating call exactly (no extra) so the loser's
-        // bookkeeping is identical on every relay.
-        await ctx.store.updateLifecycle(loser, 'superseded')
+        try {
+          const peer = await ctx.store.getByHash(loser)
+          // Idempotent: the originating relay already applied this directly, and a
+          // loser that's already superseded/denied needs no change. Skipping keeps
+          // the SQLite local-delivery case a no-op and avoids redundant refolds.
+          if (!peer || peer.lifecycle === 'superseded' || peer.lifecycle === 'denied') continue
+          // Match admit.ts's originating call exactly (no extra) so the loser's
+          // bookkeeping is identical on every relay.
+          await ctx.store.updateLifecycle(loser, 'superseded')
+        } catch (err) {
+          // A store error here leaves the loser live on this peer until the next
+          // full replay (restart). The synchronizer isolates the throw; log it so
+          // the gap is observable rather than silently diverging.
+          process.stderr.write(`apply-supersession: failed to supersede ${loser.slice(0, 10)}: ${err}\n`)
+        }
       }
     },
   }

@@ -31,8 +31,9 @@ function winner(supersedes: string[]): Interaction {
 
 const sync = applySupersession()
 
-test('matches an applied interaction that supersedes peers', () => {
+test('matches an applied or admitted interaction that supersedes peers', () => {
   expect(sync.matches(winner(['L1']))).toBe(true)
+  expect(sync.matches({ hash: 'y', lifecycle: 'admitted', supersedes: ['L1'] } as Interaction)).toBe(true)
   expect(sync.matches({ hash: 'x', lifecycle: 'applied' } as Interaction)).toBe(false)
   expect(sync.matches({ hash: 'x', lifecycle: 'proposed', supersedes: ['L1'] } as Interaction)).toBe(false)
 })

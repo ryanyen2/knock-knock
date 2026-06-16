@@ -338,8 +338,10 @@ export function projectVersionable(state: VersionableFoldState, artifactId: Arti
   return { text: folded.text, ops: folded.ops, conflicts, live: live.map(e => e.hash) }
 }
 
-/** Every edit hash in the artifact's slice — live AND excluded/conflicting. */
-export function versionableEditHashes(state: VersionableFoldState, artifactId: ArtifactId): Hash[] {
+/** Every edit hash in the artifact's slice — live AND excluded/conflicting.
+ *  Renamed from `versionableEditHashes` so the all-vs-live distinction is in the
+ *  name: callers wanting `caused_by` parents want `liveVersionableEditHashes`. */
+export function allVersionableEditHashes(state: VersionableFoldState, artifactId: ArtifactId): Hash[] {
   const edits = state.get(artifactId)
   return edits ? [...edits.keys()] : []
 }

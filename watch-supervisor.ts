@@ -81,22 +81,47 @@ export class WatchSupervisor {
    *  in `running`. */
   private readonly starting = new Set<string>()
   private unsubscribe?: () => void
+  /** Periodic failover tick (multi-relay only): re-reconcile against the current
+   *  fold so a standby relay re-attempts a lapsed single-owner claim even when
+   *  the fold is quiescent (the owner relay died). */
+  private reconcileTimer?: ReturnType<typeof setInterval>
+  /** Set by stop() so an in-flight startWatch that resolves its claim after
+   *  shutdown doesn't spawn a child or start a renewal timer no one will clear. */
+  private stopped = false
 
   constructor(private readonly opts: WatchSupervisorOpts) {}
 
   /** Begin reconciling against the watch fold. Idempotent. */
   start(): void {
     if (this.unsubscribe) return
+    this.stopped = false
     this.unsubscribe = this.opts.engine.subscribe<WatchFoldState>(WATCH_FOLD, state =>
       this.reconcile(state),
     )
+    // Failover only matters with multiple relays. The fold subscription alone
+    // never re-fires on a quiescent fleet, so a dead owner's lapsed claim would
+    // never be retaken; a half-TTL tick re-reconciles to take it over.
+    if (this.opts.relayId) {
+      const ttl = this.opts.claimTtlMs ?? 30_000
+      this.reconcileTimer = setInterval(
+        () => this.reconcile(this.opts.engine.get<WatchFoldState>(WATCH_FOLD)),
+        Math.max(1_000, Math.floor(ttl / 2)),
+      )
+    }
   }
 
   /** Stop reconciling and kill every running child. */
   stop(): void {
+    this.stopped = true
     this.unsubscribe?.()
     this.unsubscribe = undefined
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer)
+    this.reconcileTimer = undefined
     for (const key of [...this.running.keys()]) this.kill(key)
+    // A startWatch awaiting acquireClaim won't be in `running` yet; clear the
+    // in-flight set so a later start() isn't blocked, and the `stopped` flag
+    // makes those awaits return without spawning.
+    this.starting.clear()
   }
 
   // ─── Reconciliation ─────────────────────────────────────────────────────────
@@ -117,67 +142,78 @@ export class WatchSupervisor {
   }
 
   private async startWatch(key: string, spec: WatchSpec): Promise<void> {
-    const env = this.opts.resolve(spec)
-    if (!env) {
-      this.opts.log?.(`watch «${spec.name}»: no host owns ${spec.channel} here — not started`)
-      return
-    }
-    if (env.decision === 'deny') {
-      // Deny floor backstop: a watch.armed only reaches the fold after arm-time
-      // gating (allow, or an owner-approved `ask`), but the supervisor still
-      // refuses to RUN a command that hits the hard floor, however it got armed.
-      this.opts.log?.(`watch «${spec.name}»: command hits the deny floor — refusing`)
-      void this.disarm(spec, 'command hits the deny floor')
-      return
-    }
+    if (this.stopped || this.starting.has(key) || this.running.has(key)) return
+    // Guard ALL paths through this async function (not just the claim block), so
+    // a second reconcile tick can't double-dispatch — and double-spawn — a watch
+    // before the first lands in `running`, including the single-relay (no claim)
+    // case. Cleared in finally once the watch is running or declined.
+    this.starting.add(key)
+    try {
+      const env = this.opts.resolve(spec)
+      if (!env) {
+        this.opts.log?.(`watch «${spec.name}»: no host owns ${spec.channel} here — not started`)
+        return
+      }
+      if (env.decision === 'deny') {
+        // Deny floor backstop: a watch.armed only reaches the fold after arm-time
+        // gating (allow, or an owner-approved `ask`), but the supervisor still
+        // refuses to RUN a command that hits the hard floor, however it got armed.
+        this.opts.log?.(`watch «${spec.name}»: command hits the deny floor — refusing`)
+        void this.disarm(spec, 'command hits the deny floor')
+        return
+      }
 
-    // Single-owner election: across relays sharing the ledger, exactly one runs
-    // the command. The claim key is the watch's stable identity (same on every
-    // relay), so the first to acquire spawns; the others stand by and a later
-    // reconcile retries — taking over if the owner's claim lapses (failover).
-    const claimKey = `watch-run/${spec.agentKey}/${spec.channel}/${spec.name}`
-    const ttl = this.opts.claimTtlMs ?? 30_000
-    if (this.opts.relayId) {
-      this.starting.add(key)
-      try {
-        const lock = await this.opts.store.acquireClaim(claimKey, this.opts.relayId, ttl)
-        if (!lock.acquired) {
-          this.opts.log?.(`watch «${spec.name}»: another relay owns the run — standing by`)
+      // Single-owner election: across relays sharing the ledger, exactly one runs
+      // the command. The claim key is the watch's stable identity (same on every
+      // relay), so the first to acquire spawns; the others stand by and a later
+      // reconcile retries — taking over if the owner's claim lapses (failover).
+      const claimKey = `watch-run/${spec.agentKey}/${spec.channel}/${spec.name}`
+      const ttl = this.opts.claimTtlMs ?? 30_000
+      if (this.opts.relayId) {
+        try {
+          const lock = await this.opts.store.acquireClaim(claimKey, this.opts.relayId, ttl)
+          if (!lock.acquired) {
+            this.opts.log?.(`watch «${spec.name}»: another relay owns the run — standing by`)
+            return
+          }
+        } catch (err) {
+          this.opts.log?.(`watch «${spec.name}»: claim failed: ${err}`)
           return
         }
-      } catch (err) {
-        this.opts.log?.(`watch «${spec.name}»: claim failed: ${err}`)
-        return
-      } finally {
-        this.starting.delete(key)
+        // Re-check after the await: a stop() or kill/disarm may have landed.
+        if (this.stopped || this.running.has(key)) return
       }
-      // Re-check: a kill/disarm may have landed while we awaited the claim.
-      if (this.running.has(key)) return
-    }
 
-    let proc: WatchProcess
-    try {
-      proc = this.opts.spawn(spec.command, env.workspace)
-    } catch (err) {
-      this.opts.log?.(`watch «${spec.name}»: spawn failed: ${err}`)
-      void this.disarm(spec, `spawn failed: ${err}`)
-      return
-    }
+      let proc: WatchProcess
+      try {
+        proc = this.opts.spawn(spec.command, env.workspace)
+      } catch (err) {
+        this.opts.log?.(`watch «${spec.name}»: spawn failed: ${err}`)
+        void this.disarm(spec, `spawn failed: ${err}`)
+        return
+      }
 
-    const run: Running = { spec, proc }
-    if (spec.ttlMs !== undefined) {
-      run.ttlTimer = setTimeout(() => void this.disarm(spec, 'ttl expired'), spec.ttlMs)
+      const run: Running = { spec, proc }
+      if (spec.ttlMs !== undefined) {
+        run.ttlTimer = setTimeout(() => void this.disarm(spec, 'ttl expired'), spec.ttlMs)
+      }
+      // Renew the spawn claim at half-TTL so ownership survives a long-running
+      // watch; on kill the timer is cleared and the claim lapses, enabling failover.
+      if (this.opts.relayId) {
+        run.claimTimer = setInterval(() => {
+          // Log transient renewal failures (DB pressure) rather than swallowing:
+          // a silently-lapsed claim lets another relay double-spawn the command.
+          void this.opts.store
+            .acquireClaim(claimKey, this.opts.relayId!, ttl)
+            .catch(err => this.opts.log?.(`watch «${spec.name}»: claim renewal failed: ${err}`))
+        }, Math.max(1_000, Math.floor(ttl / 2)))
+      }
+      this.running.set(key, run)
+      this.opts.log?.(`watch «${spec.name}» armed: ${spec.fireOn.kind} on \`${spec.command}\``)
+      void this.readLoop(key, spec, proc)
+    } finally {
+      this.starting.delete(key)
     }
-    // Renew the spawn claim at half-TTL so ownership survives a long-running
-    // watch; on kill the timer is cleared and the claim lapses, enabling failover.
-    if (this.opts.relayId) {
-      run.claimTimer = setInterval(() => {
-        void this.opts.store.acquireClaim(claimKey, this.opts.relayId!, ttl).catch(() => {})
-      }, Math.max(1_000, Math.floor(ttl / 2)))
-    }
-    this.running.set(key, run)
-    this.opts.log?.(`watch «${spec.name}» armed: ${spec.fireOn.kind} on \`${spec.command}\``)
-    void this.readLoop(key, spec, proc)
   }
 
   private async readLoop(key: string, spec: WatchSpec, proc: WatchProcess): Promise<void> {

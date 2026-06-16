@@ -85,6 +85,17 @@ import { SessionSharing } from './host/session-sharing.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
+/** Set a key on a Map, FIFO-evicting the oldest entry when it exceeds `cap`.
+ *  The host keeps several bounded side tables (task scope, pending DM handles,
+ *  inbound side tables) that all want this exact set-and-evict dance. */
+function boundedMapSet<K, V>(map: Map<K, V>, key: K, value: V, cap: number): void {
+  map.set(key, value)
+  if (map.size > cap) {
+    const oldest = map.keys().next().value
+    if (oldest !== undefined) map.delete(oldest)
+  }
+}
+
 /** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
   driver: Driver
@@ -309,7 +320,13 @@ export class AgentHost {
   async ensureRoomForScope(scopeId: ChannelId): Promise<ChannelId | undefined> {
     const sync = this.roomForScope(scopeId)
     if (sync) return sync
-    const parent = await this.messaging.parentOf(scopeId).catch(() => undefined)
+    // Bound the probe: a slow/unavailable platform API must not hang the calling
+    // synchronization wave (e.g. conflict-card). Time out to undefined.
+    const timeout = new Promise<undefined>(resolve => setTimeout(() => resolve(undefined), 5_000))
+    const parent = await Promise.race([
+      this.messaging.parentOf(scopeId).catch(() => undefined),
+      timeout,
+    ])
     if (!parent) return undefined
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     if (!liveAgent.rooms[parent]) return undefined
@@ -326,11 +343,7 @@ export class AgentHost {
   /** Record the task scope a top-level message spawned, FIFO-bounded so the map
    *  can't grow without limit over a long-running relay. */
   private rememberTaskScope(messageId: string, scope: ChannelId): void {
-    this.taskScopeByMessage.set(messageId, scope)
-    if (this.taskScopeByMessage.size > 1000) {
-      const oldest = this.taskScopeByMessage.keys().next().value
-      if (oldest !== undefined) this.taskScopeByMessage.delete(oldest)
-    }
+    boundedMapSet(this.taskScopeByMessage, messageId, scope, 1000)
   }
 
   /** capture-workspace-edit asks "make this absolute edit path workspace-relative."
@@ -658,19 +671,15 @@ export class AgentHost {
     // react/edit the inbound message later (ack reaction, DmCourier header).
     const channelLabel = m.scopeLabel ?? `#${roomId}`
     const ackEmoji = access.ackReaction ?? '👀'
-    this.inboundByHash.set(inboundResult.interaction.hash, {
+    // Bounded: markInboundOutcome no longer deletes entries (a 🔁 retry re-marks
+    // the same inbound), so FIFO-evict the oldest to keep this from growing forever.
+    boundedMapSet(this.inboundByHash, inboundResult.interaction.hash, {
       ref: m.ref,
       ackEmoji,
       senderLabel: m.authorName,
       channelLabel,
       userPrompt: m.text,
-    })
-    // Bounded: markInboundOutcome no longer deletes entries (a 🔁 retry re-marks
-    // the same inbound), so evict the oldest to keep this from growing forever.
-    if (this.inboundByHash.size > 500) {
-      const oldest = this.inboundByHash.keys().next().value
-      if (oldest !== undefined) this.inboundByHash.delete(oldest)
-    }
+    }, 500)
 
     this.ui.turnStart(this.key, {
       channel: { label: channelLabel },
@@ -754,11 +763,7 @@ export class AgentHost {
   /** Stash a DM handle for runTurnForChannel to claim, FIFO-bounded so an
    *  admitted-but-never-driven prompt can't leak handles unbounded. */
   private rememberPendingDm(promptHash: Hash, handle: DmTurnHandle): void {
-    this.pendingDmByPrompt.set(promptHash, handle)
-    if (this.pendingDmByPrompt.size > 256) {
-      const oldest = this.pendingDmByPrompt.keys().next().value
-      if (oldest !== undefined) this.pendingDmByPrompt.delete(oldest)
-    }
+    boundedMapSet(this.pendingDmByPrompt, promptHash, handle, 256)
   }
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
@@ -860,10 +865,12 @@ export class AgentHost {
     else outcome = 'done'
     void this.markInboundOutcome(opts.inboundHash, outcome).catch(() => {})
 
-    // Confirmed delivery: only now that the turn actually ran (not stopped, no
-    // error) do we mark the imported context delivered, so a failed/stopped turn
-    // re-injects it next time rather than losing it.
-    if (!stopped && !turnError) {
+    // Confirmed delivery: mark the imported context delivered only on a genuine
+    // success (outcome 'done'). Gating on `outcome` rather than `!turnError`
+    // matters because driver.runTurn resolves adapter failures as error-text
+    // chunks (it never rejects) — so a failed or empty-reply turn (outcome
+    // 'failed') re-injects the context next time instead of silently losing it.
+    if (outcome === 'done') {
       this.sessionSharing.confirmDelivered(channelId, pendingCtx.freshHashes)
     }
 

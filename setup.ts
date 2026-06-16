@@ -324,6 +324,22 @@ async function collectAgent(access: Access): Promise<string | null> {
   }
 
   const tokenEnv = deriveTokenEnv(key, platform, access)
+
+  // Slack needs a second, app-level token (xapp-…) for Socket Mode. Capture the
+  // env-var NAME per agent (like tokenEnv) so two Slack agents don't collide on a
+  // single global var; the adapter falls back to SLACK_APP_TOKEN when absent.
+  let appTokenEnv: string | undefined
+  if (platform === 'slack') {
+    appTokenEnv =
+      orCancel(
+        await p.text({
+          message: 'Env var holding this Slack app-level token (xapp-…, Socket Mode)',
+          placeholder: 'SLACK_APP_TOKEN',
+          defaultValue: 'SLACK_APP_TOKEN',
+        }),
+      ).trim() || 'SLACK_APP_TOKEN'
+  }
+
   access.agents[key] = {
     ownerUserId,
     blurb,
@@ -333,6 +349,7 @@ async function collectAgent(access: Access): Promise<string | null> {
     rooms: {},
     // Omit when discord (the default) so access.json stays clean for the common case.
     ...(platform !== 'discord' ? { platform } : {}),
+    ...(appTokenEnv ? { appTokenEnv } : {}),
     ...(sandbox ? { sandbox } : {}),
   }
   saveAccess(access)
