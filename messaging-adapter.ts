@@ -73,6 +73,10 @@ export type Capabilities = {
   mentions: 'native' | 'reply' | 'text'
   /** Outbound chunking boundary (Discord 2000, Telegram 4096, …). */
   maxMessageLength: number
+  /** True for adapters not yet live-certified against real credentials (the
+   *  walking-skeleton platforms). The relay surfaces a loud startup warning;
+   *  Discord is the one production-tested surface (false/absent). */
+  experimental?: boolean
 }
 
 /** A normalized inbound message. The adapter surfaces the platform *mechanics*

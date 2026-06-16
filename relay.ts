@@ -383,10 +383,25 @@ store.subscribe(i => {
 // the ledger-driven pipeline.
 for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
+  const host = hosts[n]!
+  // Experimental (walking-skeleton) platforms are opt-in and not live-certified;
+  // surface that loudly at boot so a non-Discord agent never looks production-ready.
+  if (host.experimental) {
+    ui.error(
+      entry.key,
+      `${access.agents[entry.key]!.platform ?? 'discord'} is an experimental adapter (not live-certified) — verify it before relying on it.`,
+    )
+  }
   // Token-less platforms (iMessage) pass an empty string; their adapter ignores it.
   const token = process.env[access.agents[entry.key]!.tokenEnv] ?? ''
-  void hosts[n]!.start(token).catch(err => {
-    ui.error(entry.key, `login failed: ${err}`)
+  void host.start(token).catch(err => {
+    const msg = String(err)
+    // A process-global resource conflict (e.g. two webhook adapters on one port)
+    // surfaces as EADDRINUSE; name it so it isn't mistaken for a credential error.
+    const hint = /EADDRINUSE|address already in use/i.test(msg)
+      ? ' — a port is already in use (two webhook/DB adapters can\'t share one port; give each agent its own)'
+      : ''
+    ui.error(entry.key, `login failed: ${err}${hint}`)
   })
 }
 

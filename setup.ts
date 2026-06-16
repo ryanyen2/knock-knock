@@ -261,7 +261,15 @@ async function collectAgent(access: Access): Promise<string | null> {
     initialValue: 'discord',
   }))
   if (platform !== 'discord') {
-    p.log.warn(`"${platform}" is a walking-skeleton adapter — verify it live with real credentials before relying on it.`)
+    p.log.warn(`"${platform}" is an experimental walking-skeleton adapter — not live-certified, and some controls (reactions, threads, edits) may be degraded or missing.`)
+    const proceed = orCancel(await p.confirm({
+      message: `Use the experimental "${platform}" adapter anyway?`,
+      initialValue: false,
+    }))
+    if (!proceed) {
+      p.log.info('Cancelled — pick Discord (the supported surface) or re-run setup.')
+      return null
+    }
   }
 
   const ownerUserId = orCancel(await p.text({

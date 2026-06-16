@@ -202,6 +202,7 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
       dm: true,
       mentions: 'native',
       maxMessageLength: 4096,
+      experimental: true,
     }
   }
 

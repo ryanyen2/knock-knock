@@ -345,6 +345,7 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       dm: true,
       mentions: 'native',
       maxMessageLength: MAX_LEN,
+      experimental: true,
     }
   }
 

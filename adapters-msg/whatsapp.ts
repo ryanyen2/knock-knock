@@ -133,6 +133,7 @@ const WA_CAPABILITIES: Capabilities = {
   // Every inbound in a 1:1 chat is implicitly directed; no @-mention mechanic
   mentions: 'text',
   maxMessageLength: MAX_LEN,
+  experimental: true,
 }
 
 // ─── Adapter ──────────────────────────────────────────────────────────────────

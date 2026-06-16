@@ -147,6 +147,7 @@ export class iMessageMessagingAdapter implements MessagingAdapter {
       dm: true, // 1:1 send to a handle/buddy
       mentions: 'text', // "addressed to me" is implicit; never a native mention
       maxMessageLength: MAX_LEN,
+      experimental: true,
     }
   }
 
