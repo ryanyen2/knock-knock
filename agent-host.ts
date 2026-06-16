@@ -42,6 +42,7 @@ import {
   isShareSessionCommand,
   isResumeSessionCommand,
   resolveRoomForScope,
+  resolveReactionScope,
   resolveProfileForActor,
   threadNameFromPrompt,
   matchesMentionPattern,
@@ -130,6 +131,12 @@ export class AgentHost {
    *  the room that permission profiles / roster / routing key on. Populated on
    *  inbound and on thread creation. */
   private readonly scopeToRoom = new Map<ChannelId, ChannelId>()
+  /** Inbound message id → the task scope it spawned (a thread). A top-level
+   *  @mention runs its turn in a thread, but the owner reacts 🛑/🔁 on the
+   *  original message (parent-channel scope); this maps that message back to the
+   *  scope its turn actually runs in. In-memory and FIFO-bounded — lost on
+   *  restart, which is fine (no turn is in flight after a restart). */
+  private readonly taskScopeByMessage = new Map<string, ChannelId>()
   /** §4.1 per-scope pinned activity log. */
   private readonly workbench: Workbench
   private storeUnsub?: () => void
@@ -222,15 +229,18 @@ export class AgentHost {
         )
         return
       }
+      // Resolve the scope the reaction should act on: a 🛑/🔁 on the original
+      // top-level message must reach the turn running in its spawned thread.
+      const scope = resolveReactionScope(reaction.ref.id, reaction.ref.scope, this.taskScopeByMessage)
       if (emoji === GLYPHS.stop) {
-        this.handleStop(reaction.ref.scope, reaction.userId).catch(e =>
+        this.handleStop(scope, reaction.userId).catch(e =>
           this.ui.error(this.key, `stop error: ${e}`),
         )
         return
       }
       const action = rewindActionFor(emoji)
       if (action) {
-        this.handleRewind(reaction.ref.id, reaction.ref.scope, reaction.userId, action).catch(
+        this.handleRewind(reaction.ref.id, scope, reaction.userId, action).catch(
           e => this.ui.error(this.key, `rewind error: ${e}`),
         )
       }
@@ -285,6 +295,16 @@ export class AgentHost {
    *  serves the room the scope belongs to. */
   getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
     return this.roomForScope(scopeId) ? { agentKey: this.key } : undefined
+  }
+
+  /** Record the task scope a top-level message spawned, FIFO-bounded so the map
+   *  can't grow without limit over a long-running relay. */
+  private rememberTaskScope(messageId: string, scope: ChannelId): void {
+    this.taskScopeByMessage.set(messageId, scope)
+    if (this.taskScopeByMessage.size > 1000) {
+      const oldest = this.taskScopeByMessage.keys().next().value
+      if (oldest !== undefined) this.taskScopeByMessage.delete(oldest)
+    }
   }
 
   /** capture-workspace-edit asks "make this absolute edit path workspace-relative."
@@ -562,6 +582,9 @@ export class AgentHost {
       scopeId = m.scope
     }
     this.scopeToRoom.set(scopeId, roomId)
+    // Remember which task scope this top-level message spawned, so a 🛑/🔁
+    // reaction on the original message resolves to the thread its turn runs in.
+    if (scopeId !== m.scope) this.rememberTaskScope(m.ref.id, scopeId)
 
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
     const channelArtifactId = discordArtifact(scopeId)

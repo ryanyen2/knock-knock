@@ -840,3 +840,28 @@ export function resolveRoomForScope(
   if (parent && rooms[parent]) return parent
   return undefined
 }
+
+// ─── Reaction target ──────────────────────────────────────────────────────────
+//
+// A reaction carries the *message's* channel, but the turn it should act on runs
+// in the task SCOPE. A top-level @mention spawns a task thread, so the turn,
+// session, and approvals live in that thread — while the owner most naturally
+// reacts 🛑/🔁 on the original top-level message, whose channel is the parent.
+// Routing every reaction handler through this one resolver keeps stop / retry /
+// rewind from disagreeing about "where". Pure: the host records the inbound
+// message id → task scope mapping when it spawns a thread.
+
+/**
+ * Resolve the SCOPE a reaction should act on. If the reacted message spawned a
+ * task thread (recorded in `taskScopeByMessage`), the turn runs there; otherwise
+ * the reaction's own channel is the scope (a reaction inside a thread, or a
+ * plain-channel turn). After a restart the mapping is empty, so a stale reaction
+ * falls back to its raw channel — where there is no in-flight turn anyway.
+ */
+export function resolveReactionScope(
+  messageId: string,
+  rawScope: string,
+  taskScopeByMessage: ReadonlyMap<string, string>,
+): string {
+  return taskScopeByMessage.get(messageId) ?? rawScope
+}

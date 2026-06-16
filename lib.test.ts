@@ -14,6 +14,7 @@ import {
   expandPreset,
   resolveProfileForActor,
   resolveRoomForScope,
+  resolveReactionScope,
   resolveLedgerConfig,
   loopGuard,
   FRESH_WATCH_GATE,
@@ -152,6 +153,21 @@ test('resolveRoomForScope: a thread resolves to its parent via the parentOf prob
 
 test('resolveRoomForScope: an unresolved scope returns undefined (fail-restrictive)', () => {
   expect(resolveRoomForScope('UNKNOWN', ROOMS, new Map(), () => undefined)).toBeUndefined()
+})
+
+// ─── resolveReactionScope ────────────────────────────────────────────────────
+
+test('resolveReactionScope: a reaction on a message that spawned a thread targets the thread', () => {
+  const map = new Map([['MSG_TOP', 'THREAD1']])
+  expect(resolveReactionScope('MSG_TOP', 'PARENT_CHANNEL', map)).toBe('THREAD1')
+})
+
+test('resolveReactionScope: an unmapped reaction targets its own channel', () => {
+  const map = new Map([['MSG_TOP', 'THREAD1']])
+  // A 🔁 on a bot reply posted in-thread: its scope is already the thread.
+  expect(resolveReactionScope('BOT_REPLY', 'THREAD1', map)).toBe('THREAD1')
+  // A reaction in a plain channel (no thread spawned).
+  expect(resolveReactionScope('MSG_PLAIN', 'CHANNEL', new Map())).toBe('CHANNEL')
 })
 
 // ─── resolveLedgerConfig ─────────────────────────────────────────────────────
