@@ -50,6 +50,7 @@ import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
 import { resumeOnWatch } from './ledger/synchronizations/resume-on-watch.ts'
 import { captureWorkspaceEdit } from './ledger/synchronizations/capture-workspace-edit.ts'
 import { writeBackVersionable } from './ledger/synchronizations/write-back-versionable.ts'
+import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
@@ -301,6 +302,10 @@ synchronizer.register(
 )
 synchronizer.register(retryOnReaction())
 synchronizer.register(resumeOnWatch({ relayId }))
+// Local-first cross-machine convergence: a peer re-derives a supersession from
+// the winner's immutable `supersedes` op (which crosses NOTIFY), since the
+// loser's lifecycle UPDATE does not. INSERT-driven, like AOCM.
+synchronizer.register(applySupersession())
 // File-edit sync: capture Edit/Write tool runs as workspace.edit (merge gate),
 // then project + write the merged file back to disk under a per-file claim so
 // relays sharing one Postgres ledger converge without Discord conversation.

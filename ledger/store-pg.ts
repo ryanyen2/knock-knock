@@ -356,9 +356,11 @@ export class PgStore implements Store {
       [lifecycle, extra?.supersedes ?? null, extra?.deniedReason ?? null, hash],
     )
     // Awaited in-process fanout: live folds re-fold so a superseded/denied
-    // interaction leaves the live view immediately. NOTE: this is local-only —
-    // the NOTIFY trigger fires on INSERT, not UPDATE, so a peer relay's folds do
-    // not yet learn of a remote lifecycle change (pre-existing cross-machine gap).
+    // interaction leaves the live view immediately. This UPDATE is local-only —
+    // the NOTIFY trigger fires on INSERT, not UPDATE. Cross-machine convergence
+    // does NOT rely on it: the `apply-supersession` synchronization re-derives
+    // the supersession on each peer from the winner's immutable `supersedes` op
+    // (which DOES cross, via the winner's INSERT NOTIFY) — the AOCM pattern.
     for (const cb of this.lifecycleSubscribers) {
       try {
         await cb(hash, lifecycle)
