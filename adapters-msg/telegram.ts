@@ -42,7 +42,7 @@ import type {
   Choice,
   Glyph,
 } from '../messaging-adapter.ts'
-import { mapGlyphToReaction } from '../messaging-fallback.ts'
+import { mapGlyphToReaction, normalizeUnicodeReaction } from '../messaging-fallback.ts'
 
 // ─── Telegram Bot API types (minimal, hand-rolled) ────────────────────────────
 
@@ -488,9 +488,14 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     const emoji = mr.new_reaction[0]?.emoji
     if (!emoji) return  // reaction removed, or non-emoji type (custom_emoji)
 
+    // Normalize the unicode reaction to the project control vocabulary; ignore
+    // anything that isn't a control glyph the host acts on.
+    const glyph = normalizeUnicodeReaction(emoji)
+    if (!glyph) return
+
     handler({
       ref: { id: String(mr.message_id), scope: String(mr.chat.id) },
-      glyph: emoji,
+      glyph,
       userId: String(mr.user.id),
     })
   }

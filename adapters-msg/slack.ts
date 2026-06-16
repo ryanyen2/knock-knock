@@ -68,7 +68,7 @@ import type {
   Choice,
   Glyph,
 } from '../messaging-adapter.ts'
-import { mapGlyphToReaction } from '../messaging-fallback.ts'
+import { mapGlyphToReaction, normalizeSlackReaction } from '../messaging-fallback.ts'
 
 /** Slack message text cap is generous (~40k) but block text fields are smaller;
  *  we declare a conservative 3000 the way the brief specifies. */
@@ -291,11 +291,16 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       if (this._botUserId && event.user === this._botUserId) return // filter our own
       const item = event.item
       if (!item?.channel || !item?.ts) return
+      // Slack reports a shortcode (no colons), not a unicode emoji — map it back
+      // to the project control vocabulary, ignoring anything that isn't a control
+      // reaction. Without this, the host (which compares unicode glyphs) never
+      // matched and EVERY reaction control was dead on Slack.
+      const glyph = normalizeSlackReaction(event.reaction ?? '')
       const h = this.onReactionHandler
-      if (h) {
+      if (h && glyph) {
         h({
           ref: { id: item.ts, scope: item.channel },
-          glyph: event.reaction ?? '', // Slack gives a shortcode w/o colons
+          glyph,
           userId: event.user ?? '',
         })
       }

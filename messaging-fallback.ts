@@ -56,6 +56,58 @@ export function mapGlyphToReaction(glyph: Glyph, caps: Capabilities): Glyph | nu
   return null
 }
 
+// ─── Inbound reactions (the inverse of mapGlyphToReaction) ────────────────────
+//
+// A user reacting ✅/🛑/🔁 etc. is a *control* signal the host acts on, and the
+// host compares against the project glyph vocabulary. So each adapter must
+// normalize its platform-native incoming reaction code BACK to a project glyph
+// before surfacing it. Outbound mapGlyphToReaction is lossy (several glyphs share
+// one equivalent), so it is not invertible — inbound needs its own explicit map.
+// A reaction that isn't a control glyph normalizes to undefined and is ignored.
+
+/** The reserved control reactions the host acts on inbound: approve/deny, owner
+ *  stop, retry/override, rewind, checkpoint. (Session sharing uses a button, not
+ *  a reaction, so 📥 is not here.) */
+export const CONTROL_REACTIONS: readonly Glyph[] = [
+  '✅',
+  '❌',
+  GLYPHS.stop,
+  GLYPHS.override,
+  GLYPHS.rewind,
+  GLYPHS.checkpoint,
+]
+
+const CONTROL_SET = new Set<string>(CONTROL_REACTIONS)
+
+/**
+ * Normalize a unicode incoming reaction to a project control glyph, or undefined
+ * if it isn't one the host acts on. For platforms that surface reactions as
+ * unicode (Discord, Telegram, WhatsApp, and iMessage when it reports emoji).
+ */
+export function normalizeUnicodeReaction(raw: string): Glyph | undefined {
+  return CONTROL_SET.has(raw) ? (raw as Glyph) : undefined
+}
+
+/** Slack surfaces reactions as named shortcodes (no colons), not unicode, so it
+ *  needs its own inbound map. Only unambiguous control shortcodes are mapped —
+ *  a casual 👍 must NOT be read as an approval. */
+const SLACK_INBOUND: Record<string, Glyph> = {
+  white_check_mark: '✅',
+  heavy_check_mark: '✅',
+  x: '❌',
+  negative_squared_cross_mark: '❌',
+  octagonal_sign: GLYPHS.stop,
+  rewind: GLYPHS.rewind,
+  repeat: GLYPHS.override,
+  arrows_counterclockwise: GLYPHS.override,
+  safety_pin: GLYPHS.checkpoint,
+}
+
+/** Normalize a Slack reaction shortcode to a project control glyph, or undefined. */
+export function normalizeSlackReaction(shortcode: string): Glyph | undefined {
+  return SLACK_INBOUND[shortcode]
+}
+
 /**
  * Render an interactive prompt's choices as a one-line numbered text menu, for
  * platforms without buttons. Indices are 1-based to match how a human counts.

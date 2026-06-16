@@ -36,6 +36,7 @@ import type {
   Choice,
   Glyph,
 } from '../messaging-adapter.ts'
+import { normalizeUnicodeReaction } from '../messaging-fallback.ts'
 
 /** Map a neutral Choice.style onto a Discord ButtonStyle. */
 function buttonStyle(style: Choice['style']): ButtonStyle {
@@ -124,7 +125,9 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
 
     this.client.on('messageReactionAdd', (reaction, user) => {
       if (user.bot) return
-      const glyph = reaction.emoji.name
+      // Normalize to the project control vocabulary; ignore anything else so the
+      // host only ever sees glyphs it acts on (Discord surfaces unicode names).
+      const glyph = reaction.emoji.name ? normalizeUnicodeReaction(reaction.emoji.name) : undefined
       if (!glyph) return
       const h = this.onReactionHandler
       if (!h) return
