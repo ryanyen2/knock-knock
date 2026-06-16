@@ -30,8 +30,9 @@ as **synchronizations**, not imperative branches.
   (`'sqlite'|'postgres'`) for the rare behavior that must branch cross-machine.
 - **one `FoldEngine`** with the concept + artifact folds registered.
 - **one `Synchronizer`** with the synchronizations registered.
-- **N `AgentHost`s** — one per entry in `access.agents`, each owning its Discord
-  client, token, runtime, workspace, and rooms.
+- **N `AgentHost`s** — one per entry in `access.agents`, each owning its
+  messaging client (via the `MessagingAdapter` seam — Discord today, see
+  "Messaging platforms" below), token, runtime, workspace, and rooms.
 
 Inbound/outbound flow is entirely ledger-driven:
 
@@ -117,9 +118,22 @@ calls it per session. When `sandbox` is set on an agent, the factory wraps an
 **ACP** launch via `buildSandboxLaunch` (`sandbox.ts`, pure: macOS `sandbox-exec`,
 Linux `bwrap`); the in-process `claude-sdk` can't be OS-jailed (it warns).
 
+### Messaging platforms (`messaging-adapter.ts` + `adapters-msg/`)
+
+`AgentHost` speaks a platform-neutral `MessagingAdapter` interface (send / edit /
+react / dm / start-thread, plus `capabilities()` and reaction normalization), not
+a Discord SDK directly. `makeMessagingAdapter(agent.platform ?? 'discord')`
+(`adapters-msg/index.ts`) builds the concrete adapter; `discord.js` is confined to
+`adapters-msg/discord.ts`. **Discord is the supported, live surface.** The other
+adapters (`slack.ts`, `telegram.ts`, `whatsapp.ts`, `imessage.ts`) are reachable
+but **experimental/opt-in and not live-certified** — see `docs/messaging-platforms.md`
+for the per-platform maturity and honest limits. Pure formatting/fallback helpers
+live in `messaging-fallback.ts` + `lib.ts`.
+
 ### `AgentHost` (`agent-host.ts` + `host/`)
 
-A Discord ↔ ledger adapter. Inbound: `handleInbound` gates the message
+A messaging ↔ ledger adapter (Discord today, via the `MessagingAdapter` seam
+above). Inbound: `handleInbound` gates the message
 (`guildSenderAllowed`, rate cap, mention check), resolves the **scope** (thread,
 or channel) and **room** (parent), and admits a `channel.message` under the
 scope — the synchronizer chain does the rest. It owns the per-scope `Driver`
