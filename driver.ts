@@ -49,10 +49,16 @@ export class Driver {
   /** Bind this driver to an existing runtime session id, to be resumed on the
    *  next turn (owner "resume session", or a persisted binding after restart).
    *  Resets the preamble flag so the resumed session is (re)told the room
-   *  context, which it has no way of knowing. */
+   *  context, which it has no way of knowing.
+   *
+   *  Enqueued onto the same serialized queue as runTurn: a resume issued while a
+   *  turn is in flight must not race that turn's own `this.sessionId = result`
+   *  write — the bind lands after the in-flight turn and before the next one. */
   bindSession(sessionId: string): void {
-    this.sessionId = sessionId
-    this.preambleSent = false
+    this.queue = this.queue.then(() => {
+      this.sessionId = sessionId
+      this.preambleSent = false
+    })
   }
 
   /** Enqueue a turn; runs serially so concurrent messages don't corrupt session state.

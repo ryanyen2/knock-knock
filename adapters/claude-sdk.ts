@@ -77,40 +77,41 @@ export class ClaudeSdkAdapter implements AgentAdapter {
       else input.signal.addEventListener('abort', () => abortController.abort(), { once: true })
     }
 
-    const result = query({
-      prompt: input.text,
-      options: {
-        cwd: this.cwd,
-        permissionMode: 'default',
-        abortController,
-        allowedTools: [...this.profile.allow, ...this.alwaysAllow],
-        // deny is the hard floor — must reach the SDK here, not via canUseTool alone
-        disallowedTools: this.profile.deny,
-        ...(this.mcpServers ? { mcpServers: this.mcpServers } : {}),
-        // Isolation mode: prevent the SDK from loading .mcp.json, CLAUDE.md, or
-        // any project/local settings from the workspace cwd. The relay passes all
-        // policy programmatically; stray disk config is the bug this guards against.
-        settingSources: [],
-        ...(input.sessionId ? { resume: input.sessionId } : {}),
-        canUseTool: async (toolName, toolInput) => {
-          const handler = this.permHandler
-          if (!handler) {
-            return { behavior: 'deny' as const, message: 'No approval handler registered.' }
-          }
-          const verdict = await handler({ toolName, input: toolInput })
-          // On allow, echo the (unmodified) input back as `updatedInput`. The
-          // SDK's control protocol validates the permission result and a bare
-          // `{behavior:'allow'}` can be rejected — surfacing to the agent as a
-          // tool error the moment the owner approves. Echoing the input is the
-          // documented "approve unchanged" shape.
-          return verdict.behavior === 'allow'
-            ? { behavior: 'allow' as const, updatedInput: toolInput }
-            : { behavior: 'deny' as const, message: verdict.message }
+    // One query run, optionally resuming a session. Extracted so a failed resume
+    // (invalid/expired/deleted session id) can fall back to a fresh session.
+    const runOnce = async (resumeId?: string): Promise<void> => {
+      const result = query({
+        prompt: input.text,
+        options: {
+          cwd: this.cwd,
+          permissionMode: 'default',
+          abortController,
+          allowedTools: [...this.profile.allow, ...this.alwaysAllow],
+          // deny is the hard floor — must reach the SDK here, not via canUseTool alone
+          disallowedTools: this.profile.deny,
+          ...(this.mcpServers ? { mcpServers: this.mcpServers } : {}),
+          // Isolation mode: prevent the SDK from loading .mcp.json, CLAUDE.md, or
+          // any project/local settings from the workspace cwd. The relay passes all
+          // policy programmatically; stray disk config is the bug this guards against.
+          settingSources: [],
+          ...(resumeId ? { resume: resumeId } : {}),
+          canUseTool: async (toolName, toolInput) => {
+            const handler = this.permHandler
+            if (!handler) {
+              return { behavior: 'deny' as const, message: 'No approval handler registered.' }
+            }
+            const verdict = await handler({ toolName, input: toolInput })
+            // On allow, echo the (unmodified) input back as `updatedInput`. The
+            // SDK's control protocol validates the permission result and a bare
+            // `{behavior:'allow'}` can be rejected — surfacing to the agent as a
+            // tool error the moment the owner approves. Echoing the input is the
+            // documented "approve unchanged" shape.
+            return verdict.behavior === 'allow'
+              ? { behavior: 'allow' as const, updatedInput: toolInput }
+              : { behavior: 'deny' as const, message: verdict.message }
+          },
         },
-      },
-    })
-
-    try {
+      })
       for await (const msg of result) {
         this.translate(msg, startedAt)
         if (msg.type === 'system' && (msg as SDKSystemMessage).subtype === 'init') {
@@ -132,10 +133,28 @@ export class ClaudeSdkAdapter implements AgentAdapter {
           }
         }
       }
+    }
+
+    try {
+      await runOnce(input.sessionId)
     } catch (err) {
       // Aborting the query (owner 🛑) surfaces as a throw — return whatever
-      // text we had rather than failing the turn. Re-throw anything else.
-      if (!abortController.signal.aborted) throw err
+      // text we had rather than failing the turn.
+      if (abortController.signal.aborted) {
+        return { sessionId, text: text.trim() || '(no response)' }
+      }
+      // A resume that produced nothing is almost certainly an invalid/expired
+      // session id (the binding outlived the session). Degrade gracefully to a
+      // fresh session — matching the ACP adapter's load-failure fallback —
+      // rather than failing the turn.
+      if (input.sessionId && !sessionId && !text) {
+        process.stderr.write(
+          `claude-sdk: resume ${input.sessionId.slice(0, 8)} failed (${err}); starting a fresh session\n`,
+        )
+        await runOnce(undefined)
+      } else {
+        throw err
+      }
     }
 
     return { sessionId, text: text.trim() || '(no response)' }

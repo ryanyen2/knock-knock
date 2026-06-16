@@ -503,7 +503,11 @@ export class AgentHost {
     }
     const session = this.getOrCreateSession(scopeId, liveAgent, room)
     session.driver.bindSession(summary.id)
-    writeSessionBinding(this.key, scopeId, { runtime: summary.runtime, sessionId: summary.id })
+    writeSessionBinding(this.key, scopeId, {
+      runtime: summary.runtime,
+      sessionId: summary.id,
+      workspace: liveAgent.workspace,
+    })
     this.ui.note(this.key, `resuming ${summary.runtime} session ${summary.id.slice(0, 8)} in ${scopeId}`)
     await action.update(renderSessionResumed({ runtime: summary.runtime, title: summary.title }))
   }
@@ -929,10 +933,15 @@ export class AgentHost {
     })
 
     // Rebind a persisted resume binding so an owner's resume survives a restart.
-    // Stale bindings (the agent's runtime changed) are cleared, not honored.
+    // Stale bindings are cleared, not honored: a runtime change (can't resume a
+    // foreign runtime) or a workspace change (would resume a session from the
+    // OLD workspace — a quieter cross-workspace leak). A deleted/unknown session
+    // id is caught at run time by the adapter's graceful fresh-session fallback.
     const binding = readSessionBinding(this.key, channelId)
     if (binding) {
-      if (sessionRuntimeForAgent(liveAgent.runtime) === binding.runtime) {
+      const runtimeOk = sessionRuntimeForAgent(liveAgent.runtime) === binding.runtime
+      const workspaceOk = !binding.workspace || binding.workspace === liveAgent.workspace
+      if (runtimeOk && workspaceOk) {
         created.driver.bindSession(binding.sessionId)
         this.ui.note(this.key, `rebinding ${binding.runtime} session ${binding.sessionId.slice(0, 8)} in ${channelId}`)
       } else {

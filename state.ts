@@ -191,7 +191,7 @@ export function saveSettings(s: KnockSettings): void {
 // sync to peers who can't load it. Sibling of the room settings file.
 
 /** A channel bound to an existing runtime session, to resume on next start. */
-export type SessionBinding = { runtime: string; sessionId: string }
+export type SessionBinding = { runtime: string; sessionId: string; workspace?: string }
 
 /** rooms/<agentKey>/<channelId>.session.json */
 export function sessionBindingPath(agentKey: string, channelId: string): string {
@@ -203,7 +203,11 @@ export function readSessionBinding(agentKey: string, channelId: string): Session
   try {
     const parsed = JSON.parse(readFileSync(sessionBindingPath(agentKey, channelId), 'utf8')) as Partial<SessionBinding>
     if (typeof parsed.runtime === 'string' && typeof parsed.sessionId === 'string') {
-      return { runtime: parsed.runtime, sessionId: parsed.sessionId }
+      return {
+        runtime: parsed.runtime,
+        sessionId: parsed.sessionId,
+        ...(typeof parsed.workspace === 'string' ? { workspace: parsed.workspace } : {}),
+      }
     }
     return undefined
   } catch {
