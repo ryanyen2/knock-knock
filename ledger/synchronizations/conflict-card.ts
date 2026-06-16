@@ -15,7 +15,7 @@
 
 import type { Synchronization } from '../sync.ts'
 import type { Interaction, Patch } from '../interaction.ts'
-import { projectVersionable, VERSIONABLE_FOLD, type VersionableFoldState } from '../artifacts/versionable.ts'
+import { projectVersionable, isVersionableEdit, VERSIONABLE_FOLD, type VersionableFoldState } from '../artifacts/versionable.ts'
 import { renderConflictCard, type ConflictBranch } from '../render/surface.ts'
 
 export type ConflictCardPost = {
@@ -50,11 +50,7 @@ export function conflictCard(opts: ConflictCardOpts): Synchronization {
     // versionable projection (equal-role interfering edits). Fire on each admitted
     // versionable edit and consult the projection; post when the just-admitted edit
     // participates in a derived conflict region.
-    matches: i =>
-      i.verb === 'workspace.edit' &&
-      i.lifecycle === 'applied' &&
-      i.patch.kind === 'versionable' &&
-      i.target.artifactId.startsWith('vers:'),
+    matches: isVersionableEdit,
     fire: async (i, ctx) => {
       const state = ctx.engine.get<VersionableFoldState>(VERSIONABLE_FOLD)
       const region = projectVersionable(state, i.target.artifactId).conflicts.find(c =>

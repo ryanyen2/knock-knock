@@ -195,14 +195,26 @@ export const VERSIONABLE_FOLD = 'versionable:edits'
  *  contended set reaches the slice; dominance/exclusion/conflict is then DERIVED in
  *  `projectVersionable`, not encoded in the lifecycle. The key only gates slice
  *  membership (the per-interaction predicate cannot consult other ops). */
-export const versionableFold: Fold<VersionableFoldState> = {
-  name: VERSIONABLE_FOLD,
-  init: () => new Map(),
-  key: i =>
+/**
+ * The single membership predicate for a versionable edit: an admitted/applied
+ * `workspace.edit` carrying a `versionable` patch on a `vers:` artifact. The
+ * fold, the conflict card, and the write-back all share it so they can never
+ * silently disagree about what counts (e.g. a future `admitted`-but-not-`applied`
+ * edit must not drop out of the conflict card while the fold still keeps it).
+ */
+export function isVersionableEdit(i: Interaction): boolean {
+  return (
     (i.lifecycle === 'admitted' || i.lifecycle === 'applied') &&
     i.verb === 'workspace.edit' &&
     i.target.artifactId.startsWith('vers:') &&
-    i.patch.kind === 'versionable',
+    i.patch.kind === 'versionable'
+  )
+}
+
+export const versionableFold: Fold<VersionableFoldState> = {
+  name: VERSIONABLE_FOLD,
+  init: () => new Map(),
+  key: isVersionableEdit,
   step: (state, i) => {
     const prior = state.get(i.target.artifactId) ?? new Map<Hash, Interaction>()
     if (prior.has(i.hash)) return state
@@ -220,7 +232,13 @@ export const versionableFold: Fold<VersionableFoldState> = {
  *  (deterministic across replicas). */
 export type ConflictRegion = { branches: Hash[] }
 
-export type VersionableProjection = VersionableText & { conflicts: ConflictRegion[] }
+export type VersionableProjection = VersionableText & {
+  conflicts: ConflictRegion[]
+  /** Hashes of the LIVE (kept, non-excluded) edits, in the order folded. A new
+   *  edit chains its `caused_by` onto these so it descends from the live text,
+   *  not from dominated/conflicting losers. */
+  live: Hash[]
+}
 
 /** The normalized intent an edit carries, or a whole-file fallback when absent
  *  (pre-intent edits / non-intent fixtures). The fallback fails safe to whole-file,
@@ -268,7 +286,7 @@ function ancestorsInSlice(hash: Hash, byHash: ReadonlyMap<Hash, Interaction>): S
  */
 export function projectVersionable(state: VersionableFoldState, artifactId: ArtifactId): VersionableProjection {
   const editsMap = state.get(artifactId)
-  if (!editsMap || editsMap.size === 0) return { text: '', ops: 0, conflicts: [] }
+  if (!editsMap || editsMap.size === 0) return { text: '', ops: 0, conflicts: [], live: [] }
 
   const ancestorCache = new Map<Hash, Set<Hash>>()
   const ancestorsOf = (h: Hash): Set<Hash> => {
@@ -317,13 +335,19 @@ export function projectVersionable(state: VersionableFoldState, artifactId: Arti
   // Fold the live set deterministically (hash order; Yjs is order-independent).
   const live = kept.slice().sort((a, b) => (a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0))
   const folded = applyEdits(live)
-  return { text: folded.text, ops: folded.ops, conflicts }
+  return { text: folded.text, ops: folded.ops, conflicts, live: live.map(e => e.hash) }
 }
 
-/** The hashes of the artifact's currently-applied edits — used as `caused_by`
- *  parents so a new edit chains onto them (sequential edits don't conflict),
- *  while a concurrent edit from the same base does. */
+/** Every edit hash in the artifact's slice — live AND excluded/conflicting. */
 export function versionableEditHashes(state: VersionableFoldState, artifactId: ArtifactId): Hash[] {
   const edits = state.get(artifactId)
   return edits ? [...edits.keys()] : []
+}
+
+/** The hashes of the artifact's LIVE (kept) edits only — used as `caused_by`
+ *  parents so a new edit descends from the live text and is concurrent only with
+ *  genuine concurrent peers, not turned into a false descendant of a dominated or
+ *  conflicting loser. */
+export function liveVersionableEditHashes(state: VersionableFoldState, artifactId: ArtifactId): Hash[] {
+  return projectVersionable(state, artifactId).live
 }

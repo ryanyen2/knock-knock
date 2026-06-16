@@ -13,7 +13,7 @@
 import type { Synchronization } from '../sync.ts'
 import type { ArtifactId } from '../interaction.ts'
 import { withClaim } from '../artifacts/external.ts'
-import { VERSIONABLE_FOLD, projectVersionable, type VersionableFoldState } from '../artifacts/versionable.ts'
+import { VERSIONABLE_FOLD, projectVersionable, isVersionableEdit, type VersionableFoldState } from '../artifacts/versionable.ts'
 
 export type WriteBackVersionableDeps = {
   /** Resolve a `vers:<scope>/<rel>` artifact to an absolute path on this machine,
@@ -28,8 +28,7 @@ export type WriteBackVersionableDeps = {
 export function writeBackVersionable(deps: WriteBackVersionableDeps): Synchronization {
   return {
     name: 'write-back-versionable',
-    matches: i =>
-      i.verb === 'workspace.edit' && (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
+    matches: isVersionableEdit,
     fire: async (i, ctx) => {
       const artifactId = i.target.artifactId
       const absPath = deps.resolvePath(artifactId)

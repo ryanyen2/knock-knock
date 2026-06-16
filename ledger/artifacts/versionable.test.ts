@@ -323,3 +323,55 @@ test('versionable: a superseded edit leaves the live projection immediately (== 
   engine.close()
   store.close()
 })
+
+// ─── U14: shared predicate + live-hash exposure ─────────────────────────────
+
+test('isVersionableEdit: accepts admitted|applied versionable edits, rejects others', async () => {
+  const { isVersionableEdit } = await import('./versionable.ts')
+  const base = {
+    verb: 'workspace.edit',
+    target: { artifactId: 'vers:repo/x.ts', anchor: WHOLE_FILE_ANCHOR },
+    patch: { kind: 'versionable', ops: '' },
+  }
+  expect(isVersionableEdit({ ...base, lifecycle: 'applied' } as any)).toBe(true)
+  expect(isVersionableEdit({ ...base, lifecycle: 'admitted' } as any)).toBe(true)
+  expect(isVersionableEdit({ ...base, lifecycle: 'proposed' } as any)).toBe(false)
+  // wrong verb / non-vers artifact / wrong patch kind are all rejected
+  expect(isVersionableEdit({ ...base, lifecycle: 'applied', verb: 'turn.replied' } as any)).toBe(false)
+  expect(
+    isVersionableEdit({ ...base, lifecycle: 'applied', target: { artifactId: 'know:x', anchor: WHOLE_FILE_ANCHOR } } as any),
+  ).toBe(false)
+  expect(isVersionableEdit({ ...base, lifecycle: 'applied', patch: { kind: 'none' } } as any)).toBe(false)
+})
+
+test('projectVersionable.live lists the kept edits (single edit → itself)', async () => {
+  const { liveVersionableEditHashes } = await import('./versionable.ts')
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(versionableFold)
+  const artifactId = 'vers:repo/foo.ts'
+
+  const doc = new Y.Doc()
+  const ops = mutateAndEncode(doc, t => t.insert(0, 'hello'))
+  doc.destroy()
+  const res = await admit(store, {
+    actor: 'bot1',
+    role: 'agent',
+    channel: 'chan',
+    target: { artifactId, anchor: WHOLE_FILE_ANCHOR },
+    verb: 'workspace.edit',
+    patch: { kind: 'versionable', ops },
+    effect: 'workspace',
+    caused_by: [],
+  })
+  expect(res.kind).toBe('admitted')
+  const hash = res.kind === 'admitted' ? res.interaction.hash : ''
+
+  const state = engine.get<VersionableFoldState>(VERSIONABLE_FOLD)
+  const proj = projectVersionable(state, artifactId)
+  expect(proj.live).toEqual([hash])
+  expect(liveVersionableEditHashes(state, artifactId)).toEqual([hash])
+
+  engine.close()
+  store.close()
+})

@@ -30,7 +30,7 @@ import {
   parseEditIntent,
   parseVersionableId,
   versionableArtifactId,
-  versionableEditHashes,
+  liveVersionableEditHashes,
   type VersionableFoldState,
 } from '../artifacts/versionable.ts'
 
@@ -85,14 +85,21 @@ export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchroniz
       const newText = applyEditIntent(currentText, intent)
       if (newText === currentText) return // no-op edit; nothing to record
 
+      // Binary guard: a Write of non-text content would be mangled through Y.Text
+      // (UTF-16) and then write-back would overwrite the real file with corrupt
+      // text. A NUL byte is the standard binary signal — skip rather than corrupt.
+      // (v1 scope is Claude-Code-shaped text Edit/Write; binary is out of scope.)
+      if (newText.includes('\u0000')) return
+
       const ops = mutateAndEncode(doc, text => {
         text.delete(0, text.length)
         text.insert(0, newText)
       })
 
-      // Chain onto the artifact's currently-applied edits so sequential edits
-      // don't conflict; a concurrent edit from the same base still will.
-      const caused_by = [...new Set([i.hash, ...versionableEditHashes(state, artifactId)])]
+      // Chain onto the artifact's LIVE edits only, so a sequential edit descends
+      // from the live text (no false conflict) without becoming a spurious
+      // descendant of a dominated/conflicting loser.
+      const caused_by = [...new Set([i.hash, ...liveVersionableEditHashes(state, artifactId)])]
 
       await ctx.admit({
         actor: i.actor,
