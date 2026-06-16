@@ -57,9 +57,11 @@ export class ConflictUI {
     }
 
     if (action.actionId === 'cflt:write') {
-      await action.respond('Reply in this channel with your merge — it supersedes both drafts.', {
-        ephemeral: true,
-      })
+      // Close the card and let the owner's own edit resolve the conflict: a new
+      // owner-role edit is concurrent with and dominates both drafts, so the
+      // derived projection clears the region (no lingering, re-firing card).
+      this.cards.delete(action.ref.id)
+      await action.update(`${action.message}\n\n-# ✏️ write your own — reply with your merge; it supersedes both drafts`)
       return
     }
 
@@ -80,9 +82,13 @@ export class ConflictUI {
       chosenHash: chosen,
       label: `took ${LETTERS[idx]}`,
     })
-    if (!result) return
-
     this.cards.delete(action.ref.id)
+    if (!result) {
+      // Already resolved — e.g. another relay took a branch and this card is a
+      // stale copy (cards aren't shared across relays). Close it gracefully.
+      await action.respond('This conflict was already resolved.', { ephemeral: true })
+      return
+    }
     await action.update(`${action.message}\n\n-# ✓ took ${LETTERS[idx]}`)
   }
 }

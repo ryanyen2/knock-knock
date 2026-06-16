@@ -92,10 +92,24 @@ export function conflictCard(opts: ConflictCardOpts): Synchronization {
 function bodyOf(patch: Patch): string {
   if (patch.kind === 'knowledge' && patch.append) return patch.append.body
   if (patch.kind === 'versionable') {
+    // Show what the branch actually contains (from the captured intent) so Take A
+    // vs Take B is a real choice — not two identical "~N bytes" lines. Falls back
+    // to size only when an older edit carries no intent.
+    const intent = patch.intent
+    if (intent?.kind === 'write') return snippet(intent.content)
+    if (intent?.kind === 'edit') {
+      return `replace «${snippet(intent.oldString, 28)}» → «${snippet(intent.newString, 56)}»`
+    }
     const bytes = patch.ops ? Buffer.from(patch.ops, 'base64').length : 0
-    return `(file edit · ~${bytes} bytes changed)`
+    return `(file edit · ~${bytes} bytes)`
   }
   return '(draft)'
+}
+
+/** One-line preview of edited text: collapse whitespace, cap length. */
+function snippet(text: string, max = 88): string {
+  const flat = text.replace(/\s+/g, ' ').trim()
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat || '(empty)'
 }
 
 /** Short label for the contested artifact + anchor, e.g. "notes §title". */

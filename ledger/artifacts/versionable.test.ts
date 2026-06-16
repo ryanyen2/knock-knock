@@ -279,10 +279,13 @@ test('versionable (U2): the normalized intent round-trips and participates in th
   expect(hashInteraction(withoutIntent)).not.toBe(hashInteraction(withEdit))
 })
 
-test('versionable: a superseded edit leaves the live projection immediately (== fresh replay)', async () => {
-  // The motivating case for the lifecycle re-fold: two concurrent whole-file
-  // edits contend at WHOLE_FILE_ANCHOR; the owner's edit supersedes the agent's,
-  // and the agent's edit must drop from the LIVE projection without a restart.
+test('versionable: derived dominance — both edits stay applied; the projection (not the gate) drops the loser', async () => {
+  // AOCM (U6): two concurrent whole-file edits contend at WHOLE_FILE_ANCHOR. The
+  // merge gate is BYPASSED for versionable edits (admit.ts) — BOTH are admitted
+  // 'applied' — and dominance is DERIVED in projectVersionable: the owner's edit
+  // (higher role) excludes the agent's from the live set. This test guards that
+  // derived behavior: it would fail if the bypass were removed and the gate
+  // re-superseded one edit's lifecycle (the legacy mechanism AOCM replaced).
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
   await engine.register(versionableFold)
@@ -306,18 +309,30 @@ test('versionable: a superseded edit leaves the live projection immediately (== 
   const opsB = mutateAndEncode(docB, t => t.insert(0, 'BBB'))
   docB.destroy()
 
-  await admit(store, versProposal('bot1', 'agent', opsA)) // applied
-  const owner = await admit(store, versProposal('owner1', 'owner', opsB)) // owner > agent → supersedes
+  const agent = await admit(store, versProposal('bot1', 'agent', opsA))
+  const owner = await admit(store, versProposal('owner1', 'owner', opsB))
+  expect(agent.kind).toBe('admitted')
   expect(owner.kind).toBe('admitted')
 
-  // Live: only the owner's edit remains; the agent's superseded edit is gone now.
+  // BOTH edits stay 'applied' — the gate did NOT supersede the agent's. (This is
+  // the assertion the old test lacked; it passed for the wrong reason.)
+  const agentHash = agent.kind === 'admitted' ? agent.interaction.hash : ''
+  const ownerHash = owner.kind === 'admitted' ? owner.interaction.hash : ''
+  expect((await store.getByHash(agentHash))?.lifecycle).toBe('applied')
+  expect((await store.getByHash(ownerHash))?.lifecycle).toBe('applied')
+
+  // The projection derives dominance: owner wins, agent is excluded from live.
   const live = projectVersionable(engine.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
   expect(live.text).toBe('BBB')
+  expect(live.live).toEqual([ownerHash])
 
+  // Cross-machine: a fresh replica re-derives the same text+live set from the
+  // INSERTs alone (no lifecycle UPDATE crossed) — the local-first property.
   const fresh = new FoldEngine(store)
   await fresh.register(versionableFold)
   const replay = projectVersionable(fresh.get<VersionableFoldState>(VERSIONABLE_FOLD), artifactId)
   expect(replay.text).toBe('BBB')
+  expect(replay.live).toEqual([ownerHash])
 
   fresh.close()
   engine.close()
