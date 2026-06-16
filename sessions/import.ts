@@ -18,6 +18,7 @@ import type { Hash } from '../ledger/interaction.ts'
 import { admit } from '../ledger/admit.ts'
 import { wrapSharedContext } from '../lib.ts'
 import { makeSessionStore, type SessionRuntime } from './index.ts'
+import { cwdMatchesWorkspace } from './session-store.ts'
 import { distill } from './distill.ts'
 
 export type ImportSessionInput = {
@@ -25,18 +26,30 @@ export type ImportSessionInput = {
   sessionId: string
   scopeId: string
   ownerId: string
+  /** The importing agent's workspace. `read(id)` scans by bare file stem and is
+   *  NOT workspace-filtered (only `list()` is), so a stem collision could return
+   *  a session from another project. We re-check the read transcript's cwd here —
+   *  the single chokepoint for read() — so a cross-workspace session can't leak. */
+  workspace?: string
   /** Used when the transcript doesn't record its own cwd. */
   fallbackCwd?: string
 }
 
 export type ImportSessionResult =
   | { ok: true; noteHash: Hash; brief: string; tags: string[]; cwd?: string }
-  | { ok: false; reason: 'unreadable' }
+  | { ok: false; reason: 'unreadable' | 'outside-workspace' }
 
 export async function importSession(store: Store, input: ImportSessionInput): Promise<ImportSessionResult> {
   const sstore = makeSessionStore(input.runtime)
   const transcript = sstore ? await sstore.read(input.sessionId) : undefined
   if (!transcript) return { ok: false, reason: 'unreadable' }
+
+  // Privacy boundary: if the session records a cwd and a workspace was supplied,
+  // the cwd must be within it. A cwd-less transcript degrades to fallbackCwd (the
+  // agent's own workspace), so it can't leak another project.
+  if (input.workspace && transcript.cwd && !cwdMatchesWorkspace(transcript.cwd, input.workspace)) {
+    return { ok: false, reason: 'outside-workspace' }
+  }
 
   const { brief, tags } = distill(transcript)
   const cwd = transcript.cwd || input.fallbackCwd

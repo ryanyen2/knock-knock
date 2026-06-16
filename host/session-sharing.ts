@@ -166,13 +166,18 @@ export class SessionSharing {
       sessionId: summary.id,
       scopeId: card.channelId,
       ownerId,
+      workspace: this.ctx.getAccess().agents[this.ctx.key]?.workspace,
       fallbackCwd: summary.cwd,
     }).catch(err => {
       this.ctx.ui.error(this.ctx.key, `session import: ${err}`)
       return { ok: false, reason: 'unreadable' } as const
     })
     if (!result.ok) {
-      await action.respond('Could not read that session anymore.', { ephemeral: true })
+      const msg =
+        result.reason === 'outside-workspace'
+          ? 'That session belongs to a different workspace — not importing it.'
+          : 'Could not read that session anymore.'
+      await action.respond(msg, { ephemeral: true })
       return
     }
 

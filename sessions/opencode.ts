@@ -95,7 +95,10 @@ export class OpenCodeSessionStore implements SessionStore {
       const meta = await readJson(path)
       if (!meta) continue
       const cwd = metaCwd(meta)
-      if (cwd && !cwdMatchesWorkspace(cwd, opts.workspace)) continue
+      // A cwd-less session must NOT be listed for an unrelated workspace: without
+      // a directory we can't prove it belongs here, and listing it everywhere is
+      // a cross-project leak. Skip it (degrade to fewer results, never over-share).
+      if (!cwd || !cwdMatchesWorkspace(cwd, opts.workspace)) continue
       let messageCount = 0
       try {
         messageCount = (await readdir(join(storageDir(), 'message', id))).filter(f =>
