@@ -202,24 +202,35 @@ export class SessionSharing {
    * Shared-context to inject on the next turn in a scope: active
    * know:channel/<scopeId>/shared-context notes not yet delivered to this host's
    * live session. Each note's body is already the wrapped <shared-context>
-   * block. Marks them delivered so the agent sees each import exactly once.
+   * block. Does NOT mark anything delivered — the caller must call
+   * `confirmDelivered(scopeId, freshHashes)` only after the turn actually
+   * consumed the prefix, so a failed/stopped turn re-offers it next time.
    */
-  pendingContext(scopeId: ChannelId): string | undefined {
+  pendingContext(scopeId: ChannelId): { prefix?: string; freshHashes: string[] } {
     let state: KnowledgeFoldState
     try {
       state = this.ctx.engine.get<KnowledgeFoldState>(KNOWLEDGE_FOLD)
     } catch {
-      return undefined // knowledge fold not registered
+      return { freshHashes: [] } // knowledge fold not registered
     }
     const notes = activeNotes(state, `know:channel/${scopeId}/shared-context`)
     const delivered = this.delivered.get(scopeId) ?? new Set<Hash>()
-    const { prefix, freshHashes } = pickFreshContext(
+    return pickFreshContext(
       notes.map(n => ({ hash: n.hash, body: n.note.body })),
       delivered,
     )
-    if (!prefix) return undefined
+  }
+
+  /**
+   * Mark imported-context notes as delivered to this scope's live session, so
+   * each is injected exactly once. Called by the host AFTER a turn succeeds —
+   * confirmed delivery, not optimistic: a turn that throws or is stopped leaves
+   * the context undelivered so the next turn re-injects it.
+   */
+  confirmDelivered(scopeId: ChannelId, freshHashes: readonly string[]): void {
+    if (freshHashes.length === 0) return
+    const delivered = this.delivered.get(scopeId) ?? new Set<Hash>()
     for (const h of freshHashes) delivered.add(h)
     this.delivered.set(scopeId, delivered)
-    return prefix
   }
 }

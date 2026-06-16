@@ -381,6 +381,12 @@ export class AgentHost {
     return this.messaging.capabilities().maxMessageLength
   }
 
+  /** True when this host's platform adapter is a not-yet-certified skeleton, so
+   *  the relay can warn loudly at startup. */
+  get experimental(): boolean {
+    return this.messaging.capabilities().experimental === true
+  }
+
   /** Relay subscriber → refresh this scope's pinned Workbench (throttled). */
   updatePill(scopeId: ChannelId): void {
     this.workbench.updatePill(scopeId)
@@ -813,8 +819,11 @@ export class AgentHost {
       channelId,
     }
 
-    // Inject any freshly-imported session context once, ahead of this turn.
-    const contextPrefix = this.sessionSharing.pendingContext(channelId)
+    // Inject any freshly-imported session context ahead of this turn. Mark it
+    // delivered only AFTER the turn succeeds (below), so a failed/stopped turn
+    // re-offers it next time instead of silently swallowing it.
+    const pendingCtx = this.sessionSharing.pendingContext(channelId)
+    const contextPrefix = pendingCtx.prefix
 
     let chunks: string[] = []
     let turnError: string | undefined
@@ -846,6 +855,13 @@ export class AgentHost {
     else if (turnError || !replyText) outcome = 'failed'
     else outcome = 'done'
     void this.markInboundOutcome(opts.inboundHash, outcome).catch(() => {})
+
+    // Confirmed delivery: only now that the turn actually ran (not stopped, no
+    // error) do we mark the imported context delivered, so a failed/stopped turn
+    // re-injects it next time rather than losing it.
+    if (!stopped && !turnError) {
+      this.sessionSharing.confirmDelivered(channelId, pendingCtx.freshHashes)
+    }
 
     return { chunks, error: turnError }
   }
