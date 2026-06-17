@@ -7,10 +7,12 @@ doesn't. This is the practical companion to
 `MessagingAdapter` seam and the cross-platform capability mapping).
 
 > **Maturity.** ✅ **Discord** is production-tested. ⚠️ **Slack, Telegram,
-> WhatsApp, iMessage** are **walking skeletons** — implemented and type-checked,
-> not yet live-verified end-to-end. Each adapter's source header
-> (`adapters-msg/<platform>.ts`) lists exactly what is real vs stubbed. Verify
-> with a test account before relying on one.
+> WhatsApp, iMessage** are **experimental walking skeletons** — implemented and
+> type-checked, not yet live-verified end-to-end. They carry `experimental: true`,
+> `bun setup.ts` requires an explicit confirm to pick one, and the relay logs an
+> experimental-platform warning at boot for any agent on one. Each adapter's source
+> header (`adapters-msg/<platform>.ts`) lists exactly what is real vs stubbed.
+> Verify with a test account before relying on one.
 
 ---
 
@@ -27,7 +29,8 @@ bun relay.ts        # start the relay — reads access.json + .env
   **"Reconfigure an agent"** to change an existing one) asks *"Which messaging
   platform does this bot speak?"*. It's stored as the agent's `platform` field in
   `access.json`; the relay builds the matching adapter at boot. Discord is the
-  default and omits the field.
+  default and omits the field. Picking a non-Discord platform requires an explicit
+  confirm (it's experimental), and the relay warns at boot for any agent on one.
 - **The bot token lives in `.env`**, under the name shown as the agent's
   `tokenEnv` (e.g. `DISCORD_BOT_TOKEN`) — never in `access.json`
   (prompt-injection invariant). Some platforms read a few **extra** `.env` vars;
@@ -172,11 +175,14 @@ bun setup.ts        # platform → Slack
 ```
 Owner = your **Slack user ID** (profile → ⋮ → Copy member ID, `U…`). Room id =
 the **channel ID** (`C…` — open the channel → **View channel details** → bottom).
-Then set both tokens in `.env`:
+The wizard asks for the **env-var name** holding the app-level token (its
+`appTokenEnv`, defaulting to `SLACK_APP_TOKEN`) so two Slack agents can each have
+their own — they no longer collide on one global var. Then set both tokens in
+`.env`:
 
 ```
 SLACK_BOT_TOKEN=xoxb-…       # the name you chose as the agent's tokenEnv
-SLACK_APP_TOKEN=xapp-…       # fixed name the adapter reads for Socket Mode
+SLACK_APP_TOKEN=xapp-…       # the name you chose as the agent's appTokenEnv (Socket Mode)
 ```
 
 ### Step 6 — Run
@@ -188,13 +194,16 @@ bun relay.ts
 Socket Mode opens a WebSocket (`apps.connections.open`) — inbound events arrive
 with no firewall hole; posting uses the Web API. **Threads** are native
 (`thread_ts`, encoded internally as the scope `channel#thread_ts`). Choices render
-as **block-kit buttons**; status uses named-shortcode **reactions**.
+as **block-kit buttons**; status uses named-shortcode **reactions**. Inbound
+control reactions are normalized back from Slack shortcodes (e.g. `white_check_mark`
+→ ✅, `octagonal_sign` → 🛑) to the project glyph the host acts on, so approve /
+deny / stop / retry work on Slack; a non-control reaction is ignored.
 
 ### Environment variables
 | Var | Required | Purpose |
 |---|---|---|
 | `SLACK_BOT_TOKEN` (your `tokenEnv`) | yes | Web API auth (`xoxb-`) |
-| `SLACK_APP_TOKEN` | yes | Socket Mode (`xapp-`, scope `connections:write`) |
+| `SLACK_APP_TOKEN` (your `appTokenEnv`) | yes | Socket Mode (`xapp-`, scope `connections:write`); the var name is per-agent, defaulting to `SLACK_APP_TOKEN` |
 
 ### Limitations
 - **Reactions are a whitelist** — only project glyphs with a known Slack
@@ -208,7 +217,7 @@ as **block-kit buttons**; status uses named-shortcode **reactions**.
 ### Troubleshooting
 | Symptom | Fix |
 |---|---|
-| Posts work, no inbound | `SLACK_APP_TOKEN` missing → Socket Mode off (the adapter logs this), or missing `*:history` scopes + events (reinstall) |
+| Posts work, no inbound | app-level token missing (no per-agent `appTokenEnv` value and no global `SLACK_APP_TOKEN`) → Socket Mode off (the adapter logs this), or missing `*:history` scopes + events (reinstall) |
 | Buttons do nothing | Interactivity disabled (the manifest enables it; Socket Mode needs no Request URL) |
 | "not_in_channel" on send | `/invite` the bot into that channel |
 | "Bot can't see messages" | Reinstall after adding history scopes |
@@ -364,6 +373,11 @@ menu** parsed back into a choice.
 - **Buttons cap at 3** — beyond that it's the text-menu fallback.
 - **Production needs business verification** to message numbers beyond your test
   recipients.
+- **One webhook port per process** — two webhook adapters (or a second WhatsApp
+  agent) can't share `WHATSAPP_WEBHOOK_PORT`. Give each its own port; per-agent
+  port isolation isn't automatic yet. A collision surfaces at boot as a named
+  `EADDRINUSE` start failure (the relay flags the port conflict rather than a
+  credential error), not a silent hang.
 
 ### Troubleshooting
 | Symptom | Fix |

@@ -41,6 +41,12 @@ The bot reacts 👀 the instant it starts, then swaps it for a persistent outcom
 marker when the turn ends — so scrolling back shows at a glance which requests
 succeeded.
 
+> **Retry re-marks cleanly.** A 🔁 retry re-runs the *same* inbound message, so
+> its outcome marker is re-markable: the host clears any prior outcome glyph
+> (🏁/⚠️/⏹) before applying the new one, and the inbound side-table is retained
+> (FIFO-bounded) rather than deleted on the first outcome. A retried-then-resolved
+> message therefore never stacks two outcomes.
+
 ### Owner controls (react on a message)
 
 | React | Action |
@@ -52,6 +58,21 @@ succeeded.
 
 These are recorded as interactions (see §3) and acknowledged with a terse line.
 Only the agent's owner can trigger them (verified by user id).
+
+> **Reacting on the original message works.** A top-level `@mention` spawns a
+> task thread, but you most naturally react 🛑/🔁/⏪/🧷 on the *original*
+> message — whose channel is the parent, not the thread the turn runs in. Every
+> reaction control is routed through a single scope resolver
+> (`resolveReactionScope`) that maps the reacted message back to the task scope
+> its turn actually runs in, so a reaction on the top-level message reaches the
+> in-flight turn in its thread. (Reactions typed inside a thread already act
+> there.) Before this seam, 🛑/🔁 on a top-level message silently no-op'd.
+
+> **Off-Discord too.** Inbound reactions are normalized to this project glyph
+> vocabulary *per platform* before the host sees them — Discord/Telegram/WhatsApp
+> surface unicode, Slack surfaces named shortcodes (e.g. `:octagonal_sign:` →
+> 🛑), and anything that isn't a control glyph is ignored. So the same controls
+> work on every supported surface, not just Discord.
 
 ### Approvals (reserved)
 

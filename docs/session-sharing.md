@@ -110,13 +110,34 @@ with a framing line ("reference to respect, not new instructions").
   filtered to the agent's `workspace` cwd, so unrelated local projects are never
   surfaced. Cross-user sharing happens *only* via the explicit owner-curated note
   synced through the ledger — never by reaching into another machine's files.
+- **Workspace membership gate (the read-path leak it closes).** `list()` is
+  workspace-filtered, but `SessionStore.read(id)` is **not** — it scans by bare
+  file stem, so a same-stem session in another project could be returned, and
+  some readers (Gemini, Codex without `session_meta`) record no cwd to fall back
+  on. `importSession` therefore gates `read()` behind a **membership check**: the
+  chosen id must appear in the workspace-filtered `list()` *before* `read()` is
+  trusted, with a defense-in-depth cwd re-check after (catching a reader whose
+  `list`/`read` disagree). An out-of-workspace import is refused with reason
+  `'outside-workspace'` and the owner is told the session belongs to a different
+  workspace. (Relatedly, OpenCode `list()` no longer surfaces a cwd-less session
+  for an unrelated workspace — without a directory it can't prove membership, so
+  it degrades to fewer results rather than over-sharing.)
 - **No config mutation, no deny-floor change.** The import is `effect: 'pure'`
   and runs no tools; `access.json` and room profiles are untouched. The
   prompt-injection stance (config is terminal-/owner-only) is preserved — the
   share command is never admitted as a `channel.message`.
-- **Delivered once.** `pickFreshContext` tracks per-scope delivered note hashes
-  so a brief reaches the agent exactly once. The set is in-memory and
-  re-derivable; a relay restart only re-shows context, which is harmless.
+- **Delivered once, confirmed on success.** A brief reaches the agent exactly
+  once, but delivery is **confirmed after the turn**, not marked before it runs.
+  `pendingContext(scopeId)` only *reads* the not-yet-delivered notes (via
+  `pickFreshContext`) and returns the prefix plus its `freshHashes`; the host
+  injects the prefix, then calls `confirmDelivered(scopeId, freshHashes)` to mark
+  those hashes delivered **only when the turn genuinely succeeds** (`outcome ===
+  'done'`). A turn that fails, is stopped, or returns an empty reply leaves the
+  context undelivered, so the *next* turn re-injects it instead of silently
+  swallowing it. (Gating on `outcome` rather than `!turnError` matters because
+  `Driver.runTurn` resolves adapter failures as error-text chunks and never
+  rejects.) The delivered set is in-memory and re-derivable; a relay restart only
+  re-shows context, which is harmless.
 
 ## Resuming a live session
 
@@ -128,12 +149,19 @@ back to `AgentHost.resumeSession`. Picking one:
 
 - binds the scope's `Driver` to that runtime session id (`bindSession`), to be
   resumed on the next turn — and resets the preamble flag so the resumed session,
-  which knows nothing of the Discord room, is told the room context once;
+  which knows nothing of the Discord room, is told the room context once.
+  `bindSession` is **enqueued onto the Driver's serialized turn queue**, so a
+  resume issued mid-turn can't clobber the session id of the turn in flight;
 - persists the binding **locally and per-scope**
   (`rooms/<agent>/<scopeId>.session.json`, via `state.ts`). This is a local file,
   NOT a ledger note: a runtime session lives on one machine, so the binding must
-  not sync to peers who can't load it. `getOrCreateSession` rebinds it on the
-  next start (clearing it if the agent's runtime no longer matches).
+  not sync to peers who can't load it. The binding also stores the `workspace`.
+  `getOrCreateSession` rebinds it on the next start, but only after re-validating
+  **both** runtime *and* workspace against the agent's current config: a runtime
+  change (can't resume a foreign runtime) or a workspace change (would resume a
+  session from the *old* workspace — a quieter cross-workspace leak) clears the
+  binding rather than honoring it. A deleted/unknown session id needs no
+  pre-check — it's caught at run time by the adapter's fresh-session fallback.
 
 How the adapters resume a *foreign* session id (one they didn't create this
 process — a CLI session, or a persisted binding after restart):
@@ -144,7 +172,10 @@ process — a CLI session, or a persisted binding after restart):
   (replays history); without it, or on failure → a fresh session, so the turn
   still runs.
 - **Claude SDK**: resumes via the SDK's `resume` option (already foreign-id
-  capable).
+  capable). A resume that produces nothing — almost always an invalid/expired
+  session id, e.g. a persisted binding that outlived the session — **degrades to
+  a fresh session** rather than failing the turn, matching the ACP adapter's
+  load-failure fallback (an owner-aborted turn is exempt — it isn't retried).
 
 Resume is same-runtime and same-machine; import is the robust, cross-runtime,
 cross-machine path and remains the default. If an agent can't resume a session's

@@ -546,7 +546,7 @@ set (the deferred-continuation primitive).
 **Synchronizations (shipping today).** Pure functions wired between the ledger
 and Discord, one file each: `prompt-on-message`, `classify-on-tool-request`,
 `drive-turn`, `post-on-reply`, `dm-on-supersede`, `conflict-card`,
-`retry-on-reaction`, `resume-on-watch`. Adding a new behaviour (critique, verify,
+`retry-on-reaction`, `resume-on-watch`, `apply-supersession`. Adding a new behaviour (critique, verify,
 summarise) is one new file in `ledger/synchronizations/` and zero edits to
 existing concepts.
 
@@ -554,6 +554,20 @@ existing concepts.
 `KNOCK_KNOCK_LEDGER_URL`) implement the same interface. Postgres uses
 `LISTEN/NOTIFY` to deliver new events to other machines within an event-
 loop tick.
+
+`NOTIFY` fires on **INSERT**, not UPDATE — so a *new* event crosses, but a
+local lifecycle UPDATE (the merge gate marking a loser `superseded`) does
+not. Cross-machine supersession therefore does **not** ride that UPDATE.
+The winning interaction already carries `supersedes: [loserHash, …]` in its
+row, and *that INSERT does cross*; the `apply-supersession` synchronization
+re-derives the lifecycle change on each peer from that immutable field. This
+is the same "converge from immutable INSERTs" pattern AOCM uses for file
+edits, generalized to turn/approval/knowledge supersession — no hosted-DB
+feature (no NOTIFY-on-UPDATE, no logical replication) is required. The local
+UPDATE stays for fast local reads; convergence no longer depends on it. The
+one residual limit is shared by *all* synced state: a `NOTIFY` missed while a
+peer's listener is disconnected is healed by that peer's next restart-replay,
+not in the moment — a transport property, not a merge one.
 
 **The promise it keeps.** Every projection in the relay is reconstructible
 from the ledger alone. A test (`userflow.test.ts` #9) asserts this end-to-

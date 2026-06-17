@@ -254,9 +254,25 @@ invented:
   children), deduped by `name`. Live children die with the process and are
   rebuilt — never persisted.
 - **Cross-machine.** With the Postgres backend a watch is in the shared ledger,
-  but the OS resource must run on the host that owns that workspace/file/process.
-  The spec carries `agentKey`; only the owning `AgentHost`'s supervisor arms the
-  live child. (Designed, not yet shipped: the skeleton assumes a single relay.)
+  but the OS resource must run on exactly one host. The spec carries `agentKey`;
+  only an `AgentHost` that owns that channel arms the live child. When several
+  relays serve the same agent off one ledger, two extra elections keep the
+  spawn/fire story single-owner — each gated behind the relay's `relayId`, so a
+  single-relay setup omits it and is unaffected:
+  - **Single-owner spawn.** Before spawning, the `WatchSupervisor` wins a
+    cross-relay `external_claim` on the watch's stable identity
+    (`watch-run/<agentKey>/<channel>/<name>`, the same key on every relay), so the
+    command runs on exactly one machine; the others stand by. The owner renews the
+    claim at half-TTL while the child runs.
+  - **Failover.** On kill/stop the renewal stops and the claim lapses (no explicit
+    release — the TTL hands it off). A half-TTL periodic reconcile tick
+    (multi-relay only) re-reconciles against the current fold, so a standby relay
+    re-takes a dead owner's lapsed claim even when the watch fold is quiescent.
+  - **Single fire → single resume.** `resume-on-watch` gates the resumed
+    `turn.prompted` behind a per-fire `external_claim` keyed on the fire's hash
+    (`watchfire/<hash>`, identical on every relay). A replicated `watch.fired` is
+    seen by every relay's synchronizer, but exactly one wins the claim and
+    resumes the agent.
 
 ---
 
@@ -317,11 +333,11 @@ the universal fallback and works for every runtime.
 - ACP self-arming (per-runtime MCP config so out-of-process agents get the tool).
 - Workbench rendering + reaction-to-cancel.
 - Loop-guard fold exempting watch-descended turns.
-- Cross-machine host affinity.
 - A `file` specialization using native `fs.watch` instead of a polling loop, as
   an efficiency pass over the one command-based kind. (The `every=<dur>` poll
   sugar — which desugars a one-shot check into a `while … sleep` loop — already
-  ships in `parseWatchCommand`.)
+  ships in `parseWatchCommand`, but **only on the owner `!watch` path**: the agent
+  MCP `watch` tool still asks the agent to write its own loop.)
 
 ---
 

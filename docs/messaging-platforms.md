@@ -159,8 +159,16 @@ type Capabilities = {
   dm: boolean                   // private message to a user
   mentions: 'native' | 'reply' | 'text'
   maxMessageLength: number      // chunking (Discord 2000, Telegram 4096, …)
+  experimental?: boolean        // true = walking skeleton, not live-certified
 }
 ```
+
+`maxMessageLength` is **load-bearing, not documentation**: `post-on-reply` chunks
+outbound text at the *sending* platform's cap (less a small safety margin for the
+appended annotations), so a Telegram reply splits at 4096 and a Slack reply at
+3000 — never at a hardcoded Discord number. `experimental: true` marks the four
+non-Discord adapters; the relay surfaces a loud startup warning for any agent on
+one (see §7).
 
 ### Per-platform capability matrix
 
@@ -174,6 +182,7 @@ type Capabilities = {
 | DM | yes | yes | yes | yes | yes (1:1) |
 | mentions | native | native | reply | text | text |
 | max length | 2000 | ~3000 | 4096 | 4096 | ~unlimited |
+| experimental | no | **yes** | **yes** | **yes** | **yes** |
 
 ### The three degradation ladders
 
@@ -219,6 +228,20 @@ iMessage has no custom reactions at all. So glyphs split into two uses:
   🛑 stop, 📥 session) holds *only where reactions exist*; on bare platforms
   those interactions move to the text-command fallback, which is fine because
   the same ledger verbs back them.
+
+**Inbound reactions need the inverse mapping too.** An owner reacting ✅/🛑/🔁 is
+a *control* signal, and the host compares it against the project glyph vocabulary.
+Outbound `mapGlyphToReaction` is lossy (several glyphs share one platform emoji),
+so it isn't invertible — inbound gets its own explicit map in `messaging-fallback.ts`:
+`normalizeUnicodeReaction(raw)` for platforms that surface unicode (Discord,
+Telegram, WhatsApp, iMessage), and `normalizeSlackReaction(shortcode)` for Slack,
+which delivers named shortcodes (`white_check_mark`, `octagonal_sign`) instead of
+emoji. Each adapter normalizes at its inbound edge, so the host only ever sees a
+project glyph; a non-control reaction (a casual 👍) normalizes to `undefined` and
+is ignored. This closed a real gap: the host compared unicode glyphs while Slack
+delivered shortcodes, so **every** reaction control (approve/deny, stop,
+retry/rewind/checkpoint) was silently dead off-Discord until each adapter
+normalized its own reactions.
 
 ---
 
@@ -273,19 +296,22 @@ Per platform the new surface is small: a `connect`/event-normalize path, a
 `send`/`react`/`edit`/`dm` path, and a `capabilities()`. The cards, the merge
 gate, the permission model, the Workbench logic — all reused verbatim.
 
-### Status (2026-06-01)
+### Status (2026-06-16)
 
 | Step | State |
 |---|---|
 | 1 Seam (`messaging-adapter.ts`) | ✅ done |
 | 2 Discord port (`adapters-msg/discord.ts`) | ✅ done — zero behavior change, all tests green, `discord.js` isolated to this one file |
-| 3 Fallback layer (`messaging-fallback.ts` + tests) | ✅ done |
-| 4 Slack / Telegram / WhatsApp / iMessage adapters | ⚠️ **walking skeletons** — implemented, wired into `makeMessagingAdapter`, and typecheck-verified, but **not live-tested** (each needs real credentials; treat as unverified until you run it) |
-| 5 Setup wizard | ✅ `bun setup.ts` asks the platform per agent (`AgentConfig.platform`) |
+| 3 Fallback layer (`messaging-fallback.ts` + tests) | ✅ done — includes inbound reaction normalization (`normalizeUnicodeReaction` / `normalizeSlackReaction`) |
+| 4 Slack / Telegram / WhatsApp / iMessage adapters | ⚠️ **walking skeletons** — implemented, wired into `makeMessagingAdapter`, typecheck-verified, and now **explicitly gated as experimental** (`capabilities().experimental = true`), but still **not live-tested** (each needs real credentials; treat as unverified until you run it) |
+| 5 Setup wizard | ✅ `bun setup.ts` asks the platform per agent (`AgentConfig.platform`), warns on non-Discord, and **requires an explicit confirm** to pick one |
 
 Select a platform when adding an agent in `bun setup.ts`; `discord` stays the
-default and omits the field. Each non-Discord adapter's file header documents its
-exact API mechanism and what is real vs stubbed.
+default and omits the field. Picking a non-Discord platform takes an explicit
+opt-in confirm, and the relay logs a loud experimental-platform warning at boot
+for any agent on one — they never look production-ready by accident. Each
+non-Discord adapter's file header documents its exact API mechanism and what is
+real vs stubbed.
 
 ### Per-platform credentials
 
@@ -295,7 +321,7 @@ platforms read additional env vars (the setup wizard prints these as a hint):
 | Platform | `tokenEnv` value | Extra `.env` vars | Notes |
 |---|---|---|---|
 | Discord | bot token | — | production |
-| Slack | bot token `xoxb-…` | `SLACK_APP_TOKEN` (`xapp-…`, Socket Mode) | two-token model |
+| Slack | bot token `xoxb-…` | app-level token `xapp-…` (Socket Mode), in a **per-agent** env var named via `appTokenEnv`; falls back to global `SLACK_APP_TOKEN` | two-token model |
 | Telegram | BotFather token | — | long-poll; reactions need a supergroup |
 | WhatsApp | system-user access token | `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_PORT` | inbound needs a **public webhook** |
 | iMessage | (unused) | — | macOS-only; needs **Full Disk Access** to read `chat.db` |
@@ -326,5 +352,14 @@ adapter rather than a parallel architecture.
   cannot edit/unsend, so the Workbench reposts rather than edits.
 - **Reaction-driven controls degrade to text commands** on whitelist/none
   platforms — the same ledger verbs, a less tactile surface.
+- **Non-Discord adapters are experimental/opt-in.** They carry
+  `experimental: true`, `bun setup.ts` requires an explicit confirm to pick one,
+  and the relay logs an experimental-platform warning per agent at boot. Discord
+  is the one production-tested surface.
+- **Per-agent webhook-port isolation is deferred** for WhatsApp/iMessage. Two
+  same-platform agents sharing a webhook/DB port collide; the relay detects the
+  resulting `EADDRINUSE` at startup and names the port conflict (rather than
+  mislabeling it a credential error), but giving each agent its own port is still
+  a manual step.
 - **The in-process `claude-sdk` agent runtime is orthogonal** to all of this;
   messaging platform and agent runtime vary independently.

@@ -162,6 +162,28 @@ keep both on for untrusted work.
 
 ---
 
+## Reading local sessions stays inside the workspace
+
+Session sharing (importing or resuming a local coding-agent session — see
+[`session-sharing.md`](session-sharing.md)) reads transcripts off disk, so it is
+held to the same workspace boundary as everything else:
+
+- **Import verifies workspace membership first.** Before reading a chosen
+  session, the import path confirms the session id belongs to the agent's
+  workspace via the workspace-filtered `list()`. This closes a cross-workspace
+  read leak: the lower-level `read(id)` scans by bare file stem and isn't
+  workspace-filtered on its own, so a same-stem session in *another* project
+  could otherwise be returned. If the transcript records its own cwd, that is
+  re-checked against the workspace too (defense in depth). A session outside the
+  workspace is refused, not read.
+- **Resume bindings are re-validated on restart.** A persisted resume binding is
+  only honored if both the runtime *and* the workspace still match. A workspace
+  change clears the binding rather than resuming a session from the **old**
+  workspace — a quieter cross-workspace leak the runtime check alone wouldn't
+  catch.
+
+---
+
 ## Why "ask-first" matters (the one gotcha)
 
 The deny floor and the ask prompts only work **if the agent asks before running a
@@ -190,6 +212,16 @@ on the agent cooperating.
 terminal** by `bun setup.ts` — *never* from a Discord message. Nothing anyone says
 in a channel can change who's allowed or what your agent may do. Permission
 profiles are re-read on every message, so edits take effect with no restart.
+
+**Tokens are referenced by env-var *name*, never stored.** `access.json` holds
+the *name* of the env var that carries a token (`tokenEnv`), not the token
+itself — the value lives in `.env`. Platforms that need a second token follow the
+same rule: a Slack agent's app-level (`xapp-…`, Socket Mode) token is named by a
+per-agent `appTokenEnv` field, falling back to the conventional global
+`SLACK_APP_TOKEN` when absent. Per-agent naming lets two Slack agents avoid
+colliding on one global var, and — like everything else here — `appTokenEnv` is
+written only by setup, never from chat, so the prompt-injection invariant holds
+for both tokens.
 
 **Owner-only approval:** the ✅/Allow buttons are verified against the room's owner
 (by Discord user ID). A peer clicking Allow on your prompt is rejected.

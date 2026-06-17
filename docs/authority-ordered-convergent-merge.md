@@ -271,6 +271,18 @@ propagated between machines (Postgres `NOTIFY` fires on INSERT, not UPDATE). AOC
 removes the UPDATE entirely: supersession is *derived*, and the only thing that
 ever crosses the wire is an immutable INSERT.
 
+The same pattern now closes the divergence for the *other* superseding paths too
+— turns, approvals, knowledge — which still keep a `lifecycle` column outside the
+merge (§7). Those concepts can't drop the UPDATE (their liveness is genuinely
+stateful), so instead the `apply-supersession` synchronization re-derives it on
+each peer: the **winner** interaction carries its losers in an immutable
+`supersedes` field, that INSERT crosses `NOTIFY`, and a peer receiving the winner
+re-applies the lifecycle change locally. The local UPDATE stays for fast local
+reads; convergence rides the operation the store already propagates. The one
+residual limit is shared by all synced state, not specific to the merge: a
+`NOTIFY` missed during a listener disconnect heals on the peer's next
+restart-replay, not in the moment.
+
 ---
 
 ## 6. Worked examples
@@ -295,8 +307,14 @@ The agent is concurrent + interfering + lower rank → **excluded silently**.
 Agent A: `Edit(hello → HI)`. Agent B: `Edit(hello → YO)`. Same region, equal rank.
 The lower-hash branch (say A) is kept; the pair `{A, B}` is recorded as a
 conflict. **State:** `"HI world"` *and* a **conflict card** offering "Take A / Take
-B / Write your own." The fold picked a deterministic provisional text so every
-replica shows the same thing, but it does not pretend the conflict is resolved.
+B / Write your own." Each branch row shows what that branch actually contains
+— the captured intent, e.g. the replacement text or a Write snippet, not an
+opaque "~N bytes" — so Take A vs Take B is a real choice. The fold picked a
+deterministic provisional text so every replica shows the same thing, but it
+does not pretend the conflict is resolved. "Write your own" admits the owner's
+own edit, which (being owner-role and concurrent) dominates both branches and
+clears the region — the card closes (this is AE4 with the owner authoring a
+fresh branch instead of copying one).
 
 ### AE4 — Resolution is just another operation
 The owner picks branch A on the card. We do **not** flip any flag. We admit an
@@ -340,6 +358,22 @@ region-aware, so **disjoint edits still merge** regardless; only genuine
 same-region collisions lose the whole lower op. We pay coarseness exactly where
 two people are already fighting over the same span, which is the least surprising
 place to pay it.
+
+**Binary / non-text Writes.** Capture is for text. A Write of non-UTF-8 content
+(detected by a NUL byte) would be mangled through Yjs's UTF-16 `Y.Text` and then
+write-back would overwrite the real file with the corrupt round-trip — so capture
+**skips** it rather than corrupt it. The scope is honestly Claude-Code-shaped text
+Edit/Write; binary is out of scope, not silently handled.
+
+**Causal chaining onto the *live* set only.** A new edit chains its `parents` onto
+the artifact's current edits so a sequential edit is a *descendant* (history, not
+conflict, per §3.3). Earlier this chained onto *every* slice hash — including
+edits that were dominated or sitting in a conflict. That made the new edit a false
+descendant of a loser, which could mask a real concurrency. It now chains onto the
+**live (kept) hashes only**, so it descends from the live text and stays genuinely
+concurrent with any peer it should contend with. (The fold, the conflict card, and
+write-back all share one membership predicate for "what counts as a versionable
+edit," so they can never silently disagree about the slice they each read.)
 
 **The partial-order "containment lattice."** Our first cross-machine design
 ordered operations by set-containment ("a superset of edits dominates a subset").
