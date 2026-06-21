@@ -10,6 +10,7 @@
 import type { HostContext } from './context.ts'
 import type { ChannelId, Hash } from '../ledger/interaction.ts'
 import { TURN_FOLD, type TurnFoldState } from '../ledger/concepts/turn.ts'
+import { CONFIG_FOLD, configFor, type ConfigFoldState } from '../ledger/concepts/config.ts'
 import { renderWorkbench, workbenchEntries } from '../ledger/render/surface.ts'
 
 /** Max one Workbench edit per scope per this window (Discord rate limit). */
@@ -81,7 +82,16 @@ export class Workbench {
         if (txt) prompts.set(inboundHash, txt)
       }
       const entries = workbenchEntries(turns, scopeId, h => (h ? prompts.get(h) : undefined))
-      text = renderWorkbench(entries, new Date().toISOString())
+      // Per-channel Workbench verbosity (owner `!config workbench …`), resolved
+      // scope→room; defaults to 'normal' if unset or the fold isn't registered.
+      const roomId = this.ctx.roomForScope(scopeId)
+      let verbosity: 'quiet' | 'normal' | 'verbose' = 'normal'
+      try {
+        verbosity = (roomId && configFor(this.ctx.engine.get<ConfigFoldState>(CONFIG_FOLD), roomId).workbenchVerbosity) || 'normal'
+      } catch {
+        /* config fold not registered — keep 'normal' */
+      }
+      text = renderWorkbench(entries, new Date().toISOString(), verbosity)
     } catch {
       return // Turn fold not registered — pill is off.
     }

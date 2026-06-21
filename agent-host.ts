@@ -599,18 +599,21 @@ export class AgentHost {
     const ownerId = liveAgent.ownerUserId
     if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
 
-    // Inbound rate cap — owner can tune per channel (`!config rate/rate-window`),
-    // clamped so it can never disable the spam guard; else the defaults.
-    const rateCfg = this.channelConfigFor(roomId)
-    const rateWindowMs = rateCfg.rateWindowMs ?? 60_000
-    const rateCap = rateCfg.rateCapPerMin ?? 10
+    // Per-channel overlay (owner `!config`): rate cap, require-mention, extra
+    // mention patterns, ack emoji. Read once; clamped values can only tighten.
+    const cfg = this.channelConfigFor(roomId)
+    const rateWindowMs = cfg.rateWindowMs ?? 60_000
+    const rateCap = cfg.rateCapPerMin ?? 10
     const now = Date.now()
     const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < rateWindowMs)
     if (recent.length >= rateCap) return
     this.inboundRate.set(m.authorId, [...recent, now])
 
-    const requireMention = room.requireMention ?? true
-    const mentioned = await this.isMentioned(m, access.mentionPatterns)
+    // require-mention: overlay wins, then the room's RoomConfig, then default-on.
+    // A UX knob only — `guildSenderAllowed` above still gates who is allowed.
+    const requireMention = cfg.requireMention ?? room.requireMention ?? true
+    const mentionPatterns = [...(access.mentionPatterns ?? []), ...(cfg.mentionPatterns ?? [])]
+    const mentioned = await this.isMentioned(m, mentionPatterns)
     if (requireMention && !mentioned) return
 
     this.messaging.typing(m.scope)
@@ -709,7 +712,7 @@ export class AgentHost {
     // Side-table: stash messaging context so synchronization-driven UX can
     // react/edit the inbound message later (ack reaction, DmCourier header).
     const channelLabel = m.scopeLabel ?? `#${roomId}`
-    const ackEmoji = access.ackReaction ?? '👀'
+    const ackEmoji = cfg.ackReaction ?? access.ackReaction ?? '👀'
     // Bounded: markInboundOutcome no longer deletes entries (a 🔁 retry re-marks
     // the same inbound), so FIFO-evict the oldest to keep this from growing forever.
     boundedMapSet(this.inboundByHash, inboundResult.interaction.hash, {

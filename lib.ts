@@ -645,7 +645,20 @@ export type ChannelConfig = {
   rateWindowMs?: number
   /** How long (ms) to wait for the owner's approve/deny before timing out. */
   approvalTimeoutMs?: number
+  /** Whether an @mention is required to trigger the agent in this channel.
+   *  Overrides the room's RoomConfig.requireMention. A UX knob, NOT a trust
+   *  knob — who is *allowed* is still gated by the file allowlist. */
+  requireMention?: boolean
+  /** Extra mention patterns (case-insensitive regexes) for this channel, unioned
+   *  with the global ones. */
+  mentionPatterns?: string[]
+  /** Presence/ack reaction for this channel (overrides the global ackReaction). */
+  ackReaction?: string
+  /** How much detail the pinned Workbench shows in this channel. */
+  workbenchVerbosity?: WorkbenchVerbosity
 }
+
+export type WorkbenchVerbosity = 'quiet' | 'normal' | 'verbose'
 
 /** One owner edit: a partial set of keys, plus `_clear` to remove keys. A reset
  *  is `{ _clear: [keys] }`. Carried as the `config.set` patch's `intent.args`. */
@@ -670,9 +683,12 @@ export const ROLE_MAX_LEN = 1500
 export type ConfigFieldSpec = {
   chatKey: string
   field: keyof ChannelConfig
-  kind: 'text' | 'int' | 'duration'
-  min?: number
+  kind: 'text' | 'int' | 'duration' | 'bool' | 'enum' | 'list'
+  min?: number          // int/duration clamp bounds
   max?: number
+  maxLen?: number       // text / per-list-item character cap (default ROLE_MAX_LEN)
+  maxItems?: number     // list element-count cap
+  values?: readonly string[] // enum allowed values
   help: string
 }
 
@@ -689,7 +705,28 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     help: '`!config rate-window <dur>` — the rate-cap window, e.g. `60s`' },
   { chatKey: 'approval-timeout', field: 'approvalTimeoutMs', kind: 'duration', min: 5_000, max: 3_600_000,
     help: '`!config approval-timeout <dur>` — how long to wait for your ✅/❌, e.g. `5m`' },
+  { chatKey: 'require-mention', field: 'requireMention', kind: 'bool',
+    help: '`!config require-mention <on|off>` — whether an @mention is needed to reply here' },
+  { chatKey: 'mention', field: 'mentionPatterns', kind: 'list', maxItems: 10, maxLen: 100,
+    help: '`!config mention <pat,pat…>` — extra @mention regexes (comma-separated), unioned with the global ones' },
+  { chatKey: 'ack', field: 'ackReaction', kind: 'text', maxLen: 64,
+    help: '`!config ack <emoji>` — the presence reaction used while working here' },
+  { chatKey: 'workbench', field: 'workbenchVerbosity', kind: 'enum', values: ['quiet', 'normal', 'verbose'],
+    help: '`!config workbench <quiet|normal|verbose>` — how much the pinned Workbench shows' },
 ]
+
+const BOOL_TRUE = new Set(['on', 'true', 'yes', '1', 'enable', 'enabled'])
+const BOOL_FALSE = new Set(['off', 'false', 'no', '0', 'disable', 'disabled'])
+
+/** A regex compiles? (mention patterns are user-supplied; never throw on a bad one.) */
+function isValidRegex(pat: string): boolean {
+  try {
+    new RegExp(pat, 'i')
+    return true
+  } catch {
+    return false
+  }
+}
 
 const FIELD_BY_CHATKEY: ReadonlyMap<string, ConfigFieldSpec> = new Map(
   CONFIG_FIELDS.map(f => [f.chatKey, f]),
@@ -745,13 +782,37 @@ export function projectChannelConfig(records: ReadonlyArray<ConfigDeltaRecord>):
     }
     for (const k of delta._clear ?? []) delete out[k]
   }
+  // Coerce + validate + clamp each field by its kind — defense in depth, so even
+  // a junk/out-of-range value in the log can never disable a protection.
   const cfg: Record<string, unknown> = {}
-  if (typeof out.role === 'string' && out.role.trim()) cfg.role = out.role
   for (const spec of CONFIG_FIELDS) {
-    if (spec.kind === 'text') continue
     const v = out[spec.field]
-    if (typeof v === 'number' && Number.isFinite(v)) {
-      cfg[spec.field] = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(v) : v)
+    if (v === undefined) continue
+    switch (spec.kind) {
+      case 'text':
+        if (typeof v === 'string' && v.trim()) cfg[spec.field] = v.slice(0, spec.maxLen ?? ROLE_MAX_LEN)
+        break
+      case 'int':
+      case 'duration':
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          cfg[spec.field] = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(v) : v)
+        }
+        break
+      case 'bool':
+        if (typeof v === 'boolean') cfg[spec.field] = v
+        break
+      case 'enum':
+        if (typeof v === 'string' && spec.values?.includes(v)) cfg[spec.field] = v
+        break
+      case 'list':
+        if (Array.isArray(v)) {
+          const items = v
+            .filter((x): x is string => typeof x === 'string' && x.trim().length > 0 && isValidRegex(x))
+            .map(x => x.slice(0, spec.maxLen ?? 100))
+            .slice(0, spec.maxItems ?? 10)
+          if (items.length) cfg[spec.field] = items
+        }
+        break
     }
   }
   return cfg as ChannelConfig
@@ -808,19 +869,56 @@ export function parseConfigCommand(text: string): ParsedConfigCommand {
 
   const spec = FIELD_BY_CHATKEY.get(head)
   if (spec) {
-    if (spec.kind === 'text') {
-      if (!tail) return { action: 'error', message: `Usage: ${spec.help}.` }
-      if (tail.length > ROLE_MAX_LEN) return { action: 'error', message: `Role brief too long (max ${ROLE_MAX_LEN} chars).` }
-      return { action: 'set', delta: { [spec.field]: tail } as ChannelConfigDelta }
+    const set = (value: unknown): ParsedConfigCommand => ({
+      action: 'set',
+      delta: { [spec.field]: value } as ChannelConfigDelta,
+    })
+    const usage = (): ParsedConfigCommand => ({ action: 'error', message: `Usage: ${spec.help}.` })
+
+    switch (spec.kind) {
+      case 'text': {
+        if (!tail) return usage()
+        const max = spec.maxLen ?? ROLE_MAX_LEN
+        if (tail.length > max) return { action: 'error', message: `Too long (max ${max} chars).` }
+        return set(tail)
+      }
+      case 'int':
+      case 'duration': {
+        const raw = tail.split(/\s+/)[0] ?? ''
+        const parsed =
+          spec.kind === 'duration'
+            ? parseDuration(raw) ?? (/^\d+$/.test(raw) ? Number(raw) : undefined)
+            : /^\d+$/.test(raw) ? Number(raw) : undefined
+        if (parsed === undefined) return usage()
+        return set(clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(parsed) : parsed))
+      }
+      case 'bool': {
+        const t = tail.split(/\s+/)[0]?.toLowerCase() ?? ''
+        if (BOOL_TRUE.has(t)) return set(true)
+        if (BOOL_FALSE.has(t)) return set(false)
+        return usage()
+      }
+      case 'enum': {
+        const t = tail.split(/\s+/)[0]?.toLowerCase() ?? ''
+        if (!spec.values?.includes(t)) {
+          return { action: 'error', message: `\`${spec.chatKey}\` must be one of: ${spec.values?.join(', ')}.` }
+        }
+        return set(t)
+      }
+      case 'list': {
+        const items = tail
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+          .slice(0, spec.maxItems ?? 10)
+        if (items.length === 0) return usage()
+        const tooLong = items.find(p => p.length > (spec.maxLen ?? 100))
+        if (tooLong) return { action: 'error', message: `Pattern too long (max ${spec.maxLen ?? 100} chars).` }
+        const bad = items.find(p => !isValidRegex(p))
+        if (bad) return { action: 'error', message: `Not a valid regex: \`${bad}\`.` }
+        return set(items)
+      }
     }
-    const raw = tail.split(/\s+/)[0] ?? ''
-    const parsed =
-      spec.kind === 'duration'
-        ? parseDuration(raw) ?? (/^\d+$/.test(raw) ? Number(raw) : undefined)
-        : /^\d+$/.test(raw) ? Number(raw) : undefined
-    if (parsed === undefined) return { action: 'error', message: `Usage: ${spec.help}.` }
-    const value = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(parsed) : parsed)
-    return { action: 'set', delta: { [spec.field]: value } as ChannelConfigDelta }
   }
 
   if ((TERMINAL_ONLY_KEYS as readonly string[]).includes(head)) {

@@ -14,7 +14,13 @@
 
 import { formatIsoTime } from './reply-annotations.ts'
 import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts'
-import { CONFIG_FIELDS, configFieldSpec, type ChannelConfig, type ConfigFieldSpec } from '../../lib.ts'
+import {
+  CONFIG_FIELDS,
+  configFieldSpec,
+  type ChannelConfig,
+  type ConfigFieldSpec,
+  type WorkbenchVerbosity,
+} from '../../lib.ts'
 
 /**
  * §9 glyph reference — the complete visual vocabulary, in one place so every
@@ -87,7 +93,11 @@ const MAX_STEPS = 8
  * Edited in place by the glue, so the log grows as the turn runs and then
  * stays put as the trace of that turn.
  */
-export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): string {
+export function renderWorkbench(
+  entries: WorkbenchEntry[],
+  updatedAt?: string,
+  verbosity: WorkbenchVerbosity = 'normal',
+): string {
   const stamp = updatedAt ? formatIsoTime(updatedAt) : ''
   const footer = stamp ? [`-# updated ${stamp}`] : []
   if (entries.length === 0) {
@@ -97,16 +107,21 @@ export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): 
   const blocks = entries
     .slice()
     .sort((a, b) => rank[a.status] - rank[b.status] || a.agent.localeCompare(b.agent))
-    .map(e => renderEntry(e))
+    .map(e => renderEntry(e, verbosity))
   // `-#` subtext only renders at the start of a line, so the timestamp is its
   // own trailing line, never appended to the bold header.
   return ['**Workbench**', ...blocks, ...footer].join('\n')
 }
 
-function renderEntry(e: WorkbenchEntry): string {
+/** Per-verbosity cap on the tool-step lines shown. `quiet` drops them entirely
+ *  (header + state only); `verbose` keeps a longer trace. */
+const STEP_CAP: Record<WorkbenchVerbosity, number> = { quiet: 0, normal: MAX_STEPS, verbose: 20 }
+
+function renderEntry(e: WorkbenchEntry, verbosity: WorkbenchVerbosity = 'normal'): string {
   const head = `${HEAD_GLYPH[e.status]} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`
   const lines = [head]
-  const steps = e.steps.length > MAX_STEPS ? e.steps.slice(e.steps.length - MAX_STEPS) : e.steps
+  const cap = STEP_CAP[verbosity]
+  const steps = e.steps.length > cap ? e.steps.slice(e.steps.length - cap) : e.steps
   const hidden = e.steps.length - steps.length
   if (hidden > 0) lines.push(`-#   … ${hidden} earlier step${hidden === 1 ? '' : 's'}`)
   for (const s of steps) {
@@ -388,6 +403,8 @@ function formatDurationShort(ms: number): string {
 function formatConfigValue(spec: ConfigFieldSpec, value: unknown): string {
   if (spec.kind === 'duration' && typeof value === 'number') return formatDurationShort(value)
   if (spec.kind === 'text' && typeof value === 'string') return quote(value, 300)
+  if (spec.kind === 'bool') return value ? 'on' : 'off'
+  if (spec.kind === 'list' && Array.isArray(value)) return value.map(v => `\`${v}\``).join(', ')
   return String(value)
 }
 
@@ -425,8 +442,10 @@ export function renderConfig(cfg: ChannelConfig, key?: string): string {
 export function renderConfigSet(field: string, value: unknown): string {
   const spec = configFieldSpec(field)
   const label = spec?.chatKey ?? field
-  const detail =
-    spec?.kind === 'text' ? 'a new persona' : `\`${spec ? formatConfigValue(spec, value) : String(value)}\``
+  const shown = spec ? formatConfigValue(spec, value) : String(value)
+  // Echo short values verbatim (numbers, on/off, an emoji); a long one (a role
+  // brief, a big pattern list) is summarized so the confirmation stays compact.
+  const detail = shown.length <= 64 ? `\`${shown}\`` : 'a new value'
   return [
     `${GLYPHS.config} \`${label}\` set to ${detail}.`,
     `-# Takes effect on the next turn here. \`!config reset ${label}\` to clear.`,

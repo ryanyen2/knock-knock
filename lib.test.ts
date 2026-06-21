@@ -530,6 +530,44 @@ test('projectChannelConfig: numeric knobs project and are clamped against junk i
   expect(projectChannelConfig([junk]).loopMaxConsecutive).toBe(50)
 })
 
+// ─── Phase 3: routing & surface/UX knobs ─────────────────────────────────────
+
+test('parseConfigCommand: require-mention is a boolean knob', () => {
+  expect(parseConfigCommand('!config require-mention off')).toEqual({ action: 'set', delta: { requireMention: false } })
+  expect(parseConfigCommand('!config require-mention on')).toEqual({ action: 'set', delta: { requireMention: true } })
+  expect(parseConfigCommand('!config require-mention yes')).toEqual({ action: 'set', delta: { requireMention: true } })
+  expect(parseConfigCommand('!config require-mention maybe')?.action).toBe('error')
+})
+
+test('parseConfigCommand: workbench is an enum knob', () => {
+  expect(parseConfigCommand('!config workbench quiet')).toEqual({ action: 'set', delta: { workbenchVerbosity: 'quiet' } })
+  expect(parseConfigCommand('!config workbench loud')?.action).toBe('error')
+})
+
+test('parseConfigCommand: ack is a short text knob', () => {
+  expect(parseConfigCommand('!config ack 🔄')).toEqual({ action: 'set', delta: { ackReaction: '🔄' } })
+  expect(parseConfigCommand('!config ack')?.action).toBe('error')
+})
+
+test('parseConfigCommand: mention is a comma-separated regex list, validated', () => {
+  expect(parseConfigCommand('!config mention alice, hey alice')).toEqual({
+    action: 'set',
+    delta: { mentionPatterns: ['alice', 'hey alice'] },
+  })
+  // an invalid regex is rejected, not stored.
+  expect(parseConfigCommand('!config mention [unclosed')?.action).toBe('error')
+})
+
+test('projectChannelConfig: bool/enum/list project, with junk filtered out', () => {
+  expect(projectChannelConfig([rec({ requireMention: false }, '2026-06-20T10:00:00.000Z', 'a')]).requireMention).toBe(false)
+  expect(projectChannelConfig([rec({ workbenchVerbosity: 'verbose' } as any, '2026-06-20T10:00:00.000Z', 'b')]).workbenchVerbosity).toBe('verbose')
+  // an invalid enum value in the log is dropped.
+  expect(projectChannelConfig([rec({ workbenchVerbosity: 'loud' } as any, '2026-06-20T10:00:00.000Z', 'c')]).workbenchVerbosity).toBeUndefined()
+  // a list keeps only valid regexes.
+  const list = projectChannelConfig([rec({ mentionPatterns: ['ok', '[bad'] } as any, '2026-06-20T10:00:00.000Z', 'd')])
+  expect(list.mentionPatterns).toEqual(['ok'])
+})
+
 test('wrapChannelRole: frames the brief as persona, not authority, and includes the text', () => {
   const wrapped = wrapChannelRole('you are a reviewer')
   expect(wrapped).toContain('<channel-role>')
