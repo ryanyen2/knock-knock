@@ -53,6 +53,7 @@ import { writeBackVersionable } from './ledger/synchronizations/write-back-versi
 import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
+import { configFold } from './ledger/concepts/config.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -174,6 +175,7 @@ await engine.register(approvalFold)
 await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at reply time
 await engine.register(watchFold) // deferred-continuation primitive (docs/knock-knock-watches.md)
 await engine.register(versionableFold) // file-edit convergence (write-back reads this)
+await engine.register(configFold) // per-channel config overlay (owner !config edits)
 
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
 for (const [key, agent] of selectedEntries) {

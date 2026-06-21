@@ -38,6 +38,8 @@ export const GLYPHS = {
   stop: '🛑', // react on a message to abort the channel's in-flight turn
   // Session sharing (owner imports a prior local coding session's context):
   session: '📥', // share-session card header / imported-context cue
+  // Per-channel config (owner tunes a channel's persona/knobs in-chat):
+  config: '⚙️', // !config command confirmations / view
 } as const
 
 // ─── §4.1 the "now working" workbench ─────────────────────────────────────────
@@ -370,6 +372,47 @@ export function renderRewindAck(action: RewindAction): string {
     case 'checkpoint':
       return `-# ${GLYPHS.checkpoint} checkpoint pinned.`
   }
+}
+
+// ─── per-channel config (!config) ─────────────────────────────────────────────
+
+/** Help for the owner `!config` command. Lists only the chat-settable keys;
+ *  everything else is terminal-managed (and the parser says so when asked). */
+export function renderConfigHelp(): string {
+  return [
+    `${GLYPHS.config} **Channel config** — tune this channel's behavior (owner only)`,
+    '`!config role <text>` — set the agent\'s persona/role for this channel',
+    '`!config get [key]` — show the current overlay',
+    '`!config reset role` — clear it back to the agent default',
+    '-# Identity, the allowlist, and permissions stay terminal-managed (`bun setup.ts`).',
+  ].join('\n')
+}
+
+/** Show the current overlay for a channel (optionally one key). */
+export function renderConfig(cfg: { role?: string }, key?: string): string {
+  const lines = [`${GLYPHS.config} **Channel config**`]
+  if (!key || key === 'role') {
+    lines.push(
+      cfg.role ? `> role: ${quote(cfg.role, 300)}` : '-# role — not set (using the agent default)',
+    )
+  }
+  return lines.join('\n')
+}
+
+/** Terse confirmation after a key is set. */
+export function renderConfigSet(key: string): string {
+  return [
+    `${GLYPHS.config} Channel \`${key}\` updated.`,
+    `-# Takes effect on the next turn here. \`!config reset ${key}\` to clear.`,
+  ].join('\n')
+}
+
+/** Terse confirmation after keys are reset to the base. */
+export function renderConfigReset(keys: string[]): string {
+  return [
+    `${GLYPHS.config} Reset ${keys.map(k => `\`${k}\``).join(', ')} to the agent default.`,
+    '-# Takes effect on the next turn here.',
+  ].join('\n')
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

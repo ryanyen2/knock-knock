@@ -27,6 +27,12 @@ import {
   senderKind,
   isShareSessionCommand,
   isResumeSessionCommand,
+  projectChannelConfig,
+  parseConfigCommand,
+  wrapChannelRole,
+  CHAT_SETTABLE_KEYS,
+  ROLE_MAX_LEN,
+  type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
 } from './lib.ts'
@@ -392,4 +398,101 @@ test('isResumeSessionCommand: recognizes resume phrasing disjoint from share', (
   expect(isResumeSessionCommand('/resume-session')).toBe(true)
   expect(isResumeSessionCommand('please continue the session')).toBe(true)
   expect(isResumeSessionCommand('share the session')).toBe(false)
+})
+
+// ─── per-channel config overlay ──────────────────────────────────────────────
+
+const rec = (delta: ConfigDeltaRecord['delta'], createdAt: string, hash: string): ConfigDeltaRecord => ({
+  delta,
+  createdAt,
+  hash,
+})
+
+test('projectChannelConfig: empty → empty config', () => {
+  expect(projectChannelConfig([])).toEqual({})
+})
+
+test('projectChannelConfig: later (by createdAt) write wins, regardless of array order', () => {
+  const older = rec({ role: 'reviewer' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const newer = rec({ role: 'pair programmer' }, '2026-06-20T11:00:00.000Z', 'bbbb')
+  // Same input in two orders must converge — the fold replay is order-independent.
+  expect(projectChannelConfig([older, newer]).role).toBe('pair programmer')
+  expect(projectChannelConfig([newer, older]).role).toBe('pair programmer')
+})
+
+test('projectChannelConfig: equal createdAt breaks the tie by hash deterministically', () => {
+  const a = rec({ role: 'A' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const b = rec({ role: 'B' }, '2026-06-20T10:00:00.000Z', 'bbbb')
+  // Higher hash sorts last → wins, in either array order.
+  expect(projectChannelConfig([a, b]).role).toBe('B')
+  expect(projectChannelConfig([b, a]).role).toBe('B')
+})
+
+test('projectChannelConfig: _clear removes a key back to the base', () => {
+  const set = rec({ role: 'reviewer' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const clear = rec({ _clear: ['role'] }, '2026-06-20T11:00:00.000Z', 'bbbb')
+  expect(projectChannelConfig([set, clear])).toEqual({})
+})
+
+test('projectChannelConfig: drops a non-string/blank role (defensive against junk in the log)', () => {
+  const blank = rec({ role: '   ' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  expect(projectChannelConfig([blank])).toEqual({})
+})
+
+test('parseConfigCommand: returns null for non-config text', () => {
+  expect(parseConfigCommand('hello there')).toBeNull()
+  expect(parseConfigCommand('!configure something')).toBeNull()
+})
+
+test('parseConfigCommand: bare / help → help', () => {
+  expect(parseConfigCommand('!config')).toEqual({ action: 'help' })
+  expect(parseConfigCommand('!config help')).toEqual({ action: 'help' })
+})
+
+test('parseConfigCommand: set role keeps the full text (spaces preserved)', () => {
+  expect(parseConfigCommand('!config role you are a terse reviewer; no edits')).toEqual({
+    action: 'set',
+    delta: { role: 'you are a terse reviewer; no edits' },
+  })
+})
+
+test('parseConfigCommand: role with no text is an error, not an empty set', () => {
+  const r = parseConfigCommand('!config role')
+  expect(r?.action).toBe('error')
+})
+
+test('parseConfigCommand: an over-long role is rejected', () => {
+  const r = parseConfigCommand(`!config role ${'x'.repeat(ROLE_MAX_LEN + 1)}`)
+  expect(r?.action).toBe('error')
+})
+
+test('parseConfigCommand: get with and without a key', () => {
+  expect(parseConfigCommand('!config get')).toEqual({ action: 'get', key: undefined })
+  expect(parseConfigCommand('!config get role')).toEqual({ action: 'get', key: 'role' })
+})
+
+test('parseConfigCommand: reset requires a settable key', () => {
+  expect(parseConfigCommand('!config reset role')).toEqual({ action: 'reset', keys: ['role'] })
+  expect(parseConfigCommand('!config reset')?.action).toBe('error')
+  expect(parseConfigCommand('!config reset humans')?.action).toBe('error')
+})
+
+test('parseConfigCommand: a terminal-only key is refused by name (the trust surface)', () => {
+  for (const key of ['humans', 'token', 'sandbox', 'deny', 'preset', 'runtime']) {
+    const r = parseConfigCommand(`!config ${key} whatever`)
+    expect(r?.action).toBe('error')
+    if (r?.action === 'error') expect(r.message.toLowerCase()).toContain('terminal')
+  }
+})
+
+test('parseConfigCommand: only `role` is settable from chat in Phase 1', () => {
+  expect(CHAT_SETTABLE_KEYS).toEqual(['role'])
+})
+
+test('wrapChannelRole: frames the brief as persona, not authority, and includes the text', () => {
+  const wrapped = wrapChannelRole('you are a reviewer')
+  expect(wrapped).toContain('<channel-role>')
+  expect(wrapped).toContain('</channel-role>')
+  expect(wrapped).toContain('you are a reviewer')
+  expect(wrapped.toLowerCase()).toContain('no authority')
 })

@@ -46,6 +46,7 @@ import {
   resolveProfileForActor,
   threadNameFromPrompt,
   matchesMentionPattern,
+  wrapChannelRole,
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
@@ -82,6 +83,8 @@ import { Workbench } from './host/workbench.ts'
 import { ConflictUI } from './host/conflict-ui.ts'
 import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
+import { ChannelConfig } from './host/channel-config.ts'
+import { CONFIG_FOLD, configFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -137,6 +140,8 @@ export class AgentHost {
   private readonly watchControl: WatchControl
   /** Session sharing/resume — owner-only import + the per-scope context delivery. */
   private readonly sessionSharing: SessionSharing
+  /** Per-channel config overlay — owner `!config` (persona/role brief, knobs). */
+  private readonly channelConfig: ChannelConfig
   /** Scope (a thread id, or a plain channel id) → the room (parent channel) it
    *  belongs to. The single seam between the task scope the ledger keys on and
    *  the room that permission profiles / roster / routing key on. Populated on
@@ -216,6 +221,7 @@ export class AgentHost {
     this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
       this.resumeSession(action, scopeId, summary),
     )
+    this.channelConfig = new ChannelConfig(ctx)
 
     // Inbound: the adapter normalizes platform events into these three handlers.
     this.messaging.onMessage(m => {
@@ -626,6 +632,20 @@ export class AgentHost {
       return
     }
 
+    // ─── Owner per-channel config (!config) — short-circuit before any admit ──
+    // Owner-only, like the watch/session commands: the command is NOT admitted as
+    // a channel.message, so the agent is never prompted with it and a peer/human
+    // (or a prompt injection) can't reach the config write path. Tunes the
+    // behavioral overlay only (persona/role brief) — identity, the allowlist, and
+    // permissions stay terminal-managed.
+    if (kind === 'owner' && (m.text === '!config' || m.text.startsWith('!config '))) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.channelConfig.handleCommand(controlScope, m.text).catch(e =>
+        this.ui.error(this.key, `config command: ${e}`),
+      )
+      return
+    }
+
     // ─── Resolve the task scope ──────────────────────────────────────────────
     // A message already in a thread runs in that thread. A top-level @mention
     // spawns (or reuses) a task thread, so each task gets its own turn lineage,
@@ -768,6 +788,21 @@ export class AgentHost {
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
 
+  /** This channel's role brief, wrapped for the prompt, or undefined. Read from
+   *  the per-channel config overlay (owner `!config role …`) fresh per turn so a
+   *  change takes effect on the next turn without a session reset. Defensive
+   *  against the fold not being registered. */
+  private channelRoleFor(roomId: ChannelId): string | undefined {
+    let state: ConfigFoldState
+    try {
+      state = this.engine.get<ConfigFoldState>(CONFIG_FOLD)
+    } catch {
+      return undefined
+    }
+    const role = configFor(state, roomId).role
+    return role ? wrapChannelRole(role) : undefined
+  }
+
   private async runTurnForChannel(
     channelId: ChannelId,
     opts: {
@@ -832,7 +867,11 @@ export class AgentHost {
     // delivered only AFTER the turn succeeds (below), so a failed/stopped turn
     // re-offers it next time instead of silently swallowing it.
     const pendingCtx = this.sessionSharing.pendingContext(channelId)
-    const contextPrefix = pendingCtx.prefix
+    // Prepend this channel's role brief (owner !config overlay) ahead of any
+    // imported shared-context, read per-turn so a mid-session role change takes
+    // effect next turn (it rides the Driver's per-turn contextPrefix slot).
+    const roleBrief = this.channelRoleFor(roomId)
+    const contextPrefix = [roleBrief, pendingCtx.prefix].filter(Boolean).join('\n\n') || undefined
 
     let chunks: string[] = []
     let turnError: string | undefined
