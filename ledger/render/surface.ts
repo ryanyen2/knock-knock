@@ -14,6 +14,7 @@
 
 import { formatIsoTime } from './reply-annotations.ts'
 import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts'
+import { CONFIG_FIELDS, configFieldSpec, type ChannelConfig, type ConfigFieldSpec } from '../../lib.ts'
 
 /**
  * §9 glyph reference — the complete visual vocabulary, in one place so every
@@ -376,41 +377,68 @@ export function renderRewindAck(action: RewindAction): string {
 
 // ─── per-channel config (!config) ─────────────────────────────────────────────
 
-/** Help for the owner `!config` command. Lists only the chat-settable keys;
- *  everything else is terminal-managed (and the parser says so when asked). */
+/** Compact human form for a ms duration knob (8000 → `8s`). */
+function formatDurationShort(ms: number): string {
+  if (ms !== 0 && ms % 3_600_000 === 0) return `${ms / 3_600_000}h`
+  if (ms !== 0 && ms % 60_000 === 0) return `${ms / 60_000}m`
+  if (ms % 1_000 === 0) return `${ms / 1_000}s`
+  return `${ms}ms`
+}
+
+function formatConfigValue(spec: ConfigFieldSpec, value: unknown): string {
+  if (spec.kind === 'duration' && typeof value === 'number') return formatDurationShort(value)
+  if (spec.kind === 'text' && typeof value === 'string') return quote(value, 300)
+  return String(value)
+}
+
+/** Help for the owner `!config` command — driven by the field registry so a new
+ *  knob shows up automatically. Everything not listed is terminal-managed. */
 export function renderConfigHelp(): string {
   return [
     `${GLYPHS.config} **Channel config** — tune this channel's behavior (owner only)`,
-    '`!config role <text>` — set the agent\'s persona/role for this channel',
+    ...CONFIG_FIELDS.map(f => f.help),
     '`!config get [key]` — show the current overlay',
-    '`!config reset role` — clear it back to the agent default',
+    '`!config reset <key>` — clear a key back to the agent default',
     '-# Identity, the allowlist, and permissions stay terminal-managed (`bun setup.ts`).',
   ].join('\n')
 }
 
-/** Show the current overlay for a channel (optionally one key). */
-export function renderConfig(cfg: { role?: string }, key?: string): string {
+/** Show the current overlay for a channel — all set knobs, or one by chat key. */
+export function renderConfig(cfg: ChannelConfig, key?: string): string {
   const lines = [`${GLYPHS.config} **Channel config**`]
-  if (!key || key === 'role') {
-    lines.push(
-      cfg.role ? `> role: ${quote(cfg.role, 300)}` : '-# role — not set (using the agent default)',
-    )
+  const fields = key ? CONFIG_FIELDS.filter(f => f.chatKey === key) : CONFIG_FIELDS
+  const shown = fields.filter(f => (cfg as Record<string, unknown>)[f.field] !== undefined)
+  if (shown.length === 0) {
+    lines.push('-# nothing set — using the agent defaults')
+    return lines.join('\n')
+  }
+  for (const f of shown) {
+    const value = (cfg as Record<string, unknown>)[f.field]
+    const rendered = formatConfigValue(f, value)
+    lines.push(f.kind === 'text' ? `> ${f.chatKey}: ${rendered}` : `-# ${f.chatKey}: ${rendered}`)
   }
   return lines.join('\n')
 }
 
-/** Terse confirmation after a key is set. */
-export function renderConfigSet(key: string): string {
+/** Terse confirmation after a knob is set, echoing the stored (clamped) value so
+ *  the owner sees exactly what took effect. */
+export function renderConfigSet(field: string, value: unknown): string {
+  const spec = configFieldSpec(field)
+  const label = spec?.chatKey ?? field
+  const detail =
+    spec?.kind === 'text' ? 'a new persona' : `\`${spec ? formatConfigValue(spec, value) : String(value)}\``
   return [
-    `${GLYPHS.config} Channel \`${key}\` updated.`,
-    `-# Takes effect on the next turn here. \`!config reset ${key}\` to clear.`,
+    `${GLYPHS.config} \`${label}\` set to ${detail}.`,
+    `-# Takes effect on the next turn here. \`!config reset ${label}\` to clear.`,
   ].join('\n')
 }
 
-/** Terse confirmation after keys are reset to the base. */
+/** Terse confirmation after keys are reset to the agent default. Keys are
+ *  canonical field names; shown by their friendly chat key. */
 export function renderConfigReset(keys: string[]): string {
+  const labels = keys.map(k => configFieldSpec(k)?.chatKey ?? k)
   return [
-    `${GLYPHS.config} Reset ${keys.map(k => `\`${k}\``).join(', ')} to the agent default.`,
+    `${GLYPHS.config} Reset ${labels.map(k => `\`${k}\``).join(', ')} to the agent default.`,
     '-# Takes effect on the next turn here.',
   ].join('\n')
 }

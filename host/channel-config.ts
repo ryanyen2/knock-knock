@@ -31,7 +31,7 @@ import {
   renderConfigSet,
 } from '../ledger/render/surface.ts'
 
-export class ChannelConfig {
+export class ChannelConfigControl {
   constructor(private readonly ctx: HostContext) {}
 
   /** The live config-fold state, or an empty view if the fold isn't registered. */
@@ -91,8 +91,11 @@ export class ChannelConfig {
     if (parsed.action === 'reset') {
       await this.ctx.discordSend(scopeId, renderConfigReset(parsed.keys))
     } else {
-      const key = Object.keys(parsed.delta).find(k => k !== '_clear') ?? 'role'
-      await this.ctx.discordSend(scopeId, renderConfigSet(key))
+      const field = Object.keys(parsed.delta).find(k => k !== '_clear') ?? 'role'
+      await this.ctx.discordSend(
+        scopeId,
+        renderConfigSet(field, (parsed.delta as Record<string, unknown>)[field]),
+      )
     }
   }
 }

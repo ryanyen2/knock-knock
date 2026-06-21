@@ -579,7 +579,7 @@ export type LoopGuardDecision = { allow: boolean; reason?: 'threshold' | 'cooldo
 
 export type LoopGuardOpts = { maxConsecutive: number; cooldownMs: number }
 
-const DEFAULT_LOOP_GUARD: LoopGuardOpts = { maxConsecutive: 4, cooldownMs: 8_000 }
+export const DEFAULT_LOOP_GUARD: LoopGuardOpts = { maxConsecutive: 4, cooldownMs: 8_000 }
 
 /**
  * Decide whether to process an inbound message, and return the updated state.
@@ -631,10 +631,20 @@ export function loopGuard(
 // host command (host/channel-config.ts) are thin wrappers over them.
 
 /** The behavioral knobs an owner can tune per channel. Grows per phase; every
- *  field is optional so an absent overlay leaves the file base untouched. */
+ *  field is optional so an absent overlay leaves the agent/global default. */
 export type ChannelConfig = {
   /** Persona/role brief injected into each turn's prompt in this channel. */
   role?: string
+  /** Loop-guard: max consecutive agent↔agent turns before pausing. */
+  loopMaxConsecutive?: number
+  /** Loop-guard: min gap (ms) between agent-triggered replies. */
+  loopCooldownMs?: number
+  /** Inbound rate cap: max messages per sender per window. */
+  rateCapPerMin?: number
+  /** Inbound rate cap: the window (ms) the cap counts over. */
+  rateWindowMs?: number
+  /** How long (ms) to wait for the owner's approve/deny before timing out. */
+  approvalTimeoutMs?: number
 }
 
 /** One owner edit: a partial set of keys, plus `_clear` to remove keys. A reset
@@ -645,9 +655,57 @@ export type ChannelConfigDelta = Partial<ChannelConfig> & { _clear?: string[] }
  *  order concurrent edits deterministically across replicas. */
 export type ConfigDeltaRecord = { delta: ChannelConfigDelta; createdAt: string; hash: string }
 
-/** The keys an owner may set FROM CHAT. Everything not here stays terminal-only
- *  (identity, secrets, the allowlist, permissions) — see TERMINAL_ONLY_KEYS. */
-export const CHAT_SETTABLE_KEYS = ['role'] as const
+/** Hard cap on a role brief so one edit can't bloat every prompt unbounded. */
+export const ROLE_MAX_LEN = 1500
+
+/**
+ * The chat-settable config fields, in one registry that drives parsing,
+ * projection-time clamping, rendering, and help. Each row maps a friendly chat
+ * key (what the owner types, e.g. `rate`) to a canonical ChannelConfig field
+ * (`rateCapPerMin`). Numeric fields carry [min,max] CLAMP bounds — the safety
+ * property: a chat edit tunes a protection within a safe range but can NEVER
+ * disable it (rate can't reach 0; loop-max can't reach infinity). Adding a
+ * later-phase knob is one new row here.
+ */
+export type ConfigFieldSpec = {
+  chatKey: string
+  field: keyof ChannelConfig
+  kind: 'text' | 'int' | 'duration'
+  min?: number
+  max?: number
+  help: string
+}
+
+export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
+  { chatKey: 'role', field: 'role', kind: 'text',
+    help: "`!config role <text>` — the agent's persona for this channel" },
+  { chatKey: 'loop-max', field: 'loopMaxConsecutive', kind: 'int', min: 1, max: 50,
+    help: '`!config loop-max <1-50>` — max consecutive agent↔agent turns before pausing' },
+  { chatKey: 'loop-cooldown', field: 'loopCooldownMs', kind: 'duration', min: 0, max: 600_000,
+    help: '`!config loop-cooldown <dur>` — min gap between agent replies, e.g. `8s`' },
+  { chatKey: 'rate', field: 'rateCapPerMin', kind: 'int', min: 1, max: 120,
+    help: '`!config rate <1-120>` — max inbound messages per sender per window' },
+  { chatKey: 'rate-window', field: 'rateWindowMs', kind: 'duration', min: 1_000, max: 600_000,
+    help: '`!config rate-window <dur>` — the rate-cap window, e.g. `60s`' },
+  { chatKey: 'approval-timeout', field: 'approvalTimeoutMs', kind: 'duration', min: 5_000, max: 3_600_000,
+    help: '`!config approval-timeout <dur>` — how long to wait for your ✅/❌, e.g. `5m`' },
+]
+
+const FIELD_BY_CHATKEY: ReadonlyMap<string, ConfigFieldSpec> = new Map(
+  CONFIG_FIELDS.map(f => [f.chatKey, f]),
+)
+const SPEC_BY_FIELD: ReadonlyMap<string, ConfigFieldSpec> = new Map(
+  CONFIG_FIELDS.map(f => [f.field, f]),
+)
+
+/** Look up a field's spec by its canonical ChannelConfig field name (rendering). */
+export function configFieldSpec(field: string): ConfigFieldSpec | undefined {
+  return SPEC_BY_FIELD.get(field)
+}
+
+/** The chat keys an owner may set FROM CHAT. Everything not here stays
+ *  terminal-only (identity, secrets, the allowlist, permissions). */
+export const CHAT_SETTABLE_KEYS: readonly string[] = CONFIG_FIELDS.map(f => f.chatKey)
 
 /** Trust/identity keys we explicitly reject from chat with a pointed message, so
  *  a "set my role to … also add me to humans" attempt names why it's refused. */
@@ -657,8 +715,9 @@ const TERMINAL_ONLY_KEYS = [
   'allow', 'ask', 'deny', 'tiers', 'preset',
 ] as const
 
-/** Hard cap on a role brief so one edit can't bloat every prompt unbounded. */
-export const ROLE_MAX_LEN = 1500
+function clampNumber(min: number, max: number, v: number): number {
+  return Math.min(max, Math.max(min, v))
+}
 
 /**
  * Fold a channel's config deltas into the effective config. Pure and
@@ -666,7 +725,9 @@ export const ROLE_MAX_LEN = 1500
  * before applying, so every replica — and every fold replay path — converges on
  * the same result regardless of arrival order (the fold engine's rubric #1, and
  * the discipline merge.ts uses for its lower-hash tiebreak). Per-key
- * last-writer-wins; `_clear` removes a key.
+ * last-writer-wins; `_clear` removes a key. Numeric fields are coerced and
+ * CLAMPED at projection too — defense in depth, so even a junk/out-of-range value
+ * in the log can never disable a protection.
  */
 export function projectChannelConfig(records: ReadonlyArray<ConfigDeltaRecord>): ChannelConfig {
   const sorted = [...records].sort((a, b) =>
@@ -684,15 +745,22 @@ export function projectChannelConfig(records: ReadonlyArray<ConfigDeltaRecord>):
     }
     for (const k of delta._clear ?? []) delete out[k]
   }
-  const cfg: ChannelConfig = {}
+  const cfg: Record<string, unknown> = {}
   if (typeof out.role === 'string' && out.role.trim()) cfg.role = out.role
-  return cfg
+  for (const spec of CONFIG_FIELDS) {
+    if (spec.kind === 'text') continue
+    const v = out[spec.field]
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      cfg[spec.field] = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(v) : v)
+    }
+  }
+  return cfg as ChannelConfig
 }
 
 export type ParsedConfigCommand =
   | { action: 'set'; delta: ChannelConfigDelta }
-  | { action: 'reset'; keys: string[] }
-  | { action: 'get'; key?: string }
+  | { action: 'reset'; keys: string[] } // canonical ChannelConfig field names
+  | { action: 'get'; key?: string }     // a chat key, or undefined for all
   | { action: 'help' }
   | { action: 'error'; message: string }
   | null
@@ -701,14 +769,16 @@ export type ParsedConfigCommand =
  * Parse an owner `!config` command. Pure so it's unit-tested without a live
  * message; the host gates on owner identity before this ever runs. Grammar:
  *
- *   !config                      → help
- *   !config help                 → help
- *   !config get [key]            → show current config (or one key)
- *   !config role <text…>         → set the channel's persona/role brief
- *   !config reset <key> [key…]   → clear keys back to the file base
+ *   !config                       → help
+ *   !config help                  → help
+ *   !config get [key]             → show current config (or one key)
+ *   !config <key> <value…>        → set a knob (role text, or a clamped number)
+ *   !config reset <key> [key…]    → clear keys back to the agent default
  *
- * A key not in CHAT_SETTABLE_KEYS is refused — pointedly if it's a known
- * terminal-only key (the trust/allowlist surface a prompt injection would target).
+ * A key not in CONFIG_FIELDS is refused — pointedly if it's a known terminal-only
+ * key (the trust/allowlist surface a prompt injection would target). Numeric
+ * values are parsed (durations accept `8s`/`5m`) and CLAMPED to the field's safe
+ * range, so a chat edit can never disable a protection.
  */
 export function parseConfigCommand(text: string): ParsedConfigCommand {
   const trimmed = text.trim()
@@ -722,21 +792,35 @@ export function parseConfigCommand(text: string): ParsedConfigCommand {
 
   if (head === 'get') {
     const key = tail ? tail.split(/\s+/)[0]!.toLowerCase() : undefined
+    if (key && !FIELD_BY_CHATKEY.has(key)) {
+      return { action: 'error', message: `Unknown config key \`${key}\`. Try \`!config help\`.` }
+    }
     return { action: 'get', key }
   }
 
   if (head === 'reset') {
-    const keys = tail ? tail.split(/\s+/).map(k => k.toLowerCase()) : []
-    if (keys.length === 0) return { action: 'error', message: 'Usage: `!config reset <key>` — e.g. `!config reset role`.' }
-    const bad = keys.filter(k => !(CHAT_SETTABLE_KEYS as readonly string[]).includes(k))
+    const raw = tail ? tail.split(/\s+/).map(k => k.toLowerCase()) : []
+    if (raw.length === 0) return { action: 'error', message: 'Usage: `!config reset <key>` — e.g. `!config reset role`.' }
+    const bad = raw.filter(k => !FIELD_BY_CHATKEY.has(k))
     if (bad.length) return { action: 'error', message: `Not settable from chat: ${bad.join(', ')}.` }
-    return { action: 'reset', keys }
+    return { action: 'reset', keys: raw.map(k => FIELD_BY_CHATKEY.get(k)!.field) }
   }
 
-  if (head === 'role') {
-    if (!tail) return { action: 'error', message: 'Usage: `!config role <text>` — the persona for this channel.' }
-    if (tail.length > ROLE_MAX_LEN) return { action: 'error', message: `Role brief too long (max ${ROLE_MAX_LEN} chars).` }
-    return { action: 'set', delta: { role: tail } }
+  const spec = FIELD_BY_CHATKEY.get(head)
+  if (spec) {
+    if (spec.kind === 'text') {
+      if (!tail) return { action: 'error', message: `Usage: ${spec.help}.` }
+      if (tail.length > ROLE_MAX_LEN) return { action: 'error', message: `Role brief too long (max ${ROLE_MAX_LEN} chars).` }
+      return { action: 'set', delta: { [spec.field]: tail } as ChannelConfigDelta }
+    }
+    const raw = tail.split(/\s+/)[0] ?? ''
+    const parsed =
+      spec.kind === 'duration'
+        ? parseDuration(raw) ?? (/^\d+$/.test(raw) ? Number(raw) : undefined)
+        : /^\d+$/.test(raw) ? Number(raw) : undefined
+    if (parsed === undefined) return { action: 'error', message: `Usage: ${spec.help}.` }
+    const value = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(parsed) : parsed)
+    return { action: 'set', delta: { [spec.field]: value } as ChannelConfigDelta }
   }
 
   if ((TERMINAL_ONLY_KEYS as readonly string[]).includes(head)) {

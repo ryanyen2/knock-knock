@@ -47,6 +47,9 @@ import {
   threadNameFromPrompt,
   matchesMentionPattern,
   wrapChannelRole,
+  DEFAULT_LOOP_GUARD,
+  type ChannelConfig,
+  type LoopGuardOpts,
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
@@ -83,7 +86,7 @@ import { Workbench } from './host/workbench.ts'
 import { ConflictUI } from './host/conflict-ui.ts'
 import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
-import { ChannelConfig } from './host/channel-config.ts'
+import { ChannelConfigControl } from './host/channel-config.ts'
 import { CONFIG_FOLD, configFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 
 const RECENT_BOT_MSG_CAP = 200
@@ -141,7 +144,7 @@ export class AgentHost {
   /** Session sharing/resume — owner-only import + the per-scope context delivery. */
   private readonly sessionSharing: SessionSharing
   /** Per-channel config overlay — owner `!config` (persona/role brief, knobs). */
-  private readonly channelConfig: ChannelConfig
+  private readonly channelConfig: ChannelConfigControl
   /** Scope (a thread id, or a plain channel id) → the room (parent channel) it
    *  belongs to. The single seam between the task scope the ledger keys on and
    *  the room that permission profiles / roster / routing key on. Populated on
@@ -221,7 +224,7 @@ export class AgentHost {
     this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
       this.resumeSession(action, scopeId, summary),
     )
-    this.channelConfig = new ChannelConfig(ctx)
+    this.channelConfig = new ChannelConfigControl(ctx)
 
     // Inbound: the adapter normalizes platform events into these three handlers.
     this.messaging.onMessage(m => {
@@ -341,9 +344,20 @@ export class AgentHost {
   }
 
   /** prompt-on-message asks "who responds on this scope?" — yes iff this host
-   *  serves the room the scope belongs to. */
-  getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
-    return this.roomForScope(scopeId) ? { agentKey: this.key } : undefined
+   *  serves the room the scope belongs to. Also resolves the room's loop-guard
+   *  opts (owner `!config loop-max/loop-cooldown` overlay, else the defaults) so
+   *  the sync's gate uses this channel's tuned thresholds. */
+  getAgentForChannel(scopeId: ChannelId): { agentKey: string; loopGuardOpts: LoopGuardOpts } | undefined {
+    const roomId = this.roomForScope(scopeId)
+    if (!roomId) return undefined
+    const cfg = this.channelConfigFor(roomId)
+    return {
+      agentKey: this.key,
+      loopGuardOpts: {
+        maxConsecutive: cfg.loopMaxConsecutive ?? DEFAULT_LOOP_GUARD.maxConsecutive,
+        cooldownMs: cfg.loopCooldownMs ?? DEFAULT_LOOP_GUARD.cooldownMs,
+      },
+    }
   }
 
   /** Record the task scope a top-level message spawned, FIFO-bounded so the map
@@ -585,9 +599,14 @@ export class AgentHost {
     const ownerId = liveAgent.ownerUserId
     if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
 
+    // Inbound rate cap — owner can tune per channel (`!config rate/rate-window`),
+    // clamped so it can never disable the spam guard; else the defaults.
+    const rateCfg = this.channelConfigFor(roomId)
+    const rateWindowMs = rateCfg.rateWindowMs ?? 60_000
+    const rateCap = rateCfg.rateCapPerMin ?? 10
     const now = Date.now()
-    const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < 60_000)
-    if (recent.length >= 10) return
+    const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < rateWindowMs)
+    if (recent.length >= rateCap) return
     this.inboundRate.set(m.authorId, [...recent, now])
 
     const requireMention = room.requireMention ?? true
@@ -788,19 +807,29 @@ export class AgentHost {
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
 
-  /** This channel's role brief, wrapped for the prompt, or undefined. Read from
-   *  the per-channel config overlay (owner `!config role …`) fresh per turn so a
-   *  change takes effect on the next turn without a session reset. Defensive
-   *  against the fold not being registered. */
-  private channelRoleFor(roomId: ChannelId): string | undefined {
-    let state: ConfigFoldState
+  /** The per-channel config overlay for a room (owner `!config` edits), or {} if
+   *  unset / the fold isn't registered. The single read seam: the role brief,
+   *  loop-guard/rate-cap knobs, and approval timeout all resolve through this. */
+  private channelConfigFor(roomId: ChannelId): ChannelConfig {
     try {
-      state = this.engine.get<ConfigFoldState>(CONFIG_FOLD)
+      return configFor(this.engine.get<ConfigFoldState>(CONFIG_FOLD), roomId)
     } catch {
-      return undefined
+      return {}
     }
-    const role = configFor(state, roomId).role
+  }
+
+  /** This channel's role brief, wrapped for the prompt, or undefined. Read fresh
+   *  per turn so a `!config role …` change takes effect next turn (no reset). */
+  private channelRoleFor(roomId: ChannelId): string | undefined {
+    const role = this.channelConfigFor(roomId).role
     return role ? wrapChannelRole(role) : undefined
+  }
+
+  /** This channel's approval timeout override (ms), or undefined to use the
+   *  default. awaitVerdict treats undefined as DEFAULT_VERDICT_TIMEOUT_MS. */
+  private approvalTimeoutFor(scopeId: ChannelId): number | undefined {
+    const roomId = this.roomForScope(scopeId)
+    return roomId ? this.channelConfigFor(roomId).approvalTimeoutMs : undefined
   }
 
   private async runTurnForChannel(
@@ -963,7 +992,9 @@ export class AgentHost {
               input: req.input,
             })
             .catch(err => this.ui.error(this.key, `approvals post: ${err}`))
-          return awaitVerdict(this.store, toolReqHash)
+          // Per-channel approval timeout override (`!config approval-timeout`),
+          // else awaitVerdict's default.
+          return awaitVerdict(this.store, toolReqHash, this.approvalTimeoutFor(channelId))
         },
         ctx,
       ),

@@ -485,8 +485,49 @@ test('parseConfigCommand: a terminal-only key is refused by name (the trust surf
   }
 })
 
-test('parseConfigCommand: only `role` is settable from chat in Phase 1', () => {
-  expect(CHAT_SETTABLE_KEYS).toEqual(['role'])
+test('parseConfigCommand: role plus the safety/limit knobs are settable from chat', () => {
+  expect(CHAT_SETTABLE_KEYS).toContain('role')
+  expect(CHAT_SETTABLE_KEYS).toContain('loop-max')
+  expect(CHAT_SETTABLE_KEYS).toContain('rate')
+  expect(CHAT_SETTABLE_KEYS).toContain('approval-timeout')
+})
+
+test('parseConfigCommand: an int knob parses to its canonical field', () => {
+  expect(parseConfigCommand('!config rate 30')).toEqual({ action: 'set', delta: { rateCapPerMin: 30 } })
+  expect(parseConfigCommand('!config loop-max 8')).toEqual({ action: 'set', delta: { loopMaxConsecutive: 8 } })
+})
+
+test('parseConfigCommand: a numeric knob is CLAMPED to its safe range (can\'t disable a guard)', () => {
+  // rate min is 1 — 0 would disable the spam guard.
+  expect(parseConfigCommand('!config rate 0')).toEqual({ action: 'set', delta: { rateCapPerMin: 1 } })
+  // rate max is 120.
+  expect(parseConfigCommand('!config rate 9999')).toEqual({ action: 'set', delta: { rateCapPerMin: 120 } })
+  // loop-max max is 50.
+  expect(parseConfigCommand('!config loop-max 1000')).toEqual({ action: 'set', delta: { loopMaxConsecutive: 50 } })
+})
+
+test('parseConfigCommand: a duration knob accepts 8s / 5m and stores ms', () => {
+  expect(parseConfigCommand('!config loop-cooldown 8s')).toEqual({ action: 'set', delta: { loopCooldownMs: 8000 } })
+  expect(parseConfigCommand('!config approval-timeout 5m')).toEqual({ action: 'set', delta: { approvalTimeoutMs: 300000 } })
+  // a bare integer is treated as ms.
+  expect(parseConfigCommand('!config loop-cooldown 4000')).toEqual({ action: 'set', delta: { loopCooldownMs: 4000 } })
+})
+
+test('parseConfigCommand: a non-numeric value for a numeric knob is an error', () => {
+  expect(parseConfigCommand('!config rate abc')?.action).toBe('error')
+  expect(parseConfigCommand('!config loop-max')?.action).toBe('error')
+})
+
+test('parseConfigCommand: reset maps the chat key to its canonical field', () => {
+  expect(parseConfigCommand('!config reset rate')).toEqual({ action: 'reset', keys: ['rateCapPerMin'] })
+})
+
+test('projectChannelConfig: numeric knobs project and are clamped against junk in the log', () => {
+  const good = rec({ rateCapPerMin: 30 }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  expect(projectChannelConfig([good]).rateCapPerMin).toBe(30)
+  // an out-of-range value somehow in the log is clamped at projection (defense in depth).
+  const junk = rec({ loopMaxConsecutive: 9999 } as any, '2026-06-20T10:00:00.000Z', 'bbbb')
+  expect(projectChannelConfig([junk]).loopMaxConsecutive).toBe(50)
 })
 
 test('wrapChannelRole: frames the brief as persona, not authority, and includes the text', () => {
