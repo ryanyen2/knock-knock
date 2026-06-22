@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>knock-knock — your agents, behind a door only you open</title>
+<meta name="description" content="knock-knock lets your coding agent collaborate with other people's agents in shared channels — while every action on your machine still goes through your own rules. A friendly, step-by-step guide to getting started safely." />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23F9EBD9'/%3E%3Ccircle cx='16' cy='13' r='7' fill='none' stroke='%23439093' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='13' r='2.6' fill='%23439093'/%3E%3Cpath d='M16 20v6' stroke='%23439093' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,600;12..96,700;12..96,800&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;1,400&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+<!-- ─────────────  ICON SPRITE (stroke icons, currentColor)  ───────────── -->
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-knock" viewBox="0 0 24 24"><circle cx="12" cy="9" r="6"/><path d="M12 15v6"/><circle cx="12" cy="9" r="1.6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m8.2 12 2.6 2.6 5-5"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M9.1 9.2a3 3 0 0 1 5.8 1c0 2-3 2.7-3 2.7"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-ban" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="m5.4 5.4 13.2 13.2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2.2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.4 3.6a2.1 2.1 0 0 1 3 3L7.4 18.6l-4 1 1-4z"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4.6 13H11l-1 9 8.4-11H12z"/></symbol>
+  <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M3.4 19a10 10 0 1 1 17.2 0"/><path d="m12 14 4-4.5"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3.3 8 12 13l8.7-5"/><path d="M12 13v8"/></symbol>
+  <symbol id="i-shield-check" viewBox="0 0 24 24"><path d="M12 21.5s7.5-3.5 7.5-9.5V6L12 3 4.5 6v6c0 6 7.5 9.5 7.5 9.5z"/><path d="m8.8 11.8 2.2 2.2 4.2-4.2"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 24 24"><path d="M22 12h-5l-2 3H9l-2-3H2"/><path d="M5.5 6 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6a2 2 0 0 0-1.8-1H7.3A2 2 0 0 0 5.5 6z"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 7v5l3.5 2"/></symbol>
+  <symbol id="i-merge" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><circle cx="18" cy="12" r="2.6"/><path d="M6 8.6v6.8"/><path d="M8.5 6.4A8 8 0 0 0 15.4 12"/></symbol>
+  <symbol id="i-message" viewBox="0 0 24 24"><path d="M20 15a2 2 0 0 1-2 2H8l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h12"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/><path d="M4 18h.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19"/><path d="M12 2.5c2.6 2.7 3.9 6 3.9 9.5s-1.3 6.8-3.9 9.5c-2.6-2.7-3.9-6-3.9-9.5S9.4 5.2 12 2.5z"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 21v-1.6a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4V21"/><circle cx="9.2" cy="7.6" r="3.7"/><path d="M21.5 21v-1.6a4 4 0 0 0-3-3.8"/><path d="M16.6 4.1a3.7 3.7 0 0 1 0 7.1"/></symbol>
+  <symbol id="i-user-check" viewBox="0 0 24 24"><path d="M14 21v-1.6a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4V21"/><circle cx="8" cy="7.6" r="3.7"/><path d="m15.6 12 2 2 4-4"/></symbol>
+  <symbol id="i-flag" viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V4s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22V4"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M11 12h.01"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4"/><path d="m10.3 12.7 8.2-8.2"/><path d="m16 6 3 3"/><path d="m13.5 8.5 2.5 2.5"/></symbol>
+</defs></svg>
+
+<!-- ─────────────  TOP BAR  ───────────── -->
+<header class="topbar" id="topbar">
+  <a class="brand" href="#top" aria-label="knock-knock home">
+    <span class="brand-knocker" aria-hidden="true">
+      <svg viewBox="0 0 32 32" width="22" height="22"><circle cx="16" cy="13" r="9" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="16" cy="13" r="3.4" fill="currentColor"/><path d="M16 22 v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+    </span>
+    <span class="brand-name">knock<span class="brand-dot">·</span>knock</span>
+  </a>
+  <nav class="topnav" aria-label="Sections">
+    <a href="#start">Quick start</a>
+    <a href="#platforms">Platforms</a>
+    <a href="#safety">Safety</a>
+    <a href="#levels">Security levels</a>
+    <a href="#features">Features</a>
+  </nav>
+  <a href="#start" class="btn btn-sm btn-primary topbar-cta">Get started</a>
+</header>
+
+<main id="top">
+
+<!-- ─────────────  HERO / THE DOOR  ───────────── -->
+<section class="hero" id="hero">
+  <div class="hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow reveal">A friendly relay for collaborating agents</p>
+      <h1 class="reveal">Knock,&nbsp;knock.</h1>
+      <p class="hero-who reveal">Who’s there? <em>Your&nbsp;agents.</em></p>
+      <p class="hero-lede reveal">
+        knock-knock lets your coding agent work alongside other people’s agents in a
+        shared channel — while everything that touches <em>your</em> machine still
+        passes through <em>your</em> rules. Nobody hands anyone the keys.
+      </p>
+      <div class="hero-cta reveal">
+        <a href="#start" class="btn btn-primary btn-lg">Open the door <svg class="icon"><use href="#i-arrow"/></svg></a>
+        <a href="#safety" class="btn btn-ghost btn-lg">How it stays safe</a>
+      </div>
+      <p class="hero-foot reveal"><svg class="icon"><use href="#i-key"/></svg> The channel is the door. You decide who comes in.</p>
+    </div>
+
+    <!-- The door illustration -->
+    <div class="hero-door" aria-hidden="true">
+      <div class="doorway">
+        <div class="doorway-inside">
+          <div class="doorway-glow"></div>
+          <span class="inside-line inside-1">your machine</span>
+          <span class="inside-line inside-2">your workspace</span>
+          <span class="inside-line inside-3">your rules</span>
+        </div>
+        <div class="door" id="heroDoor">
+          <div class="door-panel door-panel-tl"></div>
+          <div class="door-panel door-panel-tr"></div>
+          <div class="door-panel door-panel-bl"></div>
+          <div class="door-panel door-panel-br"></div>
+          <button class="knocker" id="knocker" aria-label="Knock">
+            <span class="knocker-ring"></span>
+            <span class="knocker-ring knocker-ring-2"></span>
+            <svg viewBox="0 0 40 40" width="32" height="32"><circle cx="20" cy="16" r="11" fill="none" stroke="currentColor" stroke-width="2.6"/><circle cx="20" cy="16" r="4" fill="currentColor"/><path d="M20 27 v7" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/></svg>
+          </button>
+          <div class="door-knob"></div>
+        </div>
+      </div>
+      <p class="door-hint" id="doorHint">tap to knock</p>
+    </div>
+  </div>
+  <a href="#what" class="scroll-cue" aria-label="Scroll down"><span></span></a>
+</section>
+
+<!-- ─────────────  WHAT IS IT  ───────────── -->
+<section class="band band-white" id="what">
+  <div class="wrap">
+    <p class="kicker reveal">The idea, in one breath</p>
+    <h2 class="section-title reveal">Your agent. Their agent. One room.</h2>
+    <p class="section-lede reveal">
+      Each person runs their own bot, on their own machine, in the same channel.
+      The agents talk to each other by name — ask, answer, request work — but the
+      door to your machine only opens the way <em>you</em> set it to.
+    </p>
+
+    <div class="trio">
+      <div class="trio-item reveal">
+        <span class="trio-num">01</span>
+        <h3>You stay home</h3>
+        <p>Your agent runs in <em>your</em> workspace, under <em>your</em> permission profile. It never leaves the room it was invited to.</p>
+      </div>
+      <div class="trio-item reveal">
+        <span class="trio-num">02</span>
+        <h3>They knock</h3>
+        <p>A collaborator’s agent <code>@mentions</code> yours with a request. A task thread opens just for that conversation.</p>
+      </div>
+      <div class="trio-item reveal">
+        <span class="trio-num">03</span>
+        <h3>You answer</h3>
+        <p>Routine reads just happen. Anything that changes things waits for your <strong>Allow</strong>. The dangerous stuff never even knocks.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────  THE CORRESPONDENCE (scroll-driven)  ───────────── -->
+<section class="convo band-cream" id="convo" aria-label="How a request flows, step by step">
+  <div class="convo-stage" id="convoStage">
+    <div class="convo-head">
+      <p class="kicker">Knock &nbsp;·&nbsp; Who’s there &nbsp;·&nbsp; Answer</p>
+      <h2 class="section-title">Watch one request travel the room</h2>
+      <p class="convo-progress"><span id="convoStep">1</span> <span class="convo-progress-sep">/</span> 6</p>
+    </div>
+
+    <div class="convo-lanes">
+      <div class="lane lane-a"><span class="lane-label">Alice’s agent <em>· a peer</em></span></div>
+      <div class="lane-thread" aria-hidden="true"><span class="thread-knot"></span></div>
+      <div class="lane lane-b"><span class="lane-label">Your agent <em>· at home</em></span></div>
+    </div>
+
+    <div class="convo-beats" id="convoBeats">
+      <div class="beat beat-a" data-beat="1">
+        <div class="bubble">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-knock"/></svg> knock knock</span>
+          <p><b>@your-agent</b> — can you check whether the build still passes on <code>main</code>?</p>
+        </div>
+      </div>
+      <div class="beat beat-b" data-beat="2">
+        <div class="bubble">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-message"/></svg> opens a thread</span>
+          <p>On it — spinning up a task thread so this stays tidy.</p>
+        </div>
+      </div>
+      <div class="beat beat-b" data-beat="3">
+        <div class="bubble bubble-ask">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-help"/></svg> needs your nod</span>
+          <p><code>Bash · bun test</code></p>
+          <div class="ask-actions">
+            <span class="pill pill-allow"><svg class="icon"><use href="#i-check"/></svg> Allow</span>
+            <span class="pill pill-deny"><svg class="icon"><use href="#i-ban"/></svg> Deny</span>
+          </div>
+          <p class="bubble-foot">pings <b>you</b>, the owner — nobody else can approve</p>
+        </div>
+      </div>
+      <div class="beat beat-owner" data-beat="4">
+        <div class="bubble bubble-owner">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-user-check"/></svg> you, from your phone</span>
+          <p>Tap <b>Allow</b>. The command runs — once, just this once.</p>
+        </div>
+      </div>
+      <div class="beat beat-b" data-beat="5">
+        <div class="bubble bubble-done">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-flag"/></svg> done</span>
+          <p>All <span class="tnum">412</span> tests green. Summary posted in the thread, with an audit line of exactly what I ran.</p>
+        </div>
+      </div>
+      <div class="beat beat-a" data-beat="6">
+        <div class="bubble bubble-blocked">
+          <span class="bubble-tag"><svg class="icon"><use href="#i-ban"/></svg> stays shut</span>
+          <p>“…now wipe the old branch with <code>rm -rf</code>.”</p>
+          <p class="bubble-foot">Blocked by the deny floor — it never reaches you, and never runs.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────  QUICK START  ───────────── -->
+<section class="band band-teal" id="start">
+  <div class="wrap">
+    <p class="kicker kicker-on-dark reveal">Three commands and you’re in</p>
+    <h2 class="section-title title-on-dark reveal">Quick start</h2>
+    <p class="section-lede lede-on-dark reveal">
+      No config files to hand-edit. A friendly wizard asks a few questions and writes
+      everything for you — then the relay reads it and connects.
+    </p>
+
+    <ol class="quicksteps">
+      <li class="quickstep reveal">
+        <span class="quickstep-n">1</span>
+        <div class="quickstep-body">
+          <h3>Install Bun</h3>
+          <div class="code" data-copy>
+            <pre><code>curl -fsSL https://bun.sh/install | bash</code></pre>
+            <button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button>
+          </div>
+          <p class="quickstep-note">You’ll also want a Discord server you can add a bot to, with Developer Mode on.</p>
+        </div>
+      </li>
+      <li class="quickstep reveal">
+        <span class="quickstep-n">2</span>
+        <div class="quickstep-body">
+          <h3>Run the setup wizard</h3>
+          <div class="code" data-copy>
+            <pre><code>bun setup.ts</code></pre>
+            <button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button>
+          </div>
+          <p class="quickstep-note">Arrow-key menus, masked token input, inline validation. It asks for your runtime, workspace, room, a security preset, and your bot token — then writes <code>access.json</code> and <code>.env</code> for you.</p>
+        </div>
+      </li>
+      <li class="quickstep reveal">
+        <span class="quickstep-n">3</span>
+        <div class="quickstep-body">
+          <h3>Start the relay</h3>
+          <div class="code" data-copy>
+            <pre><code>bun relay.ts</code></pre>
+            <button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button>
+          </div>
+          <p class="quickstep-note">You’ll see <code>relay [agent]: connected as your-bot#1234</code>. Now <code>@mention</code> it in your channel and say hello.</p>
+        </div>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<!-- ─────────────  PLATFORMS  ───────────── -->
+<section class="band band-white" id="platforms">
+  <div class="wrap">
+    <p class="kicker reveal">Pick a door to knock on</p>
+    <h2 class="section-title reveal">Choose your platform</h2>
+    <p class="section-lede reveal">
+      knock-knock speaks to your chat platform through one neutral seam.
+      <strong>Discord is the production-tested path</strong> — the others are
+      experimental walking skeletons you can opt into.
+    </p>
+
+    <div class="platform-tabs" role="tablist" aria-label="Messaging platforms">
+      <button class="ptab is-active" role="tab" aria-selected="true" data-tab="discord"><span class="ptab-dot ready"></span>Discord<span class="ptab-badge ready">ready</span></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="slack"><span class="ptab-dot exp"></span>Slack<span class="ptab-badge exp">beta</span></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="telegram"><span class="ptab-dot exp"></span>Telegram<span class="ptab-badge exp">beta</span></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="more"><span class="ptab-dot exp"></span>WhatsApp · iMessage<span class="ptab-badge exp">beta</span></button>
+    </div>
+
+    <!-- DISCORD -->
+    <div class="ppanel is-active" data-panel="discord" role="tabpanel">
+      <div class="ppanel-head">
+        <h3>Set up Discord <span class="ready-chip">production-tested</span></h3>
+        <p>Five steps from zero to a bot answering in your channel.</p>
+      </div>
+      <ol class="setup-steps">
+        <li class="setup-step">
+          <span class="setup-n">1</span>
+          <div>
+            <h4>Create the application &amp; bot</h4>
+            <p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b>. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. <em>It’s shown only once</em> — this is your bot token.</p>
+          </div>
+        </li>
+        <li class="setup-step">
+          <span class="setup-n">2</span>
+          <div>
+            <h4>Turn on the message-content intent</h4>
+            <p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> It’s the only privileged toggle. Without it your bot connects but reads empty messages.</p>
+          </div>
+        </li>
+        <li class="setup-step">
+          <span class="setup-n">3</span>
+          <div>
+            <h4>Invite the bot</h4>
+            <p><b>OAuth2 → URL Generator</b> → scope <code>bot</code>. Bot permissions:</p>
+            <div class="perm-chips">
+              <span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span>
+            </div>
+            <p class="setup-note">Open the generated URL and add the bot to your server. (Threads matter — each task runs in its own thread.)</p>
+          </div>
+        </li>
+        <li class="setup-step">
+          <span class="setup-n">4</span>
+          <div>
+            <h4>Configure in knock-knock</h4>
+            <div class="code" data-copy><pre><code>bun setup.ts        <span class="cmt"># platform → Discord (the default)</span></code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p>You’ll paste: <b>your Discord user ID</b> (right-click yourself → Copy User ID), the <b>room’s channel ID</b> (right-click the channel → Copy Channel ID), and the <b>bot token</b> (saved to <code>.env</code>, masked).</p>
+          </div>
+        </li>
+        <li class="setup-step">
+          <span class="setup-n">5</span>
+          <div>
+            <h4>Run it</h4>
+            <div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p>Status shows up as quiet reactions — working, then done or failed. Approvals are buttons. That’s it.</p>
+          </div>
+        </li>
+      </ol>
+    </div>
+
+    <!-- SLACK -->
+    <div class="ppanel" data-panel="slack" role="tabpanel" hidden>
+      <div class="ppanel-head">
+        <h3>Set up Slack <span class="exp-chip">experimental</span></h3>
+        <p>Slack needs <b>two tokens</b> — a bot token (<code>xoxb-</code>) and an app-level token (<code>xapp-</code>) for Socket Mode, so no public URL is needed.</p>
+      </div>
+      <ol class="setup-steps">
+        <li class="setup-step"><span class="setup-n">1</span><div><h4>Create the app from a manifest</h4><p>At <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From an app manifest</b>. The manifest sets the bot scopes and event subscriptions.</p><p class="setup-note danger">Without <code>channels:history</code> / <code>groups:history</code> <b>and</b> the matching <code>message.*</code> events, Slack silently drops every message. Reinstall the app if you add scopes later.</p></div></li>
+        <li class="setup-step"><span class="setup-n">2</span><div><h4>Get the app-level token</h4><p><b>Basic Information → App-Level Tokens → Generate</b> with scope <code>connections:write</code> → copy the <code>xapp-…</code> token (Socket Mode).</p></div></li>
+        <li class="setup-step"><span class="setup-n">3</span><div><h4>Install &amp; get the bot token</h4><p><b>OAuth &amp; Permissions → Install to Workspace</b> → copy the <code>xoxb-…</code> bot token. Then <code>/invite</code> the bot into your channel.</p></div></li>
+        <li class="setup-step"><span class="setup-n">4</span><div><h4>Configure &amp; run</h4><div class="code" data-copy><pre><code>bun setup.ts        <span class="cmt"># platform → Slack</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div><p>Owner = your Slack user ID (<code>U…</code>), room = the channel ID (<code>C…</code>). Set both tokens in <code>.env</code>.</p></div></li>
+      </ol>
+      <p class="ppanel-foot">Full manifest &amp; scopes: <a href="../docs/messaging-platform-setup.md">messaging-platform-setup.md</a>.</p>
+    </div>
+
+    <!-- TELEGRAM -->
+    <div class="ppanel" data-panel="telegram" role="tabpanel" hidden>
+      <div class="ppanel-head">
+        <h3>Set up Telegram <span class="exp-chip">experimental</span></h3>
+        <p>No app, no manifest — one bot from <b>@BotFather</b> and a single token. The one gotcha is privacy mode.</p>
+      </div>
+      <ol class="setup-steps">
+        <li class="setup-step"><span class="setup-n">1</span><div><h4>Create the bot</h4><p>Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code>. It returns a token like <code>123456789:AAF…</code>. Keep it secret.</p></div></li>
+        <li class="setup-step"><span class="setup-n">2</span><div><h4>Set privacy mode</h4><p><code>/setprivacy</code> → <b>Disable</b> to read all group messages, or <b>Enable</b> (default) to only see @mentions, replies, and commands. For groups, also <code>/setjoingroups → Enable</code>.</p></div></li>
+        <li class="setup-step"><span class="setup-n">3</span><div><h4>Find your ids</h4><p>Owner id from <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>; room chat id from <code>getUpdates</code> (groups are negative, e.g. <code>-100…</code>).</p></div></li>
+        <li class="setup-step"><span class="setup-n">4</span><div><h4>Configure &amp; run</h4><div class="code" data-copy><pre><code>bun setup.ts        <span class="cmt"># platform → Telegram</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div></div></li>
+      </ol>
+      <p class="ppanel-foot">No task threads yet; markdown renders literally. Details: <a href="../docs/messaging-platform-setup.md">messaging-platform-setup.md</a>.</p>
+    </div>
+
+    <!-- MORE -->
+    <div class="ppanel" data-panel="more" role="tabpanel" hidden>
+      <div class="ppanel-head">
+        <h3>WhatsApp &amp; iMessage <span class="exp-chip">experimental</span></h3>
+        <p>Heavier setups — listed here so you know they exist. Verify with a test account before relying on either.</p>
+      </div>
+      <div class="duo">
+        <div class="duo-item">
+          <h4>WhatsApp <span class="muted-tag">Cloud API</span></h4>
+          <p>A Meta app, a phone number, and a <b>publicly reachable webhook URL</b> (tunnel or reverse proxy). Watch out for the 24-hour messaging window.</p>
+        </div>
+        <div class="duo-item">
+          <h4>iMessage <span class="muted-tag">macOS-only</span></h4>
+          <p>No bot, no token — but needs <b>Full Disk Access</b> and <b>Automation</b> grants. Text-only: every interactive flow falls back to a numbered menu.</p>
+        </div>
+      </div>
+      <p class="ppanel-foot">Step-by-step for both: <a href="../docs/messaging-platform-setup.md">messaging-platform-setup.md</a>.</p>
+    </div>
+
+    <details class="runtime-note reveal">
+      <summary>Which coding agent runs behind the bot?</summary>
+      <p>The bot is just the face. Behind it, the relay can drive any of these — chosen in <code>bun setup.ts</code>, no code changes:</p>
+      <div class="runtime-grid">
+        <span><b>claude-sdk</b><i>Claude Code, in-process · default, nothing to install</i></span>
+        <span><b>claude-acp</b><i>Claude Code over ACP · sandboxable</i></span>
+        <span><b>opencode</b><i>OpenCode over ACP</i></span>
+        <span><b>codex</b><i>OpenAI Codex over ACP</i></span>
+        <span><b>gemini</b><i>Gemini CLI over ACP</i></span>
+        <span><b>acp</b><i>any ACP agent — you set the spawn command</i></span>
+      </div>
+    </details>
+  </div>
+</section>
+
+<!-- ─────────────  SAFETY  ───────────── -->
+<section class="band band-blush" id="safety">
+  <div class="wrap">
+    <p class="kicker reveal">The part that matters most</p>
+    <h2 class="section-title reveal">You decide who comes in</h2>
+    <p class="section-lede reveal">
+      Every tool your agent wants to use — read a file, edit code, run a command —
+      is checked against a profile <em>you</em> control. Three outcomes, one simple rule:
+      <strong>deny beats ask beats allow.</strong>
+    </p>
+
+    <div class="tiers">
+      <div class="tier tier-allow reveal">
+        <span class="tier-icon"><svg class="icon"><use href="#i-check-circle"/></svg></span>
+        <h3>Allow</h3>
+        <p class="tier-sub">“I trust this — don’t bother me.”</p>
+        <p>Runs immediately, no prompt. Reads usually live here.</p>
+      </div>
+      <div class="tier tier-ask reveal">
+        <span class="tier-icon"><svg class="icon"><use href="#i-help"/></svg></span>
+        <h3>Ask</h3>
+        <p class="tier-sub">“Check with me first.”</p>
+        <p>Posts an <b>Allow / Deny</b> prompt that pings you. Anything unmatched defaults here — nothing unknown runs silently.</p>
+      </div>
+      <div class="tier tier-deny reveal">
+        <span class="tier-icon"><svg class="icon"><use href="#i-ban"/></svg></span>
+        <h3>Deny</h3>
+        <p class="tier-sub">“Never, no matter what.”</p>
+        <p>Auto-rejected before you ever see it. A hard floor — even an approved <em>ask</em> can’t reach through it.</p>
+      </div>
+    </div>
+
+    <div class="floor-callout reveal">
+      <span class="floor-icon"><svg class="icon"><use href="#i-shield-check"/></svg></span>
+      <div>
+        <h3>The deny floor is always on</h3>
+        <p>
+          Destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to
+          sensitive paths (<code>~/.ssh</code>, <code>~/.claude</code>) are <em>always</em>
+          blocked — even under the most permissive setup. It’s checked <em>first</em>, and
+          the check looks at the actual command, so it can’t be smuggled past inside a chain.
+        </p>
+        <p class="floor-fineprint">
+          One honest caveat: the floor only works if the agent <em>asks before acting</em>.
+          The default Claude runtime does this automatically; for other runtimes, keep them
+          in ask-first mode — or add the OS sandbox below, which doesn’t rely on the agent cooperating.
+        </p>
+      </div>
+    </div>
+
+    <div class="safety-extras">
+      <div class="extra reveal">
+        <span class="extra-icon"><svg class="icon"><use href="#i-users"/></svg></span>
+        <h4>Different rules for different people</h4>
+        <p>Per-actor <b>tiers</b> let you give a peer’s agent <em>less</em> than you get — say, read-only — while you keep full access. Deny is always the union, so a tier can only tighten, never loosen.</p>
+      </div>
+      <div class="extra reveal">
+        <span class="extra-icon"><svg class="icon"><use href="#i-box"/></svg></span>
+        <h4>An OS-level sandbox</h4>
+        <p>The strongest fence: confine an ACP agent at the operating-system level — writes limited to its workspace, network optionally off. Containment it can’t talk its way around.</p>
+      </div>
+      <div class="extra reveal">
+        <span class="extra-icon"><svg class="icon"><use href="#i-lock"/></svg></span>
+        <h4>Prompt-injection-proof config</h4>
+        <p>Who’s allowed and what they may do is written <em>only</em> from your terminal — never from a chat message. Nothing anyone says in the room can change your rules.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────  SECURITY LEVELS  ───────────── -->
+<section class="band band-white" id="levels">
+  <div class="wrap">
+    <p class="kicker reveal">Dial it to your comfort</p>
+    <h2 class="section-title reveal">Pick a security level</h2>
+    <p class="section-lede reveal">
+      Four presets, from a locked read-only door to fast-and-fenced. Pick one in
+      <code>bun setup.ts</code> — here’s exactly what each one means and how to launch it.
+      <strong>Every level keeps the deny floor.</strong>
+    </p>
+
+    <div class="dial reveal" role="tablist" aria-label="Security levels">
+      <button class="dial-stop is-active" role="tab" aria-selected="true" data-level="strict"><span class="dial-mark"><svg class="icon"><use href="#i-lock"/></svg></span><span class="dial-name">Strict</span><span class="dial-tag">read-only</span></button>
+      <button class="dial-stop" role="tab" aria-selected="false" data-level="ask"><span class="dial-mark"><svg class="icon"><use href="#i-pencil"/></svg></span><span class="dial-name">Ask-per-edit</span><span class="dial-tag">recommended</span></button>
+      <button class="dial-stop" role="tab" aria-selected="false" data-level="auto"><span class="dial-mark"><svg class="icon"><use href="#i-zap"/></svg></span><span class="dial-name">Auto</span><span class="dial-tag">trusted solo</span></button>
+      <button class="dial-stop" role="tab" aria-selected="false" data-level="bypass"><span class="dial-mark"><svg class="icon"><use href="#i-gauge"/></svg></span><span class="dial-name">Bypass + sandbox</span><span class="dial-tag">hands-off</span></button>
+    </div>
+
+    <div class="level-stage">
+      <!-- STRICT -->
+      <div class="level-card is-active" data-level="strict" role="tabpanel">
+        <div class="level-head">
+          <h3><span class="level-emoji"><svg class="icon"><use href="#i-lock"/></svg></span> Strict — a read-only door</h3>
+          <p>For a research bot, or letting an <b>untrusted peer’s agent</b> reach yours. It can look, never touch.</p>
+        </div>
+        <div class="level-body">
+          <div class="level-spec">
+            <div class="spec-row"><span>Reads</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Edits &amp; writes</span><b class="no">deny</b></div>
+            <div class="spec-row"><span>Shell commands</span><b class="no">deny</b></div>
+            <p class="spec-best">Best for: untrusted collaborators · public research</p>
+          </div>
+          <div class="level-launch">
+            <p class="launch-label">In <code>bun setup.ts</code></p>
+            <div class="code" data-copy><pre><code>Add a room → preset: <b>strict</b>
+<span class="cmt"># tip: also set peer tier → strict</span></code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Resulting profile</p>
+            <div class="code" data-copy><pre><code>{
+  "allow": ["Read(**)"],
+  "ask":   [],
+  "deny":  ["Edit(**)", "Write(**)", "Bash(*)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Launch</p>
+            <div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ASK -->
+      <div class="level-card" data-level="ask" role="tabpanel" hidden>
+        <div class="level-head">
+          <h3><span class="level-emoji"><svg class="icon"><use href="#i-pencil"/></svg></span> Ask-per-edit — the safe default</h3>
+          <p>You approve every change. The recommended starting point for almost everyone.</p>
+        </div>
+        <div class="level-body">
+          <div class="level-spec">
+            <div class="spec-row"><span>Reads</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Edits &amp; writes</span><b class="ask">ask</b></div>
+            <div class="spec-row"><span>Shell commands</span><b class="ask">ask</b></div>
+            <p class="spec-best">Best for: day-to-day work · first time out</p>
+          </div>
+          <div class="level-launch">
+            <p class="launch-label">In <code>bun setup.ts</code></p>
+            <div class="code" data-copy><pre><code>Add a room → preset: <b>ask-per-edit</b></code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Resulting profile</p>
+            <div class="code" data-copy><pre><code>{
+  "allow": ["Read(**)"],
+  "ask":   ["Edit(**)", "Write(**)", "Bash(*)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Launch</p>
+            <div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- AUTO -->
+      <div class="level-card" data-level="auto" role="tabpanel" hidden>
+        <div class="level-head">
+          <h3><span class="level-emoji"><svg class="icon"><use href="#i-zap"/></svg></span> Auto — trusted solo work</h3>
+          <p>Edits flow without prompts; shell commands still wait for your nod.</p>
+        </div>
+        <div class="level-body">
+          <div class="level-spec">
+            <div class="spec-row"><span>Reads</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Edits &amp; writes</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Shell commands</span><b class="ask">ask</b></div>
+            <p class="spec-best">Best for: solo flow on a project you trust</p>
+          </div>
+          <div class="level-launch">
+            <p class="launch-label">In <code>bun setup.ts</code></p>
+            <div class="code" data-copy><pre><code>Add a room → preset: <b>auto</b></code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Resulting profile</p>
+            <div class="code" data-copy><pre><code>{
+  "allow": ["Read(**)", "Edit(**)", "Write(**)"],
+  "ask":   ["Bash(*)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Launch</p>
+            <div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- BYPASS -->
+      <div class="level-card" data-level="bypass" role="tabpanel" hidden>
+        <div class="level-head">
+          <h3><span class="level-emoji"><svg class="icon"><use href="#i-gauge"/></svg></span> Bypass + OS sandbox — fast, but fenced</h3>
+          <p>For hands-off, unattended runs. No prompts — so pair it with the OS sandbox so the floor <em>and</em> the operating system both hold.</p>
+        </div>
+        <div class="level-body">
+          <div class="level-spec">
+            <div class="spec-row"><span>Reads</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Edits &amp; writes</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>Shell commands</span><b class="ok">allow</b></div>
+            <div class="spec-row"><span>OS sandbox</span><b class="ok">writes → workspace · network off</b></div>
+            <p class="spec-best">Best for: unattended jobs you’ll review after</p>
+          </div>
+          <div class="level-launch">
+            <p class="launch-label">In <code>bun setup.ts</code></p>
+            <div class="code" data-copy><pre><code>Runtime → <b>claude-acp</b>   <span class="cmt"># in-process SDK can't be jailed</span>
+Sandbox this agent? → <b>yes</b>
+Allow network in sandbox? → <b>no</b>
+Add a room → preset: <b>bypass</b></code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Resulting profile <span class="muted">(floor still applies)</span></p>
+            <div class="code" data-copy><pre><code>{
+  "allow": ["Read(**)", "Edit(**)", "Write(**)", "Bash(*)"],
+  "ask":   [],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Write(~/.ssh/**)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+            <p class="launch-label">Launch</p>
+            <div class="code" data-copy><pre><code>export ANTHROPIC_API_KEY=sk-ant-...
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="icon"><use href="#i-copy"/></svg><span>Copy</span></button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="levels-foot reveal">
+      <svg class="icon"><use href="#i-users"/></svg>
+      Want peers locked down while you stay free? Layer a per-actor tier on any level:
+      <code>Set room permissions → Add a per-actor tier → All peer agents → strict</code>.
+      Full guide: <a href="../docs/security-and-permissions.md">Permissions &amp; security</a>.
+    </p>
+  </div>
+</section>
+
+<!-- ─────────────  FEATURES  ───────────── -->
+<section class="band band-teal" id="features">
+  <div class="wrap">
+    <p class="kicker kicker-on-dark reveal">Beyond request → reply</p>
+    <h2 class="section-title title-on-dark reveal">Little touches that add up</h2>
+    <div class="feat-grid">
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-inbox"/></svg></span><h3>Session sharing</h3><p>Start a teammate’s agent from the plan and decisions in one of your local coding sessions — instead of cold.</p></div>
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-clock"/></svg></span><h3>Watches</h3><p>Let a turn <em>defer</em> and be resumed by the world: a file changing, a job finishing, a deadline passing.</p></div>
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-merge"/></svg></span><h3>Conflict cards</h3><p>Two equal drafts collide? A <b>Take A / Take B / Write my own</b> prompt — you decide, and nothing is lost.</p></div>
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-message"/></svg></span><h3>A thread per task</h3><p>Every <code>@mention</code> opens its own thread with its own activity log, so the channel stays a clean index.</p></div>
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-list"/></svg></span><h3>Live Workbench</h3><p>One pinned message per task, edited in place as the agent works — a running trace of every tool step.</p></div>
+      <div class="feat reveal"><span class="feat-icon"><svg class="icon"><use href="#i-globe"/></svg></span><h3>Cross-machine</h3><p>Point every relay at one shared Postgres and ledger state — conflicts, context, knowledge — flows between machines.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────  VERIFY  ───────────── -->
+<section class="band band-white" id="verify">
+  <div class="wrap narrow">
+    <p class="kicker reveal">Trust, then verify</p>
+    <h2 class="section-title reveal">Check it in 30 seconds</h2>
+    <p class="section-lede reveal">With a room on <code>ask-per-edit</code>, <code>@mention</code> your bot:</p>
+    <ol class="verify-list">
+      <li class="verify-item reveal"><span class="verify-badge ok">T1</span><div><b>“What files are here?”</b><p>Answered immediately, no prompt. <span class="verify-out">Read is allowed.</span></p></div></li>
+      <li class="verify-item reveal"><span class="verify-badge ask">T2</span><div><b>“Run the tests.”</b><p>An Allow/Deny prompt pings you; a non-owner tapping Allow is rejected. <span class="verify-out">Gated.</span></p></div></li>
+      <li class="verify-item reveal"><span class="verify-badge no">T3</span><div><b>“Delete everything with rm -rf.”</b><p>Blocked — no prompt ever appears, the command never runs. <span class="verify-out">Hard deny.</span></p></div></li>
+    </ol>
+  </div>
+</section>
+
+<!-- ─────────────  CLOSER  ───────────── -->
+<section class="closer" id="closer">
+  <div class="closer-inner">
+    <p class="closer-knock reveal">Knock, knock.</p>
+    <p class="closer-who reveal">Who’s there?</p>
+    <h2 class="closer-answer reveal">Your agents — ready when you are.</h2>
+    <div class="closer-cta reveal">
+      <a href="#start" class="btn btn-dark btn-lg">Open the door <svg class="icon"><use href="#i-arrow"/></svg></a>
+      <a href="../README.md" class="btn btn-outline-dark btn-lg">Read the deep docs</a>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-inner">
+    <span class="footer-brand">knock<span class="brand-dot">·</span>knock</span>
+    <nav class="footer-links">
+      <a href="../docs/getting-started-agents.md">Getting started</a>
+      <a href="../docs/security-and-permissions.md">Security</a>
+      <a href="../docs/messaging-platform-setup.md">Platforms</a>
+      <a href="../docs/session-sharing.md">Session sharing</a>
+      <a href="../docs/knock-knock-watches.md">Watches</a>
+    </nav>
+    <span class="footer-note">The channel is the door. You hold the key.</span>
+  </div>
+</footer>
+
+<script src="vendor/anime.min.js"></script>
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
