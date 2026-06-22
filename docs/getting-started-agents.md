@@ -1,5 +1,9 @@
 # Getting started: running knock-knock with different agents
 
+> **New to knock-knock?** Start with the **[Setup guide](setup.md)** for the
+> full zero-to-running-group-chat journey. This page is the per-runtime
+> reference it links into.
+
 The relay drives **any** coding agent through one `AgentAdapter` seam. You pick
 the agent with the `runtime` field on the agent, set during `bun setup.ts` —
 not with an environment variable. Nothing in `relay.ts` / `agent-host.ts` /

@@ -49,6 +49,8 @@ bun relay.ts                  # start the relay
 
 `bun setup.ts` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run, then an action menu once an agent exists. Re-run it any time to add agents, rooms, peers, humans, or bot tokens.
 
+> **Want a guided, top-to-bottom walkthrough?** The **[Setup guide](docs/setup.md)** takes you from zero to a running group chat step by step — platform setup, picking a runtime, choosing a permission preset, verifying it works, and adding a teammate's agent — linking into the deep docs as it goes. Start there if this is your first time.
+
 ---
 
 # Production setup — two collaborators

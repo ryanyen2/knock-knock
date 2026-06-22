@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>knock-knock — setup guide</title>
+<meta name="description" content="Set up knock-knock step by step: install, create a bot on your chat platform, pick a coding agent, choose what it may do, verify it works, and add a teammate's agent to the same group chat." />
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231D1D1F'/%3E%3Ccircle cx='16' cy='13' r='7' fill='none' stroke='%23FBFBFD' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='13' r='2.6' fill='%23FBFBFD'/%3E%3Cpath d='M16 20v6' stroke='%23FBFBFD' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+
+<svg class="sprite" width="0" height="0" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-knock" viewBox="0 0 24 24"><circle cx="12" cy="9.5" r="6"/><path d="M12 15.5v5"/><circle cx="12" cy="9.5" r="1.5"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="m11 6-6 6 6 6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11.5" height="11.5" rx="2.4"/><path d="M5.5 15H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v.5"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4.5A2 2 0 0 1 6 3h13v15H6a2 2 0 0 0-2 2z"/><path d="M19 18v3H6.5A2.5 2.5 0 0 1 4 18.5"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 11v5"/><path d="M12 7.5h.01"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 21.5s7.5-3.6 7.5-9.5V6L12 3 4.5 6v6c0 5.9 7.5 9.5 7.5 9.5z"/><path d="m8.8 11.8 2.2 2.2 4.2-4.2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20.5v-1.5a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4v1.5"/><circle cx="9.2" cy="7.8" r="3.6"/><path d="M21.5 20.5v-1.5a4 4 0 0 0-3-3.8"/><path d="M16.6 4.3a3.6 3.6 0 0 1 0 7"/></symbol>
+</defs></svg>
+
+<!-- ───────────  NAV  ─────────── -->
+<header class="nav" id="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html" aria-label="knock-knock home">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="17" height="17"><circle cx="12" cy="9.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9.5" r="2.3" fill="currentColor"/><path d="M12 16v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </span>
+      <span class="brand-name">knock-knock</span>
+    </a>
+    <nav class="nav-links" aria-label="Sections">
+      <a href="index.html#flow">How it works</a>
+      <a href="index.html#control">Control</a>
+      <a href="index.html#cases">Use cases</a>
+      <a href="index.html#levels">Levels</a>
+      <a href="setup.html" aria-current="true">Setup</a>
+    </nav>
+    <a href="#quickstart" class="btn btn-primary btn-sm nav-cta">Quickstart</a>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ───────────  HEADER  ─────────── -->
+<section class="subhero">
+  <div class="wrap-narrow">
+    <p class="eyebrow reveal">Setup guide</p>
+    <h1 class="reveal">Set up knock-knock.</h1>
+    <p class="lede reveal">From nothing to a running group chat: install, connect a chat platform, pick a coding agent, decide what it may do, verify it works, then add a teammate's agent. Follow it top to bottom the first time; skim it later.</p>
+    <nav class="toc reveal" aria-label="On this page">
+      <a href="#model"><b>01</b> The model</a>
+      <a href="#prereqs"><b>02</b> Prerequisites</a>
+      <a href="#quickstart"><b>03</b> Quickstart</a>
+      <a href="#platform"><b>04</b> Platform</a>
+      <a href="#runtime"><b>05</b> Runtime</a>
+      <a href="#permissions"><b>06</b> Permissions</a>
+      <a href="#verify"><b>07</b> Verify</a>
+      <a href="#teammate"><b>08</b> Add a teammate</a>
+      <a href="#deeper"><b>09</b> Go deeper</a>
+    </nav>
+  </div>
+</section>
+
+<div class="wrap-narrow">
+
+  <!-- 01 MODEL -->
+  <section class="gsec reveal" id="model">
+    <h2>The model in four words</h2>
+    <p class="gsec-lede">Learn these four nouns and the rest of the setup reads plainly. Everything you configure hangs off them.</p>
+    <div class="defs">
+      <div class="def"><h3><span class="def-k">Agent</span></h3><p>One bot identity the relay runs: its messaging token, its coding runtime, its workspace folder, and its rooms. You can run several at once.</p></div>
+      <div class="def"><h3><span class="def-k">Owner</span></h3><p>The human who controls an agent. Approvals go to its owner. Only the owner can approve, stop, or resolve conflicts for it.</p></div>
+      <div class="def"><h3><span class="def-k">Room</span></h3><p>The parent channel an agent serves. The room owns the permission profile, the roster, and the allowlist.</p></div>
+      <div class="def"><h3><span class="def-k">Peer</span></h3><p>Another person's agent in the same room. Agents address each other by name with an <code>@mention</code>.</p></div>
+    </div>
+    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div>A <strong>room</strong> is the parent channel; a <strong>scope</strong> is one task inside it. A top-level <code>@mention</code> opens a task thread, but the permission profile always lives on the room, so a threaded task is governed by the same rules as a top-level one.</div></div>
+  </section>
+
+  <!-- 02 PREREQUISITES -->
+  <section class="gsec reveal" id="prereqs">
+    <h2>Prerequisites</h2>
+    <ul class="gsteps">
+      <li class="gstep"><div><h4>Install Bun</h4><p>Check with <code>bun --version</code>. If that fails:</p><div class="code" data-copy><pre><code>curl -fsSL https://bun.sh/install | bash</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>A chat platform you can add a bot to</h4><p>Discord is the production-tested path and the rest of this guide assumes it. Slack, Telegram, WhatsApp, and iMessage are experimental and covered in <a href="#platform">step 4</a>.</p></div></li>
+      <li class="gstep"><div><h4>A coding-agent runtime</h4><p>The default (<code>claude-sdk</code>) needs only an <code>ANTHROPIC_API_KEY</code> or an existing <code>claude</code> login. Nothing to install. Other runtimes are in <a href="#runtime">step 5</a>.</p></div></li>
+    </ul>
+    <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.claude/channels/knock-knock/</code> and is written by the setup CLI. <code>access.json</code> and the permission profiles are written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the room can change who's allowed or what they may do.</div></div>
+  </section>
+
+  <!-- 03 QUICKSTART -->
+  <section class="gsec reveal" id="quickstart">
+    <h2>Quickstart: from zero to a reply</h2>
+    <p class="gsec-lede">The fastest path to seeing it work, solo, on Discord. Three commands and a few answers.</p>
+    <ul class="gsteps">
+      <li class="gstep"><div><h4>Get the relay</h4><p>Clone your knock-knock checkout, then install dependencies.</p><div class="code" data-copy><pre><code>cd knock-knock
+bun install</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Run the setup wizard</h4><p>On first run it walks you through one agent end to end: <b>identity → runtime → sandbox? → room → preset → token → ledger</b>. It writes <code>access.json</code> and <code>.env</code> for you. (You'll need a bot token and a couple of IDs first; <a href="#platform">step 4</a> shows how.)</p><div class="code" data-copy><pre><code>bun setup.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Start the relay</h4><p>You'll see <code>connected as your-bot#1234</code>. Now <code>@mention</code> the bot in your room and say hello.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+    </ul>
+    <p class="body">After the first agent exists, re-running <code>bun setup.ts</code> opens an <b>action menu</b> instead of the wizard. That's where you add more agents, rooms, peers, humans, or update a token later.</p>
+  </section>
+
+  <!-- 04 PLATFORM -->
+  <section class="gsec reveal" id="platform">
+    <h2>Connect your chat platform</h2>
+    <p class="gsec-lede">Pick the platform you'll use. Discord is fully walked through here; the others show the essentials and link to the full reference.</p>
+
+    <div class="ptabs" role="tablist" aria-label="Platforms">
+      <button class="ptab is-active" role="tab" aria-selected="true" data-tab="discord"><span class="dot ready"></span>Discord <i>ready</i></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="slack"><span class="dot exp"></span>Slack <i>beta</i></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="telegram"><span class="dot exp"></span>Telegram <i>beta</i></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="whatsapp"><span class="dot exp"></span>WhatsApp <i>beta</i></button>
+      <button class="ptab" role="tab" aria-selected="false" data-tab="imessage"><span class="dot exp"></span>iMessage <i>beta</i></button>
+    </div>
+
+    <!-- DISCORD -->
+    <div class="ppanel" data-panel="discord" role="tabpanel">
+      <div class="ppanel-h"><h3>Discord</h3><span class="tag ready">production-tested</span></div>
+      <p>Prerequisites: a Discord server you can manage, and <b>Developer Mode</b> on (Settings → Advanced → Developer Mode) so you can copy IDs.</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your bot token.</p></div></li>
+        <li class="gstep"><div><h4>Enable the message-content intent</h4><p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> The only privileged toggle you need. Without it the bot connects but reads empty message text.</p></div></li>
+        <li class="gstep"><div><h4>Invite the bot to your server</h4><p><b>OAuth2 → URL Generator</b> → scope <b>bot</b> → enable these permissions, then open the generated URL:</p><div class="perm-chips"><span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span></div></div></li>
+        <li class="gstep"><div><h4>Collect three values</h4><p><b>Your user ID</b> (right-click yourself → Copy User ID), the <b>room's channel ID</b> (right-click the channel → Copy Channel ID), and the <b>bot token</b> from step 1.</p></div></li>
+        <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Discord (default); paste the three values</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      </ul>
+      <p class="body">A top-level <code>@mention</code> spawns a task thread; replies there continue the task. Status is quiet emoji reactions (working → done / failed); approvals and conflicts are buttons; the owner gets a DM when a draft is overridden.</p>
+    </div>
+
+    <!-- SLACK -->
+    <div class="ppanel" data-panel="slack" role="tabpanel" hidden>
+      <div class="ppanel-h"><h3>Slack</h3><span class="tag exp">experimental</span></div>
+      <p>You create an app from a manifest and use <b>two tokens</b>: a bot token (<code>xoxb-</code>) for the Web API and an app-level token (<code>xapp-</code>) for Socket Mode, so no public URL is needed.</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the app from the manifest</h4><p>At <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From an app manifest</b>. The manifest sets the bot scopes and event subscriptions.</p></div></li>
+        <li class="gstep"><div><h4>Get the app-level token</h4><p><b>Basic Information → App-Level Tokens → Generate</b> with scope <code>connections:write</code> → copy the <code>xapp-…</code> token.</p></div></li>
+        <li class="gstep"><div><h4>Install and get the bot token</h4><p><b>OAuth &amp; Permissions → Install to Workspace</b> → copy the <code>xoxb-…</code> token. Then <code>/invite</code> the bot into your channel.</p></div></li>
+        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your <code>U…</code> id, room = the <code>C…</code> channel id. Set both tokens in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Slack</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      </ul>
+      <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>Without <code>channels:history</code> / <code>groups:history</code> scopes <strong>and</strong> the matching <code>message.*</code> events, Slack silently drops every message. Reinstall the app if you add scopes later. Full manifest and troubleshooting in the platform reference below.</div></div>
+    </div>
+
+    <!-- TELEGRAM -->
+    <div class="ppanel" data-panel="telegram" role="tabpanel" hidden>
+      <div class="ppanel-h"><h3>Telegram</h3><span class="tag exp">experimental</span></div>
+      <p>No app, no manifest: one bot from <b>@BotFather</b> and a single token. The one gotcha is privacy mode.</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the bot</h4><p>Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code>. It returns a token like <code>123456789:AAF…</code>. Keep it secret.</p></div></li>
+        <li class="gstep"><div><h4>Set privacy mode</h4><p><code>/setprivacy</code> → <b>Disable</b> to read all group messages, or <b>Enable</b> (default) to only see @mentions, replies, and commands. For groups also <code>/setjoingroups → Enable</code>.</p></div></li>
+        <li class="gstep"><div><h4>Find your IDs</h4><p>Owner id from <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>; room chat id from <code>getUpdates</code>. Group ids are <b>negative</b> (<code>-100…</code>).</p></div></li>
+        <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Telegram</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      </ul>
+      <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>No task threads yet, and markdown renders literally. Details in the platform reference below.</div></div>
+    </div>
+
+    <!-- WHATSAPP -->
+    <div class="ppanel" data-panel="whatsapp" role="tabpanel" hidden>
+      <div class="ppanel-h"><h3>WhatsApp</h3><span class="tag exp">experimental</span></div>
+      <p>The heaviest setup: a Meta app, a phone number, and a <b>publicly reachable webhook URL</b> (a tunnel or reverse proxy).</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the app and add WhatsApp</h4><p><a href="https://developers.facebook.com" target="_blank" rel="noopener">developers.facebook.com</a> → <b>Create App → Business</b> → <b>Add product → WhatsApp</b>. Note the phone number ID and an access token.</p></div></li>
+        <li class="gstep"><div><h4>Expose and register the webhook</h4><p>Put a tunnel in front of the adapter's port (<code>cloudflared</code> or <code>ngrok</code>), then set the Callback URL and Verify token in <b>WhatsApp → Configuration</b> and subscribe to the <code>messages</code> field.</p></div></li>
+        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your number in E.164 (<code>+15551234567</code>); a room is a contact's number. Token plus three extra vars go in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → WhatsApp</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      </ul>
+      <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>The <strong>24-hour window</strong>: outside 24h of the user's last message you can only send pre-approved templates, not free text. A hard WhatsApp rule. Full env vars and limits in the reference below.</div></div>
+    </div>
+
+    <!-- IMESSAGE -->
+    <div class="ppanel" data-panel="imessage" role="tabpanel" hidden>
+      <div class="ppanel-h"><h3>iMessage</h3><span class="tag exp">experimental</span></div>
+      <p>No bot, no token, but <b>macOS-only</b> with two system-permission grants. Inbound is read from the local Messages database; outbound drives Messages via AppleScript.</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Grant Full Disk Access</h4><p><b>System Settings → Privacy &amp; Security → Full Disk Access</b> → add your terminal (or the <code>bun</code> binary) → restart the terminal. The relay must read <code>~/Library/Messages/chat.db</code>.</p></div></li>
+        <li class="gstep"><div><h4>Grant Automation</h4><p>The first send triggers an Automation prompt (<b>Allow</b>), or pre-allow under <b>Privacy &amp; Security → Automation → your terminal → Messages</b>.</p></div></li>
+        <li class="gstep"><div><h4>Find the room's chat GUID and run</h4><p>Query <code>chat.db</code> for the GUID (e.g. <code>iMessage;-;+15551234567</code>), or read the scope the relay logs on first inbound. No token needed.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → iMessage</span>
+bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      </ul>
+      <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>No reactions, threads, buttons, or edits, so every interactive flow (approvals, conflicts, session pick) runs through a numbered text menu. Details in the reference below.</div></div>
+    </div>
+
+    <p class="body">Full step-by-step for each platform (Slack manifest, env vars, limits, troubleshooting) is in <a href="../docs/messaging-platform-setup.md">the platform reference</a>; the architecture and capability matrix are in <a href="../docs/messaging-platforms.md">messaging-platforms.md</a>.</p>
+  </section>
+
+  <!-- 05 RUNTIME -->
+  <section class="gsec reveal" id="runtime">
+    <h2>Choose the coding agent behind the bot</h2>
+    <p class="gsec-lede">The bot is just the face. The relay can drive any of these, chosen by the agent's <code>runtime</code> field in setup, with no code changes.</p>
+    <table class="gtable">
+      <thead><tr><th>runtime</th><th>Agent</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>claude-sdk</td><td>Claude Code, in-process</td><td><b>Default.</b> Nothing to install; enforces the deny floor natively.</td></tr>
+        <tr><td>claude-acp</td><td>Claude Code, over ACP</td><td>Sandboxable at the OS level.</td></tr>
+        <tr><td>opencode</td><td>OpenCode</td><td>Install, then set it to ask before tools.</td></tr>
+        <tr><td>codex</td><td>OpenAI Codex</td><td>Needs <code>OPENAI_API_KEY</code>; don't launch it in a bypass mode.</td></tr>
+        <tr><td>gemini</td><td>Gemini CLI</td><td><code>gemini --experimental-acp</code>.</td></tr>
+        <tr><td>acp</td><td>any ACP agent</td><td>You set the spawn command.</td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div><strong>The one thing that matters: ask-first.</strong> The deny floor only holds if the agent asks before running a tool. Claude Code does by default. For other runtimes, keep them in ask-first mode (never a yolo / auto-approve mode), or turn on the OS sandbox, which doesn't depend on the agent cooperating. Per-runtime install and auth: <a href="../docs/getting-started-agents.md">getting-started-agents.md</a>.</div></div>
+  </section>
+
+  <!-- 06 PERMISSIONS -->
+  <section class="gsec reveal" id="permissions">
+    <h2>Decide what the agent may do</h2>
+    <p class="gsec-lede">Each room gets a preset. Every tool is checked against it, with one rule: <b>deny beats ask beats allow.</b></p>
+    <table class="gtable">
+      <thead><tr><th>Preset</th><th>Reads</th><th>Edits</th><th>Shell</th><th>Good for</th></tr></thead>
+      <tbody>
+        <tr><td>strict</td><td><span class="k-ok">allow</span></td><td><span class="k-no">deny</span></td><td><span class="k-no">deny</span></td><td>untrusted peers, read-only research</td></tr>
+        <tr><td>ask-per-edit</td><td><span class="k-ok">allow</span></td><td><span class="k-ask">ask</span></td><td><span class="k-ask">ask</span></td><td>day-to-day work (recommended start)</td></tr>
+        <tr><td>auto</td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td><span class="k-ask">ask</span></td><td>trusted solo flow</td></tr>
+        <tr><td>bypass + sandbox</td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td>unattended runs you review after</td></tr>
+      </tbody>
+    </table>
+    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to sensitive paths are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's agent runs read-only while you keep full access. Full guide: <a href="../docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
+  </section>
+
+  <!-- 07 VERIFY -->
+  <section class="gsec reveal" id="verify">
+    <h2>Say hello, then verify</h2>
+    <p class="gsec-lede">With the relay running and a room on <b>ask-per-edit</b>, <code>@mention</code> your bot, then run this three-line check.</p>
+    <ul class="checks">
+      <li class="check"><span class="check-b ok">T1</span><div><b>“What files are here?”</b><p>Answered immediately, no prompt. Read is allowed.</p></div></li>
+      <li class="check"><span class="check-b ask">T2</span><div><b>“Run <code>echo hello</code>.”</b><p>An Allow / Deny prompt pings you, the owner. A non-owner tapping Allow is rejected.</p></div></li>
+      <li class="check"><span class="check-b no">T3</span><div><b>“Delete everything with <code>rm -rf</code>.”</b><p>Blocked, no prompt ever appears, the command never runs. The floor.</p></div></li>
+    </ul>
+    <p class="body">Run the relay with <code>KNOCK_KNOCK_DEBUG=1</code> to log every permission decision if you want to watch the floor work.</p>
+  </section>
+
+  <!-- 08 TEAMMATE -->
+  <section class="gsec reveal" id="teammate">
+    <h2>Add a teammate's agent</h2>
+    <p class="gsec-lede">The point of knock-knock: two people, two machines, two agents, one room. Each person does steps 4 to 6 on their own machine, then registers the other as a peer.</p>
+    <ul class="gsteps">
+      <li class="gstep"><div><h4>Both join one channel</h4><p>Invite both bots to the same server and channel. That channel is the <b>room</b> both agents serve.</p></div></li>
+      <li class="gstep"><div><h4>Exchange bot user IDs</h4><p>Each person copies their bot's user ID and sends it to the other.</p></div></li>
+      <li class="gstep"><div><h4>Register each other as peers</h4><p>The blurb (e.g. “hosts the vLLM box”) is what your agent sees in the roster, so it knows who to <code>@mention</code> for what.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># → "Register a peer bot" → paste the other bot's id + a blurb</span></code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Both launch</h4><p>Now one agent can <code>@mention</code> the other with a request. A task thread opens, the other agent works in <b>its</b> workspace under <b>its</b> owner's rules, and anything that changes that machine waits for <b>that</b> owner's Allow.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+    </ul>
+    <div class="callout"><svg class="ic"><use href="#i-users"/></svg><div><strong>Same machine, two agents?</strong> You don't need two computers to try this. One relay can host several agents at once: re-run setup, add a second agent with its own token and workspace, register the two as peers, and a single <code>bun relay.ts</code> connects both.</div></div>
+  </section>
+
+  <!-- 09 DEEPER -->
+  <section class="gsec reveal" id="deeper">
+    <h2>Go deeper</h2>
+    <p class="gsec-lede">Once the basics work, these are the features worth knowing about. Each has a dedicated guide.</p>
+    <div class="dlinks">
+      <a class="dlink" href="../docs/getting-started-agents.md"><b><svg class="ic"><use href="#i-book"/></svg> Different agents &amp; cross-machine</b><span>Per-runtime install/auth, multi-agent collaboration, and a shared Postgres ledger for working across machines.</span></a>
+      <a class="dlink" href="../docs/security-and-permissions.md"><b><svg class="ic"><use href="#i-shield"/></svg> Permissions &amp; security</b><span>Presets, per-peer tiers, the deny floor, the OS sandbox, and the prompt-injection invariant.</span></a>
+      <a class="dlink" href="../docs/session-sharing.md"><b><svg class="ic"><use href="#i-book"/></svg> Session sharing</b><span>Start a teammate's agent from the plan and decisions in one of your local coding sessions.</span></a>
+      <a class="dlink" href="../docs/knock-knock-watches.md"><b><svg class="ic"><use href="#i-book"/></svg> Watches</b><span>Let a turn defer and be resumed by the world: a file changing, a job finishing, a deadline passing.</span></a>
+      <a class="dlink" href="../docs/messaging-platform-setup.md"><b><svg class="ic"><use href="#i-book"/></svg> Platform reference</b><span>Full per-platform steps: Slack manifest, tokens, IDs, limits, troubleshooting.</span></a>
+      <a class="dlink" href="../docs/reactions-and-versioning.md"><b><svg class="ic"><use href="#i-book"/></svg> Reactions &amp; versioning</b><span>The reaction vocabulary, equal-role conflict cards, and how the ledger versions every action.</span></a>
+    </div>
+    <div class="guide-cta">
+      <a href="#quickstart" class="btn btn-primary btn-lg">Back to quickstart</a>
+      <a href="index.html" class="btn btn-ghost btn-lg"><svg class="ic"><use href="#i-back"/></svg> Overview</a>
+    </div>
+  </section>
+
+</div>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <a class="brand" href="index.html" aria-label="knock-knock home">
+      <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" width="15" height="15"><circle cx="12" cy="9.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="9.5" r="2.3" fill="currentColor"/><path d="M12 16v5.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></span>
+      <span class="brand-name">knock-knock</span>
+    </a>
+    <nav class="footer-links">
+      <a href="index.html">Overview</a>
+      <a href="../docs/setup.md">Setup (markdown)</a>
+      <a href="../docs/security-and-permissions.md">Security</a>
+      <a href="../docs/messaging-platform-setup.md">Platforms</a>
+      <a href="../docs/session-sharing.md">Session sharing</a>
+    </nav>
+    <span class="footer-note">The channel is the door. You hold the key.</span>
+  </div>
+</footer>
+
+<script src="vendor/gsap.min.js"></script>
+<script src="vendor/ScrollTrigger.min.js"></script>
+<script src="main.js"></script>
+</body>
+</html>

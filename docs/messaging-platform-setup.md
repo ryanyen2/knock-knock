@@ -1,5 +1,9 @@
 # Setting up a messaging platform
 
+> **New to knock-knock?** Start with the **[Setup guide](setup.md)** — it walks
+> you from zero to a running group chat and links back here for the full
+> per-platform detail. This page is the platform reference.
+
 Step-by-step setup for each platform knock-knock can speak — create the bot/app,
 get the tokens, wire it into knock-knock, run it, and know what works and what
 doesn't. This is the practical companion to
