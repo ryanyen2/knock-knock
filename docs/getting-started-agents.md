@@ -214,8 +214,10 @@ bun relay.ts
   The parent channel is the **room** (permissions, roster, allowlist); threads
   inherit it. Each thread gets its own agent session, so tasks don't bleed.
 - **Live "Workbench"** — one pinned message per task thread, edited in place as
-  each agent works: a per-agent log of tool steps with status (`→ Terminal git
-  status ✓`), kept afterward as the trace of the turn.
+  each agent works: the agent's **plan** as a live checklist (`✓` done / `◐` in
+  progress / `○` planned, from its TodoWrite list) above a per-agent log of tool
+  steps with status (`→ Terminal git status ✓`), kept afterward as the trace of
+  the turn.
 - **Outcome reactions** — 👀 while a turn runs, swapped for a persistent **🏁
   done** / **⚠️ failed** on the triggering message. ✅ / ❌ stay approval-only.
 - **Stop** — react **🛑** (owner only) on a message while the bot is working to

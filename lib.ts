@@ -870,3 +870,40 @@ export function resolveReactionScope(
 ): string {
   return taskScopeByMessage.get(messageId) ?? rawScope
 }
+
+// ─── Claude auth/gateway env passthrough ────────────────────────────────────
+//
+// The in-process Claude SDK adapter runs in isolation mode (`settingSources: []`)
+// so it never reads the operator's global `~/.claude/settings.json` — that guard
+// is about keeping *workspace* config (CLAUDE.md, .mcp.json, project/local
+// `.claude/`) out of the agent, the prompt-injection surface. But a machine that
+// configures Claude purely through that global file's `env` block — a custom
+// gateway (`ANTHROPIC_BASE_URL` + `ANTHROPIC_AUTH_TOKEN`) and no `claude login` —
+// would then surface "Not logged in". We forward just the recognized auth/routing
+// keys from that env block to the SDK subprocess, without loading global plugins,
+// hooks, or permissions. Anything else in the block is ignored.
+
+/** Auth/gateway env var names honored from the global settings.json `env` block. */
+export const ANTHROPIC_ENV_KEYS = [
+  'ANTHROPIC_API_KEY',
+  'ANTHROPIC_AUTH_TOKEN',
+  'ANTHROPIC_BASE_URL',
+  'ANTHROPIC_CUSTOM_HEADERS',
+] as const
+
+/**
+ * Pick the recognized Anthropic auth/gateway vars out of a settings.json `env`
+ * block. Returns only known keys whose value is a non-empty string — unknown
+ * keys and non-string values (the rest of the block) are dropped. Pure.
+ */
+export function pickAnthropicEnv(
+  env: Record<string, unknown> | undefined,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (!env) return out
+  for (const key of ANTHROPIC_ENV_KEYS) {
+    const value = env[key]
+    if (typeof value === 'string' && value.length > 0) out[key] = value
+  }
+  return out
+}

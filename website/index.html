@@ -188,9 +188,14 @@
                 <span class="ava ava-bot" style="--a:#1D1D1F">ma</span>
                 <div class="msg-main">
                   <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent · Maya's machine</span><time>2:13 PM</time></div>
-                  <!-- Workbench embed: live activity log -->
+                  <!-- Workbench embed: live activity log (plan checklist + tool steps) -->
                   <div class="embed embed-work">
                     <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
+                    <ul class="work-plan">
+                      <li class="t-done"><span class="tg">✓</span> Add the fine-tune route</li>
+                      <li class="t-run"><span class="tg">◐</span> Put API-key auth in front</li>
+                      <li class="t-todo"><span class="tg">○</span> Run the test suite</li>
+                    </ul>
                     <ul class="work-steps">
                       <li class="done"><svg class="ic"><use href="#i-check"/></svg> Read <code>gateway/config.yaml</code></li>
                       <li class="done"><svg class="ic"><use href="#i-check"/></svg> Add route <code>POST /v1/fine_tunes</code></li>
@@ -261,7 +266,7 @@
           <li class="flow-note is-on" data-note="0"><h3>It starts in a shared room</h3><p>Everyone runs their own agent on their own machine, in one channel. Maya hosts the GPU box. You and Devin build against it.</p></li>
           <li class="flow-note" data-note="1"><h3>Anyone can knock</h3><p>An <code>@mention</code> to another person's agent is a request. It cannot reach into their machine on its own.</p></li>
           <li class="flow-note" data-note="2"><h3>A thread per task</h3><p>Each request opens its own thread with its own activity log, so the channel stays a clean index.</p></li>
-          <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows every step as it goes.</p></li>
+          <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in — <b>○ planned, ◐ in progress, ✓ done</b> — above every step as it goes.</p></li>
           <li class="flow-note" data-note="4"><h3>You decide who comes in</h3><p>Anything that changes the machine waits for the owner's <b>Allow</b>. The prompt pings only the owner.</p></li>
           <li class="flow-note" data-note="5"><h3>Approved once, not forever</h3><p><b>Allow</b> runs the command a single time. The next one asks again. Approval never becomes a standing key.</p></li>
           <li class="flow-note" data-note="6"><h3>The deny floor never blinks</h3><p>Destructive commands are blocked before anyone sees them. It reads the real command, so it can't be smuggled past in a chain.</p></li>

@@ -41,6 +41,34 @@ The bot reacts 👀 the instant it starts, then swaps it for a persistent outcom
 marker when the turn ends — so scrolling back shows at a glance which requests
 succeeded.
 
+### The Workbench (the pinned activity log)
+
+The pinned **Workbench** message (one per task thread, edited in place as the
+turn runs) uses its own read-only glyphs — these label state, you never react
+with them:
+
+| Glyph | Meaning |
+|---|---|
+| ▸ | the agent is working (turn header) |
+| ◆ | live state line — `working…` / `replying…` |
+| → | a tool step, suffixed with its status |
+| ✓ | a step executed / a turn finished cleanly |
+| ✗ | a step failed / a turn finished with errors |
+| ⛔ | a step was denied by the permission gate |
+
+When the agent keeps a **plan** (its TodoWrite list), the Workbench renders it as
+a live checklist above the tool steps — edited in place as the agent advances it,
+so you watch the plan fill in:
+
+| Glyph | Meaning |
+|---|---|
+| ○ | planned — not started yet |
+| ◐ | in progress |
+| ✓ | done |
+
+The plan list replaces the noisy per-call `→ TodoWrite ✓` steps; only the
+agent's *latest* list is shown (it rewrites the whole list each update).
+
 > **Retry re-marks cleanly.** A 🔁 retry re-runs the *same* inbound message, so
 > its outcome marker is re-markable: the host clears any prior outcome glyph
 > (🏁/⚠️/⏹) before applying the new one, and the inbound side-table is retained

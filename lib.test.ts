@@ -27,6 +27,7 @@ import {
   senderKind,
   isShareSessionCommand,
   isResumeSessionCommand,
+  pickAnthropicEnv,
   type WatchSpec,
   type RoomConfig,
 } from './lib.ts'
@@ -392,4 +393,33 @@ test('isResumeSessionCommand: recognizes resume phrasing disjoint from share', (
   expect(isResumeSessionCommand('/resume-session')).toBe(true)
   expect(isResumeSessionCommand('please continue the session')).toBe(true)
   expect(isResumeSessionCommand('share the session')).toBe(false)
+})
+
+// ─── pickAnthropicEnv ──────────────────────────────────────────────────────────
+
+test('pickAnthropicEnv: forwards recognized gateway/auth keys, drops the rest', () => {
+  // A LiteLLM-style settings.json env block: gateway creds plus unrelated config.
+  const picked = pickAnthropicEnv({
+    ANTHROPIC_BASE_URL: 'https://gateway.example/v1',
+    ANTHROPIC_AUTH_TOKEN: 'sk-abc',
+    ANTHROPIC_API_KEY: 'key-123',
+    ANTHROPIC_CUSTOM_HEADERS: 'x-team: relay',
+    // Not auth — must not leak into the subprocess env.
+    SOME_OTHER_VAR: 'nope',
+    CLAUDE_CODE_USE_BEDROCK: '1',
+  })
+  expect(picked).toEqual({
+    ANTHROPIC_BASE_URL: 'https://gateway.example/v1',
+    ANTHROPIC_AUTH_TOKEN: 'sk-abc',
+    ANTHROPIC_API_KEY: 'key-123',
+    ANTHROPIC_CUSTOM_HEADERS: 'x-team: relay',
+  })
+})
+
+test('pickAnthropicEnv: ignores missing/empty/non-string values', () => {
+  expect(pickAnthropicEnv(undefined)).toEqual({})
+  expect(pickAnthropicEnv({})).toEqual({})
+  expect(
+    pickAnthropicEnv({ ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: 42 as unknown as string }),
+  ).toEqual({})
 })

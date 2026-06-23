@@ -3,6 +3,9 @@
  * The relay and driver never see the SDK; they see the AgentAdapter interface.
  */
 
+import { readFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
   SDKSystemMessage,
@@ -17,7 +20,32 @@ import type {
   Verdict,
   WatchToolHandlers,
 } from '../agent-adapter.ts'
+import { pickAnthropicEnv } from '../lib.ts'
 import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
+
+/**
+ * Build the env handed to the SDK subprocess. The SDK runs in isolation mode
+ * (`settingSources: []`), so it does not read the operator's global
+ * `~/.claude/settings.json` itself — a machine that configures Claude through
+ * that file's `env` block (custom gateway, no `claude login`) would otherwise
+ * report "Not logged in". We inherit `process.env` and layer the recognized
+ * Anthropic auth/gateway keys from that global env block on top, so credentials
+ * reach the subprocess without pulling in global plugins, hooks, or permissions.
+ * The settings-file path honors `CLAUDE_CONFIG_DIR` like Claude Code does.
+ */
+function resolveSdkEnv(): Record<string, string | undefined> {
+  let fromSettings: Record<string, string> = {}
+  try {
+    const dir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
+    const parsed = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as {
+      env?: Record<string, unknown>
+    }
+    fromSettings = pickAnthropicEnv(parsed.env)
+  } catch {
+    // No global settings, unreadable, or malformed — rely on process.env alone.
+  }
+  return { ...process.env, ...fromSettings }
+}
 
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
@@ -25,6 +53,9 @@ export class ClaudeSdkAdapter implements AgentAdapter {
   private eventHandler?: (event: AgentEvent) => void
   private readonly mcpServers?: Record<string, McpServerConfig>
   private readonly alwaysAllow: string[]
+  // Resolved once per session: process.env + the gateway/auth keys from the
+  // operator's global settings.json (see resolveSdkEnv).
+  private readonly env = resolveSdkEnv()
 
   constructor(private readonly cwd: string, watchTools?: WatchToolHandlers) {
     // The watch MCP server (if the host wired callbacks) lets the agent arm
@@ -86,6 +117,10 @@ export class ClaudeSdkAdapter implements AgentAdapter {
           cwd: this.cwd,
           permissionMode: 'default',
           abortController,
+          // Forward gateway/auth env to the subprocess. Omitting `env` would
+          // inherit process.env anyway, but isolation mode means the subprocess
+          // never reads the global settings.json env block — so we inject it.
+          env: this.env,
           allowedTools: [...this.profile.allow, ...this.alwaysAllow],
           // deny is the hard floor — must reach the SDK here, not via canUseTool alone
           disallowedTools: this.profile.deny,

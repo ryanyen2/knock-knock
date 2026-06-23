@@ -24,6 +24,10 @@ export const GLYPHS = {
   doneMark: '✓', // a finished turn / executed step (workbench)
   failMark: '✗', // a failed turn / step (workbench)
   idle: '·', // separator / quiet marker
+  // Plan/todo item status (TodoWrite list) — an empty→half→full progression so
+  // the agent's plan reads at a glance: planned ○ → in progress ◐ → done ✓.
+  planned: '○', // a todo not started yet
+  inProgress: '◐', // a todo in progress
   conflict: '🔀', // two equal-role drafts collided (conflict card)
   override: '🔁', // a draft was superseded / retry (override DM, rewind)
   rewind: '⏪', // rewind the frontier (rewind reaction)
@@ -50,12 +54,22 @@ export type WorkbenchStep = {
   status: TurnToolCall['status']
 }
 
+/** Lifecycle of a plan item, normalized from a TodoWrite `status`. */
+export type TodoStatus = 'planned' | 'inProgress' | 'done'
+
+export type WorkbenchTodo = {
+  content: string
+  status: TodoStatus
+}
+
 export type WorkbenchEntry = {
   agent: string
   status: WorkbenchStatus
   /** Short summary of what the agent worked on this turn (the prompt). */
   stage: string
   steps: WorkbenchStep[]
+  /** The agent's current plan (latest TodoWrite list this turn), if any. */
+  plan?: WorkbenchTodo[]
   /** HH:MM of the agent's last activity. */
   lastSeen?: string
 }
@@ -74,7 +88,17 @@ const HEAD_GLYPH: Record<WorkbenchStatus, string> = {
   failed: GLYPHS.failMark,
 }
 
+const TODO_GLYPH: Record<TodoStatus, string> = {
+  planned: GLYPHS.planned,
+  inProgress: GLYPHS.inProgress,
+  done: GLYPHS.doneMark,
+}
+
 const MAX_STEPS = 8
+const MAX_TODOS = 12
+
+/** The agent's planning tool — its list is rendered as a plan block, not a step. */
+const PLAN_TOOL = 'TodoWrite'
 
 /**
  * The pinned per-channel "Workbench" — a per-agent activity log. Each agent's
@@ -103,6 +127,14 @@ export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): 
 function renderEntry(e: WorkbenchEntry): string {
   const head = `${HEAD_GLYPH[e.status]} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`
   const lines = [head]
+  // The plan block (TodoWrite list) — the high-level view, above the tool steps.
+  const plan = e.plan ?? []
+  const todos = plan.length > MAX_TODOS ? plan.slice(0, MAX_TODOS) : plan
+  for (const t of todos) {
+    lines.push(`-#   ${TODO_GLYPH[t.status]} ${quote(t.content, 80)}`)
+  }
+  const hiddenTodos = plan.length - todos.length
+  if (hiddenTodos > 0) lines.push(`-#   … ${hiddenTodos} more planned`)
   const steps = e.steps.length > MAX_STEPS ? e.steps.slice(e.steps.length - MAX_STEPS) : e.steps
   const hidden = e.steps.length - steps.length
   if (hidden > 0) lines.push(`-#   … ${hidden} earlier step${hidden === 1 ? '' : 's'}`)
@@ -150,19 +182,57 @@ export function workbenchEntries(
   for (const [agent, t] of latest) {
     const working = !t.reply && !t.endedAt
     const failed = t.toolCalls.some(tc => tc.status === 'failed' || tc.status === 'denied')
+    // The plan is the agent's *latest* TodoWrite list this turn (it rewrites the
+    // whole list each call); fold those calls into a plan block and drop them
+    // from the step trace so repeated TodoWrites don't spam it.
+    const planCalls = t.toolCalls.filter(tc => tc.name === PLAN_TOOL)
+    const plan = planCalls.length ? parseTodos(planCalls[planCalls.length - 1]!.inputJson) : undefined
     entries.push({
       agent,
       status: working ? 'working' : failed ? 'failed' : 'done',
       stage: promptText(t.inboundHash) ?? '',
-      steps: t.toolCalls.map(tc => ({
-        tool: tc.name,
-        subject: toolSubject(tc.inputJson),
-        status: tc.status,
-      })),
+      steps: t.toolCalls
+        .filter(tc => tc.name !== PLAN_TOOL)
+        .map(tc => ({
+          tool: tc.name,
+          subject: toolSubject(tc.inputJson),
+          status: tc.status,
+        })),
+      plan: plan && plan.length ? plan : undefined,
       lastSeen: formatIsoTime(t.endedAt ?? t.startedAt),
     })
   }
   return entries
+}
+
+/**
+ * Parse a TodoWrite tool input (`{ todos: [{ content, status }] }`) into plan
+ * items, normalizing the runtime's status vocabulary to our three glyphs.
+ * Unknown/missing status falls back to `planned`. Pure; tolerant of garbage.
+ */
+export function parseTodos(inputJson: string): WorkbenchTodo[] {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(inputJson)
+  } catch {
+    return []
+  }
+  const todos = (parsed as { todos?: unknown } | null)?.todos
+  if (!Array.isArray(todos)) return []
+  const out: WorkbenchTodo[] = []
+  for (const t of todos) {
+    if (!t || typeof t !== 'object') continue
+    const { content, status } = t as { content?: unknown; status?: unknown }
+    if (typeof content !== 'string' || !content) continue
+    out.push({ content, status: todoStatus(status) })
+  }
+  return out
+}
+
+function todoStatus(status: unknown): TodoStatus {
+  if (status === 'completed' || status === 'done') return 'done'
+  if (status === 'in_progress' || status === 'inProgress') return 'inProgress'
+  return 'planned'
 }
 
 /** Pull the primary argument (command / path / url) out of a tool's stable

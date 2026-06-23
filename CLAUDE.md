@@ -263,7 +263,12 @@ synchronization or an `AgentHost` subscriber; Discord I/O is thin glue.
 - **Workbench** (`host/workbench.ts`, `renderWorkbench`/`workbenchEntries`) — one
   pinned per-scope (per-thread) activity log, driven by a relay-level subscriber
   on `turn.*`/`tool.*` → `AgentHost.updatePill` (throttled). A finished turn
-  keeps its step log as a trace (status `working|done|failed`).
+  keeps its step log as a trace (status `working|done|failed`). The agent's
+  **plan** — its latest `TodoWrite` list, parsed by `parseTodos` — renders as a
+  per-item checklist (`○` planned / `◐` in progress / `✓` done) above the tool
+  steps, and those `TodoWrite` calls drop from the step trace so repeated updates
+  don't spam it. Capture is reliable for Claude-Code-shaped `TodoWrite`; other
+  ACP agents simply get no plan block.
 - **Conflict card** (`conflict-card.ts`) — on a held equal-role conflict, posts a
   Take A / Take B / Write card; the `cflt:` button handler admits an owner
   `merge.resolve`.
