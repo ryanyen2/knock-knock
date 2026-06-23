@@ -1,0 +1,441 @@
+# feat: Per-thread (scope) config, modes, and context surface
+
+**Type:** feat · **Depth:** Standard · **Target repo:** knock-knock
+
+---
+
+## Context
+
+Today an owner tunes a channel's behavioral knobs from Discord via `!config …`
+(persona `role`, loop-guard, approval-timeout, workbench-verbosity, rate caps,
+mention rules). These are **keyed per-room** — `host/channel-config.ts` admits an
+owner-role `config.set` to `cfg:channel/<roomId>` and every consumer reads
+`configFor(state, roomId)`. A task thread inherits its room's config with no way
+to differ. Separately, an owner can already **import a coding-agent session's
+context** into a thread (`share session` → distilled brief →
+`know:channel/<scopeId>/shared-context`), but there is **no way to see or manage
+what's included**.
+
+We want, per **thread (scope)**, with the **room value inherited as default**:
+- the four existing knobs (`role`, loop-guard, approval-timeout, workbench),
+- a new **`end-goal`** (objective) text field, alongside the persona `role`,
+- a new **`model`** knob and **`thinking`/`effort`** modes,
+- a new **permission `mode`** knob (strict / ask-per-edit / auto / bypass),
+- a **context surface**: view what's included, remove a note, add a free-form note.
+
+Three facts make most of this tractable:
+- The config **fold is already artifact-agnostic** (`configFold.key` matches any
+  `cfg:channel/<id>`) — scope overlays need **zero** storage changes.
+- The `!config` handler **already receives the thread scope** (`controlScope =
+  m.isThread ? m.scope : roomId`, `agent-host.ts:626`).
+- The SDK takes `model`, `thinking`, and `effort` as **per-`query()` options**, so
+  these flow per-turn through the adapter — no session rebuild needed.
+
+Two pieces are genuinely new / sensitive: the permission **`mode`** knob crosses
+the deliberate terminal-only trust boundary (decided: allowed, owner-gated, with
+the containment below), and the **context surface** is a new command collaborator.
+
+**Intended outcome:** inside a task thread, an owner can set persona, objective,
+loop-guard, approval-timeout, workbench detail, model, thinking/effort, and
+permission mode for **that thread only** (falling back to the room default where
+unset), and can `!context` to see / `remove` / `add` the thread's shared context.
+
+---
+
+## Requirements
+
+- **R1** — `role`, `loopMaxConsecutive`/`loopCooldownMs`, `approvalTimeoutMs`,
+  `workbenchVerbosity`, and the new `endGoal`, `model`, `thinking`, `effort`,
+  `permissionPreset` are settable per-thread; an unset thread key inherits the
+  room value; unset both → agent/hard default.
+- **R2** — In a thread, bare `!config <key> <val>` writes the **thread** overlay;
+  at top level (scope==room) it writes the **room** overlay (unchanged from today);
+  `!config room <key> <val>` force-writes the **room** overlay from a thread.
+- **R3** — `!config get` (in a thread) shows the resolved/merged view, labeling
+  each value's source layer (`thread`/`room`/`default`). `!config reset <key>`
+  clears the layer matching the resolved write target.
+- **R4** — `model`, `thinking`, and `effort` are honored per-turn by the
+  `claude-sdk` runtime (SDK `query` options). ACP runtimes self-manage these —
+  documented as an honest limit, surfaced on set, never silently mis-applied.
+- **R5** — `endGoal` is injected into each turn's prompt as an objective block,
+  alongside the persona `role`.
+- **R6** — A per-thread permission **`mode`** selects one of the four vetted
+  presets (strict / ask-per-edit / auto / bypass). It may loosen `allow`/`ask` but
+  the effective **`deny` is always `union(room deny, preset deny incl.
+  DENY_FLOOR)`** — chat can never drop a terminal-set deny or the floor. Raw
+  `allow`/`ask`/`deny`/`tiers`/`preset` stay terminal-only. Owner-gated, applied
+  per-turn. (See Key Decisions for the full containment + residual risk.)
+- **R7** — Context surface (owner-only, per-thread): `!context` lists active
+  shared-context notes; `!context remove <n>` invalidates one; `!context add
+  <text>` appends a free-form note. Reuses the knowledge fold and once-per-turn
+  delivery.
+- **R8** — No data migration: existing `cfg:channel/<roomId>` records stay valid
+  as the inherited-default layer; no regression for room-set config in threads.
+- **R9** — Prompt-injection invariant preserved for everything except the
+  explicitly-chosen `mode` crossing: owner-only, pre-admit short-circuit; identity,
+  allowlist, raw permissions, and `access.json` stay terminal-managed.
+
+---
+
+## Key Technical Decisions
+
+- **Project-then-merge, never concat deltas.** Room and scope are independent
+  artifacts. Resolution projects **each** through the existing `projectChannelConfig`
+  (already clamps per-field), then shallow-merges `{ ...roomCfg, ...scopeCfg }`.
+  Scope key present wins; absent inherits room; absent both → omitted → consumer
+  default. Concatenating raw deltas would let a room `_clear` wipe a scope key and
+  mis-order across artifacts — rejected.
+
+- **Scope==room collapses to today.** No thread → both layers read the same
+  artifact → resolution short-circuits to `configFor(state, roomId)`.
+
+- **Write target in the host, parser stays pure.** `parseConfigCommand` gains
+  `target?: 'room' | 'scope'` (strips a leading `room` token, reports the requested
+  target; never learns real ids). `handleCommand` computes `writeScope` and routes
+  `configArtifact`, the admit `channel:`, **and** `latestConfigHash` to it (today
+  all three hardcode `roomId` — the bug magnet).
+
+- **model / thinking / effort are per-turn adapter options, not session state.**
+  The SDK accepts them per `query()`. Extend the `AgentAdapter.prompt()` input with
+  optional `{ model, thinking, effort }`; the Driver assembles them from the
+  resolved per-thread config each turn; `claude-sdk` forwards them to `query`
+  options; `acp` ignores them (honest limit). No session rebuild, no
+  invalidation hook — changing any of them just takes effect next turn. (`runtime`,
+  the only value that would need a session rebuild, is **deferred** — Scope.)
+
+- **`thinking`/`effort` map to SDK types.** `thinking` enum → `ThinkingConfig`
+  (`off`→`{type:'disabled'}`, `auto`→`{type:'adaptive'}`, `high`→`{type:'enabled',
+  budgetTokens}`). `effort` enum → `EffortLevel` (`low|medium|high|xhigh|max`).
+  Both `kind:'enum'` registry rows. `model` is `kind:'text'` (model ids churn; an
+  enum would reject valid new ids) with non-empty single-token validation.
+
+- **Permission `mode` containment (the boundary crossing).** Chat selects among
+  the **4 vetted presets only** via a new `mode` chatKey → `permissionPreset` field;
+  raw `allow`/`ask`/`deny`/`tiers`/`preset` stay in `TERMINAL_ONLY_KEYS`. At
+  per-turn permission resolution: if the scope has `permissionPreset`, the base
+  profile becomes `expandPreset(mode)` but with **`deny` overridden to
+  `union(readRoomSettings.deny, expandPreset(mode).deny)`** — so a thread loosens
+  `allow`/`ask` but never drops a terminal-set deny or the `DENY_FLOOR`. Per-actor
+  `tiers` still apply on top (only tighten). The audit `classify-on-tool-request`
+  injection is extended to resolve the same scope mode so the audit trail stays
+  honest. **Residual risk accepted per decision:** the owner (only the owner — peers
+  /humans can't reach `!config`) can set `bypass` per-thread; enforcement is correct
+  via the per-turn adapter profile, and the floor + room deny always hold.
+
+- **Context surface reuses existing machinery.** New `ContextControl` collaborator
+  (modeled on `ChannelConfigControl`/`WatchControl`): `!context` renders
+  `activeNotes(know:channel/<scopeId>/shared-context)`; `remove <n>` admits
+  owner-role `knowledge.invalidate` (verb already exists); `add <text>` admits
+  owner-role `knowledge.append` (same shape as session import). Once-per-turn
+  delivery via the existing `pendingContext`/`pickFreshContext` path is unchanged.
+
+---
+
+## Implementation Units
+
+### U1. Pure core: resolution, parser targets, new field specs (lib.ts)
+
+**Goal:** the pure, ledger-free core — layer two configs, parse a `room` target,
+and register all new knobs.
+
+**Requirements:** R1, R2, R3, R5.
+
+**Dependencies:** none (land first).
+
+**Files:** `lib.ts`, `lib.test.ts`
+
+**Approach:**
+- `resolveTwoLayerConfig(roomCfg, scopeCfg): ChannelConfig` → `{ ...roomCfg,
+  ...scopeCfg }` (both already projected/clamped).
+- `parseConfigCommand` → optional `target?: 'room' | 'scope'` on set/reset/get
+  (strip leading `room`); parser stays id-agnostic.
+- Add to `ChannelConfig` + `CONFIG_FIELDS`: `endGoal` (`role`-style text),
+  `model` (text, maxLen ~100, single-token), `thinking` (enum off|auto|high),
+  `effort` (enum low|medium|high|xhigh|max), `permissionPreset` (enum
+  strict|ask-per-edit|auto|bypass, chatKey `mode`).
+- Add `wrapChannelGoal(goal)` (mirror `wrapChannelRole`, objective framing).
+- `mode`'s chatKey is settable; `preset`/`allow`/`ask`/`deny`/`tiers` stay in
+  `TERMINAL_ONLY_KEYS`.
+
+**Patterns to follow:** `projectChannelConfig` (lib.ts:769) order-independence;
+`parseConfigCommand` (lib.ts:844) grammar; `CONFIG_FIELDS` registry rows;
+`wrapChannelRole` (lib.ts:938).
+
+**Test scenarios (`lib.test.ts`):**
+- `resolveTwoLayerConfig`: scope overrides room; absent scope inherits room; absent
+  both → omitted; clamping survives layering; identical layers (scope==room) ≡ room.
+- Parser target: `!config room role X`→`target:'room'`; `!config role X`→undefined;
+  `!config reset room role`→`target:'room'`; `!config get room`→`target:'room'`; a
+  leading `room` is only a modifier, never a key.
+- New fields: `model` rejects whitespace/empty/over-maxLen, accepts a single token;
+  `thinking`/`effort`/`mode` reject out-of-enum with usage; `mode` accepts the 4
+  preset names; `end-goal` clamps to maxLen.
+- `preset`/`allow`/`deny` still hit the terminal-only rejection (unchanged).
+
+### U2. Fold-aware resolver + layered render (config.ts, surface.ts)
+
+**Goal:** resolve config for (room, scope) and render the merged view with source
+labels.
+
+**Requirements:** R1, R3.
+
+**Dependencies:** U1.
+
+**Files:** `ledger/concepts/config.ts`, `ledger/render/surface.ts`,
+`ledger/concepts/config.test.ts`
+
+**Approach:**
+- `resolveConfigFor(state, roomId, scopeId)` → `configFor(roomId)` when
+  `scopeId===roomId`, else `resolveTwoLayerConfig(configFor(roomId),
+  configFor(scopeId))`. Keep `configFor`/`latestConfigHash` by-id.
+- `renderResolvedConfig(roomCfg, scopeCfg)` annotating each key `(thread)`/`(room)`/
+  `(default)`; suppress annotations when scope==room.
+
+**Patterns to follow:** `configFor`/`latestConfigHash` (config.ts:57,64);
+`renderConfig`/`renderConfigSet` (surface.ts).
+
+**Test scenarios (`config.test.ts`):** two artifacts → scope-where-set,
+room-otherwise; collapse equals `configFor(room)`; render labels each layer
+correctly.
+
+### U3. Write-target routing (host/channel-config.ts)
+
+**Goal:** admit to the correct overlay; resolve get/reset against the same target;
+add a security note when `mode` is set.
+
+**Requirements:** R2, R3, R6, R9.
+
+**Dependencies:** U1, U2.
+
+**Files:** `host/channel-config.ts`
+
+**Approach:**
+- `roomId = roomForScope(scopeId)`; `isThread = scopeId !== roomId`;
+  `writeScope = (parsed.target === 'room' || !isThread) ? roomId : scopeId`.
+- Route `configArtifact(writeScope)`, `channel: writeScope`, and
+  `latestConfigHash(state, writeScope)` to `writeScope`.
+- `get`→`renderResolvedConfig`; `get room`→room layer only; `reset`→`_clear` to
+  `writeScope`.
+- When the set field is `permissionPreset`, the confirmation states the thread's
+  effective allow/ask change and that the deny floor + room deny still hold.
+- Update `renderConfigHelp` + set-confirmation to document the `room` modifier and
+  the thread-vs-room UX change.
+
+**Patterns to follow:** the owner-role `config.set` admit (channel-config.ts:80–89),
+shape unchanged — only the target id varies.
+
+**Test scenarios:** host-level (Verification). Inspection: `writeScope`/`channel`/
+`latestConfigHash` consistent across set/reset × thread/room.
+
+### U4. Consumer switch + end-goal injection (agent-host.ts, host/workbench.ts)
+
+**Goal:** the existing consumers read scope-resolved config; inject `endGoal`.
+
+**Requirements:** R1, R5.
+
+**Dependencies:** U2.
+
+**Files:** `agent-host.ts`, `host/workbench.ts`
+
+**Approach:**
+- `channelConfigFor` (≈816) takes **scopeId**, resolves room internally, returns
+  `resolveConfigFor(state, roomId, scopeId)` — the single seam.
+- `channelRoleFor` (≈824) takes the turn's **scopeId** (`channelId`); also build the
+  wrapped `endGoal` block and prepend both (role + goal) into `contextPrefix`
+  (≈902/906) ahead of any shared-context.
+- loop-guard `getAgentForChannel` (≈350), `approvalTimeoutFor` (≈833), workbench
+  (`host/workbench.ts:90`) → scope-resolved.
+- Leave rate/require-mention/mention room-keyed (gate inbound before a thread
+  exists; not in target set).
+
+**Patterns to follow:** existing `roomForScope` use at each site; `contextPrefix`
+assembly in `runTurnForChannel`.
+
+**Test scenarios:** behavioral (Verification); pure resolution covered by U1/U2.
+`Test expectation: covered by U1/U2 + Verification` — confirm the four sites compile
+against the scope-aware signature.
+
+### U5. Per-turn adapter options: model / thinking / effort (agent-adapter.ts, adapters, driver.ts, agent-host.ts)
+
+**Goal:** plumb model/thinking/effort per-turn into the claude-sdk adapter; ACP
+honest-limit.
+
+**Requirements:** R4.
+
+**Dependencies:** U1, U4 (uses `resolveConfigFor`).
+
+**Files:** `agent-adapter.ts`, `adapters/claude-sdk.ts`, `adapters/acp.ts`,
+`driver.ts`, `agent-host.ts`, `lib.test.ts`
+
+**Approach:**
+- Extend `AgentAdapter.prompt()` input with optional `{ model?, thinking?, effort? }`.
+- `claude-sdk.ts query({options})` (≈83): add `...(model?{model}:{})`,
+  `...(thinking?{thinking: toThinkingConfig(thinking)}:{})`,
+  `...(effort?{effort}:{})`. Add a pure `toThinkingConfig` mapper (in lib.ts,
+  unit-tested).
+- `acp.ts`: ignore the options (no protocol param); the set-confirmation in U3
+  already notes ACP self-manages — optionally one stderr note.
+- `driver.ts runTurn`: accept a `turnOptions` param and pass to `adapter.prompt`.
+- `agent-host.ts runTurnForChannel`: build `turnOptions` from
+  `resolveConfigFor(state, roomId, channelId)` ({model, thinking, effort}).
+
+**Patterns to follow:** the existing `prompt()` input shape (claude-sdk.ts:63);
+per-turn `Driver.runTurn(... profile)` threading.
+
+**Test scenarios (`lib.test.ts` for pure mapper; Verification for wiring):**
+- `toThinkingConfig`: off→disabled, auto→adaptive, high→enabled+budget.
+- model/thinking/effort unset → `query` omits each option (default unchanged).
+- Integration: set `!config thinking high`/`model <id>` in a thread → next turn's
+  `session_init` reflects the model and thinking is visibly engaged; ACP shows the
+  honest-limit note.
+
+### U6. Per-thread permission mode — the boundary crossing (lib.ts, agent-host.ts, relay.ts)
+
+**Goal:** a per-thread `mode` selects a vetted preset; effective deny always unions
+the room deny + floor; the audit trail reflects it.
+
+**Requirements:** R6, R9.
+
+**Dependencies:** U1, U2, U4.
+
+**Files:** `lib.ts`, `agent-host.ts`, `relay.ts`, `lib.test.ts`
+
+**Approach:**
+- `lib.ts`: a pure `applyModeToProfile(base, presetName)` →
+  `{ allow: preset.allow, ask: preset.ask, deny: union(base.deny, preset.deny) }`
+  using `expandPreset` (so floor is always in `preset.deny`).
+- `agent-host.ts runTurnForChannel` (≈868): after `readRoomSettings` and before
+  `resolveProfileForActor`, if the scope config has `permissionPreset`, replace the
+  base with `applyModeToProfile(base, preset)`; then tiers apply as today.
+- `relay.ts` audit injection for `classify-on-tool-request`: resolve the scope's
+  `permissionPreset` into the injected `readPolicy` so the audit classification
+  matches enforcement (today base-only — would otherwise under-report allows in a
+  loosened thread).
+- Keep `permissionPreset` the ONLY new chat-settable trust-adjacent key; raw
+  permission keys stay terminal-only.
+
+**Patterns to follow:** `resolveProfileForActor` (lib.ts:376) deny-union discipline;
+`expandPreset` (lib.ts:335) floor guarantee; per-turn profile application via
+`Driver.runTurn(... turnProfile)`.
+
+**Test scenarios (`lib.test.ts`):**
+- `applyModeToProfile`: bypass loosens allow/ask; deny = union(base.deny,
+  floor) — a base deny like `Bash(curl *)` survives bypass; floor always present.
+- strict tightens (deny includes Edit/Write/Bash); ask-per-edit routes edits to ask.
+- A scope with no `permissionPreset` → base profile unchanged (no regression).
+- tiers still tighten a moded profile for a non-owner requester.
+
+### U7. Context surface: view / remove / add (host/context-control.ts, agent-host.ts, surface.ts, lib.ts)
+
+**Goal:** owner commands to see, remove, and add the thread's shared context.
+
+**Requirements:** R7.
+
+**Dependencies:** none on U1–U6 (independent; can land in parallel).
+
+**Files:** `host/context-control.ts` (new), `host/context.ts` (wire collaborator),
+`agent-host.ts` (handleInbound detection), `ledger/render/surface.ts`, `lib.ts`
+(command parse), `lib.test.ts`
+
+**Approach:**
+- New `ContextControl` collaborator (model on `ChannelConfigControl`): `handleCommand(scopeId, text)`.
+- `agent-host.ts handleInbound`: detect `kind==='owner' && (text==='!context' ||
+  text.startsWith('!context '))`, short-circuit before admit → `contextControl
+  .handleCommand(controlScope, text)`.
+- `!context` → `activeNotes(state, know:channel/<scopeId>/shared-context)`, rendered
+  stable-numbered (sort by createdAt) via new `renderContextList`.
+- `!context remove <n>` → map n→hash, admit owner-role `knowledge.invalidate`.
+- `!context add <text>` → admit owner-role `knowledge.append` (wrap via
+  `wrapSharedContext` with source `owner-note`), so once-per-turn delivery picks
+  it up.
+- Pure `parseContextCommand` in lib.ts (list/remove n/add text/help/error).
+
+**Patterns to follow:** `ChannelConfigControl` (host/channel-config.ts) admit shape;
+`importSession` (sessions/import.ts) `knowledge.append`; `knowledge.invalidate`
+branch (knowledge.ts:82); `activeNotes`/`pickFreshContext`.
+
+**Test scenarios (`lib.test.ts` pure parse; Verification for wiring):**
+- `parseContextCommand`: `!context`→list; `!context remove 2`→remove idx 2;
+  `!context add hello`→add 'hello'; `!context remove x`→error; bad→help.
+- Integration: import a session, `!context` lists it with source/when/by-whom;
+  `add` a note → next turn's prompt carries it once; `remove` → no longer injected.
+
+---
+
+## Risks & Mitigations
+
+- **`mode` crosses the prompt-injection boundary (highest).** Mitigated by:
+  owner-only + pre-admit gate (peers/humans/injections can't reach `!config`);
+  chat selects only among 4 vetted presets, never raw patterns; effective deny =
+  union(room deny, floor) so a thread never drops a terminal-set protection;
+  enforcement is the per-turn adapter profile (correct), and the audit injection is
+  extended to match. Residual: the owner can set `bypass` per-thread — accepted per
+  decision. Call out prominently in review + `docs/security-and-permissions.md`.
+- **Mid-turn option change.** model/thinking/effort/mode all apply at turn *start*
+  (resolved in `runTurnForChannel`); an in-flight turn is never mutated — change
+  takes effect next turn. No session teardown.
+- **`latestConfigHash`/`channel` following `roomId` not `writeScope`** (U3) — both
+  hardcode `roomId` today; route both to `writeScope` or a thread set silently
+  writes/chains the room artifact.
+- **Audit fidelity** under a loosened thread (U6) — without the relay audit
+  injection, `classify-on-tool-request` under-reports allows; U6 extends it.
+- **UX change:** `!config role …` typed in a thread now writes the **thread**, not
+  the room; document the `!config room …` modifier in help + confirmation.
+- **`renderConfig` signature ripple** to all `channel-config.ts` callers; keep a
+  room-only path for `get room`.
+- **Context numbering races** — `remove <n>` maps to a hash via a stable sort
+  (createdAt); re-list before remove. A concurrent append shifts numbers between
+  list and remove (low-impact; owner-only).
+
+---
+
+## Scope Boundaries
+
+### Deferred to follow-up work
+- **`runtime` as a per-thread knob** — the only value needing a session rebuild
+  (selects which binary spawns; sandbox-downgrade hazard); stays terminal-only.
+- **ACP `model`/`thinking`/`effort` pass-through** — ACP agents self-manage; needs
+  protocol/client support.
+- **Per-thread rate-cap / require-mention / mention-patterns** — gate inbound before
+  a thread exists; not in target set.
+
+### Out of scope (non-goals)
+- Raw `allow`/`ask`/`deny`/`tiers`/`preset` authoring from chat — stays terminal
+  only; only the named `mode` preset is chat-settable.
+- Identity, allowlist, `access.json`, SDK `bypassPermissions`/
+  `allowDangerouslySkipPermissions` — untouched (mode is achieved via knock-knock's
+  own profile, not the SDK permission mode).
+- Migrating existing fold records (none needed — R8).
+
+---
+
+## Verification
+
+On a live relay (`bun relay.ts`) with one Discord agent serving a room:
+
+1. **Inheritance & override.** Room top-level: `!config role Room persona`. In a
+   thread: `!config get` shows `role … (room)`; `!config role Thread persona` →
+   `(thread)`; a sibling thread still shows `(room)`.
+2. **Room-from-thread + reset.** In the thread: `!config room role New default` →
+   other threads pick it up; `!config reset role` → thread falls back to inherited.
+3. **Existing knobs.** Repeat for `loop-max`, `approval-timeout`, `workbench` —
+   each resolves per-thread with room fallback (workbench detail visibly changes).
+4. **end-goal.** `!config end-goal Ship the auth refactor` → the thread's next turn
+   prompt carries the objective block alongside the persona.
+5. **model / thinking / effort.** `!config model <id>` / `!config thinking high` /
+   `!config effort max` → the **next** turn reflects them (session_init model;
+   thinking engaged); an in-flight turn is not interrupted; on ACP the honest-limit
+   note shows.
+6. **mode.** `!config mode strict` → edits/Bash blocked that turn; `!config mode
+   bypass` → edits run unprompted **but** a room-set deny (e.g. `Bash(curl *)`) and
+   the floor (`rm -rf`, `sudo`) still block. Confirm the audit log matches.
+7. **context.** `share session` import, then `!context` lists it (source/when/by);
+   `!context add Remember to update CHANGELOG` → next turn carries it once;
+   `!context remove 1` → no longer injected.
+8. **Regression.** A room with no thread overlays behaves exactly as before
+   (scope==room collapse). `bun test` (lib + ledger) and `bun run typecheck` pass.
+
+**Automated:** `bun test lib.test.ts` (layering, parser targets, new-field parsing,
+`toThinkingConfig`, `applyModeToProfile`, `parseContextCommand`) and `bun test
+ledger/concepts/config.test.ts` (`resolveConfigFor` + collapse). `bun run typecheck`
+for the U4/U5/U6 signature changes.
