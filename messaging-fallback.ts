@@ -5,7 +5,7 @@
  * "pure decision logic" discipline as lib.ts and ledger/render/, so an adapter's
  * degradation is unit-testable without a live platform.
  *
- * Three jobs (see docs/messaging-platforms.md §3):
+ * Three jobs:
  *  1. mapGlyphToReaction — a project glyph → the nearest reaction the platform
  *     actually permits (or null → skip; status lives in text instead).
  *  2. choiceMenuText — render an interactive prompt's options as a numbered text
@@ -82,30 +82,10 @@ const CONTROL_SET = new Set<string>(CONTROL_REACTIONS)
 /**
  * Normalize a unicode incoming reaction to a project control glyph, or undefined
  * if it isn't one the host acts on. For platforms that surface reactions as
- * unicode (Discord, Telegram, WhatsApp, and iMessage when it reports emoji).
+ * unicode (Discord delivers the raw emoji).
  */
 export function normalizeUnicodeReaction(raw: string): Glyph | undefined {
   return CONTROL_SET.has(raw) ? (raw as Glyph) : undefined
-}
-
-/** Slack surfaces reactions as named shortcodes (no colons), not unicode, so it
- *  needs its own inbound map. Only unambiguous control shortcodes are mapped —
- *  a casual 👍 must NOT be read as an approval. */
-const SLACK_INBOUND: Record<string, Glyph> = {
-  white_check_mark: '✅',
-  heavy_check_mark: '✅',
-  x: '❌',
-  negative_squared_cross_mark: '❌',
-  octagonal_sign: GLYPHS.stop,
-  rewind: GLYPHS.rewind,
-  repeat: GLYPHS.override,
-  arrows_counterclockwise: GLYPHS.override,
-  safety_pin: GLYPHS.checkpoint,
-}
-
-/** Normalize a Slack reaction shortcode to a project control glyph, or undefined. */
-export function normalizeSlackReaction(shortcode: string): Glyph | undefined {
-  return SLACK_INBOUND[shortcode]
 }
 
 /**

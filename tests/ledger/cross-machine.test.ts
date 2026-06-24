@@ -20,25 +20,25 @@
  */
 
 import { test, expect } from 'bun:test'
-import { SqliteStore } from './store-sqlite.ts'
-import { FoldEngine } from './fold.ts'
-import { admit } from './admit.ts'
-import { hashInteraction } from './canonical.ts'
-import { mergeProposal } from './merge.ts'
+import { SqliteStore } from '../../ledger/store-sqlite.ts'
+import { FoldEngine } from '../../ledger/fold.ts'
+import { admit } from '../../ledger/admit.ts'
+import { hashInteraction } from '../../ledger/canonical.ts'
+import { mergeProposal } from '../../ledger/merge.ts'
 import {
   LOOP_GUARD_FOLD,
   loopGuardFold,
   stateFor,
   type LoopGuardFoldState,
-} from './concepts/loop-guard.ts'
+} from '../../ledger/concepts/loop-guard.ts'
 import {
   KNOWLEDGE_FOLD,
   knowledgeFold,
   activeNotes,
   annotateWithStaleness,
   type KnowledgeFoldState,
-} from './artifacts/knowledge.ts'
-import type { Interaction, ProposedInteraction } from './interaction.ts'
+} from '../../ledger/artifacts/knowledge.ts'
+import type { Interaction, ProposedInteraction } from '../../ledger/interaction.ts'
 
 const CHANNEL = 'chan-shared'
 const ARTIFACT = 'know:scope/shared'
@@ -216,7 +216,7 @@ test('cross-machine: bootstrap on a new machine reproduces the existing view', a
     notes: activeNotes(engineA.get<KnowledgeFoldState>(KNOWLEDGE_FOLD), ARTIFACT),
   }
 
-  const { bootstrap } = await import('./bootstrap.ts')
+  const { bootstrap } = await import('../../ledger/bootstrap.ts')
   const boot = await bootstrap(store)
   expect(boot.hasExistingData).toBe(true)
   expect(boot.scanned).toBeGreaterThan(0)

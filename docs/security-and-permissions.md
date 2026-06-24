@@ -271,14 +271,10 @@ in a channel can change who's allowed or what your agent may do. Permission
 profiles are re-read on every message, so edits take effect with no restart.
 
 **Tokens are referenced by env-var *name*, never stored.** `access.json` holds
-the *name* of the env var that carries a token (`tokenEnv`), not the token
-itself — the value lives in `.env`. Platforms that need a second token follow the
-same rule: a Slack agent's app-level (`xapp-…`, Socket Mode) token is named by a
-per-agent `appTokenEnv` field, falling back to the conventional global
-`SLACK_APP_TOKEN` when absent. Per-agent naming lets two Slack agents avoid
-colliding on one global var, and — like everything else here — `appTokenEnv` is
-written only by setup, never from chat, so the prompt-injection invariant holds
-for both tokens.
+the *name* of the env var that carries a bot's token (`tokenEnv`), not the token
+itself — the value lives in `.env`. Like everything else in `access.json`, the
+env-var name is written only by setup, never from chat, so the prompt-injection
+invariant holds for the token reference too.
 
 **Owner-only approval:** the ✅/Allow buttons are verified against the room's owner
 (by Discord user ID). A peer clicking Allow on your prompt is rejected.

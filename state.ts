@@ -1,23 +1,26 @@
 /**
- * State I/O for knock-knock — path constants, the access file, and per-room
- * permission profiles. This is the only module that reads or writes these files.
- * No top-level side effects; safe to import without touching Discord.
+ * State I/O for knock-knock — path constants and the access/settings files.
+ * This is the only module that reads or writes these files. No top-level side
+ * effects; safe to import without touching Discord.
+ *
+ * access.json is authored ONLY in the normalized, channel-centric
+ * `AuthoringAccess` shape (a `bots` table + `channels` + `roster`); the relay
+ * consumes the agent-keyed runtime `Access` projected from it. Permission
+ * profiles are inline on each `Membership.profile` — there is no separate
+ * on-disk profile file and no legacy agent-keyed reader.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, copyFileSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 import {
   type Access,
-  type AgentConfig,
   type AuthoringAccess,
   type KnockSettings,
   type RoomProfile,
-  type ActorTiers,
   defaultAccess,
   defaultAuthoringAccess,
   defaultSettings,
-  DENY_FLOOR,
   projectToRuntime,
 } from './lib.ts'
 import type { PermissionProfile } from './agent-adapter.ts'
@@ -29,111 +32,15 @@ export const STATE_DIR =
 export const ACCESS_FILE = join(STATE_DIR, 'access.json')
 export const SETTINGS_FILE = join(STATE_DIR, 'settings.json')
 
-/** The permission profile for a room: rooms/<agentKey>/<channelId>.settings.json. */
-export function roomSettingsPath(agentKey: string, channelId: string): string {
-  return join(STATE_DIR, 'rooms', agentKey, `${channelId}.settings.json`)
-}
-
-/** Pull allow/ask/deny out of either the flat shape or a Claude-Code-style
- *  `{ "permissions": { … } }` wrapper, so a profile written in either form is
- *  honored rather than silently ignored. Exported for unit testing. */
-export function parseProfile(raw: string): RoomProfile {
-  const parsed = JSON.parse(raw) as Record<string, unknown>
-  const src = (
-    parsed && typeof parsed.permissions === 'object' && parsed.permissions
-      ? parsed.permissions
-      : parsed
-  ) as Partial<RoomProfile> & Record<string, unknown>
-  const profile: RoomProfile = {
-    allow: Array.isArray(src.allow) ? src.allow : [],
-    ask: Array.isArray(src.ask) ? src.ask : [],
-    deny: Array.isArray(src.deny) ? src.deny : [],
-  }
-  const tiers = parseTiers(src.tiers)
-  if (tiers) profile.tiers = tiers
-  return profile
-}
-
-/** Parse the optional per-actor `tiers` map, keeping only well-formed entries
- *  (a tier is a partial allow/ask/deny). Unknown/malformed entries are dropped. */
-function parseTiers(raw: unknown): ActorTiers | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined
-  const out: ActorTiers = {}
-  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
-    if (!val || typeof val !== 'object') continue
-    const v = val as Record<string, unknown>
-    const tier: Partial<PermissionProfile> = {}
-    if (Array.isArray(v.allow)) tier.allow = v.allow as string[]
-    if (Array.isArray(v.ask)) tier.ask = v.ask as string[]
-    if (Array.isArray(v.deny)) tier.deny = v.deny as string[]
-    if (tier.allow || tier.ask || tier.deny) out[key] = tier
-  }
-  return Object.keys(out).length > 0 ? out : undefined
-}
-
 /**
- * Read a room's allow/ask/deny profile. Missing or unreadable → empty profile.
- *
- * A profile written in the `{ "permissions": {…} }` wrapper is unwrapped (so a
- * Claude-Code-style settings.json is honored). An empty-but-present file warns
- * loudly rather than silently degrading to "everything asks" — that also drops
- * the deny floor, which is almost never what an empty file is meant to do.
- */
-export function readRoomSettings(agentKey: string, channelId: string): RoomProfile {
-  const path = roomSettingsPath(agentKey, channelId)
-  let raw: string
-  try {
-    raw = readFileSync(path, 'utf8')
-  } catch {
-    return { allow: [], ask: [], deny: [] } // no profile at this path
-  }
-  let profile: RoomProfile
-  try {
-    profile = parseProfile(raw)
-  } catch {
-    process.stderr.write(`knock-knock: room profile at ${path} is not valid JSON — ignoring it.\n`)
-    return { allow: [], ask: [], deny: [] }
-  }
-  if (profile.allow.length + profile.ask.length + profile.deny.length === 0) {
-    process.stderr.write(
-      `knock-knock: room profile at ${path} parsed to an EMPTY profile — every tool will ` +
-        `default to 'ask'. Use top-level allow/ask/deny ` +
-        `(a { "permissions": { … } } wrapper is also accepted).\n`,
-    )
-  }
-  // Re-union the current DENY_FLOOR at READ time, not just write time. Presets
-  // expand the floor when a room file is written, but a profile written by an
-  // OLDER build (or hand-authored) would otherwise miss floor entries added
-  // since — including the credential Read/FileShare floor. Unioning here makes
-  // the floor hold for every room on upgrade, and `deny` only ever tightens.
-  // Done after the empty-check so a genuinely empty file still warns.
-  profile.deny = [...new Set([...profile.deny, ...DENY_FLOOR])]
-  return profile
-}
-
-/**
- * Read the access file as the agent-keyed RUNTIME shape the relay/hosts consume.
- *
- * access.json is authored in the normalized, channel-centric `AuthoringAccess`
- * shape (a `bots` table + `channels` + `roster`); this projects it down via
- * `projectToRuntime`. A legacy file written in the agent-keyed shape (top-level
- * `agents`, no `bots`) is still honored as-is, so an existing config keeps working
- * without a migration step.
- *
- * Missing → defaults; corrupt → moved aside, then defaults.
+ * Read the access file as the agent-keyed RUNTIME shape the relay/hosts consume,
+ * projected from the channel-centric `AuthoringAccess` on disk via
+ * `projectToRuntime`. Missing → defaults; corrupt → moved aside, then defaults.
  */
 export function readAccessFile(): Access {
   try {
     const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
-    if (isAuthoringShape(parsed)) return projectToRuntime(parseAuthoringAccess(parsed))
-    // Legacy agent-keyed shape — honor as-is.
-    return {
-      agents: parsed.agents && typeof parsed.agents === 'object'
-        ? (parsed.agents as Record<string, AgentConfig>)
-        : {},
-      mentionPatterns: parsed.mentionPatterns as string[] | undefined,
-      ackReaction: parsed.ackReaction as string | undefined,
-    }
+    return projectToRuntime(parseAuthoringAccess(parsed))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
     try {
@@ -142,11 +49,6 @@ export function readAccessFile(): Access {
     process.stderr.write('knock-knock: access.json is corrupt, moved aside. Starting fresh.\n')
     return defaultAccess()
   }
-}
-
-/** A parsed access.json is in the new authoring shape iff it has a `bots` table. */
-function isAuthoringShape(parsed: Record<string, unknown>): boolean {
-  return !!parsed.bots && typeof parsed.bots === 'object' && !Array.isArray(parsed.bots)
 }
 
 /** Coerce raw JSON into a well-formed `AuthoringAccess`, dropping malformed parts.
@@ -169,24 +71,11 @@ export function parseAuthoringAccess(parsed: Record<string, unknown>): Authoring
 }
 
 /** Read access.json as the channel-centric AUTHORING shape (what setup.ts edits).
- *  A missing file or a legacy agent-keyed file → a fresh empty authoring config. */
+ *  A missing or unreadable file → a fresh empty authoring config. */
 export function readAuthoringAccess(): AuthoringAccess {
   try {
     const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
-    if (isAuthoringShape(parsed)) return parseAuthoringAccess(parsed)
-    // A legacy agent-keyed file is not auto-migrated, and the next save would
-    // overwrite it. Preserve it once (access.json.legacy) so no config is lost.
-    const backup = ACCESS_FILE + '.legacy'
-    if (!existsSync(backup)) {
-      try {
-        copyFileSync(ACCESS_FILE, backup)
-        process.stderr.write(
-          `knock-knock: legacy access.json detected — backed up to ${backup}. ` +
-            `Setup now uses the channel-centric shape; re-add your bots/channels.\n`,
-        )
-      } catch {}
-    }
-    return defaultAuthoringAccess()
+    return parseAuthoringAccess(parsed)
   } catch {
     return defaultAuthoringAccess()
   }
@@ -194,14 +83,6 @@ export function readAuthoringAccess(): AuthoringAccess {
 
 /** Persist the channel-centric authoring config (atomic, 0600). */
 export function saveAuthoringAccess(a: AuthoringAccess): void {
-  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-  const tmp = ACCESS_FILE + '.tmp'
-  writeFileSync(tmp, JSON.stringify(a, null, 2) + '\n', { mode: 0o600 })
-  renameSync(tmp, ACCESS_FILE)
-}
-
-/** Persist a legacy agent-keyed runtime Access (retained for transitional callers). */
-export function saveAccess(a: Access): void {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
   const tmp = ACCESS_FILE + '.tmp'
   writeFileSync(tmp, JSON.stringify(a, null, 2) + '\n', { mode: 0o600 })

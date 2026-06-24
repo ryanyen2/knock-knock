@@ -102,7 +102,7 @@ export type Patch =
     }
   /** External-proxy: declared intent, optional later result, optional reverse pair.
    *  `channel` is the source surface: an internal proxy (`shell`/`http`/`tool`) or
-   *  a messaging platform name (`discord`, `slack`, …, from
+   *  a messaging platform name (`discord`, … from
    *  `MessagingAdapter.platform`). `(string & {})` keeps the named values as
    *  autocomplete hints while admitting any platform key. */
   | {

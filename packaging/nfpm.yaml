@@ -1,0 +1,26 @@
+# nfpm config to package the prebuilt knock-knock binary as a .deb (and .rpm).
+# https://nfpm.goreleaser.com
+#
+# The release workflow runs this once per Linux arch after build.sh, e.g.:
+#   ARCH=amd64 BIN=dist/knock-knock-linux-x64   VERSION=0.1.0 nfpm pkg -p deb -f packaging/nfpm.yaml
+#   ARCH=arm64 BIN=dist/knock-knock-linux-arm64 VERSION=0.1.0 nfpm pkg -p deb -f packaging/nfpm.yaml
+# (ARCH, BIN, VERSION are read from the environment below.)
+
+name: knock-knock
+arch: ${ARCH}
+version: ${VERSION}
+version_schema: semver
+section: utils
+priority: optional
+maintainer: ryanyen2 <noreply@github.com>
+description: |
+  Collaborating coding agents over Discord, gated by your own
+  allow/ask/deny rules. The binary embeds the Bun runtime.
+homepage: https://github.com/ryanyen2/knock-knock
+license: MIT
+
+contents:
+  - src: ${BIN}
+    dst: /usr/bin/knock-knock
+    file_info:
+      mode: 0755

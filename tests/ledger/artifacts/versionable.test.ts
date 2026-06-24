@@ -20,13 +20,13 @@ import {
   interferes,
   regionOf,
   type VersionableFoldState,
-} from './versionable.ts'
-import type { VersionableIntent } from '../interaction.ts'
-import { hashInteraction } from '../canonical.ts'
-import { SqliteStore } from '../store-sqlite.ts'
-import { FoldEngine } from '../fold.ts'
-import { admit } from '../admit.ts'
-import type { Interaction, ProposedInteraction } from '../interaction.ts'
+} from '../../../ledger/artifacts/versionable.ts'
+import type { VersionableIntent } from '../../../ledger/interaction.ts'
+import { hashInteraction } from '../../../ledger/canonical.ts'
+import { SqliteStore } from '../../../ledger/store-sqlite.ts'
+import { FoldEngine } from '../../../ledger/fold.ts'
+import { admit } from '../../../ledger/admit.ts'
+import type { Interaction, ProposedInteraction } from '../../../ledger/interaction.ts'
 
 function editFromOps(opsBase64: string, parents: string[] = []): Interaction {
   const p: ProposedInteraction = {
@@ -342,7 +342,7 @@ test('versionable: derived dominance — both edits stay applied; the projection
 // ─── U14: shared predicate + live-hash exposure ─────────────────────────────
 
 test('isVersionableEdit: accepts admitted|applied versionable edits, rejects others', async () => {
-  const { isVersionableEdit } = await import('./versionable.ts')
+  const { isVersionableEdit } = await import('../../../ledger/artifacts/versionable.ts')
   const base = {
     verb: 'workspace.edit',
     target: { artifactId: 'vers:repo/x.ts', anchor: WHOLE_FILE_ANCHOR },
@@ -360,7 +360,7 @@ test('isVersionableEdit: accepts admitted|applied versionable edits, rejects oth
 })
 
 test('projectVersionable.live lists the kept edits (single edit → itself)', async () => {
-  const { liveVersionableEditHashes } = await import('./versionable.ts')
+  const { liveVersionableEditHashes } = await import('../../../ledger/artifacts/versionable.ts')
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
   await engine.register(versionableFold)

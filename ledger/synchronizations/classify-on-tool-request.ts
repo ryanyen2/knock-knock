@@ -22,19 +22,20 @@
  * each runtime's blind spots are documented.
  */
 
-import { readRoomSettings, type PermissionProfile } from '../../state.ts'
-import { classifyTool, type ToolDescriptor } from '../../lib.ts'
+import type { PermissionProfile } from '../../state.ts'
+import { classifyTool, resolveRoomProfile, type ToolDescriptor } from '../../lib.ts'
 import type { Synchronization } from '../sync.ts'
 
 export type ReadPolicy = (agentKey: string, channelId: string) => PermissionProfile
 
 /**
- * Factory so tests can inject a stub `readPolicy` rather than touching the
- * real STATE_DIR. Production wiring uses `classifyOnToolRequest()` (no args)
- * which defaults to `readRoomSettings` from state.ts.
+ * Factory so the relay injects a scope→room `readPolicy` (resolving the live
+ * membership profile via `AgentHost.auditProfileForScope`) and tests inject a
+ * stub. The no-arg default fails restrictive: the deny-floor-only profile, so an
+ * unwired audit can never read as permissive.
  */
 export function classifyOnToolRequest(opts?: { readPolicy?: ReadPolicy }): Synchronization {
-  const readPolicy = opts?.readPolicy ?? readRoomSettings
+  const readPolicy = opts?.readPolicy ?? (() => resolveRoomProfile(undefined))
   return {
     name: 'classify-on-tool-request',
     matches: i =>

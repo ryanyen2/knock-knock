@@ -6,8 +6,8 @@
  */
 
 import { test, expect } from 'bun:test'
-import { applySupersession } from './apply-supersession.ts'
-import type { Interaction, Lifecycle } from '../interaction.ts'
+import { applySupersession } from '../../../ledger/synchronizations/apply-supersession.ts'
+import type { Interaction, Lifecycle } from '../../../ledger/interaction.ts'
 
 function fakeStore(rows: Record<string, Lifecycle>) {
   const updates: Array<{ hash: string; lifecycle: Lifecycle }> = []

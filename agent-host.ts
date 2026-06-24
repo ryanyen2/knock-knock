@@ -28,7 +28,6 @@ import type {
   IncomingReaction,
 } from './messaging-adapter.ts'
 import {
-  readRoomSettings,
   readSessionBinding,
   writeSessionBinding,
   clearSessionBinding,
@@ -46,6 +45,7 @@ import {
   resolveChannelForScope,
   resolveReactionScope,
   resolveProfileForActor,
+  resolveRoomProfile,
   threadNameFromPrompt,
   matchesMentionPattern,
   wrapChannelRole,
@@ -199,10 +199,7 @@ export class AgentHost {
   ) {
     // Build the messaging adapter for this agent's platform (Discord today). The
     // host speaks only the MessagingAdapter seam from here on — no platform SDK.
-    // Resolve any per-agent secondary token (Slack's app token) by env-var name,
-    // falling back to the platform's global convention inside the adapter.
-    const appToken = agent.appTokenEnv ? process.env[agent.appTokenEnv] : undefined
-    this.messaging = makeMessagingAdapter(agent.platform ?? 'discord', { appToken })
+    this.messaging = makeMessagingAdapter(agent.platform ?? 'discord')
 
     const liveAgentGetter = () => getAccess().agents[this.key] ?? this.agent
 
@@ -645,12 +642,6 @@ export class AgentHost {
     return this.messaging.capabilities().maxMessageLength
   }
 
-  /** True when this host's platform adapter is a not-yet-certified skeleton, so
-   *  the relay can warn loudly at startup. */
-  get experimental(): boolean {
-    return this.messaging.capabilities().experimental === true
-  }
-
   /** Relay subscriber → refresh a turn's (per-call) Workbench message (throttled). */
   updateWorkbench(scopeId: ChannelId, promptHash: Hash): void {
     this.workbench.updateForTurn(scopeId, promptHash)
@@ -811,11 +802,11 @@ export class AgentHost {
   auditProfileForScope(agentKey: string, scopeId: ChannelId): PermissionProfile | undefined {
     const roomId = this.roomForScope(scopeId)
     if (!roomId) return undefined
-    // Prefer the membership's inline profile (channel-centric authoring shape);
-    // fall back to the on-disk per-channel settings file — same precedence the
-    // enforced session profile uses, so the audit matches enforcement.
+    // The membership's inline profile is the single source, with DENY_FLOOR
+    // re-unioned (resolveRoomProfile) — same resolution the enforced session
+    // profile uses, so the audit matches enforcement.
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const base = liveAgent.rooms[roomId]?.profile ?? readRoomSettings(agentKey, roomId)
+    const base = resolveRoomProfile(liveAgent.rooms[roomId]?.profile)
     const mode = this.channelConfigFor(scopeId).permissionPreset
     return mode ? applyModeToProfile(base, mode) : base
   }
@@ -1177,11 +1168,11 @@ export class AgentHost {
     const approverUserId = approverForAgent(liveAgent, roomId) ?? liveAgent.ownerUserId
 
     // Per-actor permission floor: the room profile is the OWNER floor; a turn
-    // prompted by a peer/human is narrowed by its tier. Read fresh + resolve per
-    // turn (the requester can differ between turns on one cached session), then
-    // re-apply to the adapter inside the serialized runTurn. The audit-only
+    // prompted by a peer/human is narrowed by its tier. Resolved per turn (the
+    // requester can differ between turns on one cached session), then re-applied
+    // to the adapter inside the serialized runTurn. The audit-only
     // classify-on-tool-request sync resolves the same scope mode (see relay.ts).
-    const storedProfile = readRoomSettings(this.key, roomId)
+    const storedProfile = resolveRoomProfile(room.profile)
     // Per-thread permission `mode` (owner `!config mode …`): a vetted preset whose
     // allow/ask loosen the room base, but whose deny is UNIONed with the room deny
     // + floor — so a thread loosens what it auto-allows but never drops a
@@ -1302,11 +1293,11 @@ export class AgentHost {
     const existing = this.sessions.get(channelId)
     if (existing) return existing
 
-    // The adapter's deny floor (applyPolicy) is the real enforcement point. Prefer
-    // the membership's inline profile (channel-centric authoring shape); fall back
-    // to the on-disk per-channel settings file. Resolve scope→room either way so a
-    // threaded session is governed by the same floor as a top-level one.
-    const profile = room.profile ?? readRoomSettings(this.key, this.roomForScope(channelId) ?? channelId)
+    // The adapter's deny floor (applyPolicy) is the real enforcement point. The
+    // membership's inline profile is the single source; resolveRoomProfile
+    // re-unions DENY_FLOOR so a threaded session is governed by the same floor as
+    // a top-level one even if the profile was written by an older build.
+    const profile = resolveRoomProfile(room.profile)
     // Workspace is membership-scoped: a bot can work in a different folder per
     // channel/project. Fall back to the bot's default workspace when unset.
     const workspace = room.workspace ?? liveAgent.workspace

@@ -4,12 +4,12 @@
  *
  * Reads the access file and spawns one AgentHost per configured agent. Each
  * AgentHost owns its own bot identity, token, runtime, and rooms (the platform
- * — Discord/Slack/… — is the agent's MessagingAdapter).
- * Configure agents with `bun setup.ts`, then start with `bun relay.ts`.
+ * — Discord — is the agent's MessagingAdapter).
+ * Configure agents with `knock-knock setup`, then start with `knock-knock relay`.
  *
  * Start a subset instead of every agent:
- *   bun relay.ts <key> [<key> …]   start only the named agents (scriptable)
- *   bun relay.ts --pick            interactive multi-select (TTY only)
+ *   knock-knock relay <key> [<key> …]   start only the named agents (scriptable)
+ *   knock-knock relay --pick            interactive multi-select (TTY only)
  * No args (non-interactive) starts all configured agents.
  *
  * Phase 3 architecture: the ledger drives the flow.
@@ -75,7 +75,7 @@ const access = readAccessFile()
 const agentEntries = Object.entries(access.agents)
 
 if (agentEntries.length === 0) {
-  process.stderr.write('relay: no agents configured. Run `bun setup.ts` first.\n')
+  process.stderr.write('relay: no agents configured. Run `knock-knock setup` first.\n')
   process.exit(1)
 }
 
@@ -92,7 +92,7 @@ if (requestedKeys.length > 0) {
   const known = new Set(agentEntries.map(([k]) => k))
   for (const k of requestedKeys) {
     if (!known.has(k)) {
-      process.stderr.write(`relay: unknown agent "${k}" — ignoring (run \`bun setup.ts\` to list agents).\n`)
+      process.stderr.write(`relay: unknown agent "${k}" — ignoring (run \`knock-knock setup\` to list agents).\n`)
     }
   }
   selectedEntries = agentEntries.filter(([k]) => requestedKeys.includes(k))
@@ -148,7 +148,7 @@ if (ledgerConfig.backend === 'postgres') {
     process.stderr.write(
       `relay: FATAL — could not connect to the Postgres ledger: ${err}\n` +
         `  Backend is set to postgres (settings.json or KNOCK_KNOCK_LEDGER_URL).\n` +
-        `  Not starting on local SQLite. Fix the connection or run \`bun setup.ts\`\n` +
+        `  Not starting on local SQLite. Fix the connection or run \`knock-knock setup\`\n` +
         `  and choose the local backend.\n`,
     )
     process.exit(1)
@@ -181,28 +181,25 @@ await engine.register(configFold) // per-channel config overlay (owner !config e
 
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
 for (const [key, agent] of selectedEntries) {
-  // iMessage is local (no token) — it authenticates via macOS permissions, not a
-  // bot token, so don't gate it on a token env var.
-  const tokenless = agent.platform === 'imessage'
   const token = process.env[agent.tokenEnv]
-  if (!token && !tokenless) {
+  if (!token) {
     process.stderr.write(
       `relay: agent "${key}" skipped — ${agent.tokenEnv} is not set.\n` +
-        `  Run \`bun setup.ts\` to save its bot token.\n`,
+        `  Run \`knock-knock setup\` to save its bot token.\n`,
     )
     continue
   }
   if (Object.keys(agent.rooms).length === 0) {
     process.stderr.write(
       `relay: bot "${key}" skipped — it isn't a member of any channel, so it has\n` +
-        `  nothing to listen to. Add it to a channel with \`bun setup.ts\`.\n`,
+        `  nothing to listen to. Add it to a channel with \`knock-knock setup\`.\n`,
     )
     continue
   }
   if (!agent.workspace) {
     process.stderr.write(
       `relay: bot "${key}" skipped — no workspace folder set for its channels.\n` +
-        `  Run \`bun setup.ts\` → add/edit channel to set one.\n`,
+        `  Run \`knock-knock setup\` → add/edit channel to set one.\n`,
     )
     continue
   }
@@ -231,7 +228,7 @@ if (hosts.length === 0) {
     if (!agent) continue
     const rooms = Object.entries(agent.rooms)
     lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime} (default)`)
-    if (rooms.length === 0) lines.push('      (no channels — add one with `bun setup.ts`)')
+    if (rooms.length === 0) lines.push('      (no channels — add one with `knock-knock setup`)')
     for (const [channelId, room] of rooms) {
       // Show the per-channel coding agent only when it overrides the bot default.
       const agentNote = room.runtime && room.runtime !== agent.runtime ? `  [${room.runtime}]` : ''
@@ -534,24 +531,9 @@ store.subscribe(i => {
 for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
   const host = hosts[n]!
-  // Experimental (walking-skeleton) platforms are opt-in and not live-certified;
-  // surface that loudly at boot so a non-Discord agent never looks production-ready.
-  if (host.experimental) {
-    ui.error(
-      entry.key,
-      `${access.agents[entry.key]!.platform ?? 'discord'} is an experimental adapter (not live-certified) — verify it before relying on it.`,
-    )
-  }
-  // Token-less platforms (iMessage) pass an empty string; their adapter ignores it.
   const token = process.env[access.agents[entry.key]!.tokenEnv] ?? ''
   void host.start(token).catch(err => {
-    const msg = String(err)
-    // A process-global resource conflict (e.g. two webhook adapters on one port)
-    // surfaces as EADDRINUSE; name it so it isn't mistaken for a credential error.
-    const hint = /EADDRINUSE|address already in use/i.test(msg)
-      ? ' — a port is already in use (two webhook/DB adapters can\'t share one port; give each agent its own)'
-      : ''
-    ui.error(entry.key, `login failed: ${err}${hint}`)
+    ui.error(entry.key, `login failed: ${err}`)
   })
 }
 

@@ -20,10 +20,10 @@ import {
   renderConfigCard,
   renderContextList,
   type WorkbenchEntry,
-} from './surface.ts'
-import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts'
-import { stableJson } from '../util.ts'
-import type { ChannelConfig } from '../../lib.ts'
+} from '../../../ledger/render/surface.ts'
+import type { TurnFoldState, TurnState, TurnToolCall } from '../../../ledger/concepts/turn.ts'
+import { stableJson } from '../../../ledger/util.ts'
+import type { ChannelConfig } from '../../../lib.ts'
 
 function tc(name: string, args: unknown, status: TurnToolCall['status'], hash: string): TurnToolCall {
   return { hash, name, inputJson: stableJson(args), status }

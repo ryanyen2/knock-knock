@@ -53,11 +53,6 @@ export type AgentConfig = {
   /** Messaging platform this agent speaks (the MessagingAdapter to build).
    *  Defaults to 'discord' when absent — today's only platform. */
   platform?: string
-  /** NAME of the env var holding a second platform token, when the platform
-   *  needs one (Slack's app-level `xapp-…` token for Socket Mode). Per-agent so
-   *  two same-platform agents don't collide on a single global env var; falls
-   *  back to the platform's conventional global name when absent. */
-  appTokenEnv?: string
   rooms: Record<string, RoomConfig>
   sandbox?: SandboxConfig // OS-level confinement (ACP runtimes only)
 }
@@ -94,14 +89,15 @@ export function defaultAccess(): Access {
 // and folds already consume — so the ledger core is untouched. The reshape lives
 // entirely in this projection + setup.ts + state.ts.
 
-export type Platform = 'discord' | 'slack' | 'telegram' | 'whatsapp' | 'imessage'
+/** Messaging platforms knock-knock can speak. Discord is the live surface;
+ *  adding another is one new MessagingAdapter (the seam in `adapters-msg/`). */
+export type Platform = 'discord'
 
 /** One coding-agent identity I run = one platform app holding a token locally. Its
  *  name/avatar/description live on the platform and are fetched live, never typed. */
 export type Bot = {
   platform: Platform
   tokenEnv: string // NAME of the env var holding this bot's platform token
-  appTokenEnv?: string // Slack socket-mode app-token env name
   runtime: string
   sandbox?: SandboxConfig
   displayName?: string // cached from the platform on connect; cosmetic, non-authoritative
@@ -217,7 +213,6 @@ export function projectToRuntime(a: AuthoringAccess): Access {
       tokenEnv: bot.tokenEnv,
       platform: bot.platform,
       rooms,
-      ...(bot.appTokenEnv ? { appTokenEnv: bot.appTokenEnv } : {}),
       ...(bot.sandbox ? { sandbox: bot.sandbox } : {}),
       ...(bot.displayName ? { name: bot.displayName } : {}),
     }
@@ -434,8 +429,8 @@ export function classifyTool(
 // A room profile is tedious to hand-author and easy to get dangerously wrong
 // (an empty file silently drops the deny floor). Presets give the operator a
 // named starting point — strict / ask-per-edit / auto / bypass — that `setup.ts`
-// stamps into the room's settings.json. They are expanded to allow/ask/deny at
-// WRITE time, so `readRoomSettings` and `classifyTool` stay unchanged and the
+// stamps into the membership's inline profile. They are expanded to allow/ask/deny
+// at WRITE time, so `resolveRoomProfile` and `classifyTool` stay unchanged and the
 // deny-floor precedence keeps working byte-for-byte.
 
 /** The non-negotiable deny floor every preset carries: destructive shell and
@@ -558,6 +553,20 @@ export type ActorTiers = Record<string, Partial<PermissionProfile>>
  *  structural superset of PermissionProfile, so every classifyTool consumer that
  *  only reads allow/ask/deny keeps working unchanged. */
 export type RoomProfile = PermissionProfile & { tiers?: ActorTiers }
+
+/**
+ * Resolve the effective profile a relay should enforce from a membership's inline
+ * profile. The current DENY_FLOOR is always re-unioned at READ time (not just when
+ * a preset is stamped at write time), so the credential/secret floor holds even for
+ * a profile written by an older build or hand-authored — and `deny` only ever
+ * tightens. An ABSENT profile fails restrictive: deny-floor only, everything else
+ * defaults to `ask`. This is the single source of a room's enforced profile now
+ * that inline `Membership.profile` is the only store (no on-disk fallback).
+ */
+export function resolveRoomProfile(profile?: RoomProfile): RoomProfile {
+  const base: RoomProfile = profile ?? { allow: [], ask: [], deny: [] }
+  return { ...base, deny: [...new Set([...base.deny, ...DENY_FLOOR])] }
+}
 
 /**
  * Resolve the effective allow/ask/deny for a turn, given who prompted it.

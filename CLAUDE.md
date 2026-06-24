@@ -5,11 +5,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-bun test              # all tests: pure decision logic (lib.test.ts) + the ledger suite
+bun test              # all tests (everything under tests/): pure decision logic + the ledger suite
 bun run typecheck     # tsc --noEmit
 bun relay.ts          # start the relay (reads agents from access.json)
 bun setup.ts          # interactive setup wizard/menu
-bun test ledger/render/surface.test.ts   # run one test file
+bun test tests/ledger/render/surface.test.ts   # run one test file
 bun test --test-name-pattern "conflict"  # run tests matching a name
 ```
 
@@ -54,7 +54,7 @@ already in a thread use that thread; owner control commands (`!watch`, `share
 session`) never spawn a thread — they act in the scope they're typed in.
 
 The **room** is the parent text channel, and it owns what is *not* per-task:
-the permission profile (`rooms/<agentKey>/<roomId>.settings.json`), the roster,
+the permission profile (the member's inline `Membership.profile`), the roster,
 the allowlist, and routing. `AgentHost.roomForScope(scopeId)` is the single seam
 that resolves a scope to its room (pure core: `resolveRoomForScope` in `lib.ts`).
 **Permission classification always resolves scope→room**, so a threaded turn is
@@ -142,11 +142,10 @@ Linux `bwrap`); the in-process `claude-sdk` can't be OS-jailed (it warns).
 react / dm / start-thread, plus `capabilities()` and reaction normalization), not
 a Discord SDK directly. `makeMessagingAdapter(agent.platform ?? 'discord')`
 (`adapters-msg/index.ts`) builds the concrete adapter; `discord.js` is confined to
-`adapters-msg/discord.ts`. **Discord is the supported, live surface.** The other
-adapters (`slack.ts`, `telegram.ts`, `whatsapp.ts`, `imessage.ts`) are reachable
-but **experimental/opt-in and not live-certified** — see `docs/messaging-platforms.md`
-for the per-platform maturity and honest limits. Pure formatting/fallback helpers
-live in `messaging-fallback.ts` + `lib.ts`.
+`adapters-msg/discord.ts`. **Discord is the live surface and the only `Platform`.**
+Supporting another platform is one new adapter file in `adapters-msg/` implementing
+the seam plus a branch in the factory — nothing else changes. Pure formatting/fallback
+helpers live in `messaging-fallback.ts` + `lib.ts`.
 
 ### `AgentHost` (`agent-host.ts` + `host/`)
 
@@ -183,12 +182,13 @@ glob patterns. SDK adapter: `deny` → `disallowedTools`, `allow` →
 2. **Unmatched tools default to `ask`** — an unknown tool must never silently
    auto-run.
 3. **Profiles are keyed by room, not scope.** A tool request's `channel` is the
-   task scope (a thread); the profile lives at `rooms/<agentKey>/<roomId>`. Both
-   enforcement paths resolve scope→room first — the adapter's `applyPolicy` (via
-   `getOrCreateSession` → `readRoomSettings(roomForScope(scope))`) and the
-   audit-only `classify-on-tool-request` (relay injects a scope→room
-   `readPolicy`). An unresolved room must fail restrictive, never to an empty
-   profile (which would drop the deny floor).
+   task scope (a thread); the profile is the room member's inline
+   `Membership.profile`, resolved via `resolveRoomProfile` (which re-unions the
+   `DENY_FLOOR` at read time). Both enforcement paths resolve scope→room first —
+   the adapter's `applyPolicy` (via `getOrCreateSession` → `resolveRoomProfile`)
+   and the audit-only `classify-on-tool-request` (relay injects a scope→room
+   `readPolicy` over `auditProfileForScope`). An absent profile fails restrictive
+   (deny-floor only), never to an empty profile (which would drop the deny floor).
 
 ACP detail: a tool's subject (command / path) may arrive in `rawInput`, the
 `content` blocks, or `locations` — `AcpAdapter` probes all three and merges
@@ -196,8 +196,8 @@ across `tool_call_update`s so deny patterns match regardless of where the agent
 put it.
 
 **Presets (`lib.ts`).** `PRESET_MODES` (strict / ask-per-edit / auto / bypass)
-are named profiles `setup.ts` stamps into a room's settings via `expandPreset`,
-**expanded at write time** so `readRoomSettings`/`classifyTool` are unchanged.
+are named profiles `setup.ts` stamps into a member's inline profile via `expandPreset`,
+**expanded at write time** so `resolveRoomProfile`/`classifyTool` are unchanged.
 Every preset carries the `DENY_FLOOR` (so `deny` is never empty); `bypass` is
 wide-open *except* the floor. A `_mode` hint is written but ignored by `parseProfile`.
 
@@ -285,7 +285,7 @@ the live surface. Pure policy is in `lib.ts` (`sniffFileKind` magic-byte typing,
   (cross-relay dedup), and records `file.shared` completed. Agent-initiated
   sharing via a `share_file` tool + interactive consent is a deferred fast-follow.
 - **Secret floor** — `DENY_FLOOR` gains `Read(<secret>)` + `FileShare(<secret>)`
-  patterns (`SECRET_PATH_GLOBS`); `readRoomSettings` re-unions the floor at read
+  patterns (`SECRET_PATH_GLOBS`); `resolveRoomProfile` re-unions the floor at read
   time so it holds for rooms written by older builds. v1 types: text/code/image/
   gif/pdf; audio/video transcription, the concrete Slack file flow, and inline
   multimodal prompt blocks are deferred.
@@ -401,11 +401,11 @@ prior plan, decisions, and pitfalls instead of cold. See
 All persistent config lives in `~/.knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
 - `access.json` — written in the **channel-centric authoring shape** (`AuthoringAccess`, `lib.ts`): `{ me?, bots, channels, roster, mentionPatterns?, ackReaction? }`.
   - `me` — `Partial<Record<Platform, userId>>`: the owner's id per platform, entered **once** and reused (no per-bot owner re-entry).
-  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, appTokenEnv?, runtime, sandbox?, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
+  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, runtime, sandbox?, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
   - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace`, inline `profile`, `preset`, and an optional per-channel `runtime` override — the same bot can drive `claude-sdk` in one channel and `codex` in another) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`. The effective runtime per channel is `Membership.runtime ?? Bot.runtime`, resolved in `getOrCreateSession`. Runtime is terminal-written only (it selects which local binary runs with workspace access), never chat-settable.
   - `roster` — `{people: Record<id, Person>, peers: Record<id, Peer>}`: known humans + peer bots, entered once and referenced by id from a channel's `collaborators`.
   - **Read via `readAccessFile()`**, which projects this to the agent-keyed runtime `Access` (`{agents: Record<botId, AgentConfig>}`) via the pure `projectToRuntime` — so the relay/hosts/folds are unchanged. `readAuthoringAccess`/`saveAuthoringAccess` operate on the authoring shape (setup only). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
-- Permission profiles are **inline** on each `Membership.profile` in `access.json` (`{allow, ask, deny, tiers?}`, expanded from a named `preset`). A legacy on-disk `rooms/<botId>/<channelId>.settings.json` file is still read as a fallback when a membership has no inline profile.
+- Permission profiles are **inline** on each `Membership.profile` in `access.json` (`{allow, ask, deny, tiers?}`, expanded from a named `preset`). They are the only profile store — there is no separate on-disk profile file. The enforced profile is resolved through the pure `resolveRoomProfile` (re-unions `DENY_FLOOR`; an absent profile fails restrictive to deny-floor-only).
 - `settings.json` — machine-global, setup-written: `ledger` backend (`{backend, url?}`) and any user-defined `presets`. Read by `relay.ts` via `resolveLedgerConfig`. Same prompt-injection invariant as `access.json`.
 - `ledger.sqlite` — the interaction DAG (SQLite backend; override path with `KNOCK_KNOCK_LEDGER_FILE`). Postgres is used instead when configured (settings.json or `KNOCK_KNOCK_LEDGER_URL`).
 - `.env` — bot tokens (one per bot, keyed by each bot's `tokenEnv`) and any other secrets.

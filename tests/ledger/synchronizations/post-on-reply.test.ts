@@ -5,8 +5,8 @@
  */
 
 import { test, expect } from 'bun:test'
-import { chunkLimitFor } from './post-on-reply.ts'
-import { chunk } from '../../lib.ts'
+import { chunkLimitFor } from '../../../ledger/synchronizations/post-on-reply.ts'
+import { chunk } from '../../../lib.ts'
 
 test('chunkLimitFor: applies a safety margin under the platform cap', () => {
   expect(chunkLimitFor(2000)).toBe(1900) // Discord

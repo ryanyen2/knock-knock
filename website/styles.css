@@ -1,8 +1,8 @@
 /* ══════════════════════════════════════════════════════════════════
-   knock-knock — Apple-light design system
-   Theme is light-locked by explicit decision. System SF font stack
-   (real San Francisco on Apple devices), single blue accent, weight-
-   driven hierarchy, generous whitespace. No webfonts, no decoration.
+   knock-knock — warm cream design system (PostHog-inspired)
+   Cream canvas, olive ink, a single saturated yellow-orange CTA, and
+   teal for links/interactive accents. IBM Plex Sans across every role.
+   Flat: 1px hairline borders, no drop shadows; tight 4–8px radii.
    ══════════════════════════════════════════════════════════════════ */
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -10,43 +10,51 @@
 
 :root {
   /* canvas + ink */
-  --canvas:   #FBFBFD;
-  --surface:  #FFFFFF;
-  --surface-2:#F5F5F7;
-  --ink:      #1D1D1F;
-  --muted:    #6E6E73;
-  --faint:    #86868B;
-  --hairline: #D2D2D7;
-  --hairline-2:#E8E8ED;
+  --canvas:   #EEEFE9;  /* warm cream page ground */
+  --surface:  #FFFFFF;  /* white cards on cream */
+  --surface-2:#E5E7E0;  /* soft surface: secondary buttons, code chips */
+  --ink:      #23251D;  /* deep olive-charcoal — headlines, near-black on cream */
+  --muted:    #4D4F46;  /* olive-gray body text */
+  --faint:    #6C6E63;  /* metadata, lowest-emphasis */
+  --hairline: #BFC1B7;  /* 1px card border / rule */
+  --hairline-2:#DCDFD2; /* soft inset rule */
 
-  /* single brand accent */
-  --accent:   #0071E3;
-  --accent-press:#0077ED;
-  --accent-wash:#EAF3FE;
+  /* the single saturated CTA (yellow-orange) — dark text on it */
+  --cta:      #F7A501;
+  --cta-press:#DD9001;
+  --on-cta:   #23251D;
 
-  /* semantic status (chat content only) */
-  --green:    #1DA851;
-  --green-wash:#E7F6EC;
-  --red:      #E5484D;
-  --red-wash: #FCEBEB;
-  --amber:    #B7791F;
+  /* interactive / link accent (teal) — links, eyebrows, ghost buttons,
+     active states. Kept distinct from the CTA so yellow stays scarce. */
+  --accent:   #1078A3;
+  --accent-press:#0F5F80;
+  --accent-wash:#DCEAF6;
 
-  /* type */
-  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
+  /* semantic status (chat content only) — PostHog callout pastels */
+  --green:    #2C8C66;
+  --green-wash:#D9EDDF;
+  --red:      #CD4239;
+  --red-wash: #F7D6D3;
+  --amber:    #B17816;
+
+  /* type — IBM Plex Sans across every role; Source Code Pro for mono */
+  --sans: "IBM Plex Sans", Inter, -apple-system, BlinkMacSystemFont,
           "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --mono: ui-monospace, "SF Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --mono: "Source Code Pro", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* radius scale (soft, consistent) */
-  --r-sm: 8px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-xl: 28px;
+  /* radius scale (tight, PostHog-like) */
+  --r-sm: 4px;
+  --r-md: 6px;
+  --r-lg: 8px;
+  --r-xl: 12px;
 
-  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 12px 32px rgba(0,0,0,.06);
-  --shadow-lg: 0 2px 6px rgba(0,0,0,.05), 0 30px 70px rgba(0,0,0,.10);
+  /* Flat system: no drop shadows. Every box-shadow resolves to a crisp
+     1px hairline ring, so cards read as bordered, not lifted. */
+  --shadow: 0 0 0 1px var(--hairline);
+  --shadow-lg: 0 0 0 1px var(--hairline);
 
   --maxw: 1120px;
-  --nav-h: 52px;
+  --nav-h: 56px;
 }
 
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
@@ -96,8 +104,8 @@ a { color: inherit; text-decoration: none; }
 .btn .ic { font-size: 1.05em; }
 .btn-sm { font-size: 14px; padding: 7px 16px; }
 .btn-lg { font-size: 17px; padding: 12px 26px; }
-.btn-primary { background: var(--accent); color: #fff; }
-.btn-primary:hover { background: var(--accent-press); }
+.btn-primary { background: var(--cta); color: var(--on-cta); font-weight: 600; }
+.btn-primary:hover { background: var(--cta-press); }
 .btn-ghost { color: var(--accent); background: transparent; }
 .btn-ghost:hover { color: var(--accent-press); }
 .btn-ghost:hover .ic { transform: translateX(3px); }
@@ -111,10 +119,10 @@ a { color: inherit; text-decoration: none; }
   border-bottom: 1px solid transparent;
 }
 .nav.scrolled {
-  background: rgba(251,251,253,.72);
+  background: rgba(238,239,233,.82);
   backdrop-filter: saturate(180%) blur(20px);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
-  border-bottom-color: var(--hairline-2);
+  border-bottom-color: var(--hairline);
 }
 .nav-inner {
   max-width: var(--maxw); margin: 0 auto; height: 100%;
@@ -140,10 +148,7 @@ a { color: inherit; text-decoration: none; }
   font-size: clamp(40px, 6.2vw, 66px); font-weight: 700;
   letter-spacing: -0.03em; line-height: 1.05;
 }
-.grad {
-  background: linear-gradient(110deg, var(--accent), #6E40E0 60%, #C24DD6);
-  -webkit-background-clip: text; background-clip: text; color: transparent;
-}
+.grad { color: var(--accent); }
 .hero-sub {
   font-size: clamp(18px, 2.1vw, 24px); color: var(--muted);
   line-height: 1.4; max-width: 36ch; margin: 22px auto 0;
@@ -181,7 +186,7 @@ a { color: inherit; text-decoration: none; }
 .chat-bar {
   display: flex; align-items: center; gap: 8px;
   padding: 13px 18px; border-bottom: 1px solid var(--hairline-2);
-  background: linear-gradient(180deg, #fff, #fcfcfe);
+  background: var(--surface);
 }
 .chat-hash { color: var(--faint); font-weight: 600; font-size: 16px; }
 .chat-name { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
@@ -255,8 +260,8 @@ a { color: inherit; text-decoration: none; }
 
 .embed-work { background: var(--surface); }
 .embed-work .embed-head { color: var(--accent); }
-.dot-work { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(0,113,227,.4); animation: pulse 1.8s infinite; }
-@keyframes pulse { 70% { box-shadow: 0 0 0 6px rgba(0,113,227,0); } 100% { box-shadow: 0 0 0 0 rgba(0,113,227,0); } }
+.dot-work { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 0 rgba(16,120,163,.4); animation: pulse 1.8s infinite; }
+@keyframes pulse { 70% { box-shadow: 0 0 0 6px rgba(16,120,163,0); } 100% { box-shadow: 0 0 0 0 rgba(16,120,163,0); } }
 /* Plan checklist (TodoWrite list) — sits above the tool steps; glyphs mirror the
    product's exact vocabulary: planned ○ → in progress ◐ → done ✓. */
 .work-plan { list-style: none; padding: 10px 13px 0; display: flex; flex-direction: column; gap: 7px; }
@@ -298,7 +303,7 @@ a { color: inherit; text-decoration: none; }
 .deny-cmd s { color: var(--red); opacity: .8; }
 .deny-foot { padding: 4px 13px 11px; font-size: 11.5px; color: #A23B3F; }
 
-.embed-conflict .embed-head { color: #7A4FD6; background: #F4EFFC; }
+.embed-conflict .embed-head { color: #7C44A6; background: #E7D8EE; }
 .embed-conflict .ask-row { padding: 11px 13px; }
 
 /* ═════════════  FLOW (pinned scrollytelling)  ═════════════ */
@@ -347,7 +352,7 @@ a { color: inherit; text-decoration: none; }
 .cell-fine { font-size: 13px !important; color: var(--faint) !important; padding-top: 12px; border-top: 1px solid var(--hairline-2); }
 .cell code { font-family: var(--mono); font-size: .85em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
 
-.cell-tiers { grid-column: span 2; grid-row: span 2; display: grid; grid-template-columns: 1fr 0.85fr; gap: 26px; align-items: center; background: linear-gradient(180deg, #fff, #fbfbfe); }
+.cell-tiers { grid-column: span 2; grid-row: span 2; display: grid; grid-template-columns: 1fr 0.85fr; gap: 26px; align-items: center; background: var(--surface); }
 .tiers { display: flex; flex-direction: column; gap: 18px; }
 .tier { display: grid; grid-template-columns: 88px 1fr; gap: 16px; align-items: start; }
 .tier-k { font-family: var(--mono); font-size: 13px; font-weight: 600; padding: 5px 0; text-align: center; border-radius: 8px; }
@@ -421,7 +426,7 @@ a { color: inherit; text-decoration: none; }
 .best { font-size: 13.5px; color: var(--faint); }
 
 /* ═════════════  CODE BLOCK  ═════════════ */
-.code { position: relative; background: #1D1D1F; border-radius: var(--r-md); overflow: hidden; }
+.code { position: relative; background: var(--ink); border-radius: var(--r-md); overflow: hidden; }
 .code-cap { font-size: 11.5px; color: #8E8E93; padding: 11px 16px 0; font-family: var(--mono); }
 .code-cap span { color: #5a5a5e; }
 .code pre { padding: 14px 16px; overflow-x: auto; }

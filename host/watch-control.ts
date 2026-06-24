@@ -15,8 +15,7 @@ import { admit } from '../ledger/admit.ts'
 import { awaitVerdict, DEFAULT_VERDICT_TIMEOUT_MS } from '../ledger/await-verdict.ts'
 import { WATCH_FOLD, liveWatches, type WatchFoldState } from '../ledger/concepts/watch.ts'
 import { GLYPHS } from '../ledger/render/surface.ts'
-import { classifyTool, parseWatchCommand, type WatchSpec } from '../lib.ts'
-import { readRoomSettings } from '../state.ts'
+import { classifyTool, parseWatchCommand, resolveRoomProfile, type WatchSpec } from '../lib.ts'
 import type { WatchToolHandlers, WatchArmPartial } from '../agent-adapter.ts'
 import type { WatchRunEnv } from '../watch-supervisor.ts'
 
@@ -36,8 +35,9 @@ export class WatchControl {
   resolveWatch(spec: WatchSpec): WatchRunEnv | undefined {
     const roomId = this.ctx.roomForScope(spec.channel)
     if (!roomId) return undefined
-    const workspace = this.ctx.getAccess().agents[this.ctx.key]?.workspace ?? ''
-    const decision = classifyTool(readRoomSettings(this.ctx.key, roomId), {
+    const agent = this.ctx.getAccess().agents[this.ctx.key]
+    const workspace = agent?.workspace ?? ''
+    const decision = classifyTool(resolveRoomProfile(agent?.rooms[roomId]?.profile), {
       toolName: 'Bash',
       subject: spec.command,
     })
@@ -94,7 +94,8 @@ export class WatchControl {
     const roomId = this.ctx.roomForScope(scopeId)
     if (!roomId) return { ok: false, message: 'No agent serves this channel.' }
     const spec: WatchSpec = { ...partial, channel: scopeId, agentKey: this.ctx.key }
-    const decision = classifyTool(readRoomSettings(this.ctx.key, roomId), {
+    const profile = resolveRoomProfile(this.ctx.getAccess().agents[this.ctx.key]?.rooms[roomId]?.profile)
+    const decision = classifyTool(profile, {
       toolName: 'Bash',
       subject: spec.command,
     })

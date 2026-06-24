@@ -1,10 +1,10 @@
 /**
- * MessagingAdapter seam — the interface the relay/host uses to talk to any
- * messaging platform (Discord, Slack, Telegram, WhatsApp, iMessage, …). The
- * sibling of `agent-adapter.ts`: that one abstracts the *agent runtime*, this
- * one abstracts the *chat surface*. No platform SDK is imported here; this
- * module is the contract only. Adding a platform means writing one new adapter
- * against this interface, nothing else (see docs/messaging-platforms.md).
+ * MessagingAdapter seam — the interface the relay/host uses to talk to a
+ * messaging platform. Discord is the live surface. The sibling of
+ * `agent-adapter.ts`: that one abstracts the *agent runtime*, this one abstracts
+ * the *chat surface*. No platform SDK is imported here; this module is the
+ * contract only. Adding a platform means writing one new adapter against this
+ * interface (in `adapters-msg/`), nothing else.
  *
  * The ledger, the synchronizations, the concepts, and the pure render layer
  * never import a platform SDK and never branch on platform NAME — they branch on
@@ -91,10 +91,6 @@ export type Capabilities = {
    *  skipped; `!outbound` → outbound shares degrade to a text notice. The host
    *  and syncs branch on this, never on a platform name. */
   files?: { inbound: boolean; outbound: boolean; maxBytes: number }
-  /** True for adapters not yet live-certified against real credentials (the
-   *  walking-skeleton platforms). The relay surfaces a loud startup warning;
-   *  Discord is the one production-tested surface (false/absent). */
-  experimental?: boolean
 }
 
 /** A file attached to an inbound message. All fields are uploader-controlled and

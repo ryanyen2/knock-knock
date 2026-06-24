@@ -1,0 +1,95 @@
+name: Release
+
+# Tag a release to build + publish:  git tag v0.1.0 && git push --tags
+# Produces: GitHub Release with the four binaries + checksums + .deb packages,
+# an npm publish (if NPM_TOKEN is set), and a Homebrew formula rendered with the
+# real sha256s (pushed to the tap if HOMEBREW_TAP_TOKEN is set, else attached to
+# the release for a manual bump).
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+      TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Resolve version
+        id: v
+        run: |
+          REF="${{ github.event.inputs.version || github.ref_name }}"
+          echo "tag=$REF" >> "$GITHUB_OUTPUT"
+          echo "num=${REF#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Install deps
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck + test
+        run: |
+          bun run typecheck
+          bun test
+
+      - name: Build binaries (all targets)
+        run: bash scripts/build.sh "${{ steps.v.outputs.num }}"
+
+      - name: Build .deb packages
+        run: |
+          curl -fsSL https://github.com/goreleaser/nfpm/releases/download/v2.43.0/nfpm_2.43.0_amd64.deb -o /tmp/nfpm.deb
+          sudo dpkg -i /tmp/nfpm.deb
+          ARCH=amd64 BIN=dist/knock-knock-linux-x64   VERSION="${{ steps.v.outputs.num }}" nfpm pkg -p deb -f packaging/nfpm.yaml -t "dist/knock-knock_${{ steps.v.outputs.num }}_amd64.deb"
+          ARCH=arm64 BIN=dist/knock-knock-linux-arm64 VERSION="${{ steps.v.outputs.num }}" nfpm pkg -p deb -f packaging/nfpm.yaml -t "dist/knock-knock_${{ steps.v.outputs.num }}_arm64.deb"
+
+      - name: Render Homebrew formula with real checksums
+        run: |
+          cd dist
+          sed \
+            -e "s/^  version \".*\"/  version \"${{ steps.v.outputs.num }}\"/" \
+            -e "s/REPLACE_DARWIN_ARM64_SHA256/$(awk '/darwin-arm64$/{print $1}' SHA256SUMS.txt)/" \
+            -e "s/REPLACE_DARWIN_X64_SHA256/$(awk '/darwin-x64$/{print $1}' SHA256SUMS.txt)/" \
+            -e "s/REPLACE_LINUX_ARM64_SHA256/$(awk '/linux-arm64$/{print $1}' SHA256SUMS.txt)/" \
+            -e "s/REPLACE_LINUX_X64_SHA256/$(awk '/linux-x64$/{print $1}' SHA256SUMS.txt)/" \
+            ../packaging/knock-knock.rb > knock-knock.rb
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.v.outputs.tag }}" \
+            --title "${{ steps.v.outputs.tag }}" \
+            --generate-notes \
+            dist/knock-knock-* dist/SHA256SUMS.txt dist/*.deb dist/knock-knock.rb
+
+      - name: Publish to npm
+        if: ${{ env.NPM_TOKEN != '' }}
+        run: |
+          echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
+          npm publish --access public
+
+      - name: Push formula to Homebrew tap
+        if: ${{ env.TAP_TOKEN != '' }}
+        run: |
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/ryanyen2/homebrew-knock-knock.git" tap
+          mkdir -p tap/Formula
+          cp dist/knock-knock.rb tap/Formula/knock-knock.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/knock-knock.rb
+          git commit -m "knock-knock ${{ steps.v.outputs.tag }}" && git push || echo "no formula change"

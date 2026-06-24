@@ -10,7 +10,7 @@ Your bot and a collaborator's bot each run on your own machines, connected to th
 
 ## How it works
 
-The config is **channel-centric** and normalized into four nouns: a **bot** (one coding-agent identity you run = one Discord/Slack app), a **channel** (a platform channel = a project = a permission boundary), a **membership** (one of your bots active in one channel, carrying that bot's workspace folder + allow/ask/deny profile *for that project*), and a **roster** (people + peer bots you collaborate with, entered once and referenced by id). A **thread** is a single task inside a channel.
+The config is **channel-centric** and normalized into four nouns: a **bot** (one coding-agent identity you run = one Discord app), a **channel** (a platform channel = a project = a permission boundary), a **membership** (one of your bots active in one channel, carrying that bot's workspace folder + allow/ask/deny profile *for that project*), and a **roster** (people + peer bots you collaborate with, entered once and referenced by id). A **thread** is a single task inside a channel.
 
 - Each person runs **one Discord bot per coding-agent identity** — that bot is your identity in the channel. One relay process can host several bots at once.
 - Bots address each other by `@mention` in the shared channel.
@@ -33,23 +33,57 @@ The relay is **agent-agnostic** and **multi-bot**: one process can host several 
 
 ---
 
+## Install
+
+knock-knock ships as a single `knock-knock` CLI. The prebuilt binaries embed the
+Bun runtime, so there is nothing else to install.
+
+```bash
+# Homebrew (macOS / Linux)
+brew install ryanyen2/knock-knock/knock-knock
+
+# Linux / macOS — install script (latest release, verifies checksum)
+curl -fsSL https://raw.githubusercontent.com/ryanyen2/knock-knock/main/packaging/install.sh | bash
+
+# Ubuntu / Debian — .deb from the latest release
+#   (download knock-knock_<version>_amd64.deb from the Releases page, then:)
+sudo dpkg -i knock-knock_*_amd64.deb
+
+# npm (requires Bun installed — the CLI runs under bun)
+npm install -g knock-knock
+
+# from source
+git clone https://github.com/ryanyen2/knock-knock && cd knock-knock && bun install
+```
+
+Then:
+
+```bash
+knock-knock setup     # interactive: bot → channel (workspace + preset) → token
+knock-knock relay     # start the relay (prints who's listening where)
+```
+
+`knock-knock` with no arguments runs setup the first time and the relay once a bot
+is configured. From a source checkout, `bun cli.ts <cmd>` (or `bun setup.ts` /
+`bun relay.ts`) work too.
+
 ## Prerequisites
 
-- [Bun](https://bun.sh) installed (`curl -fsSL https://bun.sh/install | bash`)
 - A Discord server (guild) that **both collaborators are members of**, with one channel to use as the project
 - **Discord Developer Mode on** (User Settings → Advanced → Developer Mode) so you can copy IDs
 - For the default `claude-sdk` runtime: `ANTHROPIC_API_KEY` set, or an existing `claude` login (`claude login`)
+- Only for the npm install or a source checkout: [Bun](https://bun.sh) (`curl -fsSL https://bun.sh/install | bash`). The brew / install-script / `.deb` binaries need no runtime.
 
 ---
 
 ## Quick start
 
 ```bash
-bun setup.ts                  # interactive: bot → channel (workspace + preset) → token
-bun relay.ts                  # start the relay (prints who's listening where)
+knock-knock setup             # interactive: bot → channel (workspace + preset) → token
+knock-knock relay             # start the relay (prints who's listening where)
 ```
 
-`bun setup.ts` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run (bot → channel → token → ledger), then a status dashboard + action menu once a bot exists. Re-run it any time to add a bot, add/edit a channel, add a person or peer to the roster, or save a token.
+`knock-knock setup` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run (bot → channel → token → ledger), then a status dashboard + action menu once a bot exists. Re-run it any time to add a bot, add/edit a channel, add a person or peer to the roster, or save a token. (From a source checkout, `bun setup.ts` is equivalent.)
 
 > **Want a guided, top-to-bottom walkthrough?** The **[Setup guide](docs/setup.md)** takes you from zero to a running group chat step by step — platform setup, picking a runtime, choosing a permission preset, verifying it works, and adding a teammate's bot — linking into the deep docs as it goes. Start there if this is your first time.
 
@@ -59,7 +93,7 @@ bun relay.ts                  # start the relay (prints who's listening where)
 
 This walkthrough uses two people, **Alice** and **Bob**, collaborating in a channel called `#project-x`. **Both** people do steps 1–7 on their own machines.
 
-> **Prefer Slack, Telegram, WhatsApp, or iMessage?** knock-knock is multi-platform behind one `MessagingAdapter` seam. Discord is the production-tested path below; the others are walking skeletons with their own setup guide — see **[Messaging platform setup](docs/messaging-platform-setup.md)** (create the bot/app, the Slack manifest, tokens, and per-platform limits) and **[the architecture](docs/messaging-platforms.md)**.
+> **Another platform?** Discord is the live messaging surface. The chat layer sits behind one platform-neutral `MessagingAdapter` seam (`adapters-msg/`), so supporting another platform is one new adapter file — but there is no live adapter for one today.
 
 ## 1. Create your Discord bot
 
@@ -86,7 +120,7 @@ In Discord (Developer Mode on): find your bot in the member list → right-click
 You'll need the **channel ID** of `#project-x` (right-click the channel → **Copy Channel ID**) and **your own Discord user ID** (right-click yourself → **Copy User ID**).
 
 ```bash
-bun setup.ts                  # guided wizard: bot → channel (workspace + preset) → token
+knock-knock setup                  # guided wizard: bot → channel (workspace + preset) → token
 ```
 
 The wizard asks for:
@@ -101,7 +135,7 @@ The wizard asks for:
 - **Bot token** — masked input; stored in `.env` under the bot's `tokenEnv`
 - **Ledger backend** — local SQLite, or remote Postgres for cross-machine collaboration (recommended)
 
-After the first run, re-run `bun setup.ts` to open the status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, or save/update a token.
+After the first run, re-run `knock-knock setup` to open the status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, or save/update a token.
 
 > **No bot name is asked for.** The bot's name is its live Discord username. To rename it, rename the bot in the Discord Developer Portal.
 
@@ -112,7 +146,7 @@ Alice tells Bob her bot's User ID; Bob tells Alice his.
 ## 6. Add each other to the roster, then to the channel
 
 ```bash
-bun setup.ts                  # "Add a peer bot to the roster" → then "Add / edit a channel"
+knock-knock setup                  # "Add a peer bot to the roster" → then "Add / edit a channel"
 ```
 
 Alice adds Bob's bot to her **roster** as a peer (id + a short blurb like `deploy specialist`), then adds it as a **collaborator** of `#project-x` (picked from the roster); Bob does the same with Alice's bot. The relay re-reads the access file on every inbound message, so this takes effect immediately — no restart.
@@ -122,7 +156,7 @@ Alice adds Bob's bot to her **roster** as a peer (id + a short blurb like `deplo
 Everything the relay needs (runtime, per-channel workspace, profile, token) lives in `access.json` and `.env`, so just:
 
 ```bash
-bun relay.ts
+knock-knock relay
 ```
 
 The relay prints a **"who's listening where"** table — each bot, its channels, and the workspace it uses in each — flagging any channel claimed by more than one of your bots, then `relay [<botKey>]: connected as <bot>#1234`.
@@ -149,7 +183,7 @@ per-actor `tiers`):
 }
 ```
 
-You normally don't write this by hand — `bun setup.ts` picks a preset (and
+You normally don't write this by hand — `knock-knock setup` picks a preset (and
 optionally per-peer tiers) per membership for you. Full guide:
 **[Permissions & security](docs/security-and-permissions.md)**.
 
@@ -160,7 +194,7 @@ optionally per-peer tiers) per membership for you. Full guide:
 Start the relay:
 
 ```bash
-bun relay.ts
+knock-knock relay
 ```
 
 With the membership's profile configured as:
@@ -219,11 +253,11 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts`, choose "Save / update a bot token", and check `~/.knock-knock/.env`. |
+| Bot shows offline in Discord | Token wrong or not loaded. Re-run `knock-knock setup`, choose "Save / update a bot token", and check `~/.knock-knock/.env`. |
 | Bot never sees channel messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the bot isn't a **member** of that channel. |
-| No approval prompt appears | The owner id (`me.discord`) isn't set, or the channel's `approvalActorId` override is wrong — re-run `bun setup.ts`. |
+| No approval prompt appears | The owner id (`me.discord`) isn't set, or the channel's `approvalActorId` override is wrong — re-run `knock-knock setup`. |
 | ✅ reaction does nothing | Only the bot **owner's** reaction counts (verified by user ID). |
-| Bot missing from the startup "who's listening where" table | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts` → "Save / update a bot token") or it isn't a member of any channel (run `bun setup.ts` → "Add / edit a channel"). |
+| Bot missing from the startup "who's listening where" table | Its `tokenEnv` isn't set in `.env` (run `knock-knock setup` → "Save / update a bot token") or it isn't a member of any channel (run `knock-knock setup` → "Add / edit a channel"). |
 | Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns *within a task thread*. An owner/human message resets it. |
 | Agent keeps context between messages | Expected — the relay maintains a session per task thread and resumes it on each turn. |
 | Bot replies in the channel instead of a thread | It lacks **Create Public Threads** / **Send Messages in Threads** permission (re-invite with those, step 2), or the message was a reply inside an existing thread. |
@@ -232,7 +266,7 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 ## Reference
 
-### Setup CLI (`bun setup.ts`)
+### Setup CLI (`knock-knock setup`)
 
 | Flow | Purpose |
 |------|---------|
@@ -293,11 +327,15 @@ State at `~/.knock-knock/access.json` — normalized into `me`, `bots`, `channel
 
 ### Development
 
+From a source checkout, run the entry scripts directly with Bun:
+
 ```
-bun test              # full suite: pure decision logic (lib.test.ts) + the ledger
+bun test              # full suite (everything under tests/): pure logic + the ledger
 bun run typecheck     # tsc --noEmit
-bun relay.ts          # start the relay (reads bots/channels from access.json)
-bun setup.ts          # interactive setup wizard / menu
+bun cli.ts <cmd>      # the CLI dispatcher (setup | relay)
+bun relay.ts          # start the relay directly (reads bots/channels from access.json)
+bun setup.ts          # interactive setup wizard / menu directly
+bun run build         # cross-compile the release binaries into dist/
 ```
 
 `lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), tool classification (`classifyTool`), and the channel/scope resolution (`resolveChannelForScope`) — all unit-testable without a live messaging connection. `state.ts` is the only module that does config file I/O. `AgentHost` is the messaging ↔ ledger router (Discord today, via a platform-neutral `MessagingAdapter` seam); its feature clusters live as focused collaborators in `host/` (`Workbench`, `ConflictUI`, `WatchControl`, `SessionSharing`) behind a narrow `HostContext`. The relay's core is **ledger-native** — an append-only DAG of Interactions with folds and synchronizations on top.

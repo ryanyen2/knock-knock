@@ -1,21 +1,19 @@
 /**
  * Pure tests for the messaging fallback/normalization layer. Inbound reaction
- * normalization (U6) is the load-bearing one: before this, the host compared
- * unicode glyphs while Slack delivered shortcodes, so every reaction control was
- * dead off-Discord.
+ * normalization is the load-bearing one: the host compares control glyphs, so a
+ * casual 👍 must never read as an approval.
  */
 
 import { test, expect } from 'bun:test'
 import {
   normalizeUnicodeReaction,
-  normalizeSlackReaction,
   CONTROL_REACTIONS,
   mapGlyphToReaction,
   outboundFileNotice,
-} from './messaging-fallback.ts'
-import { GLYPHS } from './ledger/render/surface.ts'
+} from '../messaging-fallback.ts'
+import { GLYPHS } from '../ledger/render/surface.ts'
 
-// ─── normalizeUnicodeReaction (Discord / Telegram / WhatsApp) ─────────────────
+// ─── normalizeUnicodeReaction (Discord delivers the raw emoji) ────────────────
 
 test('normalizeUnicodeReaction: a control glyph passes through unchanged', () => {
   expect(normalizeUnicodeReaction('✅')).toBe('✅')
@@ -32,33 +30,13 @@ test('normalizeUnicodeReaction: a non-control reaction is ignored (undefined)', 
   expect(normalizeUnicodeReaction('')).toBeUndefined()
 })
 
-// ─── normalizeSlackReaction (the dead-reactions fix) ──────────────────────────
-
-test('normalizeSlackReaction: shortcodes map to project control glyphs', () => {
-  expect(normalizeSlackReaction('white_check_mark')).toBe('✅')
-  expect(normalizeSlackReaction('heavy_check_mark')).toBe('✅')
-  expect(normalizeSlackReaction('x')).toBe('❌')
-  expect(normalizeSlackReaction('octagonal_sign')).toBe(GLYPHS.stop)
-  expect(normalizeSlackReaction('rewind')).toBe(GLYPHS.rewind)
-  expect(normalizeSlackReaction('repeat')).toBe(GLYPHS.override)
-  expect(normalizeSlackReaction('safety_pin')).toBe(GLYPHS.checkpoint)
-})
-
-test('normalizeSlackReaction: an unmapped shortcode is ignored (no false approval)', () => {
-  // A casual 👍 (:+1:) must NOT be read as an approval.
-  expect(normalizeSlackReaction('+1')).toBeUndefined()
-  expect(normalizeSlackReaction('tada')).toBeUndefined()
-  expect(normalizeSlackReaction('')).toBeUndefined()
-})
-
-test('every Slack-mapped glyph is a recognized control reaction', () => {
-  for (const code of ['white_check_mark', 'x', 'octagonal_sign', 'rewind', 'repeat', 'safety_pin']) {
-    const glyph = normalizeSlackReaction(code)!
-    expect(CONTROL_REACTIONS).toContain(glyph)
+test('every control glyph is a recognized control reaction', () => {
+  for (const glyph of ['✅', '❌', GLYPHS.stop, GLYPHS.override, GLYPHS.rewind, GLYPHS.checkpoint]) {
+    expect(CONTROL_REACTIONS).toContain(normalizeUnicodeReaction(glyph)!)
   }
 })
 
-// ─── outbound mapGlyphToReaction (regression guard for the pairing) ───────────
+// ─── outbound mapGlyphToReaction (the generic capability seam) ────────────────
 
 test('mapGlyphToReaction: none → null, any → unchanged, whitelist → equivalent', () => {
   expect(mapGlyphToReaction('✅', { reactions: 'none' } as any)).toBeNull()

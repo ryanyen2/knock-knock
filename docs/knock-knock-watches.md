@@ -187,7 +187,7 @@ This is the part to get right from day one, because a watch *runs a script,
 repeatedly, unattended.*
 
 - **Permission floor, three-way (non-negotiable).** The command is classified
-  via `classifyTool(readRoomSettings(agent, room), {toolName:'Bash', subject:
+  via `classifyTool(resolveRoomProfile(membership.profile), {toolName:'Bash', subject:
   command})` at arm time — the watch's `channel` is the task scope (a thread), so
   the profile is read against the **room** it resolves to (`roomForScope`), never
   an empty profile. The arm-gate is `WatchControl.arm` (`host/watch-control.ts`):
@@ -306,10 +306,10 @@ requests in §4 work:
    arms only on approve. The supervisor's spawn gate relaxed to **deny-floor
    only**. This is what makes self-arming usable under a real `ask:[Bash(*)]`
    profile — see §5.
-9. **Robust profile loading** (`state.ts`/`readRoomSettings`): accepts both the
-   flat and `{"permissions":{…}}` shapes, and warns on an empty-but-present
-   profile — so a mis-formatted `settings.json` fails loudly instead of silently
-   dropping the deny floor. (Profiles are keyed by room; `roomForScope` resolves
+9. **Robust profile resolution** (`lib.ts`/`resolveRoomProfile`): the member's
+   inline `profile` is the single source, with the `DENY_FLOOR` always re-unioned
+   at read time and an absent profile failing restrictive (deny-floor only) — so a
+   missing or stale profile can never silently drop the deny floor. (Profiles are keyed by room; `roomForScope` resolves
    a threaded turn's scope back to its room before the read.)
 
 ### How the agent self-arming works (§3 "imperative" path)

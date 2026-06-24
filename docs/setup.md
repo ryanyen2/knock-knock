@@ -13,7 +13,7 @@ Each step links to a deeper reference when you want the full detail.
 1. [The model in five words](#1-the-model-in-five-words) — bot, channel, membership, roster, owner
 2. [Prerequisites](#2-prerequisites)
 3. [Quickstart: from zero to a reply](#3-quickstart-from-zero-to-a-reply) — the three-command path
-4. [Connect your chat platform](#4-connect-your-chat-platform) — Discord in full, plus Slack / Telegram / WhatsApp / iMessage
+4. [Connect your chat platform](#4-connect-your-chat-platform) — Discord, the live surface
 5. [Choose the coding agent behind the bot](#5-choose-the-coding-agent-behind-the-bot) — the runtime
 6. [Decide what the bot may do](#6-decide-what-the-bot-may-do) — presets and the deny floor
 7. [Say hello, then verify](#7-say-hello-then-verify) — the T1 / T2 / T3 check
@@ -31,7 +31,7 @@ plainly.
 
 | Term | What it is |
 |------|------------|
-| **Bot** | One coding-agent identity you run = one Discord/Slack app you created, holding a token locally. Its name and avatar live **on the platform** and are fetched on connect — never typed. Has a runtime (Claude Code, OpenCode, …) and an optional OS sandbox. You can run several at once. |
+| **Bot** | One coding-agent identity you run = one Discord app you created, holding a token locally. Its name and avatar live **on the platform** and are fetched on connect — never typed. Has a runtime (Claude Code, OpenCode, …) and an optional OS sandbox. You can run several at once. |
 | **Channel** | A platform channel = **a project = a permission boundary**. It's the thing a bot is "invited" to. Keyed globally as `${platform}:${channelId}` so two platforms never collide. |
 | **Membership** | One of *your* bots active in one channel. This is the permission boundary itself: it carries that bot's **workspace folder** and its **allow/ask/deny profile** *for that project*. The same bot can have a read-only workspace in one channel and a read-write one in another. |
 | **Roster** | Your local address-book of **people** (human collaborators) and **peers** (other people's bots), each entered **once** and then picked from a list. No re-pasting IDs. |
@@ -57,8 +57,8 @@ tables, and a channel references bots and roster entries by id.
   ```bash
   curl -fsSL https://bun.sh/install | bash
   ```
-- **A chat platform you can add a bot to.** Discord is the production-tested path
-  and the rest of this guide assumes it unless a section says otherwise.
+- **A Discord account and a server you can add a bot to.** Discord is the live
+  messaging platform this guide uses throughout.
 - **A coding-agent runtime.** The default (`claude-sdk`) needs only an
   `ANTHROPIC_API_KEY` or an existing `claude` login — nothing to install. Other
   runtimes are covered in [step 5](#5-choose-the-coding-agent-behind-the-bot).
@@ -68,9 +68,9 @@ knock-knock has **no `config.json` you hand-edit.** Everything lives under
 
 | File | Holds | Written by |
 |------|-------|------------|
-| `access.json` | `me` (owner per platform), `bots`, `channels` (with each member's workspace + permission profile), `roster` (people + peers) | `bun setup.ts` only |
-| `.env` | bot tokens and secrets | `bun setup.ts` (or you) |
-| `settings.json` | ledger backend, presets | `bun setup.ts` |
+| `access.json` | `me` (owner per platform), `bots`, `channels` (with each member's workspace + permission profile), `roster` (people + peers) | `knock-knock setup` only |
+| `.env` | bot tokens and secrets | `knock-knock setup` (or you) |
+| `settings.json` | ledger backend, presets | `knock-knock setup` |
 | `ledger.sqlite` | the interaction log | the relay |
 
 `access.json` (including the inline permission profiles) is written **only** from
@@ -81,10 +81,10 @@ can change who's allowed or what they may do.
 
 **One global file: `~/.knock-knock/.env`** — *not* per-project and *not* tied to the
 folder you run from. You set it up **once**; every bot, every channel, and every
-`bun relay.ts` (launched from any directory) reads the same file. You never re-enter
+`knock-knock relay` (launched from any directory) reads the same file. You never re-enter
 env vars when you add a channel or start from a different folder.
 
-It holds two kinds of secret, both managed by `bun setup.ts`:
+It holds two kinds of secret, both managed by `knock-knock setup`:
 
 - **Bot tokens** — one per bot (e.g. `DISCORD_BOT_TOKEN`), via "Save a bot token".
 - **Coding-agent API keys** — e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, via "Save a
@@ -113,7 +113,7 @@ answers.
 
 > **Step 2 — Run the setup wizard**
 > ```bash
-> bun setup.ts
+> knock-knock setup
 > ```
 > On first run it walks you through one bot and a channel for it to work in,
 > with arrow-key menus and masked token input: **bot (platform → runtime →
@@ -126,7 +126,7 @@ answers.
 
 > **Step 3 — Start the relay**
 > ```bash
-> bun relay.ts
+> knock-knock relay
 > ```
 > The relay prints a **"who's listening where"** table — each bot, the channels
 > it's a member of, and the workspace it uses there — then `connected as
@@ -134,7 +134,7 @@ answers.
 > startup rather than picking one silently.) Now `@mention` the bot in your
 > channel and say hello.
 
-After the first bot exists, re-running `bun setup.ts` opens a **status
+After the first bot exists, re-running `knock-knock setup` opens a **status
 dashboard + action menu** instead of the wizard — a compact map of your bots,
 channels, and roster, plus actions to add a bot, add/edit a channel, add a
 person or peer to the roster, save a token, or choose the ledger backend.
@@ -146,21 +146,10 @@ If you want to feel the flow before creating a real bot, skip ahead to
 
 ## 4. Connect your chat platform
 
-Pick the platform you'll use. **Discord is fully walked through here.** The
-others have their own complete reference — the essentials are below with a link
-to the full steps (app manifests, limits, troubleshooting).
-
-| Platform | Status | Full steps |
-|----------|--------|-----------|
-| **Discord** | ✅ production-tested | inline below |
-| Slack | ⚠️ experimental | [messaging-platform-setup.md](messaging-platform-setup.md) → Slack |
-| Telegram | ⚠️ experimental | [messaging-platform-setup.md](messaging-platform-setup.md) → Telegram |
-| WhatsApp | ⚠️ experimental | [messaging-platform-setup.md](messaging-platform-setup.md) → WhatsApp |
-| iMessage | ⚠️ experimental | [messaging-platform-setup.md](messaging-platform-setup.md) → iMessage |
-
-> **Experimental** means implemented and type-checked, not yet live-verified
-> end to end. `bun setup.ts` makes you confirm before picking one, and the relay
-> warns at boot. Verify with a test account before relying on it.
+Discord is the live messaging surface, and it's fully walked through below. The
+chat layer sits behind one platform-neutral `MessagingAdapter` seam
+(`adapters-msg/`), so another platform is one new adapter file away — but there
+is no live adapter for one today.
 
 ### Discord (the default path)
 
@@ -192,8 +181,8 @@ to the full steps (app manifests, limits, troubleshooting).
 
 > **Step 5 — Configure and run**
 > ```bash
-> bun setup.ts        # bot → channel (paste id, pick this bot as a member, set its workspace + preset) → token
-> bun relay.ts
+> knock-knock setup        # bot → channel (paste id, pick this bot as a member, set its workspace + preset) → token
+> knock-knock relay
 > ```
 
 **How it behaves:** a top-level `@mention` spawns a task thread; replies in that
@@ -201,38 +190,19 @@ thread continue the task. Status shows as quiet emoji reactions (👀 working �
 done / ⚠️ failed). Approvals and conflict choices are buttons. The owner gets a
 DM when a draft is overridden.
 
-### The other platforms, in one breath
+### Another platform?
 
-You still run `bun setup.ts` (pick the bot's platform when you add it) and `bun
-relay.ts`. What differs per platform is **how you create the bot, which tokens
-you need, and the shape of the owner / channel IDs**:
-
-- **Slack** — create an app **from the manifest** in the reference; needs **two**
-  tokens, a bot token (`xoxb-`) and an app-level token (`xapp-`) for Socket Mode
-  (no public URL). Owner is a `U…` id, the channel is a `C…` id. The one trap:
-  without `channels:history` / `groups:history` scopes **and** the matching
-  `message.*` events, Slack silently drops every message.
-- **Telegram** — one bot from **@BotFather**, one token. Set **privacy mode** to
-  decide whether it reads non-mention group messages. Owner is your numeric user
-  id; group channel ids are **negative** (`-100…`).
-- **WhatsApp** — the heaviest: a Meta app, a phone number, and a **public webhook
-  URL** (a tunnel like `cloudflared` or `ngrok`). Mind the 24-hour messaging
-  window.
-- **iMessage** — macOS only, **no token**. Grant **Full Disk Access** and
-  **Automation**; the channel is a chat GUID from `chat.db`. Text-only, so every
-  interactive flow falls back to a numbered menu.
-
-Full step-by-step for each (manifests, env vars, limits, troubleshooting) lives
-in **[messaging-platform-setup.md](messaging-platform-setup.md)**; the
-architecture and capability matrix are in
-**[messaging-platforms.md](messaging-platforms.md)**.
+Discord is the only live messaging platform. The chat layer is isolated behind a
+platform-neutral `MessagingAdapter` interface (`adapters-msg/`), so adding
+another platform means writing one new adapter against that seam and a branch in
+its factory — the relay, the ledger, and the permission model never change.
 
 ---
 
 ## 5. Choose the coding agent behind the bot
 
 The bot is just the face. Behind it, the relay can drive any of these coding
-agents — chosen by the bot's **`runtime`** in `bun setup.ts`, no code changes:
+agents — chosen by the bot's **`runtime`** in `knock-knock setup`, no code changes:
 
 | `runtime` | Agent | Notes |
 |-----------|-------|-------|
@@ -257,7 +227,7 @@ sandbox details) are in
 
 ## 6. Decide what the bot may do
 
-In `bun setup.ts`, each **membership** (a bot in a channel) gets a **preset** — a
+In `knock-knock setup`, each **membership** (a bot in a channel) gets a **preset** — a
 named permission profile, expanded inline into that membership's allow/ask/deny.
 Every tool the bot reaches for is checked against it, with one rule: **deny beats
 ask beats allow.** Because the profile lives on the membership, the same bot can
@@ -320,7 +290,7 @@ adds the other to their roster as a peer.
 
 > **Step 3 — Add each other as peers, then as channel collaborators**
 > ```bash
-> bun setup.ts        # "Add a peer bot to the roster" → paste the other bot's id + a short blurb
+> knock-knock setup        # "Add a peer bot to the roster" → paste the other bot's id + a short blurb
 >                     # then "Add / edit a channel" → add that peer as a collaborator (picked from the roster)
 > ```
 > The blurb (e.g. "hosts the vLLM box") is what your bot sees in the roster, so
@@ -329,7 +299,7 @@ adds the other to their roster as a peer.
 
 > **Step 4 — Both launch**
 > ```bash
-> bun relay.ts
+> knock-knock relay
 > ```
 > Now in the channel, one bot can `@mention` the other with a request. A task
 > thread opens, the other bot works in **its** membership's workspace under
@@ -344,9 +314,9 @@ The full list is in
 [getting-started-agents.md#multi-agent-collaboration](getting-started-agents.md#multi-agent-collaboration).
 
 > **Same machine, two bots?** You don't need two computers to try this. One
-> relay can host several bots at once — re-run `bun setup.ts`, add a second bot
+> relay can host several bots at once — re-run `knock-knock setup`, add a second bot
 > with its own token, make both members of the channel (each with its own
-> workspace + preset), and a single `bun relay.ts` connects both. With more than
+> workspace + preset), and a single `knock-knock relay` connects both. With more than
 > one of your bots in a channel, an `@mention` routes to the named bot; an
 > un-mentioned top-level message isn't auto-answered by everyone.
 
@@ -361,7 +331,7 @@ dedicated guide.
   local SQLite ledger, so two relays only see each other through the chat. To
   share ledger state (imported session context, cross-machine conflict
   detection, collaborative file edits), point **every** relay at one shared
-  **Postgres**: `bun setup.ts → "Choose ledger backend" → Remote (Postgres)`.
+  **Postgres**: `knock-knock setup → "Choose ledger backend" → Remote (Postgres)`.
   Setup and the Neon walkthrough:
   [getting-started-agents.md#cross-machine-setup-shared-postgres-ledger](getting-started-agents.md#cross-machine-setup-shared-postgres-ledger).
 - **Per-task tuning (owner, in-thread)** — `!config role <text>`, model, thinking,
@@ -382,18 +352,14 @@ dedicated guide.
 
 | Symptom | Fix |
 |---------|-----|
-| Bot shows offline | Token wrong or not loaded. Re-run `bun setup.ts → "Save / update a bot token"` and check `.env`. |
+| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup → "Save / update a bot token"` and check `.env`. |
 | Bot is silent | On Discord, MESSAGE CONTENT INTENT is off, the bot isn't in the channel, or the channel requires an `@mention` and you didn't mention it. |
 | Empty message text (Discord) | MESSAGE CONTENT INTENT not enabled. |
 | Bot not in the "who's listening where" table at startup | Its `tokenEnv` isn't set in `.env`, or it isn't a **member** of any channel. Re-run setup, save its token, and add it to a channel. |
 | Two of your bots flagged on the same channel | Legal but ambiguous — an `@mention` routes to the named bot, and a thread continuation stays with the bot that owns it. Give each a distinct role or drop one from the channel. |
-| No approval prompt appears | The owner id (`me`) for that platform isn't set, or the channel's `approvalActorId` override is wrong. Re-run `bun setup.ts`. |
+| No approval prompt appears | The owner id (`me`) for that platform isn't set, or the channel's `approvalActorId` override is wrong. Re-run `knock-knock setup`. |
 | `rm -rf` ran anyway (ACP runtime) | The agent isn't asking before tools. Put it in ask-first mode, or turn on the OS sandbox. See [the deny-floor caveat](getting-started-agents.md). |
-| Slack posts but no inbound | Missing `*:history` scopes + `message.*` events, or Socket Mode token missing. Reinstall after adding scopes. |
 | Cross-machine state not syncing | Both relays must point at the **same** Postgres (direct endpoint, not a pooled one). |
-
-Per-platform troubleshooting tables are in
-[messaging-platform-setup.md](messaging-platform-setup.md).
 
 ---
 
@@ -401,8 +367,6 @@ Per-platform troubleshooting tables are in
 
 | Guide | When to read it |
 |-------|-----------------|
-| [Messaging platform setup](messaging-platform-setup.md) | Full per-platform steps: Slack manifest, tokens, IDs, limits, troubleshooting |
-| [Messaging platforms (architecture)](messaging-platforms.md) | The `MessagingAdapter` seam and the cross-platform capability matrix |
 | [Getting started with different agents](getting-started-agents.md) | Per-runtime install/auth, multi-agent collaboration, cross-machine, the deny-floor caveat |
 | [Permissions & security](security-and-permissions.md) | Presets, per-peer tiers, the deny floor, OS sandbox, prompt-injection invariant |
 | [Session sharing](session-sharing.md) | Importing or resuming a local coding session into a channel |

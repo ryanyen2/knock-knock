@@ -55,7 +55,7 @@ import {
   type WatchSpec,
   type RoomConfig,
   type AuthoringAccess,
-} from './lib.ts'
+} from '../lib.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
 
@@ -184,10 +184,10 @@ test('resolveChannelForScope: an unresolved scope returns undefined (fail-restri
 // ─── projectToRuntime (channel-centric authoring → agent-keyed runtime) ───────
 
 const AUTHORING: AuthoringAccess = {
-  me: { discord: 'OWNER_D', slack: 'OWNER_S' },
+  me: { discord: 'OWNER_D' },
   bots: {
     reviewer: { platform: 'discord', tokenEnv: 'REVIEWER_TOKEN', runtime: 'claude-sdk', blurb: 'reviews code' },
-    builder: { platform: 'slack', tokenEnv: 'BUILDER_TOKEN', appTokenEnv: 'BUILDER_APP', runtime: 'acp' },
+    builder: { platform: 'discord', tokenEnv: 'BUILDER_TOKEN', runtime: 'acp' },
   },
   channels: {
     'discord:C_INFRA': {
@@ -203,8 +203,8 @@ const AUTHORING: AuthoringAccess = {
       members: [{ bot: 'reviewer', workspace: '/repos/web' }],
       collaborators: [{ kind: 'human', id: 'alice' }],
     },
-    'slack:C_Z': {
-      platform: 'slack',
+    'discord:C_Z': {
+      platform: 'discord',
       channelId: 'C_Z',
       members: [{ bot: 'builder', workspace: '/repos/z' }],
       collaborators: [{ kind: 'human', id: 'bob' }],
@@ -213,7 +213,7 @@ const AUTHORING: AuthoringAccess = {
   roster: {
     people: {
       alice: { platform: 'discord', userId: 'U_ALICE' },
-      bob: { platform: 'slack', userId: 'U_BOB' },
+      bob: { platform: 'discord', userId: 'U_BOB' },
     },
     peers: { carol: { platform: 'discord', userId: 'U_CAROL', blurb: 'docs writer', label: 'carol-bot' } },
   },
@@ -224,17 +224,16 @@ test('projectToRuntime: each bot becomes one runtime agent with platform + token
   expect(Object.keys(rt.agents).sort()).toEqual(['builder', 'reviewer'])
   expect(rt.agents.reviewer!.platform).toBe('discord')
   expect(rt.agents.reviewer!.ownerUserId).toBe('OWNER_D') // from me[platform], not re-typed
-  expect(rt.agents.builder!.ownerUserId).toBe('OWNER_S')
-  expect(rt.agents.builder!.appTokenEnv).toBe('BUILDER_APP')
+  expect(rt.agents.builder!.ownerUserId).toBe('OWNER_D')
 })
 
-test('projectToRuntime: a bot is a member only of its own-platform channels (per-channel workspace)', () => {
+test('projectToRuntime: a bot is a member only of the channels it joins (per-channel workspace)', () => {
   const rt = projectToRuntime(AUTHORING)
-  // reviewer is in both discord channels, not the slack one.
+  // reviewer is a member of both channels it was added to, not C_Z.
   expect(Object.keys(rt.agents.reviewer!.rooms).sort()).toEqual(['C_INFRA', 'C_WEB'])
   expect(rt.agents.reviewer!.rooms.C_INFRA!.workspace).toBe('/repos/infra')
   expect(rt.agents.reviewer!.rooms.C_WEB!.workspace).toBe('/repos/web')
-  // builder only sees its slack channel.
+  // builder only sees the channel it's a member of.
   expect(Object.keys(rt.agents.builder!.rooms)).toEqual(['C_Z'])
 })
 

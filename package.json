@@ -1,13 +1,48 @@
 {
   "name": "knock-knock",
   "version": "0.1.0",
+  "description": "Your agents, their agents, one channel — collaborating coding agents over Discord, with every action on your machine gated by your own allow/ask/deny rules.",
   "license": "MIT",
   "type": "module",
+  "bin": {
+    "knock-knock": "./cli.ts"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "files": [
+    "cli.ts",
+    "relay.ts",
+    "setup.ts",
+    "state.ts",
+    "lib.ts",
+    "driver.ts",
+    "agent-adapter.ts",
+    "agent-host.ts",
+    "approvals.ts",
+    "console-ui.ts",
+    "dm-courier.ts",
+    "messaging-adapter.ts",
+    "messaging-fallback.ts",
+    "sandbox.ts",
+    "watch-supervisor.ts",
+    "adapters/",
+    "adapters-msg/",
+    "host/",
+    "ledger/",
+    "sessions/",
+    "tsconfig.json",
+    "README.md",
+    "LICENSE",
+    "docs/"
+  ],
   "scripts": {
     "relay": "bun relay.ts",
     "setup": "bun setup.ts",
+    "cli": "bun cli.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "bash scripts/build.sh"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.22.1",
