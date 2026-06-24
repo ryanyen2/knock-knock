@@ -45,6 +45,11 @@ export type Verb =
   | 'workspace.edit'
   | 'knowledge.append'
   | 'knowledge.invalidate'
+  // File exchange — an inbound attachment materialized into the workspace, and
+  // an outbound workspace file shared back to the channel. Both `effect:external`
+  // and carry the path-free descriptor in the external patch intent args.
+  | 'file.received'
+  | 'file.shared'
   // External-proxy serialization (Phase 2)
   | 'external.claim'
   | 'external.release'

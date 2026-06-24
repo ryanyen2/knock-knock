@@ -22,6 +22,7 @@ import type {
   MessagingAdapter,
   MessageRef,
   IncomingMessage,
+  IncomingAttachment,
   IncomingAction,
   IncomingReaction,
 } from './messaging-adapter.ts'
@@ -69,7 +70,8 @@ import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
 import { parseVersionableId } from './ledger/artifacts/versionable.ts'
-import { join, relative, resolve, isAbsolute } from 'path'
+import { join, relative, resolve, isAbsolute, dirname } from 'path'
+import { mkdirSync, writeFileSync } from 'fs'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
@@ -129,6 +131,10 @@ type InboundSideTable = {
   senderLabel: string
   channelLabel: string
   userPrompt: string
+  /** Full inbound attachments (incl. signed/expiring URLs). Held in-process only
+   *  — never persisted to the ledger (KTD2: the URL expires + leaks its
+   *  signature). The ingest sync reads these via loadInboundAttachments. */
+  attachments?: IncomingAttachment[]
 }
 
 export class AgentHost {
@@ -391,6 +397,61 @@ export class AgentHost {
     const rel = relative(ws, abs)
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined
     return rel
+  }
+
+  // ─── File ingest (deps for the ingest-attachment synchronization) ─────────────
+
+  /** Inbound file support + per-file cap for the surface serving `scope`, or
+   *  undefined when this host doesn't serve the scope or the platform delivers no
+   *  files. The ingest sync skips when this is undefined. */
+  inboundFileCap(scope: ChannelId): { maxBytes: number } | undefined {
+    if (!this.roomForScope(scope)) return undefined
+    const files = this.messaging.capabilities().files
+    return files?.inbound ? { maxBytes: files.maxBytes } : undefined
+  }
+
+  /** The full inbound attachments for a `channel.message` hash, from the
+   *  in-process side table (URLs never crossed the ledger). Empty on a peer relay
+   *  that didn't receive the message — so only the receiving machine ingests. */
+  loadInboundAttachments(hash: Hash): IncomingAttachment[] {
+    return this.inboundByHash.get(hash)?.attachments ?? []
+  }
+
+  /** Fetch an inbound attachment's bytes at ingest time (URLs expire). */
+  async downloadInboundAttachment(att: IncomingAttachment): Promise<Uint8Array | undefined> {
+    return this.messaging.downloadAttachment?.(att.url, att.ref)
+  }
+
+  /** Materialize `bytes` into the agent's workspace under `inbox/<safeName>`,
+   *  returning the workspace-relative path. Undefined when the scope is unserved
+   *  or the resolved path escapes the workspace (containment via
+   *  relativizeWorkspacePath). `safeName` is already sanitized by the sync. */
+  async materializeAttachment(
+    scope: ChannelId,
+    safeName: string,
+    bytes: Uint8Array,
+  ): Promise<string | undefined> {
+    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    if (!ws || !this.roomForScope(scope)) return undefined
+    const relIntended = join('inbox', safeName)
+    const abs = resolve(ws, relIntended)
+    // Containment: the resolved path must stay inside the workspace.
+    const rel = this.relativizeWorkspacePath(scope, abs)
+    if (!rel) return undefined
+    try {
+      mkdirSync(dirname(abs), { recursive: true })
+      writeFileSync(abs, bytes)
+      return rel
+    } catch (e) {
+      this.ui.error(this.key, `materializeAttachment failed for ${scope}: ${e}`)
+      return undefined
+    }
+  }
+
+  /** Post a short best-effort note back to a scope (e.g. an attachment was
+   *  rejected). Fire-and-forget. */
+  noteToScope(scope: ChannelId, text: string): void {
+    void this.messaging.send(scope, text).catch(() => {})
   }
 
   /** write-back-versionable asks "where on disk does this vers: artifact live?"
@@ -732,6 +793,13 @@ export class AgentHost {
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
     const channelArtifactId = discordArtifact(scopeId)
     const prior = await this.store.latestInChannel(scopeId)
+    // Lightweight, URL-free descriptors persisted in the ledger so the ingest
+    // sync (and cross-machine peers) know files rode along, without storing the
+    // signed/expiring attachment URL (KTD2). The real handles live in the side
+    // table below and never leave this process.
+    const attachmentMeta = m.attachments?.length
+      ? m.attachments.map(a => ({ name: a.name, sizeBytes: a.sizeBytes, contentType: a.contentType }))
+      : undefined
     const inboundResult = await admit(this.store, {
       actor: m.authorId,
       role: kind === 'unknown' ? 'agent' : kind,
@@ -743,7 +811,7 @@ export class AgentHost {
         intent: {
           channel: this.messaging.platform,
           op: 'received',
-          args: { text: m.text, messageId: m.ref.id },
+          args: { text: m.text, messageId: m.ref.id, ...(attachmentMeta ? { attachments: attachmentMeta } : {}) },
         },
       },
       effect: 'external',
@@ -763,6 +831,7 @@ export class AgentHost {
       senderLabel: m.authorName,
       channelLabel,
       userPrompt: m.text,
+      attachments: m.attachments,
     }, 500)
 
     this.ui.turnStart(this.key, {

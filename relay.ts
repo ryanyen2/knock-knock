@@ -49,6 +49,7 @@ import { conflictCard } from './ledger/synchronizations/conflict-card.ts'
 import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
 import { resumeOnWatch } from './ledger/synchronizations/resume-on-watch.ts'
 import { captureWorkspaceEdit } from './ledger/synchronizations/capture-workspace-edit.ts'
+import { ingestAttachment } from './ledger/synchronizations/ingest-attachment.ts'
 import { writeBackVersionable } from './ledger/synchronizations/write-back-versionable.ts'
 import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
@@ -344,6 +345,51 @@ synchronizer.register(
       const tmp = `${absPath}.knock-tmp-${process.pid}`
       writeFileSync(tmp, content)
       renameSync(tmp, absPath)
+    },
+  }),
+)
+// File ingest: a human's inbound attachment → bytes downloaded at receive time
+// (URLs expire), magic-byte-sniffed, secret-scanned, materialized inside the
+// agent workspace, recorded as file.received. Deps fan out across hosts; the one
+// serving the scope answers (loadAttachments is empty on a non-receiving peer).
+synchronizer.register(
+  ingestAttachment({
+    filesInbound: scope => {
+      for (const h of hosts) {
+        const cap = h.inboundFileCap(scope)
+        if (cap) return cap
+      }
+      return undefined
+    },
+    loadAttachments: (scope, hash) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        const atts = h.loadInboundAttachments(hash)
+        if (atts.length) return atts
+      }
+      return []
+    },
+    download: async (scope, att) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        return h.downloadInboundAttachment(att)
+      }
+      return undefined
+    },
+    materialize: async (scope, safeName, bytes) => {
+      for (const h of hosts) {
+        const rel = await h.materializeAttachment(scope, safeName, bytes)
+        if (rel) return rel
+      }
+      return undefined
+    },
+    note: (scope, text) => {
+      for (const h of hosts) {
+        if (h.inboundFileCap(scope)) {
+          h.noteToScope(scope, text)
+          return
+        }
+      }
     },
   }),
 )
