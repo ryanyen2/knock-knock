@@ -469,6 +469,11 @@ export class AgentHost {
   /** Buffer a file.received so the next turn in its scope learns the path. */
   private bufferIngestedFile(i: import('./ledger/interaction.ts').Interaction): void {
     if (i.patch.kind !== 'external') return
+    // Only the host SERVING this scope buffers: file.received crosses the ledger
+    // to peer relays, but the materialized file lives only in the receiving
+    // machine's workspace, and only the serving host ever runs a turn for the
+    // scope. Without this guard a peer accumulates undrainable buffer entries.
+    if (!this.roomForScope(i.channel)) return
     const args = i.patch.intent.args as { relpath?: string; kind?: string } | undefined
     if (!args?.relpath) return
     const list = this.pendingIngestedByScope.get(i.channel) ?? []
