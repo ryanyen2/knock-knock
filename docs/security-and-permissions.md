@@ -127,6 +127,40 @@ So a peer can be given *less* than you, never *more* than your floor allows.
 
 ---
 
+## Per-thread permission mode (`!config mode …`)
+
+Inside a task **thread**, the owner can pick a permission **mode** from chat —
+`strict` / `ask-per-edit` / `auto` / `bypass`, the same four vetted presets — so
+one task can run looser (or tighter) than the room default without touching the
+terminal config:
+
+```
+!config mode bypass     # in a thread: auto-run edits/writes/Bash for THIS task
+!config mode strict     # read-only for this task
+```
+
+This is the **one** trust-adjacent knob settable from chat, and it is contained:
+
+- **Owner-only.** `!config` is short-circuited before any message reaches the
+  agent and only runs for the agent's owner — a peer/human (or a prompt injection)
+  can never set it. Raw `allow`/`ask`/`deny`/`tiers`/`preset` stay terminal-only.
+- **Vetted presets only.** Chat selects a named mode, never free-text patterns.
+- **Deny never drops.** A mode loosens `allow`/`ask`, but the effective **deny is
+  always `union(room deny, preset deny incl. the DENY_FLOOR)`** — so a thread on
+  `bypass` *still* can't run `rm -rf`/`sudo`, still can't write `~/.ssh`, and still
+  obeys any deny you set in the room's terminal config (e.g. `Bash(curl *)`).
+- **Per-actor tiers still apply on top** (they only tighten).
+
+> **Residual risk (accepted).** The owner — and only the owner — can set `bypass`
+> per-thread. Enforcement is correct (the per-turn adapter profile), and the floor
+> + room deny always hold; for hands-off work, pair it with the OS sandbox below.
+
+The thread's current mode (and the rest of its setup) is shown on the **pinned
+config card** at the top of the thread, and every `!config mode` change is an
+auditable, owner-attributed ledger entry, reversible with `!config reset mode`.
+
+---
+
 ## The strongest fence: OS-level sandboxing
 
 Permissions above work *if the agent asks before acting* (see the next section).

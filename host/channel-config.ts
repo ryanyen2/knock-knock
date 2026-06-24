@@ -20,6 +20,7 @@ import {
   CONFIG_FOLD,
   configArtifact,
   configFor,
+  resolveConfigFor,
   latestConfigHash,
   type ConfigFoldState,
 } from '../ledger/concepts/config.ts'
@@ -29,6 +30,7 @@ import {
   renderConfigHelp,
   renderConfigReset,
   renderConfigSet,
+  renderResolvedConfig,
 } from '../ledger/render/surface.ts'
 
 export class ChannelConfigControl {
@@ -52,6 +54,10 @@ export class ChannelConfigControl {
       await this.ctx.discordSend(scopeId, 'No agent serves this channel.')
       return
     }
+    // A command typed inside a thread writes the THREAD overlay by default; at
+    // top level (scope==room) it writes the room. A leading `room` modifier
+    // (parsed.target==='room') force-writes the room overlay from a thread.
+    const isThread = scopeId !== roomId
 
     const parsed = parseConfigCommand(text)
     if (!parsed || parsed.action === 'help') {
@@ -63,7 +69,16 @@ export class ChannelConfigControl {
       return
     }
     if (parsed.action === 'get') {
-      await this.ctx.discordSend(scopeId, renderConfig(configFor(this.state(), roomId), parsed.key))
+      // `!config get room` shows the room layer only; bare `!config get` (in a
+      // thread) shows the resolved thread ⊕ room view with source labels.
+      if (parsed.target === 'room') {
+        await this.ctx.discordSend(scopeId, renderConfig(configFor(this.state(), roomId), parsed.key))
+      } else {
+        await this.ctx.discordSend(
+          scopeId,
+          renderResolvedConfig(configFor(this.state(), roomId), configFor(this.state(), scopeId), isThread),
+        )
+      }
       return
     }
 
@@ -73,15 +88,21 @@ export class ChannelConfigControl {
       return
     }
 
+    // Route the WRITE to the resolved layer: the room when explicitly targeted or
+    // at top level, else this thread's overlay. The admit's channel, artifact, AND
+    // the caused_by chain all follow writeScope (all three were room-only before).
+    const writeScope = parsed.target === 'room' || !isThread ? roomId : scopeId
+    const where: 'thread' | 'room' | undefined = !isThread ? undefined : writeScope === roomId ? 'room' : 'thread'
+
     // Chain caused_by onto the artifact's latest config so re-affirming a prior
     // value isn't deduped to the older (earlier) interaction by content hash.
-    const latest = latestConfigHash(this.state(), roomId)
+    const latest = latestConfigHash(this.state(), writeScope)
     const delta = parsed.action === 'reset' ? { _clear: parsed.keys } : parsed.delta
     await admit(this.ctx.store, {
       actor: ownerId, // the OWNER is the author of the config change
       role: 'owner', // owner-role merge precedence + audit attribution
-      channel: roomId, // room-keyed overlay
-      target: { artifactId: configArtifact(roomId), anchor: { kind: 'none' } },
+      channel: writeScope, // room- or thread-keyed overlay
+      target: { artifactId: configArtifact(writeScope), anchor: { kind: 'none' } },
       verb: 'config.set',
       patch: { kind: 'external', intent: { channel: 'tool', op: 'config.set', args: delta } },
       effect: 'pure',
@@ -94,8 +115,10 @@ export class ChannelConfigControl {
       const field = Object.keys(parsed.delta).find(k => k !== '_clear') ?? 'role'
       await this.ctx.discordSend(
         scopeId,
-        renderConfigSet(field, (parsed.delta as Record<string, unknown>)[field]),
+        renderConfigSet(field, (parsed.delta as Record<string, unknown>)[field], where),
       )
     }
+    // Reflect the change on the thread's pinned config card.
+    this.ctx.refreshConfigCard(scopeId)
   }
 }

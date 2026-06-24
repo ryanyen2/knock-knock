@@ -19,7 +19,12 @@
 
 import type { Fold } from '../fold.ts'
 import type { Interaction, ChannelId, ArtifactId } from '../interaction.ts'
-import { projectChannelConfig, type ChannelConfig, type ConfigDeltaRecord } from '../../lib.ts'
+import {
+  projectChannelConfig,
+  resolveTwoLayerConfig,
+  type ChannelConfig,
+  type ConfigDeltaRecord,
+} from '../../lib.ts'
 
 export type ConfigFoldState = ReadonlyMap<ArtifactId, ConfigDeltaRecord[]>
 
@@ -53,9 +58,29 @@ export const configFold: Fold<ConfigFoldState> = {
   },
 }
 
-/** The effective config for a room — the file base is merged OVER by the caller. */
-export function configFor(state: ConfigFoldState, roomId: ChannelId): ChannelConfig {
-  return projectChannelConfig(state.get(configArtifact(roomId)) ?? [])
+/** The effective config for a single artifact id (room OR thread scope) — the
+ *  file base is merged OVER by the caller. */
+export function configFor(state: ConfigFoldState, id: ChannelId): ChannelConfig {
+  return projectChannelConfig(state.get(configArtifact(id)) ?? [])
+}
+
+/**
+ * The effective config for a turn running in `scopeId` whose room is `roomId`:
+ * the room overlay is the inherited default, and the scope (thread) overlay wins
+ * per key. When the scope IS the room (no thread) this collapses to the room
+ * config — both layers read the same artifact, so resolution is a no-op.
+ *
+ * The two layers are independent artifacts, each projected + clamped on its own;
+ * we merge the RESULTS (never concatenate raw deltas), so a room `_clear` can't
+ * reach into a scope key. See `resolveTwoLayerConfig`.
+ */
+export function resolveConfigFor(
+  state: ConfigFoldState,
+  roomId: ChannelId,
+  scopeId: ChannelId,
+): ChannelConfig {
+  if (scopeId === roomId) return configFor(state, roomId)
+  return resolveTwoLayerConfig(configFor(state, roomId), configFor(state, scopeId))
 }
 
 /** The artifact's records ordered for causal chaining — the host chains a new

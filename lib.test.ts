@@ -30,6 +30,13 @@ import {
   projectChannelConfig,
   parseConfigCommand,
   wrapChannelRole,
+  wrapChannelGoal,
+  resolveTwoLayerConfig,
+  toThinkingConfig,
+  THINKING_HIGH_BUDGET,
+  applyModeToProfile,
+  parseContextCommand,
+  CONTEXT_NOTE_MAX_LEN,
   CHAT_SETTABLE_KEYS,
   ROLE_MAX_LEN,
   type ConfigDeltaRecord,
@@ -574,4 +581,105 @@ test('wrapChannelRole: frames the brief as persona, not authority, and includes 
   expect(wrapped).toContain('</channel-role>')
   expect(wrapped).toContain('you are a reviewer')
   expect(wrapped.toLowerCase()).toContain('no authority')
+})
+
+// ─── per-thread config: new fields, two-layer resolve, mappers (U1) ────────────
+
+test('wrapChannelGoal: frames the objective, not authority, and includes the text', () => {
+  const wrapped = wrapChannelGoal('ship the auth refactor')
+  expect(wrapped).toContain('<objective>')
+  expect(wrapped).toContain('</objective>')
+  expect(wrapped).toContain('ship the auth refactor')
+})
+
+test('resolveTwoLayerConfig: scope overrides room; absent scope inherits room', () => {
+  const room = { role: 'room persona', model: 'claude-room', loopMaxConsecutive: 4 }
+  const scope = { role: 'thread persona', effort: 'max' as const }
+  const merged = resolveTwoLayerConfig(room, scope)
+  expect(merged.role).toBe('thread persona') // scope wins
+  expect(merged.model).toBe('claude-room')   // inherited from room
+  expect(merged.effort).toBe('max')          // scope-only
+  expect(merged.loopMaxConsecutive).toBe(4)  // inherited
+})
+
+test('resolveTwoLayerConfig: identical layers (scope==room) is a no-op', () => {
+  const cfg = { role: 'x', thinking: 'high' as const }
+  expect(resolveTwoLayerConfig(cfg, cfg)).toEqual(cfg)
+})
+
+test('parseConfigCommand: a leading `room` modifier targets the room overlay', () => {
+  expect(parseConfigCommand('!config room role X')).toEqual({
+    action: 'set', delta: { role: 'X' }, target: 'room',
+  })
+  // bare set has no target (host decides by scope)
+  expect(parseConfigCommand('!config role X')).toEqual({ action: 'set', delta: { role: 'X' } })
+  expect(parseConfigCommand('!config get room')).toEqual({ action: 'get', key: undefined, target: 'room' })
+  expect(parseConfigCommand('!config reset room role')).toEqual({
+    action: 'reset', keys: ['role'], target: 'room',
+  })
+  // `room` is only a modifier, never a settable key on its own
+  expect(parseConfigCommand('!config room')?.action).toBe('error')
+})
+
+test('parseConfigCommand: model is a single token; thinking/effort/mode are enums', () => {
+  expect(parseConfigCommand('!config model claude-opus-4-8')).toEqual({
+    action: 'set', delta: { model: 'claude-opus-4-8' },
+  })
+  // model rejects whitespace / empty
+  expect(parseConfigCommand('!config model claude opus')?.action).toBe('error')
+  expect(parseConfigCommand('!config model')?.action).toBe('error')
+  // thinking / effort / mode accept their enum values and reject others
+  expect(parseConfigCommand('!config thinking high')).toEqual({ action: 'set', delta: { thinking: 'high' } })
+  expect(parseConfigCommand('!config thinking turbo')?.action).toBe('error')
+  expect(parseConfigCommand('!config effort max')).toEqual({ action: 'set', delta: { effort: 'max' } })
+  expect(parseConfigCommand('!config mode bypass')).toEqual({ action: 'set', delta: { permissionPreset: 'bypass' } })
+  expect(parseConfigCommand('!config mode yolo')?.action).toBe('error')
+  // end-goal clamps like a text field
+  expect(parseConfigCommand('!config end-goal ship it')).toEqual({ action: 'set', delta: { endGoal: 'ship it' } })
+})
+
+test('parseConfigCommand: raw permission keys stay terminal-only; mode is allowed', () => {
+  for (const key of ['preset', 'allow', 'deny', 'tiers']) {
+    expect(parseConfigCommand(`!config ${key} whatever`)?.action).toBe('error')
+  }
+  expect(parseConfigCommand('!config mode strict')?.action).toBe('set')
+  expect(CHAT_SETTABLE_KEYS).toContain('mode')
+  expect(CHAT_SETTABLE_KEYS).not.toContain('preset')
+})
+
+test('toThinkingConfig: off→disabled, auto→adaptive, high→enabled+budget, unknown→undefined', () => {
+  expect(toThinkingConfig('off')).toEqual({ type: 'disabled' })
+  expect(toThinkingConfig('auto')).toEqual({ type: 'adaptive' })
+  expect(toThinkingConfig('high')).toEqual({ type: 'enabled', budgetTokens: THINKING_HIGH_BUDGET })
+  expect(toThinkingConfig(undefined)).toBeUndefined()
+  expect(toThinkingConfig('bogus')).toBeUndefined()
+})
+
+test('applyModeToProfile: loosens allow/ask but deny = union(base, preset floor)', () => {
+  const base = { allow: ['Read(**)'], ask: [], deny: ['Bash(curl *)', ...DENY_FLOOR] }
+  const bypassed = applyModeToProfile(base, 'bypass')
+  // bypass loosens allow (edits/writes/bash auto-allowed)
+  expect(bypassed.allow).toContain('Edit(**)')
+  // a room-set deny survives bypass, and the floor is always present
+  expect(bypassed.deny).toContain('Bash(curl *)')
+  expect(bypassed.deny).toContain('Bash(rm -rf *)')
+  // strict tightens: edits/writes/bash denied
+  const strict = applyModeToProfile(base, 'strict')
+  expect(strict.deny).toContain('Edit(**)')
+  expect(strict.deny).toContain('Bash(curl *)') // base deny still unioned in
+})
+
+test('parseContextCommand: list / remove / add / help / error', () => {
+  expect(parseContextCommand('!context')).toEqual({ action: 'list' })
+  expect(parseContextCommand('!context list')).toEqual({ action: 'list' })
+  expect(parseContextCommand('!context remove 2')).toEqual({ action: 'remove', index: 2 })
+  expect(parseContextCommand('!context rm 1')).toEqual({ action: 'remove', index: 1 })
+  expect(parseContextCommand('!context remove x')?.action).toBe('error')
+  expect(parseContextCommand('!context add remember the changelog')).toEqual({
+    action: 'add', text: 'remember the changelog',
+  })
+  expect(parseContextCommand('!context add')?.action).toBe('error')
+  expect(parseContextCommand(`!context add ${'x'.repeat(CONTEXT_NOTE_MAX_LEN + 1)}`)?.action).toBe('error')
+  expect(parseContextCommand('!context help')).toEqual({ action: 'help' })
+  expect(parseContextCommand('hello')).toBeNull()
 })

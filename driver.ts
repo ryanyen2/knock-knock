@@ -10,7 +10,7 @@
  *   • Every turn:  wrapEnvelope(meta, text)  (<channel kind=…> wrapper)
  */
 
-import type { AgentAdapter, PermissionProfile, Verdict } from './agent-adapter.ts'
+import type { AgentAdapter, PermissionProfile, TurnOptions, Verdict } from './agent-adapter.ts'
 import { chunk, wrapEnvelope, buildPreamble, type PreambleContext, type TurnEnvelopeMeta } from './lib.ts'
 
 export type TurnMeta = {
@@ -67,20 +67,23 @@ export class Driver {
    *  `profile`, when given, is re-applied to the adapter BEFORE this turn runs —
    *  this is the per-actor permission floor (resolved from who prompted the turn).
    *  Applying it inside the serialized queue guarantees each turn enforces its own
-   *  requester's floor with no cross-turn race. */
+   *  requester's floor with no cross-turn race.
+   *  `turnOptions` (model/thinking/effort) are forwarded to the adapter for this
+   *  turn only — the claude-sdk runtime honors them; ACP self-manages and ignores. */
   runTurn(
     text: string,
     meta: TurnMeta,
     signal?: AbortSignal,
     contextPrefix?: string,
     profile?: PermissionProfile,
+    turnOptions?: TurnOptions,
   ): Promise<string[]> {
     return new Promise<string[]>(resolve => {
       this.queue = this.queue.then(async () => {
         try {
           if (profile) this.adapter.applyPolicy(profile)
           const prompt = this.buildPrompt(text, meta, contextPrefix)
-          const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId, signal })
+          const result = await this.adapter.prompt({ text: prompt, sessionId: this.sessionId, signal, options: turnOptions })
           this.sessionId = result.sessionId
           resolve(chunk(result.text, CHUNK_LIMIT, CHUNK_MODE))
         } catch (err) {

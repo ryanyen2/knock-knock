@@ -15,6 +15,7 @@ import {
   CONFIG_FOLD,
   configFold,
   configFor,
+  resolveConfigFor,
   configArtifact,
   latestConfigHash,
   type ConfigFoldState,
@@ -25,11 +26,15 @@ import type { ProposedInteraction } from '../interaction.ts'
 const ROOM = 'room-1'
 
 function configSet(delta: ChannelConfigDelta, caused_by: string[] = []): ProposedInteraction {
+  return configSetFor(ROOM, delta, caused_by)
+}
+
+function configSetFor(id: string, delta: ChannelConfigDelta, caused_by: string[] = []): ProposedInteraction {
   return {
     actor: 'OWNER',
     role: 'owner',
-    channel: ROOM,
-    target: { artifactId: configArtifact(ROOM), anchor: { kind: 'none' } },
+    channel: id,
+    target: { artifactId: configArtifact(id), anchor: { kind: 'none' } },
     verb: 'config.set',
     patch: { kind: 'external', intent: { channel: 'tool', op: 'config.set', args: delta } },
     effect: 'pure',
@@ -107,6 +112,31 @@ test('config fold: re-affirming a prior value is not deduped when chained, and w
   expect(third.kind).toBe('admitted')
 
   expect(configFor(engineA.get<ConfigFoldState>(CONFIG_FOLD), ROOM).role).toBe('A')
+
+  engineA.close()
+  store.close()
+})
+
+test('resolveConfigFor: thread overlay wins per key, room is the inherited default', async () => {
+  const { store, engineA } = await setupTwoMachines()
+  const THREAD = 'thread-1'
+  await admit(store, configSetFor(ROOM, { role: 'room persona', model: 'claude-room' }))
+  await admit(store, configSetFor(THREAD, { role: 'thread persona' }))
+
+  const state = engineA.get<ConfigFoldState>(CONFIG_FOLD)
+  const resolved = resolveConfigFor(state, ROOM, THREAD)
+  expect(resolved.role).toBe('thread persona') // thread overrides
+  expect(resolved.model).toBe('claude-room')   // inherited from room
+
+  engineA.close()
+  store.close()
+})
+
+test('resolveConfigFor: scope==room collapses to the room config (no thread)', async () => {
+  const { store, engineA } = await setupTwoMachines()
+  await admit(store, configSetFor(ROOM, { role: 'room persona' }))
+  const state = engineA.get<ConfigFoldState>(CONFIG_FOLD)
+  expect(resolveConfigFor(state, ROOM, ROOM)).toEqual(configFor(state, ROOM))
 
   engineA.close()
   store.close()

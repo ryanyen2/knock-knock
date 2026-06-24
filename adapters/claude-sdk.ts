@@ -14,9 +14,11 @@ import type {
   AgentAdapter,
   AgentEvent,
   PermissionProfile,
+  TurnOptions,
   Verdict,
   WatchToolHandlers,
 } from '../agent-adapter.ts'
+import { toThinkingConfig } from '../lib.ts'
 import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
 
 export class ClaudeSdkAdapter implements AgentAdapter {
@@ -64,10 +66,22 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     text: string
     sessionId?: string
     signal?: AbortSignal
+    options?: TurnOptions
   }): Promise<{ sessionId: string; text: string }> {
     let sessionId = ''
     let text = ''
     const startedAt = Date.now()
+
+    // Per-turn knobs (owner `!config model/thinking/effort`), forwarded to the
+    // SDK as per-query() options. Each is omitted when unset so the runtime
+    // default is unchanged; `thinking` maps mode→ThinkingConfig.
+    const opts = input.options ?? {}
+    const thinkingCfg = toThinkingConfig(opts.thinking)
+    const turnOptionFields = {
+      ...(opts.model ? { model: opts.model } : {}),
+      ...(thinkingCfg ? { thinking: thinkingCfg } : {}),
+      ...(opts.effort ? { effort: opts.effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' } : {}),
+    }
 
     // Bridge the relay's AbortSignal to the SDK's AbortController so a 🛑 stops
     // the query promptly.
@@ -86,6 +100,7 @@ export class ClaudeSdkAdapter implements AgentAdapter {
           cwd: this.cwd,
           permissionMode: 'default',
           abortController,
+          ...turnOptionFields,
           allowedTools: [...this.profile.allow, ...this.alwaysAllow],
           // deny is the hard floor — must reach the SDK here, not via canUseTool alone
           disallowedTools: this.profile.deny,
