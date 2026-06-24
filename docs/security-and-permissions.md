@@ -196,6 +196,29 @@ keep both on for untrusted work.
 
 ---
 
+## Files: the credential floor (can't be read or shared)
+
+When you exchange files with the agent (see [`file-exchange.md`](file-exchange.md)),
+the deny floor grows two file rules that hold under **every** preset, including
+`bypass`:
+
+- The agent's **`Read`** can't open a credential file — `.env`, `*.key`, `*.pem`,
+  `id_rsa*`, `.ssh/**`, `.aws/**`, `.npmrc`, `.git-credentials`, … — so a
+  prompt-injected agent can't read your secrets in the first place.
+- **`FileShare`** can't send one out, so a credential can't be exfiltrated to the
+  channel. A content scan also catches a secret hiding in an innocuously-named
+  file, and `!share` of a symlink pointing outside the workspace is refused.
+
+This floor is re-applied whenever a room profile is read, so it protects rooms
+that were configured before file exchange existed — you don't have to re-stamp
+them. As always, the floor is **only enforced if the agent asks before running
+tools**; the SDK enforces it natively, ACP agents must be configured ask-first.
+
+For untrusted file work, prefer `claude-acp` with `network: 'deny'` (below) —
+the in-process `claude-sdk` can't be OS-jailed, so it leans on this floor alone.
+
+---
+
 ## Reading local sessions stays inside the workspace
 
 Session sharing (importing or resuming a local coding-agent session — see

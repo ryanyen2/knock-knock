@@ -182,7 +182,16 @@ one (see §7).
 | DM | yes | yes | yes | yes | yes (1:1) |
 | mentions | native | native | reply | text | text |
 | max length | 2000 | ~3000 | 4096 | 4096 | ~unlimited |
+| files (in/out) | **yes** | seam-ready* | seam-ready* | seam-ready* | **no** |
 | experimental | no | **yes** | **yes** | **yes** | **yes** |
+
+\* File exchange (`Capabilities.files`, `IncomingMessage.attachments`,
+`SendOpts.files`) is **live on Discord only**. The seam is platform-neutral, but
+the other adapters declare no file support yet: Slack needs the authed
+`url_private` download + the new `getUploadURLExternal`/`completeUploadExternal`
+upload flow (the old `files.upload` was sunset 2025-11-12); Telegram/WhatsApp
+have media endpoints but aren't wired; iMessage has no file API. See
+[`file-exchange.md`](file-exchange.md).
 
 ### The three degradation ladders
 

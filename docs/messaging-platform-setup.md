@@ -68,8 +68,10 @@ text.
 ### Step 3 — Invite the bot
 **OAuth2 → URL Generator** → scope **`bot`** → Bot Permissions: **View Channels,
 Send Messages, Send Messages in Threads, Create Public Threads, Read Message
-History, Add Reactions, Manage Messages** (Manage Messages is for pinning the
-Workbench). Open the generated URL and add the bot to your server.
+History, Add Reactions, Manage Messages, Attach Files** (Manage Messages is for
+pinning the Workbench; Attach Files lets the bot send files for
+[file exchange](file-exchange.md) — inbound attachments ride on the message-content
+intent above). Open the generated URL and add the bot to your server.
 
 ### Step 4 — Configure in knock-knock
 ```bash

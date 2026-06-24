@@ -115,7 +115,8 @@ Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 convergence — re-derives a lifecycle change on each peer from the winner's
 immutable `supersedes` op, which crosses NOTIFY where the UPDATE does not), and
 the file-edit pair `capture-workspace-edit` + `write-back-versionable` (see
-"File-edit sync" below).
+"File-edit sync" below), and the file-exchange pair `ingest-attachment`
+(inbound) + `share-file` (outbound) (see "File exchange" below).
 
 ### The AgentAdapter seam (`agent-adapter.ts`)
 
@@ -253,6 +254,41 @@ a mutated lifecycle column. Full concept + algebra in
 - v1 scope: whole-file anchor retained (different-role exclusion is whole-op;
   interval anchors deferred). Capture is reliable for Claude-Code-shaped Edit/Write
   tools (`claude-sdk`); other ACP agents' edit formats are deferred.
+
+### File exchange (inbound ingest + outbound share)
+
+Move files between the chat surface and the workspace (see
+**`docs/file-exchange.md`**). The seam carries `IncomingMessage.attachments`,
+`SendOpts.files`, and `Capabilities.files` (`messaging-adapter.ts`); Discord is
+the live surface. Pure policy is in `lib.ts` (`sniffFileKind` magic-byte typing,
+`sanitizeAttachmentName`, `withinBudget`, `looksLikeSecret`, `SECRET_PATH_GLOBS`,
+`formatAttachedFilesBlock`, `parseShareCommand`) and unit-tested in `lib.test.ts`.
+
+- **Inbound** — `ingest-attachment` (sync) fires on a `channel.message` carrying
+  attachments. It's registered **before** `prompt-on-message` ON PURPOSE: the
+  synchronizer fires subs sequentially and awaits each, so the file is downloaded
+  + materialized + recorded as `file.received` before the turn is prompted — the
+  same turn the file rode in on sees it. The signed/expiring attachment URL is
+  **never persisted** (KTD2): only URL-free descriptors ride the
+  `channel.message` args; the real handles stay in the host side table
+  (`loadInboundAttachments`). Pipeline: budget → download (timeout-bounded) →
+  magic-byte sniff → v1-type allowlist → secret scan → traversal-safe name →
+  materialize inside the workspace (containment via `relativizeWorkspacePath`) →
+  admit `file.received`. `AgentHost` buffers `file.received` per scope (only the
+  serving host buffers) and `runTurnForChannel` prepends a `<attached-files>`
+  **untrusted** block (delivered once, confirmed after the turn succeeds).
+- **Outbound** — owner `!share <relpath>` short-circuits before any admit (like
+  `!watch`/`!config`) and admits a `file.shared` request; `share-file` (sync)
+  resolves it inside the workspace (realpath + containment + size guard), refuses
+  a credential path/content, classifies `FileShare` (`deny` ⇒ refuse; `ask`/`allow`
+  proceed since the owner command is consent), sends under an `external_claim`
+  (cross-relay dedup), and records `file.shared` completed. Agent-initiated
+  sharing via a `share_file` tool + interactive consent is a deferred fast-follow.
+- **Secret floor** — `DENY_FLOOR` gains `Read(<secret>)` + `FileShare(<secret>)`
+  patterns (`SECRET_PATH_GLOBS`); `readRoomSettings` re-unions the floor at read
+  time so it holds for rooms written by older builds. v1 types: text/code/image/
+  gif/pdf; audio/video transcription, the concrete Slack file flow, and inline
+  multimodal prompt blocks are deferred.
 
 ### Headless control verbs (`ledger/` + thin Discord adapters)
 
