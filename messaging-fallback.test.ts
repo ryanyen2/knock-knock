@@ -11,6 +11,7 @@ import {
   normalizeSlackReaction,
   CONTROL_REACTIONS,
   mapGlyphToReaction,
+  outboundFileNotice,
 } from './messaging-fallback.ts'
 import { GLYPHS } from './ledger/render/surface.ts'
 
@@ -66,4 +67,23 @@ test('mapGlyphToReaction: none → null, any → unchanged, whitelist → equiva
   expect(
     mapGlyphToReaction(GLYPHS.stop, { reactions: 'whitelist', reactionWhitelist: ['👎'] } as any),
   ).toBe('👎')
+})
+
+// ─── outboundFileNotice (U2) ──────────────────────────────────────────────────
+
+test('outboundFileNotice: null when the platform handles files natively', () => {
+  const caps = { files: { inbound: true, outbound: true, maxBytes: 1 } } as any
+  expect(outboundFileNotice([{ name: 'a.pdf' }], caps)).toBeNull()
+})
+
+test('outboundFileNotice: text notice naming withheld files when outbound unsupported', () => {
+  const noFiles = { files: { inbound: false, outbound: false, maxBytes: 0 } } as any
+  expect(outboundFileNotice([{ name: 'a.pdf' }], noFiles)).toContain('a.pdf')
+  expect(outboundFileNotice([{ name: 'a.pdf' }, { name: 'b.png' }], noFiles)).toContain('b.png')
+  // absent files capability also degrades
+  expect(outboundFileNotice([{ name: 'a.pdf' }], {} as any)).toContain('a.pdf')
+})
+
+test('outboundFileNotice: null when there is nothing to attach', () => {
+  expect(outboundFileNotice([], {} as any)).toBeNull()
 })

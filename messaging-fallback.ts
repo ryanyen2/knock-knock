@@ -14,7 +14,7 @@
  *     back into the chosen Choice.id, so a bare platform still drives the ledger.
  */
 
-import type { Capabilities, Choice, Glyph } from './messaging-adapter.ts'
+import type { Capabilities, Choice, Glyph, OutgoingFile } from './messaging-adapter.ts'
 import { GLYPHS } from './ledger/render/surface.ts'
 
 /**
@@ -189,4 +189,24 @@ export function parseChoiceReply(text: string, choices: Choice[]): string | null
   if (headMatches.length === 1) return headMatches[0]!.id
 
   return null
+}
+
+// ─── Outbound files (capability degradation) ──────────────────────────────────
+
+/**
+ * When a platform can't accept outbound files (`Capabilities.files.outbound` is
+ * false/absent), produce a short text notice naming the withheld files so the
+ * share isn't silently dropped — or null when the platform handles files
+ * natively (the adapter attaches them) or there's nothing to attach.
+ */
+export function outboundFileNotice(
+  files: Pick<OutgoingFile, 'name'>[],
+  caps: Capabilities,
+): string | null {
+  if (caps.files?.outbound) return null
+  if (!files || files.length === 0) return null
+  const names = files.map(f => f.name).join(', ')
+  return files.length === 1
+    ? `(attachment "${names}" omitted — this platform can't receive files)`
+    : `(attachments omitted — this platform can't receive files: ${names})`
 }

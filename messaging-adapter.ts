@@ -39,6 +39,15 @@ export type Choice = {
   style?: 'primary' | 'danger' | 'neutral'
 }
 
+/** A file the agent/relay wants to send out. `data` is the bytes (the host reads
+ *  workspace files itself) or a `{path}` the adapter reads. Adapters that can't
+ *  attach files degrade via `outboundFileNotice` (messaging-fallback). */
+export type OutgoingFile = {
+  name: string
+  data: Uint8Array | { path: string }
+  contentType?: string
+}
+
 export type SendOpts = {
   /** Interactive options. Rendering + fallback is the adapter's job (§3 of the doc). */
   choices?: Choice[]
@@ -46,6 +55,9 @@ export type SendOpts = {
   mentionUser?: string
   /** Prefer a private/ephemeral delivery if the platform has one. */
   ephemeral?: boolean
+  /** Files to attach. Honored only where `Capabilities.files.outbound` is true;
+   *  otherwise the host posts a text notice instead (see messaging-fallback). */
+  files?: OutgoingFile[]
 }
 
 /** What a platform can do. The host and the pure render layer branch on THIS,
@@ -73,10 +85,28 @@ export type Capabilities = {
   mentions: 'native' | 'reply' | 'text'
   /** Outbound chunking boundary (Discord 2000, Telegram 4096, …). */
   maxMessageLength: number
+  /** File attachments. `inbound` = the platform delivers attachment metadata on
+   *  messages; `outbound` = it accepts files on send; `maxBytes` = the per-file
+   *  ceiling (Discord's 10 MiB floor). Absent or `!inbound` → the ingest path is
+   *  skipped; `!outbound` → outbound shares degrade to a text notice. The host
+   *  and syncs branch on this, never on a platform name. */
+  files?: { inbound: boolean; outbound: boolean; maxBytes: number }
   /** True for adapters not yet live-certified against real credentials (the
    *  walking-skeleton platforms). The relay surfaces a loud startup warning;
    *  Discord is the one production-tested surface (false/absent). */
   experimental?: boolean
+}
+
+/** A file attached to an inbound message. All fields are uploader-controlled and
+ *  untrusted. `url` is how the adapter fetches the bytes (may be signed/expiring
+ *  or require auth); `ref` is an opaque platform handle when the URL alone isn't
+ *  enough to fetch (e.g. a Slack file id). */
+export type IncomingAttachment = {
+  name: string
+  url: string
+  contentType?: string
+  sizeBytes?: number
+  ref?: string
 }
 
 /** A normalized inbound message. The adapter surfaces the platform *mechanics*
@@ -99,6 +129,11 @@ export type IncomingMessage = {
   replyToMessageId?: string
   /** Is `scope` a sub-conversation (thread/topic) rather than the room itself? */
   isThread: boolean
+  /** Files attached to this message, when the platform delivers them and
+   *  `Capabilities.files.inbound` is true. Everything here is uploader-controlled
+   *  and untrusted: the `url` may be signed/expiring or need auth (download at
+   *  ingest), the `contentType`/`name` are spoofable (sniff bytes, sanitize name). */
+  attachments?: IncomingAttachment[]
   /** A human-readable label for the scope the message arrived in (e.g.
    *  `#general › task-thread`), for the operator console + DM-courier header. The
    *  label is platform-specific formatting, computed by the adapter; the host
