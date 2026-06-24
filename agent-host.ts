@@ -75,7 +75,7 @@ import { TurnRecorder } from './ledger/turn-recorder.ts'
 import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
 import { parseVersionableId } from './ledger/artifacts/versionable.ts'
 import { join, relative, resolve, isAbsolute, dirname, basename } from 'path'
-import { mkdirSync, writeFileSync, readFileSync } from 'fs'
+import { mkdirSync, writeFileSync, readFileSync, realpathSync, statSync } from 'fs'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
@@ -551,8 +551,22 @@ export class AgentHost {
     const abs = isAbsolute(relpath) ? relpath : resolve(ws, relpath)
     const rel = this.relativizeWorkspacePath(scope, abs)
     if (!rel) return { error: 'path is outside the workspace' }
+    const target = join(ws, rel)
+    // Symlink-escape guard (OQ3): containment above is string-based, so a symlink
+    // inside the workspace could point at a secret outside it. Resolve the real
+    // path and re-check before reading — closes the share-side exfil vector.
     try {
-      const bytes = new Uint8Array(readFileSync(join(ws, rel)))
+      const real = realpathSync(target)
+      if (this.relativizeWorkspacePath(scope, real) === undefined) {
+        return { error: 'path resolves outside the workspace' }
+      }
+      // Size guard: reject before reading a huge file into memory (and before a
+      // guaranteed platform rejection). Cap at the outbound per-file ceiling.
+      const cap = this.messaging.capabilities().files?.maxBytes ?? 10 * 1024 * 1024
+      const st = statSync(real)
+      if (!st.isFile()) return { error: 'not a file' }
+      if (st.size > cap) return { error: 'file is too large to share' }
+      const bytes = new Uint8Array(readFileSync(real))
       return { name: basename(rel), bytes }
     } catch {
       return { error: 'file not found or unreadable' }
