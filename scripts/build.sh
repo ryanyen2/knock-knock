@@ -20,7 +20,7 @@ cd "$(dirname "$0")/.."
 
 VERSION="${1:-$(bun -e 'console.log(require("./package.json").version)')}"
 OUT="dist"
-ENTRY="cli.ts"
+ENTRY="src/cli.ts"
 
 # target triple  →  output suffix
 TARGETS=(

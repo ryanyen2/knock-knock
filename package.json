@@ -5,32 +5,13 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "knock-knock": "./cli.ts"
+    "knock-knock": "./src/cli.ts"
   },
   "engines": {
     "bun": ">=1.1.0"
   },
   "files": [
-    "cli.ts",
-    "relay.ts",
-    "setup.ts",
-    "state.ts",
-    "lib.ts",
-    "driver.ts",
-    "agent-adapter.ts",
-    "agent-host.ts",
-    "approvals.ts",
-    "console-ui.ts",
-    "dm-courier.ts",
-    "messaging-adapter.ts",
-    "messaging-fallback.ts",
-    "sandbox.ts",
-    "watch-supervisor.ts",
-    "adapters/",
-    "adapters-msg/",
-    "host/",
-    "ledger/",
-    "sessions/",
+    "src/",
     "tsconfig.json",
     "README.md",
     "LICENSE",

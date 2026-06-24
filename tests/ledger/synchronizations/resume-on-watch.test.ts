@@ -6,8 +6,8 @@
  */
 
 import { test, expect } from 'bun:test'
-import { resumeOnWatch } from '../../../ledger/synchronizations/resume-on-watch.ts'
-import type { Interaction } from '../../../ledger/interaction.ts'
+import { resumeOnWatch } from '../../../src/ledger/synchronizations/resume-on-watch.ts'
+import type { Interaction } from '../../../src/ledger/interaction.ts'
 
 function firedInteraction(): Interaction {
   return {

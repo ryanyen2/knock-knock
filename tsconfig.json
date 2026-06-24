@@ -10,5 +10,5 @@
     "skipLibCheck": true,
     "types": ["bun"]
   },
-  "include": ["cli.ts", "lib.ts", "relay.ts", "state.ts", "agent-adapter.ts", "driver.ts", "approvals.ts", "agent-host.ts", "setup.ts", "adapters/**/*.ts", "ledger/**/*.ts", "console-ui.ts", "dm-courier.ts", "tests/**/*.ts"]
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
 }

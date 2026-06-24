@@ -10,11 +10,11 @@
 
 import { test, expect } from 'bun:test'
 import * as Y from 'yjs'
-import { SqliteStore } from '../../ledger/store-sqlite.ts'
-import { FoldEngine } from '../../ledger/fold.ts'
-import { Ledger } from '../../ledger/capture.ts'
-import { admit, inboxArtifact } from '../../ledger/admit.ts'
-import { resolveConflict } from '../../ledger/resolve-conflict.ts'
+import { SqliteStore } from '../../src/ledger/store-sqlite.ts'
+import { FoldEngine } from '../../src/ledger/fold.ts'
+import { Ledger } from '../../src/ledger/capture.ts'
+import { admit, inboxArtifact } from '../../src/ledger/admit.ts'
+import { resolveConflict } from '../../src/ledger/resolve-conflict.ts'
 import {
   mutateAndEncode,
   projectVersionable,
@@ -23,7 +23,7 @@ import {
   VERSIONABLE_FOLD,
   WHOLE_FILE_ANCHOR,
   type VersionableFoldState,
-} from '../../ledger/artifacts/versionable.ts'
+} from '../../src/ledger/artifacts/versionable.ts'
 
 test('resolveConflict (U6): owner pick clears the derived conflict + notifies the loser', async () => {
   const store = new SqliteStore(':memory:')

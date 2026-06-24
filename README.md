@@ -329,12 +329,15 @@ State at `~/.knock-knock/access.json` — normalized into `me`, `bots`, `channel
 
 From a source checkout, run the entry scripts directly with Bun:
 
+All source lives under `src/`; the repo root holds only `src/`, `tests/`,
+`website/`, `packaging/`, `scripts/`, `docs/`, and config files.
+
 ```
 bun test              # full suite (everything under tests/): pure logic + the ledger
 bun run typecheck     # tsc --noEmit
-bun cli.ts <cmd>      # the CLI dispatcher (setup | relay)
-bun relay.ts          # start the relay directly (reads bots/channels from access.json)
-bun setup.ts          # interactive setup wizard / menu directly
+bun src/cli.ts <cmd>  # the CLI dispatcher (setup | relay)
+bun src/relay.ts      # start the relay directly (reads bots/channels from access.json)
+bun src/setup.ts      # interactive setup wizard / menu directly
 bun run build         # cross-compile the release binaries into dist/
 ```
 

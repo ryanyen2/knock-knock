@@ -55,7 +55,7 @@ import {
   type WatchSpec,
   type RoomConfig,
   type AuthoringAccess,
-} from '../lib.ts'
+} from '../src/lib.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
 

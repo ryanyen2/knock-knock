@@ -7,13 +7,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 bun test              # all tests (everything under tests/): pure decision logic + the ledger suite
 bun run typecheck     # tsc --noEmit
-bun relay.ts          # start the relay (reads agents from access.json)
-bun setup.ts          # interactive setup wizard/menu
+bun src/cli.ts relay  # start the relay (reads agents from access.json)
+bun src/cli.ts setup  # interactive setup wizard/menu
+bun run build         # cross-compile the release binaries into dist/
 bun test tests/ledger/render/surface.test.ts   # run one test file
 bun test --test-name-pattern "conflict"  # run tests matching a name
 ```
 
 ## Architecture
+
+**All source lives under `src/`** (the loose modules and the `adapters/`,
+`adapters-msg/`, `host/`, `ledger/`, `sessions/` trees). The repo root holds only
+`src/`, `tests/`, `website/`, `packaging/`, `scripts/`, `docs/`, and config files.
+Source paths below are written relative to `src/` — e.g. `lib.ts` is `src/lib.ts`,
+`ledger/store-sqlite.ts` is `src/ledger/store-sqlite.ts`.
 
 knock-knock is a standalone Bun **relay** process built on a **ledger-native**
 core: the only thing persisted is an append-only, content-addressed DAG of

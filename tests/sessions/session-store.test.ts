@@ -6,7 +6,7 @@
  */
 
 import { test, expect } from 'bun:test'
-import { cwdMatchesWorkspace, normalizeWorkspace } from '../../sessions/session-store.ts'
+import { cwdMatchesWorkspace, normalizeWorkspace } from '../../src/sessions/session-store.ts'
 
 test('cwdMatchesWorkspace: exact match and descendant match', () => {
   expect(cwdMatchesWorkspace('/a/b', '/a/b')).toBe(true)

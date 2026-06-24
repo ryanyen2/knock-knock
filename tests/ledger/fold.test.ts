@@ -6,11 +6,11 @@
 
 import { test, expect } from 'bun:test'
 import * as Y from 'yjs'
-import { SqliteStore } from '../../ledger/store-sqlite.ts'
-import { Ledger } from '../../ledger/capture.ts'
-import { hashInteraction } from '../../ledger/canonical.ts'
-import { FoldEngine, type Fold } from '../../ledger/fold.ts'
-import type { Interaction, ProposedInteraction } from '../../ledger/interaction.ts'
+import { SqliteStore } from '../../src/ledger/store-sqlite.ts'
+import { Ledger } from '../../src/ledger/capture.ts'
+import { hashInteraction } from '../../src/ledger/canonical.ts'
+import { FoldEngine, type Fold } from '../../src/ledger/fold.ts'
+import type { Interaction, ProposedInteraction } from '../../src/ledger/interaction.ts'
 import {
   mutateAndEncode,
   projectVersionable,
@@ -19,7 +19,7 @@ import {
   VERSIONABLE_FOLD,
   WHOLE_FILE_ANCHOR,
   type VersionableFoldState,
-} from '../../ledger/artifacts/versionable.ts'
+} from '../../src/ledger/artifacts/versionable.ts'
 
 const COUNT_FOLD: Fold<{ count: number }> = {
   name: 'count',

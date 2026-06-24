@@ -5,9 +5,9 @@
  */
 
 import { test, expect } from 'bun:test'
-import { hashInteraction } from '../../ledger/canonical.ts'
-import { mergeProposal } from '../../ledger/merge.ts'
-import type { Interaction, ProposedInteraction, Role } from '../../ledger/interaction.ts'
+import { hashInteraction } from '../../src/ledger/canonical.ts'
+import { mergeProposal } from '../../src/ledger/merge.ts'
+import type { Interaction, ProposedInteraction, Role } from '../../src/ledger/interaction.ts'
 
 function make(
   overrides: Partial<ProposedInteraction> & { lifecycle?: Interaction['lifecycle'] } = {},

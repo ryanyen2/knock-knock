@@ -10,8 +10,8 @@ import {
   CONTROL_REACTIONS,
   mapGlyphToReaction,
   outboundFileNotice,
-} from '../messaging-fallback.ts'
-import { GLYPHS } from '../ledger/render/surface.ts'
+} from '../src/messaging-fallback.ts'
+import { GLYPHS } from '../src/ledger/render/surface.ts'
 
 // ─── normalizeUnicodeReaction (Discord delivers the raw emoji) ────────────────
 

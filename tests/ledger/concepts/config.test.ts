@@ -8,9 +8,9 @@
  */
 
 import { test, expect } from 'bun:test'
-import { SqliteStore } from '../../../ledger/store-sqlite.ts'
-import { FoldEngine } from '../../../ledger/fold.ts'
-import { admit } from '../../../ledger/admit.ts'
+import { SqliteStore } from '../../../src/ledger/store-sqlite.ts'
+import { FoldEngine } from '../../../src/ledger/fold.ts'
+import { admit } from '../../../src/ledger/admit.ts'
 import {
   CONFIG_FOLD,
   configFold,
@@ -19,9 +19,9 @@ import {
   configArtifact,
   latestConfigHash,
   type ConfigFoldState,
-} from '../../../ledger/concepts/config.ts'
-import type { ChannelConfigDelta } from '../../../lib.ts'
-import type { ProposedInteraction } from '../../../ledger/interaction.ts'
+} from '../../../src/ledger/concepts/config.ts'
+import type { ChannelConfigDelta } from '../../../src/lib.ts'
+import type { ProposedInteraction } from '../../../src/ledger/interaction.ts'
 
 const ROOM = 'room-1'
 

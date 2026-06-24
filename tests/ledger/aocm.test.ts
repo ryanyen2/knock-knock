@@ -22,14 +22,14 @@
 
 import { test, expect } from 'bun:test'
 import * as Y from 'yjs'
-import { SqliteStore } from '../../ledger/store-sqlite.ts'
-import { FoldEngine } from '../../ledger/fold.ts'
-import { Ledger } from '../../ledger/capture.ts'
-import { admit, inboxArtifact } from '../../ledger/admit.ts'
-import { resolveConflict } from '../../ledger/resolve-conflict.ts'
-import { hashInteraction } from '../../ledger/canonical.ts'
-import { ROLE_RANK } from '../../ledger/interaction.ts'
-import type { Interaction, ProposedInteraction, Role, VersionableIntent } from '../../ledger/interaction.ts'
+import { SqliteStore } from '../../src/ledger/store-sqlite.ts'
+import { FoldEngine } from '../../src/ledger/fold.ts'
+import { Ledger } from '../../src/ledger/capture.ts'
+import { admit, inboxArtifact } from '../../src/ledger/admit.ts'
+import { resolveConflict } from '../../src/ledger/resolve-conflict.ts'
+import { hashInteraction } from '../../src/ledger/canonical.ts'
+import { ROLE_RANK } from '../../src/ledger/interaction.ts'
+import type { Interaction, ProposedInteraction, Role, VersionableIntent } from '../../src/ledger/interaction.ts'
 import {
   interferes,
   mutateAndEncode,
@@ -40,7 +40,7 @@ import {
   WHOLE_FILE_ANCHOR,
   type ConflictRegion,
   type VersionableFoldState,
-} from '../../ledger/artifacts/versionable.ts'
+} from '../../src/ledger/artifacts/versionable.ts'
 
 // ─── Fixture: a flat op-set (seed + concurrent children) over a 4-word base ──────
 const BASE = 'alpha bravo charlie delta' // alpha[0,5] bravo[6,11] charlie[12,19] delta[20,25]

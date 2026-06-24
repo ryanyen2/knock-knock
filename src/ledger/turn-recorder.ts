@@ -1,0 +1,177 @@
+/**
+ * Per-turn capture state: owns the bookkeeping (pending tool calls, executed
+ * tool hashes for turn.replied caused_by) so AgentHost stays a thin router.
+ */
+
+import type { AgentEvent } from '../agent-adapter.ts'
+import type { Ledger } from './capture.ts'
+import { discordArtifact, type ChannelId, type Hash, type Interaction, type Role } from './interaction.ts'
+import { stableJson } from './util.ts'
+
+export type TurnRecorderCtx = {
+  agentKey: string
+  approverUserId: string
+  channelId: ChannelId
+}
+
+export type InboundMessage = {
+  senderId: string
+  senderKind: 'owner' | 'human' | 'agent' | 'unknown'
+  messageId: string
+  text: string
+}
+
+export class TurnRecorder {
+  private readonly toolReqByCallId = new Map<string, Hash>()
+  private readonly pendingToolCalls: Array<{
+    name: string
+    inputJson: string
+    hash: Hash
+  }> = []
+  private readonly toolExecutedHashes: Hash[] = []
+
+  private constructor(
+    private readonly ledger: Ledger,
+    private readonly ctx: TurnRecorderCtx,
+    readonly inboundHash: Hash,
+    readonly promptHash: Hash,
+  ) {}
+
+  /** Record the inbound message + the turn.prompted causal pin. */
+  static async beginTurn(
+    ledger: Ledger,
+    ctx: TurnRecorderCtx,
+    msg: InboundMessage,
+  ): Promise<TurnRecorder> {
+    const prior = await ledger.latestInChannel(ctx.channelId)
+    const inbound = await ledger.record({
+      actor: msg.senderId,
+      role: roleFromKind(msg.senderKind),
+      channel: ctx.channelId,
+      target: { artifactId: discordArtifact(ctx.channelId), anchor: { kind: 'none' } },
+      verb: 'channel.message',
+      patch: {
+        kind: 'external',
+        intent: {
+          channel: 'discord',
+          op: 'received',
+          args: { text: msg.text, messageId: msg.messageId },
+        },
+      },
+      effect: 'external',
+      caused_by: prior ? [prior.hash] : [],
+    })
+
+    const prompted = await ledger.record({
+      actor: ctx.agentKey,
+      role: 'agent',
+      channel: ctx.channelId,
+      target: { artifactId: discordArtifact(ctx.channelId), anchor: { kind: 'none' } },
+      verb: 'turn.prompted',
+      patch: { kind: 'none' },
+      effect: 'pure',
+      caused_by: [inbound.hash],
+    })
+
+    return new TurnRecorder(ledger, ctx, inbound.hash, prompted.hash)
+  }
+
+  /** Construct a recorder around an already-admitted (channel.message,
+   *  turn.prompted) pair. Used by drive-turn. */
+  static restore(
+    ledger: Ledger,
+    ctx: TurnRecorderCtx,
+    inboundHash: Hash,
+    promptHash: Hash,
+  ): TurnRecorder {
+    return new TurnRecorder(ledger, ctx, inboundHash, promptHash)
+  }
+
+  async onAdapterEvent(event: AgentEvent): Promise<Interaction | undefined> {
+    if (event.type === 'tool_call') {
+      const inputJson = stableJson(event.input)
+      const proxyId = event.toolCallId ?? `local-${this.pendingToolCalls.length}-${event.name}`
+      const rec = await this.ledger.record({
+        actor: this.ctx.agentKey,
+        role: 'agent',
+        channel: this.ctx.channelId,
+        target: {
+          artifactId: `extp:tool/${proxyId}`,
+          anchor: { kind: 'proxy', proxyId },
+        },
+        verb: 'tool.requested',
+        patch: {
+          kind: 'external',
+          intent: { channel: 'tool', op: event.name, args: event.input },
+        },
+        effect: 'external',
+        caused_by: [this.promptHash],
+      })
+      this.pendingToolCalls.push({ name: event.name, inputJson, hash: rec.hash })
+      if (event.toolCallId) this.toolReqByCallId.set(event.toolCallId, rec.hash)
+      return rec
+    }
+    if (event.type === 'tool_result') {
+      const parent = event.toolCallId
+        ? this.toolReqByCallId.get(event.toolCallId)
+        : undefined
+      const rec = await this.ledger.record({
+        actor: this.ctx.agentKey,
+        role: 'agent',
+        channel: this.ctx.channelId,
+        target: {
+          artifactId: `extp:tool/${event.toolCallId ?? 'unknown'}`,
+          anchor: event.toolCallId
+            ? { kind: 'proxy', proxyId: event.toolCallId }
+            : { kind: 'none' },
+        },
+        verb: 'tool.executed',
+        patch: {
+          kind: 'external',
+          intent: { channel: 'tool', op: 'result', args: {} },
+          result:
+            event.status === 'completed'
+              ? { ok: true, ref: event.toolCallId ?? '' }
+              : { ok: false, error: event.status },
+        },
+        effect: 'external',
+        caused_by: parent ? [parent] : [this.promptHash],
+      })
+      this.toolExecutedHashes.push(rec.hash)
+      return rec
+    }
+    return undefined
+  }
+
+  /** Pop the tool.requested hash matching a permission-handler call's
+   *  (name, input) for use as `caused_by`. Falls back to promptHash on a race. */
+  popPendingForVerdict(toolName: string, input: unknown): Hash {
+    const inputJson = stableJson(input)
+    const idx = this.pendingToolCalls.findIndex(
+      p => p.name === toolName && p.inputJson === inputJson,
+    )
+    return idx >= 0 ? this.pendingToolCalls.splice(idx, 1)[0]!.hash : this.promptHash
+  }
+
+  /** Close the turn. caused_by = the prompt + every tool the agent ran. */
+  async finishTurn(replyText: string | undefined): Promise<Interaction | undefined> {
+    if (!replyText) return undefined
+    return this.ledger.record({
+      actor: this.ctx.agentKey,
+      role: 'agent',
+      channel: this.ctx.channelId,
+      target: { artifactId: discordArtifact(this.ctx.channelId), anchor: { kind: 'none' } },
+      verb: 'turn.replied',
+      patch: {
+        kind: 'external',
+        intent: { channel: 'discord', op: 'reply', args: { text: replyText } },
+      },
+      effect: 'external',
+      caused_by: [this.promptHash, ...this.toolExecutedHashes],
+    })
+  }
+}
+
+function roleFromKind(kind: 'owner' | 'human' | 'agent' | 'unknown'): Role {
+  return kind === 'unknown' ? 'agent' : kind
+}

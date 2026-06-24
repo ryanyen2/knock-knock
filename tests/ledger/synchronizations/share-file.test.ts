@@ -5,7 +5,7 @@
  */
 
 import { test, expect } from 'bun:test'
-import { shareFile, type ShareFileDeps } from '../../../ledger/synchronizations/share-file.ts'
+import { shareFile, type ShareFileDeps } from '../../../src/ledger/synchronizations/share-file.ts'
 
 const PDF_BYTES = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 1, 2, 3])
 const SECRET_BYTES = new Uint8Array([...'KEY=AKIAIOSFODNN7EXAMPLE'].map(c => c.charCodeAt(0)))
