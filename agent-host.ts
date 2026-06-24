@@ -403,13 +403,25 @@ export class AgentHost {
    *  workspace — so only in-workspace edits become versionable artifacts, and the
    *  artifact id (vers:<scope>/<rel>) stays stable across machines. */
   relativizeWorkspacePath(scope: ChannelId, absFilePath: string): string | undefined {
-    if (!this.roomForScope(scope)) return undefined
-    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    const ws = this.workspaceForScope(scope)
     if (!ws) return undefined
     const abs = isAbsolute(absFilePath) ? absFilePath : resolve(ws, absFilePath)
     const rel = relative(ws, abs)
     if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined
     return rel
+  }
+
+  /** The workspace folder for a scope — the channel-centric redesign makes this
+   *  per-(bot,channel): the agent runs in `rooms[channel].workspace` (see
+   *  getOrCreateSession), so file containment + ingest/share must resolve against
+   *  the SAME folder, not the per-bot default (`agent.workspace`, which projection
+   *  fills from the bot's first channel). Falls back to the bot default, then
+   *  undefined when the scope is unserved. */
+  private workspaceForScope(scope: ChannelId): string | undefined {
+    const roomId = this.roomForScope(scope)
+    if (!roomId) return undefined
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    return liveAgent.rooms[roomId]?.workspace ?? liveAgent.workspace
   }
 
   // ─── File ingest (deps for the ingest-attachment synchronization) ─────────────
@@ -444,8 +456,8 @@ export class AgentHost {
     safeName: string,
     bytes: Uint8Array,
   ): Promise<string | undefined> {
-    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
-    if (!ws || !this.roomForScope(scope)) return undefined
+    const ws = this.workspaceForScope(scope)
+    if (!ws) return undefined
     const relIntended = join('inbox', safeName)
     const abs = resolve(ws, relIntended)
     // Containment: the resolved path must stay inside the workspace.
@@ -546,8 +558,8 @@ export class AgentHost {
     scope: ChannelId,
     relpath: string,
   ): Promise<{ name: string; bytes: Uint8Array } | { error: string }> {
-    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
-    if (!ws || !this.roomForScope(scope)) return { error: 'no workspace for this scope' }
+    const ws = this.workspaceForScope(scope)
+    if (!ws) return { error: 'no workspace for this scope' }
     const abs = isAbsolute(relpath) ? relpath : resolve(ws, relpath)
     const rel = this.relativizeWorkspacePath(scope, abs)
     if (!rel) return { error: 'path is outside the workspace' }
@@ -603,8 +615,8 @@ export class AgentHost {
    *  Undefined when this host doesn't serve the artifact's scope. */
   resolveVersionablePath(artifactId: string): string | undefined {
     const parsed = parseVersionableId(artifactId)
-    if (!parsed || !this.roomForScope(parsed.scope)) return undefined
-    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    if (!parsed) return undefined
+    const ws = this.workspaceForScope(parsed.scope)
     return ws ? join(ws, parsed.relPath) : undefined
   }
 
