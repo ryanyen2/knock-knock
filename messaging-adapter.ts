@@ -215,6 +215,12 @@ export interface MessagingAdapter {
   dm(userId: string, text: string, opts?: SendOpts): Promise<MessageRef | undefined>
   /** Best-effort typing indicator; fire-and-forget. */
   typing(scope: ScopeId): void
+  /** Fetch the bytes of an inbound attachment (capability `files.inbound`). The
+   *  ingest sync calls this at receive time because platform attachment URLs are
+   *  signed/expiring or require auth. `ref` is the opaque IncomingAttachment.ref
+   *  for platforms that need more than the URL. Undefined on failure or when the
+   *  platform has no file support. */
+  downloadAttachment?(url: string, ref?: string): Promise<Uint8Array | undefined>
 
   // ─── structure (capability-gated) ────────────────────────────────────────────
   /** Spawn a task sub-scope from a message (capability `threads`); undefined when

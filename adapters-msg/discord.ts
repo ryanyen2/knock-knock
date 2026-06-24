@@ -19,6 +19,7 @@ import {
   ButtonBuilder,
   ButtonStyle,
   ActionRowBuilder,
+  AttachmentBuilder,
   type Message,
   type ThreadChannel,
   type Interaction,
@@ -168,6 +169,9 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
       dm: true,
       mentions: 'native',
       maxMessageLength: MAX_LEN,
+      // 10 MiB is Discord's default per-file floor; boosted servers allow more,
+      // but we design for the floor (the ingest budget caps here too).
+      files: { inbound: true, outbound: true, maxBytes: 10 * 1024 * 1024 },
     }
   }
 
@@ -311,6 +315,15 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
       replyToMessageId: msg.reference?.messageId ?? undefined,
       isThread: msg.channel.isThread(),
       scopeLabel: this.describeChannel(msg),
+      attachments: msg.attachments.size
+        ? [...msg.attachments.values()].map(a => ({
+            name: a.name ?? a.id,
+            url: a.url,
+            contentType: a.contentType ?? undefined,
+            sizeBytes: a.size,
+            ref: a.id,
+          }))
+        : undefined,
     }
   }
 
@@ -348,13 +361,37 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
     }
   }
 
-  private buildPayload(text: string, opts?: SendOpts): { content: string; components?: any[] } {
+  private buildPayload(
+    text: string,
+    opts?: SendOpts,
+  ): { content: string; components?: any[]; files?: AttachmentBuilder[] } {
     const mention = opts?.mentionUser ? `<@${opts.mentionUser}> ` : ''
     const full = mention + text
     const trimmed = full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
-    const payload: { content: string; components?: any[] } = { content: trimmed }
+    const payload: { content: string; components?: any[]; files?: AttachmentBuilder[] } = {
+      content: trimmed,
+    }
     if (opts?.choices && opts.choices.length > 0) payload.components = rowsFor(opts.choices)
+    if (opts?.files && opts.files.length > 0) {
+      payload.files = opts.files.map(f => {
+        const src = 'path' in f.data ? f.data.path : Buffer.from(f.data)
+        return new AttachmentBuilder(src as any, { name: f.name })
+      })
+    }
     return payload
+  }
+
+  /** Download an inbound attachment's bytes. Discord CDN URLs are signed and
+   *  expiring, so the ingest sync fetches immediately rather than persisting the
+   *  URL. Returns undefined on failure (the caller surfaces a fetch-failed note). */
+  async downloadAttachment(url: string): Promise<Uint8Array | undefined> {
+    try {
+      const res = await fetch(url)
+      if (!res.ok) return undefined
+      return new Uint8Array(await res.arrayBuffer())
+    } catch {
+      return undefined
+    }
   }
 
   private async fetchMessage(ref: MessageRef): Promise<Message | undefined> {
