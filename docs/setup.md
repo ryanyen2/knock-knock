@@ -64,7 +64,7 @@ tables, and a channel references bots and roster entries by id.
   runtimes are covered in [step 5](#5-choose-the-coding-agent-behind-the-bot).
 
 knock-knock has **no `config.json` you hand-edit.** Everything lives under
-`~/.claude/channels/knock-knock/` and is written for you by the setup CLI:
+`~/.knock-knock/` and is written for you by the setup CLI:
 
 | File | Holds | Written by |
 |------|-------|------------|
@@ -76,6 +76,26 @@ knock-knock has **no `config.json` you hand-edit.** Everything lives under
 `access.json` (including the inline permission profiles) is written **only** from
 your terminal, never from a chat message — so nothing anyone says in the channel
 can change who's allowed or what they may do.
+
+### Where does the `.env` go? (set it once)
+
+**One global file: `~/.knock-knock/.env`** — *not* per-project and *not* tied to the
+folder you run from. You set it up **once**; every bot, every channel, and every
+`bun relay.ts` (launched from any directory) reads the same file. You never re-enter
+env vars when you add a channel or start from a different folder.
+
+It holds two kinds of secret, both managed by `bun setup.ts`:
+
+- **Bot tokens** — one per bot (e.g. `DISCORD_BOT_TOKEN`), via "Save a bot token".
+- **Coding-agent API keys** — e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, via "Save a
+  coding-agent API key". A key is **shared across every bot using that agent**, so you
+  enter `ANTHROPIC_API_KEY` once no matter how many Claude bots you run. Agents that use
+  their own login (`gemini`, `opencode`) need no key here at all.
+
+The setup dashboard shows a **CODING-AGENT AUTH** panel with a ✓/✗ per key so you can
+see at a glance what's set. The bot's **workspace** (the project folder it edits) is a
+*separate* per-channel path you choose in setup — it has nothing to do with where the
+`.env` lives. Relocate the whole state dir with `KNOCK_KNOCK_STATE_DIR` if you must.
 
 ---
 

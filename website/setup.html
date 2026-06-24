@@ -90,7 +90,7 @@
       <li class="gstep"><div><h4>A chat platform you can add a bot to</h4><p>Discord is the production-tested path and the rest of this guide assumes it. Slack, Telegram, WhatsApp, and iMessage are experimental and covered in <a href="#platform">step 4</a>.</p></div></li>
       <li class="gstep"><div><h4>A coding-agent runtime</h4><p>The default (<code>claude-sdk</code>) needs only an <code>ANTHROPIC_API_KEY</code> or an existing <code>claude</code> login. Nothing to install. Other runtimes are in <a href="#runtime">step 5</a>.</p></div></li>
     </ul>
-    <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.claude/channels/knock-knock/</code> and is written by the setup CLI. <code>access.json</code> — normalized into <code>me</code> / <code>bots</code> / <code>channels</code> (with each member's inline permission profile) / <code>roster</code> — is written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the channel can change who's allowed or what they may do.</div></div>
+    <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.knock-knock/</code> and is written by the setup CLI. <code>access.json</code> — normalized into <code>me</code> / <code>bots</code> / <code>channels</code> (with each member's inline permission profile) / <code>roster</code> — is written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the channel can change who's allowed or what they may do.</div></div>
   </section>
 
   <!-- 03 QUICKSTART -->

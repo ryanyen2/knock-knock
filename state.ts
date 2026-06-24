@@ -24,7 +24,7 @@ import type { PermissionProfile } from './agent-adapter.ts'
 export type { PermissionProfile, RoomProfile }
 
 export const STATE_DIR =
-  process.env.KNOCK_KNOCK_STATE_DIR ?? join(homedir(), '.claude', 'channels', 'knock-knock')
+  process.env.KNOCK_KNOCK_STATE_DIR ?? join(homedir(), '.knock-knock')
 export const ACCESS_FILE = join(STATE_DIR, 'access.json')
 export const SETTINGS_FILE = join(STATE_DIR, 'settings.json')
 

@@ -362,11 +362,11 @@ prior plan, decisions, and pitfalls instead of cold. See
 
 ### State layout
 
-All persistent config lives in `~/.claude/channels/knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
+All persistent config lives in `~/.knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
 - `access.json` — written in the **channel-centric authoring shape** (`AuthoringAccess`, `lib.ts`): `{ me?, bots, channels, roster, mentionPatterns?, ackReaction? }`.
   - `me` — `Partial<Record<Platform, userId>>`: the owner's id per platform, entered **once** and reused (no per-bot owner re-entry).
-  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, appTokenEnv?, runtime, sandbox?, displayName?, blurb?}`. The bot's name/avatar live on the platform (fetched live, never typed).
-  - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace` + inline `profile` + `preset`) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`.
+  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, appTokenEnv?, runtime, sandbox?, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
+  - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace`, inline `profile`, `preset`, and an optional per-channel `runtime` override — the same bot can drive `claude-sdk` in one channel and `codex` in another) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`. The effective runtime per channel is `Membership.runtime ?? Bot.runtime`, resolved in `getOrCreateSession`. Runtime is terminal-written only (it selects which local binary runs with workspace access), never chat-settable.
   - `roster` — `{people: Record<id, Person>, peers: Record<id, Peer>}`: known humans + peer bots, entered once and referenced by id from a channel's `collaborators`.
   - **Read via `readAccessFile()`**, which projects this to the agent-keyed runtime `Access` (`{agents: Record<botId, AgentConfig>}`) via the pure `projectToRuntime` — so the relay/hosts/folds are unchanged. `readAuthoringAccess`/`saveAuthoringAccess` operate on the authoring shape (setup only). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
 - Permission profiles are **inline** on each `Membership.profile` in `access.json` (`{allow, ask, deny, tiers?}`, expanded from a named `preset`). A legacy on-disk `rooms/<botId>/<channelId>.settings.json` file is still read as a fallback when a membership has no inline profile.
@@ -410,7 +410,7 @@ the token value itself lives in `.env`.
 | Variable | Required | Purpose |
 |---|---|---|
 | `<tokenEnv>` (e.g. `DISCORD_BOT_TOKEN`) | yes | Discord bot token; the env-var *name* is set per agent via `tokenEnv` |
-| `KNOCK_KNOCK_STATE_DIR` | no | Override the state directory (default `~/.claude/channels/knock-knock`) |
+| `KNOCK_KNOCK_STATE_DIR` | no | Override the state directory (default `~/.knock-knock`) |
 | `KNOCK_KNOCK_LEDGER_URL` | no | Postgres connection string; **overrides** the setup-managed `settings.json` ledger choice. Neither set → SQLite. Prefer choosing the backend in `bun setup.ts`. |
 | `KNOCK_KNOCK_LEDGER_FILE` | no | Override the SQLite ledger path (default `<state-dir>/ledger.sqlite`) |
 | `KNOCK_KNOCK_ACP_COMMAND` | when `runtime=acp` | Spawn command for the ACP subprocess |

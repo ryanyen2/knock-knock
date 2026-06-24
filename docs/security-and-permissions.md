@@ -237,10 +237,10 @@ on the agent cooperating.
 
 | File | What |
 |------|------|
-| `~/.claude/channels/knock-knock/access.json` | agents, owners, rooms, peers, sandbox flags |
-| `~/.claude/channels/knock-knock/rooms/<agent>/<channel>.settings.json` | a room's allow/ask/deny (+ tiers) |
-| `~/.claude/channels/knock-knock/settings.json` | ledger backend (local/remote) |
-| `~/.claude/channels/knock-knock/.env` | bot tokens (chmod 600) |
+| `~/.knock-knock/access.json` | agents, owners, rooms, peers, sandbox flags |
+| `~/.knock-knock/rooms/<agent>/<channel>.settings.json` | a room's allow/ask/deny (+ tiers) |
+| `~/.knock-knock/settings.json` | ledger backend (local/remote) |
+| `~/.knock-knock/.env` | bot tokens (chmod 600) |
 
 **Prompt-injection protection:** every one of these is written **only from your
 terminal** by `bun setup.ts` — *never* from a Discord message. Nothing anyone says
