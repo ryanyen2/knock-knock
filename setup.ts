@@ -875,6 +875,7 @@ function finishWithNextSteps(access: Access): void {
   if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run ${color.cyan('bun setup.ts')} and pick "Save token"`)
   if (noRoom.length) tips.push(`${color.yellow('!')} No room for ${noRoom.join(', ')} — run ${color.cyan('bun setup.ts')} and pick "Add a room"`)
   tips.push(`${color.green('→')} Start the relay: ${color.cyan('bun relay.ts')}`)
+  tips.push(`${color.green('→')} Tune a channel in-chat (owner only): ${color.cyan('!config role <text>')} — ${color.cyan('!config help')} for more`)
   p.note(tips.join('\n'), 'Next steps')
   p.outro(color.green('All done.'))
 }

@@ -32,7 +32,7 @@ import {
   type SessionNotification,
   type PermissionOption,
 } from '@agentclientprotocol/sdk'
-import type { AgentAdapter, AgentEvent, PermissionProfile, Verdict } from '../agent-adapter.ts'
+import type { AgentAdapter, AgentEvent, PermissionProfile, TurnOptions, Verdict } from '../agent-adapter.ts'
 import { classifyTool, type ToolDescriptor } from '../lib.ts'
 
 const DEBUG = process.env.KNOCK_KNOCK_DEBUG === '1'
@@ -256,7 +256,14 @@ export class AcpAdapter implements AgentAdapter {
     text: string
     sessionId?: string
     signal?: AbortSignal
+    /** Per-turn model/thinking/effort. ACP runtimes self-manage these via their
+     *  own config; there is no protocol field to pass them through, so they are
+     *  intentionally ignored here (honest limit, surfaced on `!config` set). */
+    options?: TurnOptions
   }): Promise<{ sessionId: string; text: string }> {
+    if (input.options && (input.options.model || input.options.thinking || input.options.effort)) {
+      dbg('per-turn model/thinking/effort ignored — ACP runtimes self-manage these')
+    }
     await this.init()
     const conn = this.conn!
 

@@ -14,6 +14,13 @@
 
 import { formatIsoTime } from './reply-annotations.ts'
 import type { TurnFoldState, TurnState, TurnToolCall } from '../concepts/turn.ts'
+import {
+  CONFIG_FIELDS,
+  configFieldSpec,
+  type ChannelConfig,
+  type ConfigFieldSpec,
+  type WorkbenchVerbosity,
+} from '../../lib.ts'
 
 /**
  * §9 glyph reference — the complete visual vocabulary, in one place so every
@@ -42,6 +49,8 @@ export const GLYPHS = {
   stop: '🛑', // react on a message to abort the channel's in-flight turn
   // Session sharing (owner imports a prior local coding session's context):
   session: '📥', // share-session card header / imported-context cue
+  // Per-channel config (owner tunes a channel's persona/knobs in-chat):
+  config: '⚙️', // !config command confirmations / view
 } as const
 
 // ─── §4.1 the "now working" workbench ─────────────────────────────────────────
@@ -108,7 +117,11 @@ const PLAN_TOOL = 'TodoWrite'
  * Edited in place by the glue, so the log grows as the turn runs and then
  * stays put as the trace of that turn.
  */
-export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): string {
+export function renderWorkbench(
+  entries: WorkbenchEntry[],
+  updatedAt?: string,
+  verbosity: WorkbenchVerbosity = 'normal',
+): string {
   const stamp = updatedAt ? formatIsoTime(updatedAt) : ''
   const footer = stamp ? [`-# updated ${stamp}`] : []
   if (entries.length === 0) {
@@ -118,13 +131,17 @@ export function renderWorkbench(entries: WorkbenchEntry[], updatedAt?: string): 
   const blocks = entries
     .slice()
     .sort((a, b) => rank[a.status] - rank[b.status] || a.agent.localeCompare(b.agent))
-    .map(e => renderEntry(e))
+    .map(e => renderEntry(e, verbosity))
   // `-#` subtext only renders at the start of a line, so the timestamp is its
   // own trailing line, never appended to the bold header.
   return ['**Workbench**', ...blocks, ...footer].join('\n')
 }
 
-function renderEntry(e: WorkbenchEntry): string {
+/** Per-verbosity cap on the tool-step lines shown. `quiet` drops them entirely
+ *  (header + state only); `verbose` keeps a longer trace. */
+const STEP_CAP: Record<WorkbenchVerbosity, number> = { quiet: 0, normal: MAX_STEPS, verbose: 20 }
+
+function renderEntry(e: WorkbenchEntry, verbosity: WorkbenchVerbosity = 'normal'): string {
   const head = `${HEAD_GLYPH[e.status]} ${e.agent}${e.stage ? ` — ${quote(e.stage, 100)}` : ''}`
   const lines = [head]
   // The plan block (TodoWrite list) — the high-level view, above the tool steps.
@@ -135,7 +152,9 @@ function renderEntry(e: WorkbenchEntry): string {
   }
   const hiddenTodos = plan.length - todos.length
   if (hiddenTodos > 0) lines.push(`-#   … ${hiddenTodos} more planned`)
-  const steps = e.steps.length > MAX_STEPS ? e.steps.slice(e.steps.length - MAX_STEPS) : e.steps
+  // Tool steps, capped by the per-thread workbench verbosity (quiet drops them).
+  const cap = STEP_CAP[verbosity]
+  const steps = e.steps.length > cap ? e.steps.slice(e.steps.length - cap) : e.steps
   const hidden = e.steps.length - steps.length
   if (hidden > 0) lines.push(`-#   … ${hidden} earlier step${hidden === 1 ? '' : 's'}`)
   for (const s of steps) {
@@ -179,30 +198,51 @@ export function workbenchEntries(
     if (!prev || t.startedAt > prev.startedAt) latest.set(t.agentKey, t)
   }
   const entries: WorkbenchEntry[] = []
-  for (const [agent, t] of latest) {
-    const working = !t.reply && !t.endedAt
-    const failed = t.toolCalls.some(tc => tc.status === 'failed' || tc.status === 'denied')
-    // The plan is the agent's *latest* TodoWrite list this turn (it rewrites the
-    // whole list each call); fold those calls into a plan block and drop them
-    // from the step trace so repeated TodoWrites don't spam it.
-    const planCalls = t.toolCalls.filter(tc => tc.name === PLAN_TOOL)
-    const plan = planCalls.length ? parseTodos(planCalls[planCalls.length - 1]!.inputJson) : undefined
-    entries.push({
-      agent,
-      status: working ? 'working' : failed ? 'failed' : 'done',
-      stage: promptText(t.inboundHash) ?? '',
-      steps: t.toolCalls
-        .filter(tc => tc.name !== PLAN_TOOL)
-        .map(tc => ({
-          tool: tc.name,
-          subject: toolSubject(tc.inputJson),
-          status: tc.status,
-        })),
-      plan: plan && plan.length ? plan : undefined,
-      lastSeen: formatIsoTime(t.endedAt ?? t.startedAt),
-    })
-  }
+  for (const [, t] of latest) entries.push(entryFromTurn(t, promptText))
   return entries
+}
+
+/** A single turn's workbench entry, by its promptHash — used for the per-turn
+ *  (per agent-tag "call") activity log. Undefined when the turn isn't in the
+ *  fold yet. Pure. */
+export function workbenchEntryForTurn(
+  turns: TurnFoldState,
+  promptHash: string,
+  promptText: (inboundHash: string | undefined) => string | undefined,
+): WorkbenchEntry | undefined {
+  const t = turns.get(promptHash)
+  return t ? entryFromTurn(t, promptText) : undefined
+}
+
+/** Build a workbench entry from one TurnState. `working` = no reply yet;
+ *  otherwise `failed` if any tool failed/was denied, else `done`. The agent's
+ *  latest TodoWrite list this turn becomes the plan block (and those calls are
+ *  dropped from the step trace so repeated TodoWrites don't spam it). */
+function entryFromTurn(
+  t: TurnState,
+  promptText: (inboundHash: string | undefined) => string | undefined,
+): WorkbenchEntry {
+  const working = !t.reply && !t.endedAt
+  const failed = t.toolCalls.some(tc => tc.status === 'failed' || tc.status === 'denied')
+  // The plan is the agent's *latest* TodoWrite list this turn (it rewrites the
+  // whole list each call); fold those calls into a plan block and drop them from
+  // the step trace so repeated TodoWrites don't spam it.
+  const planCalls = t.toolCalls.filter(tc => tc.name === PLAN_TOOL)
+  const plan = planCalls.length ? parseTodos(planCalls[planCalls.length - 1]!.inputJson) : undefined
+  return {
+    agent: t.agentKey,
+    status: working ? 'working' : failed ? 'failed' : 'done',
+    stage: promptText(t.inboundHash) ?? '',
+    steps: t.toolCalls
+      .filter(tc => tc.name !== PLAN_TOOL)
+      .map(tc => ({
+        tool: tc.name,
+        subject: toolSubject(tc.inputJson),
+        status: tc.status,
+      })),
+    plan: plan && plan.length ? plan : undefined,
+    lastSeen: formatIsoTime(t.endedAt ?? t.startedAt),
+  }
 }
 
 /**
@@ -440,6 +480,228 @@ export function renderRewindAck(action: RewindAction): string {
     case 'checkpoint':
       return `-# ${GLYPHS.checkpoint} checkpoint pinned.`
   }
+}
+
+// ─── per-channel config (!config) ─────────────────────────────────────────────
+
+/** Compact human form for a ms duration knob (8000 → `8s`). */
+function formatDurationShort(ms: number): string {
+  if (ms !== 0 && ms % 3_600_000 === 0) return `${ms / 3_600_000}h`
+  if (ms !== 0 && ms % 60_000 === 0) return `${ms / 60_000}m`
+  if (ms % 1_000 === 0) return `${ms / 1_000}s`
+  return `${ms}ms`
+}
+
+function formatConfigValue(spec: ConfigFieldSpec, value: unknown): string {
+  if (spec.kind === 'duration' && typeof value === 'number') return formatDurationShort(value)
+  if (spec.kind === 'text' && typeof value === 'string') return quote(value, 300)
+  if (spec.kind === 'token' && typeof value === 'string') return `\`${value}\``
+  if (spec.kind === 'bool') return value ? 'on' : 'off'
+  if (spec.kind === 'list' && Array.isArray(value)) return value.map(v => `\`${v}\``).join(', ')
+  return String(value)
+}
+
+/** Help for the owner `!config` command — driven by the field registry so a new
+ *  knob shows up automatically. Everything not listed is terminal-managed. */
+export function renderConfigHelp(): string {
+  return [
+    `${GLYPHS.config} **Channel config** — tune behavior (owner only)`,
+    ...CONFIG_FIELDS.map(f => f.help),
+    '`!config get [key]` — show the resolved overlay (thread ⊕ room)',
+    '`!config reset <key>` — clear a key back to the inherited default',
+    '-# In a thread, edits apply to **this thread**; `!config room <key> <val>` sets the room default for all threads.',
+    '-# Identity, the allowlist, and raw permissions stay terminal-managed (`bun setup.ts`).',
+  ].join('\n')
+}
+
+/** Show the current overlay for a channel — all set knobs, or one by chat key. */
+export function renderConfig(cfg: ChannelConfig, key?: string): string {
+  const lines = [`${GLYPHS.config} **Channel config**`]
+  const fields = key ? CONFIG_FIELDS.filter(f => f.chatKey === key) : CONFIG_FIELDS
+  const shown = fields.filter(f => (cfg as Record<string, unknown>)[f.field] !== undefined)
+  if (shown.length === 0) {
+    lines.push('-# nothing set — using the agent defaults')
+    return lines.join('\n')
+  }
+  for (const f of shown) {
+    const value = (cfg as Record<string, unknown>)[f.field]
+    const rendered = formatConfigValue(f, value)
+    lines.push(f.kind === 'text' ? `> ${f.chatKey}: ${rendered}` : `-# ${f.chatKey}: ${rendered}`)
+  }
+  return lines.join('\n')
+}
+
+/** Terse confirmation after a knob is set, echoing the stored (clamped) value so
+ *  the owner sees exactly what took effect. `where` labels which layer it landed
+ *  on (a thread overlay vs the room default), so the thread-vs-room UX is clear. */
+export function renderConfigSet(field: string, value: unknown, where?: 'thread' | 'room'): string {
+  const spec = configFieldSpec(field)
+  const label = spec?.chatKey ?? field
+  const shown = spec ? formatConfigValue(spec, value) : String(value)
+  // Echo short values verbatim (numbers, on/off, an emoji); a long one (a role
+  // brief, a big pattern list) is summarized so the confirmation stays compact.
+  const detail = shown.length <= 64 ? `\`${shown}\`` : 'a new value'
+  const scopeNote = where === 'room' ? ' for the **room** (all threads)' : where === 'thread' ? ' for **this thread**' : ''
+  const lines = [
+    `${GLYPHS.config} \`${label}\` set to ${detail}${scopeNote}.`,
+  ]
+  // The permission `mode` crosses the terminal-only trust boundary, so the
+  // confirmation states the safety envelope explicitly: it loosens allow/ask but
+  // the room's deny and the destructive deny floor (rm -rf, sudo, ~/.ssh) hold.
+  if (field === 'permissionPreset') {
+    lines.push('-# Loosens allow/ask only — the room deny and the destructive deny floor still apply.')
+  }
+  lines.push(`-# Takes effect on the next turn here. \`!config reset ${label}\` to clear.`)
+  return lines.join('\n')
+}
+
+/**
+ * Render the RESOLVED (merged room ⊕ thread) config, labeling each value's
+ * source layer so the owner sees what's inherited vs. thread-local. In a plain
+ * channel (scope==room, `isThread` false) the labels are suppressed and this
+ * matches the flat `renderConfig` view.
+ */
+export function renderResolvedConfig(
+  roomCfg: ChannelConfig,
+  scopeCfg: ChannelConfig,
+  isThread: boolean,
+): string {
+  if (!isThread) return renderConfig(scopeCfg)
+  const lines = [`${GLYPHS.config} **Thread config** — resolved (thread ⊕ room)`]
+  const rows: string[] = []
+  for (const f of CONFIG_FIELDS) {
+    const scopeVal = (scopeCfg as Record<string, unknown>)[f.field]
+    const roomVal = (roomCfg as Record<string, unknown>)[f.field]
+    const has = scopeVal !== undefined ? scopeVal : roomVal
+    if (has === undefined) continue
+    const src = scopeVal !== undefined ? 'thread' : 'room'
+    const rendered = formatConfigValue(f, has)
+    rows.push(
+      f.kind === 'text'
+        ? `> ${f.chatKey}: ${rendered} (${src})`
+        : `-# ${f.chatKey}: ${rendered} (${src})`,
+    )
+  }
+  if (rows.length === 0) {
+    lines.push('-# nothing set — using the room/agent defaults')
+    return lines.join('\n')
+  }
+  lines.push(...rows)
+  lines.push('-# `!config <key> <val>` sets this thread; `!config room <key> <val>` sets the room default.')
+  return lines.join('\n')
+}
+
+/** Terse confirmation after keys are reset to the agent default. Keys are
+ *  canonical field names; shown by their friendly chat key. */
+export function renderConfigReset(keys: string[]): string {
+  const labels = keys.map(k => configFieldSpec(k)?.chatKey ?? k)
+  return [
+    `${GLYPHS.config} Reset ${labels.map(k => `\`${k}\``).join(', ')} to the agent default.`,
+    '-# Takes effect on the next turn here.',
+  ].join('\n')
+}
+
+// ─── pinned per-thread config card ────────────────────────────────────────────
+
+/**
+ * The pinned card shown in a task thread so the owner always sees the thread's
+ * current setup — persona, objective, model/thinking/effort, permission mode —
+ * resolved (thread ⊕ room) with a source label per value, plus how many context
+ * notes are attached. Edited in place by the glue and pinned; the Workbench is
+ * no longer pinned (one per-turn activity log posts inline instead). Pure.
+ */
+export function renderConfigCard(
+  roomCfg: ChannelConfig,
+  scopeCfg: ChannelConfig,
+  contextCount: number,
+): string {
+  const resolve = (field: keyof ChannelConfig): { v: unknown; src: 'thread' | 'room' } | undefined => {
+    const sv = (scopeCfg as Record<string, unknown>)[field]
+    const rv = (roomCfg as Record<string, unknown>)[field]
+    if (sv !== undefined) return { v: sv, src: 'thread' }
+    if (rv !== undefined) return { v: rv, src: 'room' }
+    return undefined
+  }
+  const lines = [`${GLYPHS.config} **Thread setup**`]
+  // Persona + objective as quoted blocks (they're free text).
+  for (const field of ['role', 'endGoal'] as const) {
+    const r = resolve(field)
+    if (!r) continue
+    const spec = configFieldSpec(field)
+    lines.push(`> ${spec?.chatKey ?? field}: ${spec ? formatConfigValue(spec, r.v) : String(r.v)} (${r.src})`)
+  }
+  // Compact knob line: model / thinking / effort / mode.
+  const knobs: string[] = []
+  for (const field of ['model', 'thinking', 'effort', 'permissionPreset'] as const) {
+    const r = resolve(field)
+    if (!r) continue
+    const spec = configFieldSpec(field)
+    knobs.push(`${spec?.chatKey ?? field} ${spec ? formatConfigValue(spec, r.v) : String(r.v)} (${r.src})`)
+  }
+  if (knobs.length) lines.push(`-# ${knobs.join(' · ')}`)
+  lines.push(
+    `-# ${contextCount} context note${contextCount === 1 ? '' : 's'} · \`!config\` to tune · \`!context\` to manage`,
+  )
+  return lines.join('\n')
+}
+
+// ─── per-thread context surface (!context) ───────────────────────────────────
+
+export type ContextEntry = {
+  /** Provenance label, e.g. "claude-code:1a2b3c4d" or "owner-note". */
+  source: string
+  /** Readable snippet of the note (envelope stripped). */
+  summary: string
+  /** ISO timestamp the note was added. */
+  when: string
+  /** Discord id of who added it, when known. */
+  by?: string
+}
+
+/** The owner `!context` list — active shared-context notes for the thread,
+ *  stable-numbered (oldest-first) so `!context remove <n>` maps to the same note. */
+export function renderContextList(entries: ContextEntry[]): string {
+  if (entries.length === 0) {
+    return [
+      `${GLYPHS.session} **Thread context** — none`,
+      '-# Import a session ("share session") or add a note with `!context add <text>`.',
+    ].join('\n')
+  }
+  const lines = [
+    `${GLYPHS.session} **Thread context** — ${entries.length} note${entries.length === 1 ? '' : 's'}`,
+  ]
+  entries.forEach((e, i) => {
+    lines.push('')
+    lines.push(`${i + 1}. \`${e.source}\` — ${quote(e.summary, 140)}`)
+    lines.push(`-#   added ${formatIsoTime(e.when)}${e.by ? ` by <@${e.by}>` : ''}`)
+  })
+  lines.push('', '-# `!context add <text>` to add · `!context remove <n>` to drop one')
+  return lines.join('\n')
+}
+
+/** Help for the owner `!context` command. */
+export function renderContextHelp(): string {
+  return [
+    `${GLYPHS.session} **Thread context** — curate what this thread's turns see (owner only)`,
+    '`!context` — list the active shared-context notes',
+    '`!context add <text>` — append a free-form note injected once next turn',
+    '`!context remove <n>` — drop the n-th note',
+  ].join('\n')
+}
+
+/** Terse confirmation after a free-form context note is added. */
+export function renderContextAdded(): string {
+  return [
+    `${GLYPHS.session} Context note added.`,
+    '-# The next turn here will see it once.',
+  ].join('\n')
+}
+
+/** Terse confirmation after a context note is removed (invalidated). Echoes the
+ *  removed note's source + summary so a concurrent renumber is caught at a glance. */
+export function renderContextRemoved(index: number, removed?: ContextEntry): string {
+  const what = removed ? ` — \`${removed.source}\`: ${quote(removed.summary, 100)}` : ''
+  return `${GLYPHS.session} Removed context note #${index}${what}. It won't be injected again.`
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────

@@ -37,4 +37,7 @@ export type HostContext = {
   discordSend(scopeId: ChannelId, text: string): Promise<string | undefined>
   /** Remember a message this host posted (dedup for self-reply / reaction gating). */
   noteBotMsg(id: string): void
+  /** Refresh the pinned per-thread config card for a scope (after a `!config` /
+   *  `!context` edit, or when a task thread is created). Best-effort, throttled. */
+  refreshConfigCard(scopeId: ChannelId): void
 }

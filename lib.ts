@@ -579,7 +579,7 @@ export type LoopGuardDecision = { allow: boolean; reason?: 'threshold' | 'cooldo
 
 export type LoopGuardOpts = { maxConsecutive: number; cooldownMs: number }
 
-const DEFAULT_LOOP_GUARD: LoopGuardOpts = { maxConsecutive: 4, cooldownMs: 8_000 }
+export const DEFAULT_LOOP_GUARD: LoopGuardOpts = { maxConsecutive: 4, cooldownMs: 8_000 }
 
 /**
  * Decide whether to process an inbound message, and return the updated state.
@@ -616,6 +616,536 @@ export function loopGuard(
   }
   // 'unknown' senders are gated by guildSenderAllowed before reaching here.
   return { decision: { allow: true }, next: state }
+}
+
+// ─── Per-channel config overlay ──────────────────────────────────────────────
+//
+// Setup (the terminal CLI) writes the BASE layer — identity, secrets, the
+// allowlist, the permission deny-floor — and is the only writer of access.json /
+// room settings files (the prompt-injection invariant). On top of that base, the
+// OWNER tunes each channel in-chat via `!config`, which admits owner-role
+// `config.set` interactions; a fold projects them and the values merge OVER the
+// file base at use-time. The overlay can only adjust behavior or tighten — never
+// grant trust. These pure functions own the grammar + projection so they're
+// unit-tested without a live ledger; the fold (ledger/concepts/config.ts) and the
+// host command (host/channel-config.ts) are thin wrappers over them.
+
+/** The behavioral knobs an owner can tune per channel. Grows per phase; every
+ *  field is optional so an absent overlay leaves the agent/global default. */
+export type ChannelConfig = {
+  /** Persona/role brief injected into each turn's prompt in this channel. */
+  role?: string
+  /** Objective/end-goal for this task, injected alongside the persona role. */
+  endGoal?: string
+  /** Model id for this thread's turns (claude-sdk only — per-`query()` option). */
+  model?: string
+  /** Extended-thinking mode for this thread's turns (claude-sdk only). */
+  thinking?: ThinkingMode
+  /** Reasoning-effort level for this thread's turns (claude-sdk only). */
+  effort?: EffortMode
+  /** Permission mode for this thread — selects a vetted preset whose allow/ask
+   *  loosen the room base, but whose deny is UNIONed with the room deny + floor
+   *  (chat can never drop a terminal-set deny). The ONLY trust-adjacent knob the
+   *  owner may set from chat; raw allow/ask/deny/tiers/preset stay terminal-only. */
+  permissionPreset?: PermissionMode
+  /** Loop-guard: max consecutive agent↔agent turns before pausing. */
+  loopMaxConsecutive?: number
+  /** Loop-guard: min gap (ms) between agent-triggered replies. */
+  loopCooldownMs?: number
+  /** Inbound rate cap: max messages per sender per window. */
+  rateCapPerMin?: number
+  /** Inbound rate cap: the window (ms) the cap counts over. */
+  rateWindowMs?: number
+  /** How long (ms) to wait for the owner's approve/deny before timing out. */
+  approvalTimeoutMs?: number
+  /** Whether an @mention is required to trigger the agent in this channel.
+   *  Overrides the room's RoomConfig.requireMention. A UX knob, NOT a trust
+   *  knob — who is *allowed* is still gated by the file allowlist. */
+  requireMention?: boolean
+  /** Extra mention patterns (case-insensitive regexes) for this channel, unioned
+   *  with the global ones. */
+  mentionPatterns?: string[]
+  /** Presence/ack reaction for this channel (overrides the global ackReaction). */
+  ackReaction?: string
+  /** How much detail the pinned Workbench shows in this channel. */
+  workbenchVerbosity?: WorkbenchVerbosity
+}
+
+export type WorkbenchVerbosity = 'quiet' | 'normal' | 'verbose'
+
+/** Extended-thinking modes the owner can pick per thread. Mapped to the SDK's
+ *  ThinkingConfig by `toThinkingConfig`. */
+export type ThinkingMode = 'off' | 'auto' | 'high'
+
+/** Reasoning-effort levels (mirror the SDK's EffortLevel union). */
+export type EffortMode = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+
+/** The vetted permission presets a thread `mode` may select (the named keys of
+ *  PRESET_MODES). */
+export type PermissionMode = 'strict' | 'ask-per-edit' | 'auto' | 'bypass'
+
+/** One owner edit: a partial set of keys, plus `_clear` to remove keys. A reset
+ *  is `{ _clear: [keys] }`. Carried as the `config.set` patch's `intent.args`. */
+export type ChannelConfigDelta = Partial<ChannelConfig> & { _clear?: string[] }
+
+/** A delta as stored in the fold, tagged with the immutable provenance used to
+ *  order concurrent edits deterministically across replicas. */
+export type ConfigDeltaRecord = { delta: ChannelConfigDelta; createdAt: string; hash: string }
+
+/** Hard cap on a role brief so one edit can't bloat every prompt unbounded. */
+export const ROLE_MAX_LEN = 1500
+
+/**
+ * The chat-settable config fields, in one registry that drives parsing,
+ * projection-time clamping, rendering, and help. Each row maps a friendly chat
+ * key (what the owner types, e.g. `rate`) to a canonical ChannelConfig field
+ * (`rateCapPerMin`). Numeric fields carry [min,max] CLAMP bounds — the safety
+ * property: a chat edit tunes a protection within a safe range but can NEVER
+ * disable it (rate can't reach 0; loop-max can't reach infinity). Adding a
+ * later-phase knob is one new row here.
+ */
+export type ConfigFieldSpec = {
+  chatKey: string
+  field: keyof ChannelConfig
+  kind: 'text' | 'token' | 'int' | 'duration' | 'bool' | 'enum' | 'list'
+  min?: number          // int/duration clamp bounds
+  max?: number
+  maxLen?: number       // text / per-list-item character cap (default ROLE_MAX_LEN)
+  maxItems?: number     // list element-count cap
+  values?: readonly string[] // enum allowed values
+  help: string
+}
+
+export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
+  { chatKey: 'role', field: 'role', kind: 'text',
+    help: "`!config role <text>` — the agent's persona for this channel" },
+  { chatKey: 'end-goal', field: 'endGoal', kind: 'text',
+    help: '`!config end-goal <text>` — the objective for this task/thread, kept in view each turn' },
+  { chatKey: 'model', field: 'model', kind: 'token', maxLen: 100,
+    help: '`!config model <id>` — model for this thread (claude-sdk only), e.g. `claude-opus-4-8`' },
+  { chatKey: 'thinking', field: 'thinking', kind: 'enum', values: ['off', 'auto', 'high'],
+    help: '`!config thinking <off|auto|high>` — extended-thinking mode (claude-sdk only)' },
+  { chatKey: 'effort', field: 'effort', kind: 'enum', values: ['low', 'medium', 'high', 'xhigh', 'max'],
+    help: '`!config effort <low|medium|high|xhigh|max>` — reasoning effort (claude-sdk only)' },
+  { chatKey: 'mode', field: 'permissionPreset', kind: 'enum', values: ['strict', 'ask-per-edit', 'auto', 'bypass'],
+    help: '`!config mode <strict|ask-per-edit|auto|bypass>` — permission mode for this thread (deny floor always holds)' },
+  { chatKey: 'loop-max', field: 'loopMaxConsecutive', kind: 'int', min: 1, max: 50,
+    help: '`!config loop-max <1-50>` — max consecutive agent↔agent turns before pausing' },
+  { chatKey: 'loop-cooldown', field: 'loopCooldownMs', kind: 'duration', min: 0, max: 600_000,
+    help: '`!config loop-cooldown <dur>` — min gap between agent replies, e.g. `8s`' },
+  { chatKey: 'rate', field: 'rateCapPerMin', kind: 'int', min: 1, max: 120,
+    help: '`!config rate <1-120>` — max inbound messages per sender per window' },
+  { chatKey: 'rate-window', field: 'rateWindowMs', kind: 'duration', min: 1_000, max: 600_000,
+    help: '`!config rate-window <dur>` — the rate-cap window, e.g. `60s`' },
+  { chatKey: 'approval-timeout', field: 'approvalTimeoutMs', kind: 'duration', min: 5_000, max: 3_600_000,
+    help: '`!config approval-timeout <dur>` — how long to wait for your ✅/❌, e.g. `5m`' },
+  { chatKey: 'require-mention', field: 'requireMention', kind: 'bool',
+    help: '`!config require-mention <on|off>` — whether an @mention is needed to reply here' },
+  { chatKey: 'mention', field: 'mentionPatterns', kind: 'list', maxItems: 10, maxLen: 100,
+    help: '`!config mention <pat,pat…>` — extra @mention regexes (comma-separated), unioned with the global ones' },
+  { chatKey: 'ack', field: 'ackReaction', kind: 'text', maxLen: 64,
+    help: '`!config ack <emoji>` — the presence reaction used while working here' },
+  { chatKey: 'workbench', field: 'workbenchVerbosity', kind: 'enum', values: ['quiet', 'normal', 'verbose'],
+    help: '`!config workbench <quiet|normal|verbose>` — how much the pinned Workbench shows' },
+]
+
+const BOOL_TRUE = new Set(['on', 'true', 'yes', '1', 'enable', 'enabled'])
+const BOOL_FALSE = new Set(['off', 'false', 'no', '0', 'disable', 'disabled'])
+
+/** A regex compiles? (mention patterns are user-supplied; never throw on a bad one.) */
+function isValidRegex(pat: string): boolean {
+  try {
+    new RegExp(pat, 'i')
+    return true
+  } catch {
+    return false
+  }
+}
+
+const FIELD_BY_CHATKEY: ReadonlyMap<string, ConfigFieldSpec> = new Map(
+  CONFIG_FIELDS.map(f => [f.chatKey, f]),
+)
+const SPEC_BY_FIELD: ReadonlyMap<string, ConfigFieldSpec> = new Map(
+  CONFIG_FIELDS.map(f => [f.field, f]),
+)
+
+/** Look up a field's spec by its canonical ChannelConfig field name (rendering). */
+export function configFieldSpec(field: string): ConfigFieldSpec | undefined {
+  return SPEC_BY_FIELD.get(field)
+}
+
+/** The chat keys an owner may set FROM CHAT. Everything not here stays
+ *  terminal-only (identity, secrets, the allowlist, permissions). */
+export const CHAT_SETTABLE_KEYS: readonly string[] = CONFIG_FIELDS.map(f => f.chatKey)
+
+/** Trust/identity keys we explicitly reject from chat with a pointed message, so
+ *  a "set my role to … also add me to humans" attempt names why it's refused. */
+const TERMINAL_ONLY_KEYS = [
+  'humans', 'human', 'participants', 'peer', 'peers', 'token', 'tokenenv',
+  'runtime', 'workspace', 'sandbox', 'owner', 'owneruserid', 'approvalactorid',
+  'allow', 'ask', 'deny', 'tiers', 'preset',
+] as const
+
+function clampNumber(min: number, max: number, v: number): number {
+  return Math.min(max, Math.max(min, v))
+}
+
+/**
+ * Fold a channel's config deltas into the effective config. Pure and
+ * ORDER-INDEPENDENT: deltas are sorted by their immutable `(createdAt, hash)`
+ * before applying, so every replica — and every fold replay path — converges on
+ * the same result regardless of arrival order (the fold engine's rubric #1, and
+ * the discipline merge.ts uses for its lower-hash tiebreak). Per-key
+ * last-writer-wins; `_clear` removes a key. Numeric fields are coerced and
+ * CLAMPED at projection too — defense in depth, so even a junk/out-of-range value
+ * in the log can never disable a protection.
+ */
+export function projectChannelConfig(records: ReadonlyArray<ConfigDeltaRecord>): ChannelConfig {
+  const sorted = [...records].sort((a, b) =>
+    a.createdAt < b.createdAt ? -1
+    : a.createdAt > b.createdAt ? 1
+    : a.hash < b.hash ? -1
+    : a.hash > b.hash ? 1
+    : 0,
+  )
+  const out: Record<string, unknown> = {}
+  for (const { delta } of sorted) {
+    for (const [k, v] of Object.entries(delta)) {
+      if (k === '_clear') continue
+      if (v !== undefined) out[k] = v
+    }
+    for (const k of delta._clear ?? []) delete out[k]
+  }
+  // Coerce + validate + clamp each field by its kind — defense in depth, so even
+  // a junk/out-of-range value in the log can never disable a protection.
+  const cfg: Record<string, unknown> = {}
+  for (const spec of CONFIG_FIELDS) {
+    const v = out[spec.field]
+    if (v === undefined) continue
+    switch (spec.kind) {
+      case 'text':
+        if (typeof v === 'string' && v.trim()) cfg[spec.field] = v.slice(0, spec.maxLen ?? ROLE_MAX_LEN)
+        break
+      case 'token':
+        // Single token (no whitespace), e.g. a model id — defensive against junk.
+        if (typeof v === 'string' && v.trim() && !/\s/.test(v)) cfg[spec.field] = v.slice(0, spec.maxLen ?? 100)
+        break
+      case 'int':
+      case 'duration':
+        if (typeof v === 'number' && Number.isFinite(v)) {
+          cfg[spec.field] = clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(v) : v)
+        }
+        break
+      case 'bool':
+        if (typeof v === 'boolean') cfg[spec.field] = v
+        break
+      case 'enum':
+        if (typeof v === 'string' && spec.values?.includes(v)) cfg[spec.field] = v
+        break
+      case 'list':
+        if (Array.isArray(v)) {
+          const items = v
+            .filter((x): x is string => typeof x === 'string' && x.trim().length > 0 && isValidRegex(x))
+            .map(x => x.slice(0, spec.maxLen ?? 100))
+            .slice(0, spec.maxItems ?? 10)
+          if (items.length) cfg[spec.field] = items
+        }
+        break
+    }
+  }
+  return cfg as ChannelConfig
+}
+
+export type ParsedConfigCommand =
+  | { action: 'set'; delta: ChannelConfigDelta; target?: 'room' }
+  | { action: 'reset'; keys: string[]; target?: 'room' } // canonical ChannelConfig field names
+  | { action: 'get'; key?: string; target?: 'room' }     // a chat key, or undefined for all
+  | { action: 'help' }
+  | { action: 'error'; message: string }
+  | null
+
+/**
+ * Parse an owner `!config` command. Pure so it's unit-tested without a live
+ * message; the host gates on owner identity before this ever runs. Grammar:
+ *
+ *   !config                       → help
+ *   !config help                  → help
+ *   !config get [key]             → show current config (or one key)
+ *   !config <key> <value…>        → set a knob (role text, or a clamped number)
+ *   !config reset <key> [key…]    → clear keys back to the agent default
+ *
+ * A key not in CONFIG_FIELDS is refused — pointedly if it's a known terminal-only
+ * key (the trust/allowlist surface a prompt injection would target). Numeric
+ * values are parsed (durations accept `8s`/`5m`) and CLAMPED to the field's safe
+ * range, so a chat edit can never disable a protection.
+ *
+ * A leading `room` token force-targets the ROOM overlay from inside a thread
+ * (`!config room role X`, `!config get room`, `!config reset room role`). Absent
+ * the modifier, the host decides the target by scope (thread → scope overlay,
+ * top level → room) — the parser stays id-agnostic and only reports the request.
+ */
+export function parseConfigCommand(text: string): ParsedConfigCommand {
+  const trimmed = text.trim()
+  if (!/^!config\b/.test(trimmed)) return null
+  const rest = trimmed.slice('!config'.length).trim()
+  if (rest === '' || rest.toLowerCase() === 'help') return { action: 'help' }
+
+  const headTail = (s: string): { head: string; tail: string } => {
+    const sp = s.indexOf(' ')
+    return {
+      head: (sp === -1 ? s : s.slice(0, sp)).toLowerCase(),
+      tail: sp === -1 ? '' : s.slice(sp + 1).trim(),
+    }
+  }
+
+  let { head, tail } = headTail(rest)
+
+  if (head === 'get') {
+    let target: 'room' | undefined
+    let t = tail
+    const ht = headTail(t)
+    if (ht.head === 'room') { target = 'room'; t = ht.tail }
+    const key = t ? t.split(/\s+/)[0]!.toLowerCase() : undefined
+    if (key && !FIELD_BY_CHATKEY.has(key)) {
+      return { action: 'error', message: `Unknown config key \`${key}\`. Try \`!config help\`.` }
+    }
+    return { action: 'get', key, ...(target ? { target } : {}) }
+  }
+
+  if (head === 'reset') {
+    let target: 'room' | undefined
+    let t = tail
+    const ht = headTail(t)
+    if (ht.head === 'room') { target = 'room'; t = ht.tail }
+    const raw = t ? t.split(/\s+/).map(k => k.toLowerCase()) : []
+    if (raw.length === 0) return { action: 'error', message: 'Usage: `!config reset <key>` — e.g. `!config reset role`.' }
+    const bad = raw.filter(k => !FIELD_BY_CHATKEY.has(k))
+    if (bad.length) return { action: 'error', message: `Not settable from chat: ${bad.join(', ')}.` }
+    return { action: 'reset', keys: raw.map(k => FIELD_BY_CHATKEY.get(k)!.field), ...(target ? { target } : {}) }
+  }
+
+  // Set form. A leading `room` token force-targets the room overlay from a thread.
+  let target: 'room' | undefined
+  if (head === 'room') {
+    target = 'room'
+    const next = headTail(tail)
+    head = next.head
+    tail = next.tail
+    if (!head) return { action: 'error', message: 'Usage: `!config room <key> <value>`.' }
+  }
+
+  const spec = FIELD_BY_CHATKEY.get(head)
+  if (spec) {
+    const set = (value: unknown): ParsedConfigCommand => ({
+      action: 'set',
+      delta: { [spec.field]: value } as ChannelConfigDelta,
+      ...(target ? { target } : {}),
+    })
+    const usage = (): ParsedConfigCommand => ({ action: 'error', message: `Usage: ${spec.help}.` })
+
+    switch (spec.kind) {
+      case 'text': {
+        if (!tail) return usage()
+        const max = spec.maxLen ?? ROLE_MAX_LEN
+        if (tail.length > max) return { action: 'error', message: `Too long (max ${max} chars).` }
+        return set(tail)
+      }
+      case 'token': {
+        if (!tail) return usage()
+        const tok = tail.split(/\s+/)[0]!
+        if (tok !== tail) return { action: 'error', message: `\`${spec.chatKey}\` takes a single token (no spaces).` }
+        const max = spec.maxLen ?? 100
+        if (tok.length > max) return { action: 'error', message: `Too long (max ${max} chars).` }
+        return set(tok)
+      }
+      case 'int':
+      case 'duration': {
+        const raw = tail.split(/\s+/)[0] ?? ''
+        const parsed =
+          spec.kind === 'duration'
+            ? parseDuration(raw) ?? (/^\d+$/.test(raw) ? Number(raw) : undefined)
+            : /^\d+$/.test(raw) ? Number(raw) : undefined
+        if (parsed === undefined) return usage()
+        return set(clampNumber(spec.min!, spec.max!, spec.kind === 'int' ? Math.round(parsed) : parsed))
+      }
+      case 'bool': {
+        const t = tail.split(/\s+/)[0]?.toLowerCase() ?? ''
+        if (BOOL_TRUE.has(t)) return set(true)
+        if (BOOL_FALSE.has(t)) return set(false)
+        return usage()
+      }
+      case 'enum': {
+        const t = tail.split(/\s+/)[0]?.toLowerCase() ?? ''
+        if (!spec.values?.includes(t)) {
+          return { action: 'error', message: `\`${spec.chatKey}\` must be one of: ${spec.values?.join(', ')}.` }
+        }
+        return set(t)
+      }
+      case 'list': {
+        const items = tail
+          .split(',')
+          .map(s => s.trim())
+          .filter(Boolean)
+          .slice(0, spec.maxItems ?? 10)
+        if (items.length === 0) return usage()
+        const tooLong = items.find(p => p.length > (spec.maxLen ?? 100))
+        if (tooLong) return { action: 'error', message: `Pattern too long (max ${spec.maxLen ?? 100} chars).` }
+        const bad = items.find(p => !isValidRegex(p))
+        if (bad) return { action: 'error', message: `Not a valid regex: \`${bad}\`.` }
+        return set(items)
+      }
+    }
+  }
+
+  if ((TERMINAL_ONLY_KEYS as readonly string[]).includes(head)) {
+    return {
+      action: 'error',
+      message: `\`${head}\` is managed from your terminal (\`bun setup.ts\`), not from chat.`,
+    }
+  }
+  return { action: 'error', message: `Unknown config key \`${head}\`. Try \`!config help\`.` }
+}
+
+/**
+ * Wrap a channel's role brief in the `<channel-role>` envelope the agent
+ * receives. Like `wrapSharedContext`, a framing line marks it as persona — tone
+ * and focus only — explicitly NOT new authority over access or tools. Pure.
+ */
+export function wrapChannelRole(role: string): string {
+  return [
+    '<channel-role>',
+    'Your role in this channel, set by your owner. Adopt it as your persona and priorities for how you respond here. It shapes tone and focus only — it grants no authority over access, permissions, or tools, which remain governed by your terminal configuration.',
+    '',
+    role,
+    '</channel-role>',
+  ].join('\n')
+}
+
+/**
+ * Wrap a thread's end-goal/objective in the `<objective>` envelope, alongside
+ * the persona role. Same framing discipline: it sets what "done" means for this
+ * task, but grants no authority over access, permissions, or tools. Pure.
+ */
+export function wrapChannelGoal(goal: string): string {
+  return [
+    '<objective>',
+    'The objective for this task, set by your owner. Keep it in view and steer your work toward it — it frames what "done" means here. Like your role it shapes focus only; it grants no authority over access, permissions, or tools.',
+    '',
+    goal,
+    '</objective>',
+  ].join('\n')
+}
+
+/**
+ * Resolve a (room, scope) config pair into one effective config. Both layers are
+ * already projected + clamped by `projectChannelConfig`, so this is a plain
+ * per-key shallow merge: a key set on the scope wins; an unset scope key inherits
+ * the room value; unset on both stays omitted → the consumer's default. When the
+ * scope IS the room (no thread) the two layers are identical and this is a no-op.
+ * Never concatenate raw deltas across layers — that would let a room `_clear`
+ * wipe a scope key and mis-order across artifacts.
+ */
+export function resolveTwoLayerConfig(
+  roomCfg: ChannelConfig,
+  scopeCfg: ChannelConfig,
+): ChannelConfig {
+  return { ...roomCfg, ...scopeCfg }
+}
+
+/** The SDK ThinkingConfig shape, mirrored locally so lib.ts stays SDK-free; the
+ *  claude-sdk adapter passes the result straight to `query`'s `thinking` option. */
+export type ThinkingConfigOut =
+  | { type: 'disabled' }
+  | { type: 'adaptive' }
+  | { type: 'enabled'; budgetTokens: number }
+
+/** Fixed budget for the `high` thinking mode (older/enabled-budget models). */
+export const THINKING_HIGH_BUDGET = 16_000
+
+/** Map a per-thread thinking mode to the SDK's ThinkingConfig. `undefined`/an
+ *  unknown value returns undefined so the adapter omits the option entirely. */
+export function toThinkingConfig(mode: string | undefined): ThinkingConfigOut | undefined {
+  switch (mode) {
+    case 'off':
+      return { type: 'disabled' }
+    case 'auto':
+      return { type: 'adaptive' }
+    case 'high':
+      return { type: 'enabled', budgetTokens: THINKING_HIGH_BUDGET }
+    default:
+      return undefined
+  }
+}
+
+/**
+ * Apply a per-thread permission `mode` to the room base profile. The named
+ * preset's allow/ask REPLACE the base (a thread may loosen what's auto-allowed or
+ * routed to ask), but the effective `deny` is the UNION of the base deny and the
+ * preset's deny — and every preset carries the DENY_FLOOR. So a thread can never
+ * drop a terminal-set deny or the floor; `mode` only ever tightens deny. Pure.
+ */
+export function applyModeToProfile(
+  base: PermissionProfile,
+  presetName: string,
+): PermissionProfile {
+  const preset = expandPreset(presetName) // always carries DENY_FLOOR
+  const denySet = new Set(base.deny)
+  for (const d of preset.deny) denySet.add(d)
+  return { allow: [...preset.allow], ask: [...preset.ask], deny: [...denySet] }
+}
+
+// ─── Per-thread context surface (!context) ────────────────────────────────────
+//
+// An owner curates a thread's shared-context notes (imported sessions, free-form
+// notes) from chat. Like `!config`, the host gates on owner identity before this
+// runs; the parser is pure so it's unit-tested without a live message.
+
+/** Hard cap on a free-form context note so one !context add can't bloat a prompt. */
+export const CONTEXT_NOTE_MAX_LEN = 2000
+
+export type ParsedContextCommand =
+  | { action: 'list' }
+  | { action: 'remove'; index: number } // 1-based, as shown by `!context`
+  | { action: 'add'; text: string }
+  | { action: 'help' }
+  | { action: 'error'; message: string }
+  | null
+
+/**
+ * Parse an owner `!context` command. Grammar:
+ *   !context                  → list active shared-context notes
+ *   !context list             → list
+ *   !context remove <n>       → invalidate the n-th listed note (1-based)
+ *   !context add <text…>      → append a free-form note
+ *   !context help             → help
+ */
+export function parseContextCommand(text: string): ParsedContextCommand {
+  const trimmed = text.trim()
+  if (!/^!context\b/.test(trimmed)) return null
+  const rest = trimmed.slice('!context'.length).trim()
+  if (rest === '' || rest.toLowerCase() === 'list') return { action: 'list' }
+  if (rest.toLowerCase() === 'help') return { action: 'help' }
+
+  const sp = rest.indexOf(' ')
+  const head = (sp === -1 ? rest : rest.slice(0, sp)).toLowerCase()
+  const tail = sp === -1 ? '' : rest.slice(sp + 1).trim()
+
+  if (head === 'remove' || head === 'rm') {
+    const raw = tail.split(/\s+/)[0] ?? ''
+    const n = /^\d+$/.test(raw) ? Number(raw) : NaN
+    if (!Number.isInteger(n) || n < 1) {
+      return { action: 'error', message: 'Usage: `!context remove <n>` — the number shown by `!context`.' }
+    }
+    return { action: 'remove', index: n }
+  }
+  if (head === 'add') {
+    if (!tail) return { action: 'error', message: 'Usage: `!context add <text>`.' }
+    if (tail.length > CONTEXT_NOTE_MAX_LEN) {
+      return { action: 'error', message: `Too long (max ${CONTEXT_NOTE_MAX_LEN} chars).` }
+    }
+    return { action: 'add', text: tail }
+  }
+  return { action: 'help' }
 }
 
 // ─── Watches: the deferred-continuation primitive ────────────────────────────

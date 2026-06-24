@@ -24,7 +24,7 @@
 import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
-import { STATE_DIR, readAccessFile, readRoomSettings, readSettings } from './state.ts'
+import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
 import { resolveLedgerConfig } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
@@ -37,7 +37,7 @@ import { Synchronizer } from './ledger/sync.ts'
 import { bootstrap } from './ledger/bootstrap.ts'
 import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
 import { channelFold } from './ledger/concepts/channel.ts'
-import { turnFold } from './ledger/concepts/turn.ts'
+import { turnFold, TURN_FOLD, findTurnForInteraction, type TurnFoldState } from './ledger/concepts/turn.ts'
 import { approvalFold } from './ledger/concepts/approval.ts'
 import { knowledgeFold } from './ledger/artifacts/knowledge.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
@@ -53,6 +53,7 @@ import { writeBackVersionable } from './ledger/synchronizations/write-back-versi
 import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
+import { configFold } from './ledger/concepts/config.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -174,6 +175,7 @@ await engine.register(approvalFold)
 await engine.register(knowledgeFold) // §4.6 stale-note flag reads this at reply time
 await engine.register(watchFold) // deferred-continuation primitive (docs/knock-knock-watches.md)
 await engine.register(versionableFold) // file-edit convergence (write-back reads this)
+await engine.register(configFold) // per-channel config overlay (owner !config edits)
 
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
 for (const [key, agent] of selectedEntries) {
@@ -215,13 +217,14 @@ synchronizer.register(
     // Permission profiles are keyed by ROOM (the parent channel); a tool
     // request's channel is the task SCOPE (a thread). Resolve scope→room via
     // the serving host so a threaded turn classifies against the same floor as
-    // a top-level one. No serving host ⇒ empty profile here, but this sync is
-    // audit only — the enforced deny floor is the adapter's applyPolicy, which
-    // reads the room profile via the same scope→room resolution.
+    // a top-level one — and apply the thread's permission `mode` so a loosened
+    // thread's audit classification matches enforcement (without it the audit
+    // would under-report allows). No serving host ⇒ empty profile here, but this
+    // sync is audit only — the enforced deny floor is the adapter's applyPolicy.
     readPolicy: (agentKey, scopeId) => {
       for (const h of hosts) {
-        const roomId = h.roomForScope(scopeId)
-        if (roomId) return readRoomSettings(agentKey, roomId)
+        const p = h.auditProfileForScope(agentKey, scopeId)
+        if (p) return p
       }
       return { allow: [], ask: [], deny: [] }
     },
@@ -366,10 +369,11 @@ const watchSupervisor = new WatchSupervisor({
 })
 watchSupervisor.start()
 
-// §4.1 now-working Workbench — one pinned message per channel, refreshed as the
-// turn runs (start, each tool step, end). Driven at relay level (not per-host)
-// so a channel served by several agents still gets a single board, rendered
-// from the shared Turn fold. AgentHost.updatePill throttles the Discord edits.
+// §4.1 now-working Workbench — one message PER TURN (per agent-tag "call"),
+// refreshed as the turn runs (start, each tool step, end) and left as a trace.
+// Driven at relay level (not per-host) from the shared Turn fold: resolve the
+// turn each event belongs to, then refresh that turn's board. AgentHost throttles
+// the Discord edits. The board is no longer pinned — the ConfigCard owns the pin.
 const PILL_VERBS = new Set([
   'turn.prompted',
   'turn.replied',
@@ -382,7 +386,14 @@ store.subscribe(i => {
   if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
   if (!PILL_VERBS.has(i.verb)) return
   const host = hosts.find(h => h.getAgentForChannel(i.channel))
-  host?.updatePill(i.channel)
+  if (!host) return
+  let promptHash: string | undefined
+  try {
+    promptHash = findTurnForInteraction(engine.get<TurnFoldState>(TURN_FOLD), i)
+  } catch {
+    promptHash = undefined
+  }
+  if (promptHash) host.updateWorkbench(i.channel, promptHash)
 })
 
 // Now connect each host's messaging adapter — messages will start flowing into

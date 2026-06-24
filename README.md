@@ -297,6 +297,32 @@ bun setup.ts          # interactive setup wizard / menu
 - **Agent↔agent loop guard.** A local per-scope heuristic caps consecutive agent-to-agent turns (default 4) within a task thread; an owner/human message resets it.
 - **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).
 
+
+This scenario illustrates a typical workflow supported by Knockknock.
+
+UserA and UserB are collaborating on a project. UserA creates a chat room and invites BotA and BotB, two agents that were independently created and configured by UserA and UserB, respectively.
+
+---
+## Usage Workflow
+
+### UserA Needs Help from UserB
+
+UserA wants to implement a feature that requires modifications to code owned by UserB.
+
+To initiate the task, UserA creates a new thread and mentions (@) BotB. Within the thread, UserA describes the task and optionally customizes thread-specific settings, such as the persona brief, loop-guard parameters (`maxConsecutive`, `cooldownMs`), `approvalTimeoutMs`, workbench verbosity, and the model/runtime used by BotA.
+
+UserB can also adjust the configuration of BotB. Once the task is set up, UserA can interact directly with BotB. With UserB's approval, BotB can access and modify files on UserB's side to complete the requested work.
+
+UserA can also explicitly mention BotA to invite it to the thread, which has context from UserA's side and access to UserA’s files. With UserA’s permission, BotA can discuss and collaborate with BotB to better complete the task.
+
+### Handling Concurrent Edits and Conflicts
+
+Potential conflicts may arise when multiple agents are working on the same file. For example, while BotB is modifying `fileB`, UserB may also be using another agent, BotB2, to perform a separate task that involves editing the same file.
+
+As long as BotB and BotB2 are connected to the same relay (and the same thread?), Knockknock automatically detects and manages these concurrent edits, helping users avoid conflicts and maintain a consistent workspace.
+
+---
+
 ## Forked from
 
 Anthropic's official Discord channel plugin (`discord@claude-plugins-official`). The discord.js connection patterns and message chunking come from that plugin.

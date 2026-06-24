@@ -15,6 +15,22 @@ export type PermissionProfile = {
 export type Verdict = { behavior: 'allow' } | { behavior: 'deny'; message: string }
 
 /**
+ * Per-turn runtime knobs, resolved from the thread's config each turn (owner
+ * `!config model/thinking/effort`). The in-process Claude SDK honors them as
+ * per-`query()` options; out-of-process (ACP) runtimes self-manage these and
+ * ignore them (an honest limit, surfaced on set). All optional — an omitted
+ * field leaves the runtime default unchanged.
+ */
+export type TurnOptions = {
+  /** Model id, e.g. "claude-opus-4-8". */
+  model?: string
+  /** Extended-thinking mode: 'off' | 'auto' | 'high' (the adapter maps it). */
+  thinking?: string
+  /** Reasoning effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max'. */
+  effort?: string
+}
+
+/**
  * Structured progress events emitted by an adapter while a turn runs. The host
  * subscribes via onEvent and feeds them into the terminal renderer and the
  * owner DM courier so the operator can see what the agent is doing in real
@@ -85,5 +101,8 @@ export interface AgentAdapter {
     text: string
     sessionId?: string
     signal?: AbortSignal
+    /** Per-turn knobs (model/thinking/effort). claude-sdk honors them; ACP
+     *  ignores them (self-managed). Omit to leave the runtime default. */
+    options?: TurnOptions
   }): Promise<{ sessionId: string; text: string }>
 }

@@ -17,6 +17,7 @@
 
 import type { Synchronization } from '../sync.ts'
 import type { ChannelId, Role } from '../interaction.ts'
+import type { LoopGuardOpts } from '../../lib.ts'
 import {
   LOOP_GUARD_FOLD,
   decideLoopGuard,
@@ -26,6 +27,9 @@ import {
 export type AgentForChannel = {
   /** Which agent's turn we're prompting on this channel. */
   agentKey: string
+  /** The room's loop-guard thresholds (owner `!config` overlay, else defaults).
+   *  Resolved by the host, which owns scope→room + the config fold. */
+  loopGuardOpts?: LoopGuardOpts
 }
 
 export type PromptOnMessageOpts = {
@@ -50,7 +54,7 @@ export function promptOnMessage(opts: PromptOnMessageOpts): Synchronization {
       // interaction. The loop guard uses it to decide; owner/human pass,
       // agent goes through the threshold + cooldown check.
       const lgState = ctx.engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)
-      const decision = decideLoopGuard(lgState, i.channel, i.role, now())
+      const decision = decideLoopGuard(lgState, i.channel, i.role, now(), agentInfo.loopGuardOpts)
       if (!decision.allow) {
         // Silently skip — the operator console gets a note elsewhere. The
         // channel.message stays in the ledger as evidence; the absence of

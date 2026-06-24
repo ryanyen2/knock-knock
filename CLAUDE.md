@@ -88,10 +88,24 @@ fold engine, cutover phases, cross-machine) lives in
 ### Concepts, artifacts, synchronizations
 
 A **concept**'s state *is* its named fold; nothing else. Registered in
-`relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`
+`relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`, `config`
 (`ledger/concepts/`) and the `knowledge` + `versionable` artifact folds
 (`ledger/artifacts/`). Folds **reuse the pure functions in `lib.ts` verbatim**
 (e.g. `LoopGuard.step` calls `loopGuard(...)`).
+
+The **`config`** fold is the owner's behavioral overlay (`!config`), keyed by
+artifact `cfg:channel/<id>` — and because the id can be a **room OR a thread
+scope**, the same fold backs both layers. `resolveConfigFor(state, roomId,
+scopeId)` projects each layer through the pure `projectChannelConfig` and merges
+them (`resolveTwoLayerConfig`): a thread overlay wins per key, an unset key
+inherits the room, unset on both → the agent default; `scope===room` collapses to
+the room config (no thread). The room is the inherited default; rate-cap /
+require-mention / mention / ack stay **room-keyed** (they gate inbound *before* a
+thread exists). `role`/`end-goal` ride the per-turn `contextPrefix`;
+`model`/`thinking`/`effort` ride the per-turn `TurnOptions` (claude-sdk only; ACP
+self-manages); the permission `mode` applies a vetted preset to the room profile
+with `deny` always UNIONed (`applyModeToProfile`). `!context` curates a thread's
+shared-context notes over the same `knowledge` fold session-sharing imports into.
 
 Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 = one new synchronization, zero edits to concepts). Registered today:
@@ -143,14 +157,17 @@ scope — the synchronizer chain does the rest. It owns the per-scope `Driver`
 session (adapter instances are per-process), the live `Approvals` service, the
 `scopeToRoom` cache + `roomForScope`, and turn driving; it exposes callbacks the
 synchronizations call back into (`getDriveHandle`, `discordSend`,
-`postConflictCard`, `dmUser`, `updatePill`, `resolveWatch`).
+`postConflictCard`, `dmUser`, `updateWorkbench`, `auditProfileForScope`,
+`resolveWatch`).
 
 Its cohesive UI/feature clusters are separate collaborators in `host/`, each
 owning its own state and reaching shared host capabilities through the narrow
-`HostContext` (`host/context.ts`): `Workbench` (§4.1 pinned activity log),
-`ConflictUI` (§4.2 cards), `WatchControl` (arm/disarm/list + `resolveWatch`), and
-`SessionSharing` (import + per-scope context delivery; resume stays in the host,
-delegated via a callback because it's tied to the Driver/Session lifecycle).
+`HostContext` (`host/context.ts`): `Workbench` (§4.1 per-turn activity log),
+`ConfigCard` (the pinned per-thread setup card), `ConflictUI` (§4.2 cards),
+`WatchControl` (arm/disarm/list + `resolveWatch`), `ChannelConfigControl` (owner
+`!config`), `ContextControl` (owner `!context`), and `SessionSharing` (import +
+per-scope context delivery; resume stays in the host, delegated via a callback
+because it's tied to the Driver/Session lifecycle).
 
 ### Permission model and `classifyTool` (`lib.ts`)
 
@@ -260,15 +277,21 @@ synchronization or an `AgentHost` subscriber; Discord I/O is thin glue.
 
 - **Attribution line** (`reply-annotations.ts`) + **stale-note flag** — appended
   to outbound text in `post-on-reply` from `caused_by` and the knowledge fold.
-- **Workbench** (`host/workbench.ts`, `renderWorkbench`/`workbenchEntries`) — one
-  pinned per-scope (per-thread) activity log, driven by a relay-level subscriber
-  on `turn.*`/`tool.*` → `AgentHost.updatePill` (throttled). A finished turn
-  keeps its step log as a trace (status `working|done|failed`). The agent's
-  **plan** — its latest `TodoWrite` list, parsed by `parseTodos` — renders as a
-  per-item checklist (`○` planned / `◐` in progress / `✓` done) above the tool
-  steps, and those `TodoWrite` calls drop from the step trace so repeated updates
-  don't spam it. Capture is reliable for Claude-Code-shaped `TodoWrite`; other
-  ACP agents simply get no plan block.
+- **Workbench** (`host/workbench.ts`, `renderWorkbench`/`workbenchEntryForTurn`) —
+  one **per-turn** (per agent-tag "call") activity log, **not pinned**, posted
+  inline and edited in place. Driven by a relay-level subscriber on
+  `turn.*`/`tool.*` that resolves the turn (`findTurnForInteraction`) →
+  `AgentHost.updateWorkbench(scope, promptHash)` (throttled). A finished turn keeps
+  its step log as a trace (status `working|done|failed`). The agent's **plan** —
+  its latest `TodoWrite` list, parsed by `parseTodos` — renders as a per-item
+  checklist (`○` planned / `◐` in progress / `✓` done) above the tool steps, and
+  those `TodoWrite` calls drop from the step trace so repeated updates don't spam
+  it (Claude-Code-shaped `TodoWrite` only; other ACP agents get no plan block).
+- **Config card** (`host/config-card.ts`, `renderConfigCard`) — the **pinned**
+  per-thread setup card: the resolved (thread ⊕ room) persona/objective/model/
+  thinking/effort/mode + attached context-note count, refreshed on thread spawn
+  and on `!config`/`!context` edits (`HostContext.refreshConfigCard`). Takes the
+  pin slot the Workbench used to hold.
 - **Conflict card** (`conflict-card.ts`) — on a held equal-role conflict, posts a
   Take A / Take B / Write card; the `cflt:` button handler admits an owner
   `merge.resolve`.

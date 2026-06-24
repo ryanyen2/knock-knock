@@ -53,6 +53,11 @@ export type Verb =
   | 'merge.resolve'
   // Policy admissions journaled into the log so folds see them live
   | 'policy.classified'
+  // Per-channel config overlay: an owner edit to a channel's behavioral knobs
+  // (persona/role brief, soft limits). Anchor is `none` so the merge gate is a
+  // no-op; the config fold projects the deltas. Owner-only at the source (the
+  // host short-circuits a `!config` command before any channel.message admit).
+  | 'config.set'
   // Frontier control surfaced as reactions (§4.5): rewind the active frontier,
   // re-run a turn, or pin a named checkpoint. All are just interactions.
   | 'frontier.rewind'

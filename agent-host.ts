@@ -46,6 +46,13 @@ import {
   resolveProfileForActor,
   threadNameFromPrompt,
   matchesMentionPattern,
+  wrapChannelRole,
+  wrapChannelGoal,
+  applyModeToProfile,
+  toThinkingConfig,
+  DEFAULT_LOOP_GUARD,
+  type ChannelConfig,
+  type LoopGuardOpts,
   type WatchSpec,
 } from './lib.ts'
 import { Driver, type TurnMeta } from './driver.ts'
@@ -53,7 +60,7 @@ import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 import { ConsoleUI } from './console-ui.ts'
 import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
-import type { AgentEvent } from './agent-adapter.ts'
+import type { AgentEvent, PermissionProfile } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
@@ -79,9 +86,13 @@ import {
 } from './sessions/index.ts'
 import type { HostContext } from './host/context.ts'
 import { Workbench } from './host/workbench.ts'
+import { ConfigCard } from './host/config-card.ts'
 import { ConflictUI } from './host/conflict-ui.ts'
 import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
+import { ChannelConfigControl } from './host/channel-config.ts'
+import { ContextControl } from './host/context-control.ts'
+import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -137,6 +148,10 @@ export class AgentHost {
   private readonly watchControl: WatchControl
   /** Session sharing/resume — owner-only import + the per-scope context delivery. */
   private readonly sessionSharing: SessionSharing
+  /** Per-channel config overlay — owner `!config` (persona/role brief, knobs). */
+  private readonly channelConfig: ChannelConfigControl
+  /** Per-thread context surface — owner `!context` (view/add/remove shared context). */
+  private readonly contextControl: ContextControl
   /** Scope (a thread id, or a plain channel id) → the room (parent channel) it
    *  belongs to. The single seam between the task scope the ledger keys on and
    *  the room that permission profiles / roster / routing key on. Populated on
@@ -153,8 +168,10 @@ export class AgentHost {
    *  same `turn.prompted` in nondeterministic order; whichever runs second
    *  reconciles here, so the per-turn DM handle attaches regardless of ordering. */
   private readonly pendingDmByPrompt = new Map<Hash, DmTurnHandle>()
-  /** §4.1 per-scope pinned activity log. */
+  /** §4.1 per-turn activity log (no longer pinned). */
   private readonly workbench: Workbench
+  /** Pinned per-thread config/setup card (takes the pin slot from the workbench). */
+  private readonly configCard: ConfigCard
   private storeUnsub?: () => void
 
   constructor(
@@ -209,13 +226,17 @@ export class AgentHost {
       getOwnerForChannel: id => this.getOwnerForChannel(id),
       discordSend: (id, text) => this.discordSend(id, text),
       noteBotMsg: id => this.noteBotMsg(id),
+      refreshConfigCard: id => this.configCard.refresh(id),
     }
     this.workbench = new Workbench(ctx)
+    this.configCard = new ConfigCard(ctx)
     this.conflictUI = new ConflictUI(ctx)
     this.watchControl = new WatchControl(ctx, this.approvals)
     this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
       this.resumeSession(action, scopeId, summary),
     )
+    this.channelConfig = new ChannelConfigControl(ctx)
+    this.contextControl = new ContextControl(ctx)
 
     // Inbound: the adapter normalizes platform events into these three handlers.
     this.messaging.onMessage(m => {
@@ -284,6 +305,7 @@ export class AgentHost {
   async stop(): Promise<void> {
     this.storeUnsub?.()
     this.workbench.stop()
+    this.configCard.stop()
     await this.messaging.disconnect()
   }
 
@@ -335,9 +357,20 @@ export class AgentHost {
   }
 
   /** prompt-on-message asks "who responds on this scope?" — yes iff this host
-   *  serves the room the scope belongs to. */
-  getAgentForChannel(scopeId: ChannelId): { agentKey: string } | undefined {
-    return this.roomForScope(scopeId) ? { agentKey: this.key } : undefined
+   *  serves the room the scope belongs to. Also resolves the room's loop-guard
+   *  opts (owner `!config loop-max/loop-cooldown` overlay, else the defaults) so
+   *  the sync's gate uses this channel's tuned thresholds. */
+  getAgentForChannel(scopeId: ChannelId): { agentKey: string; loopGuardOpts: LoopGuardOpts } | undefined {
+    const roomId = this.roomForScope(scopeId)
+    if (!roomId) return undefined
+    const cfg = this.channelConfigFor(scopeId)
+    return {
+      agentKey: this.key,
+      loopGuardOpts: {
+        maxConsecutive: cfg.loopMaxConsecutive ?? DEFAULT_LOOP_GUARD.maxConsecutive,
+        cooldownMs: cfg.loopCooldownMs ?? DEFAULT_LOOP_GUARD.cooldownMs,
+      },
+    }
   }
 
   /** Record the task scope a top-level message spawned, FIFO-bounded so the map
@@ -400,9 +433,9 @@ export class AgentHost {
     return this.messaging.capabilities().experimental === true
   }
 
-  /** Relay subscriber → refresh this scope's pinned Workbench (throttled). */
-  updatePill(scopeId: ChannelId): void {
-    this.workbench.updatePill(scopeId)
+  /** Relay subscriber → refresh a turn's (per-call) Workbench message (throttled). */
+  updateWorkbench(scopeId: ChannelId, promptHash: Hash): void {
+    this.workbench.updateForTurn(scopeId, promptHash)
   }
 
   /**
@@ -549,6 +582,19 @@ export class AgentHost {
     return this.watchControl.resolveWatch(spec)
   }
 
+  /** The base profile the audit-only classify-on-tool-request sync should match
+   *  against, for a scope this host serves: the room profile with the thread's
+   *  permission `mode` applied (so the audit reflects a loosened thread), but no
+   *  per-actor tiers (the audit stays on the base — tier deny ⊇ base deny). Undefined
+   *  when this host doesn't serve the scope's room. */
+  auditProfileForScope(agentKey: string, scopeId: ChannelId): PermissionProfile | undefined {
+    const roomId = this.roomForScope(scopeId)
+    if (!roomId) return undefined
+    const base = readRoomSettings(agentKey, roomId)
+    const mode = this.channelConfigFor(scopeId).permissionPreset
+    return mode ? applyModeToProfile(base, mode) : base
+  }
+
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
   /**
@@ -579,13 +625,22 @@ export class AgentHost {
     const ownerId = liveAgent.ownerUserId
     if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
 
+    // Per-channel overlay (owner `!config`): rate cap, require-mention, extra
+    // mention patterns, ack emoji. Room-keyed — these gate inbound BEFORE a task
+    // thread exists, so they read the raw room overlay (no scope merge).
+    const cfg = this.roomConfigRaw(roomId)
+    const rateWindowMs = cfg.rateWindowMs ?? 60_000
+    const rateCap = cfg.rateCapPerMin ?? 10
     const now = Date.now()
-    const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < 60_000)
-    if (recent.length >= 10) return
+    const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < rateWindowMs)
+    if (recent.length >= rateCap) return
     this.inboundRate.set(m.authorId, [...recent, now])
 
-    const requireMention = room.requireMention ?? true
-    const mentioned = await this.isMentioned(m, access.mentionPatterns)
+    // require-mention: overlay wins, then the room's RoomConfig, then default-on.
+    // A UX knob only — `guildSenderAllowed` above still gates who is allowed.
+    const requireMention = cfg.requireMention ?? room.requireMention ?? true
+    const mentionPatterns = [...(access.mentionPatterns ?? []), ...(cfg.mentionPatterns ?? [])]
+    const mentioned = await this.isMentioned(m, mentionPatterns)
     if (requireMention && !mentioned) return
 
     this.messaging.typing(m.scope)
@@ -626,6 +681,33 @@ export class AgentHost {
       return
     }
 
+    // ─── Owner per-channel config (!config) — short-circuit before any admit ──
+    // Owner-only, like the watch/session commands: the command is NOT admitted as
+    // a channel.message, so the agent is never prompted with it and a peer/human
+    // (or a prompt injection) can't reach the config write path. Tunes the
+    // behavioral overlay only (persona/role brief) — identity, the allowlist, and
+    // permissions stay terminal-managed.
+    if (kind === 'owner' && (m.text === '!config' || m.text.startsWith('!config '))) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.channelConfig.handleCommand(controlScope, m.text).catch(e =>
+        this.ui.error(this.key, `config command: ${e}`),
+      )
+      return
+    }
+
+    // ─── Owner per-thread context surface (!context) — short-circuit before admit ─
+    // Owner-only, like !config: the command is NOT admitted as a channel.message,
+    // so the agent is never prompted with it and a peer/human can't curate context.
+    // Views / adds / removes the thread's shared-context notes (reuses the same
+    // knowledge artifact session import writes + the once-per-turn delivery path).
+    if (kind === 'owner' && (m.text === '!context' || m.text.startsWith('!context '))) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.contextControl.handleCommand(controlScope, m.text).catch(e =>
+        this.ui.error(this.key, `context command: ${e}`),
+      )
+      return
+    }
+
     // ─── Resolve the task scope ──────────────────────────────────────────────
     // A message already in a thread runs in that thread. A top-level @mention
     // spawns (or reuses) a task thread, so each task gets its own turn lineage,
@@ -644,6 +726,8 @@ export class AgentHost {
     // Remember which task scope this top-level message spawned, so a 🛑/🔁
     // reaction on the original message resolves to the thread its turn runs in.
     if (scopeId !== m.scope) this.rememberTaskScope(m.ref.id, scopeId)
+    // Surface the thread's pinned setup card (no-op for a plain-channel scope).
+    this.configCard.refresh(scopeId)
 
     // ─── Admit channel.message — that's all handleInbound does in Phase 3 ───
     const channelArtifactId = discordArtifact(scopeId)
@@ -670,7 +754,7 @@ export class AgentHost {
     // Side-table: stash messaging context so synchronization-driven UX can
     // react/edit the inbound message later (ack reaction, DmCourier header).
     const channelLabel = m.scopeLabel ?? `#${roomId}`
-    const ackEmoji = access.ackReaction ?? '👀'
+    const ackEmoji = cfg.ackReaction ?? access.ackReaction ?? '👀'
     // Bounded: markInboundOutcome no longer deletes entries (a 🔁 retry re-marks
     // the same inbound), so FIFO-evict the oldest to keep this from growing forever.
     boundedMapSet(this.inboundByHash, inboundResult.interaction.hash, {
@@ -768,6 +852,49 @@ export class AgentHost {
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
 
+  /** The SCOPE-RESOLVED config overlay (thread overlay ⊕ room default) for a
+   *  scope this host serves, or {} if unresolved / the fold isn't registered. The
+   *  single per-turn read seam: role, end-goal, loop-guard, approval timeout,
+   *  model/thinking/effort, and the permission mode all resolve through this. */
+  private channelConfigFor(scopeId: ChannelId): ChannelConfig {
+    const roomId = this.roomForScope(scopeId)
+    if (!roomId) return {}
+    try {
+      return resolveConfigFor(this.engine.get<ConfigFoldState>(CONFIG_FOLD), roomId, scopeId)
+    } catch {
+      return {}
+    }
+  }
+
+  /** The RAW room overlay (no scope merge), for the inbound gate — which runs
+   *  BEFORE a task thread exists, so rate-cap / require-mention / mention / ack
+   *  are necessarily room-keyed (the per-thread plan defers these by design). */
+  private roomConfigRaw(roomId: ChannelId): ChannelConfig {
+    try {
+      return configFor(this.engine.get<ConfigFoldState>(CONFIG_FOLD), roomId)
+    } catch {
+      return {}
+    }
+  }
+
+  /** This scope's persona blocks — the role brief and the end-goal/objective,
+   *  each wrapped for the prompt — joined, or undefined when neither is set. Read
+   *  fresh per turn so a `!config role/end-goal …` change takes effect next turn. */
+  private personaBlocksFor(scopeId: ChannelId): string | undefined {
+    const cfg = this.channelConfigFor(scopeId)
+    const blocks = [
+      cfg.role ? wrapChannelRole(cfg.role) : undefined,
+      cfg.endGoal ? wrapChannelGoal(cfg.endGoal) : undefined,
+    ].filter(Boolean)
+    return blocks.length ? blocks.join('\n\n') : undefined
+  }
+
+  /** This scope's approval timeout override (ms), or undefined to use the
+   *  default. awaitVerdict treats undefined as DEFAULT_VERDICT_TIMEOUT_MS. */
+  private approvalTimeoutFor(scopeId: ChannelId): number | undefined {
+    return this.channelConfigFor(scopeId).approvalTimeoutMs
+  }
+
   private async runTurnForChannel(
     channelId: ChannelId,
     opts: {
@@ -796,11 +923,22 @@ export class AgentHost {
     // prompted by a peer/human is narrowed by its tier. Read fresh + resolve per
     // turn (the requester can differ between turns on one cached session), then
     // re-apply to the adapter inside the serialized runTurn. The audit-only
-    // classify-on-tool-request sync keeps reading the base floor — safe because
-    // tiers only ADD deny, so its pre-deny is always a subset of the enforced one.
+    // classify-on-tool-request sync resolves the same scope mode (see relay.ts).
     const storedProfile = readRoomSettings(this.key, roomId)
+    // Per-thread permission `mode` (owner `!config mode …`): a vetted preset whose
+    // allow/ask loosen the room base, but whose deny is UNIONed with the room deny
+    // + floor — so a thread loosens what it auto-allows but never drops a
+    // terminal-set deny. Applied ONLY to owner-prompted turns: `mode` is the
+    // owner's convenience for their own task, and `applyModeToProfile` REPLACES
+    // allow/ask, so applying it to a peer/human-prompted turn (an untiered one in
+    // particular) would auto-widen what the agent does on someone else's behalf
+    // past the room floor. A non-owner turn always resolves from the room base,
+    // then its tier narrows it. (Deny still unions either way — the floor holds.)
+    const mode = this.channelConfigFor(channelId).permissionPreset
+    const base =
+      mode && opts.senderKindKind === 'owner' ? applyModeToProfile(storedProfile, mode) : storedProfile
     const turnProfile = resolveProfileForActor(
-      storedProfile,
+      base,
       storedProfile.tiers,
       opts.senderKindKind,
       opts.senderId,
@@ -832,12 +970,25 @@ export class AgentHost {
     // delivered only AFTER the turn succeeds (below), so a failed/stopped turn
     // re-offers it next time instead of silently swallowing it.
     const pendingCtx = this.sessionSharing.pendingContext(channelId)
-    const contextPrefix = pendingCtx.prefix
+    // Prepend this scope's persona blocks (role + end-goal, owner !config overlay)
+    // ahead of any imported shared-context, read per-turn so a mid-session change
+    // takes effect next turn (it rides the Driver's per-turn contextPrefix slot).
+    const personaPrefix = this.personaBlocksFor(channelId)
+    const contextPrefix = [personaPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') || undefined
+
+    // Per-turn runtime knobs (model/thinking/effort), resolved per-thread. The
+    // claude-sdk adapter honors them; ACP self-manages and ignores them.
+    const turnCfg = this.channelConfigFor(channelId)
+    const turnOptions = {
+      ...(turnCfg.model ? { model: turnCfg.model } : {}),
+      ...(turnCfg.thinking ? { thinking: turnCfg.thinking } : {}),
+      ...(turnCfg.effort ? { effort: turnCfg.effort } : {}),
+    }
 
     let chunks: string[] = []
     let turnError: string | undefined
     try {
-      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal, contextPrefix, turnProfile)
+      chunks = await session.driver.runTurn(opts.promptText, meta, abort.signal, contextPrefix, turnProfile, turnOptions)
     } catch (e) {
       turnError = e instanceof Error ? e.message : String(e)
       this.ui.error(this.key, `turn failed: ${turnError}`)
@@ -924,7 +1075,9 @@ export class AgentHost {
               input: req.input,
             })
             .catch(err => this.ui.error(this.key, `approvals post: ${err}`))
-          return awaitVerdict(this.store, toolReqHash)
+          // Per-channel approval timeout override (`!config approval-timeout`),
+          // else awaitVerdict's default.
+          return awaitVerdict(this.store, toolReqHash, this.approvalTimeoutFor(channelId))
         },
         ctx,
       ),

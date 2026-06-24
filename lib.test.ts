@@ -28,6 +28,19 @@ import {
   isShareSessionCommand,
   isResumeSessionCommand,
   pickAnthropicEnv,
+  projectChannelConfig,
+  parseConfigCommand,
+  wrapChannelRole,
+  wrapChannelGoal,
+  resolveTwoLayerConfig,
+  toThinkingConfig,
+  THINKING_HIGH_BUDGET,
+  applyModeToProfile,
+  parseContextCommand,
+  CONTEXT_NOTE_MAX_LEN,
+  CHAT_SETTABLE_KEYS,
+  ROLE_MAX_LEN,
+  type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
 } from './lib.ts'
@@ -422,4 +435,296 @@ test('pickAnthropicEnv: ignores missing/empty/non-string values', () => {
   expect(
     pickAnthropicEnv({ ANTHROPIC_AUTH_TOKEN: '', ANTHROPIC_BASE_URL: 42 as unknown as string }),
   ).toEqual({})
+})
+
+// ─── per-channel config overlay ──────────────────────────────────────────────
+
+const rec = (delta: ConfigDeltaRecord['delta'], createdAt: string, hash: string): ConfigDeltaRecord => ({
+  delta,
+  createdAt,
+  hash,
+})
+
+test('projectChannelConfig: empty → empty config', () => {
+  expect(projectChannelConfig([])).toEqual({})
+})
+
+test('projectChannelConfig: later (by createdAt) write wins, regardless of array order', () => {
+  const older = rec({ role: 'reviewer' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const newer = rec({ role: 'pair programmer' }, '2026-06-20T11:00:00.000Z', 'bbbb')
+  // Same input in two orders must converge — the fold replay is order-independent.
+  expect(projectChannelConfig([older, newer]).role).toBe('pair programmer')
+  expect(projectChannelConfig([newer, older]).role).toBe('pair programmer')
+})
+
+test('projectChannelConfig: equal createdAt breaks the tie by hash deterministically', () => {
+  const a = rec({ role: 'A' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const b = rec({ role: 'B' }, '2026-06-20T10:00:00.000Z', 'bbbb')
+  // Higher hash sorts last → wins, in either array order.
+  expect(projectChannelConfig([a, b]).role).toBe('B')
+  expect(projectChannelConfig([b, a]).role).toBe('B')
+})
+
+test('projectChannelConfig: _clear removes a key back to the base', () => {
+  const set = rec({ role: 'reviewer' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  const clear = rec({ _clear: ['role'] }, '2026-06-20T11:00:00.000Z', 'bbbb')
+  expect(projectChannelConfig([set, clear])).toEqual({})
+})
+
+test('projectChannelConfig: drops a non-string/blank role (defensive against junk in the log)', () => {
+  const blank = rec({ role: '   ' }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  expect(projectChannelConfig([blank])).toEqual({})
+})
+
+test('parseConfigCommand: returns null for non-config text', () => {
+  expect(parseConfigCommand('hello there')).toBeNull()
+  expect(parseConfigCommand('!configure something')).toBeNull()
+})
+
+test('parseConfigCommand: bare / help → help', () => {
+  expect(parseConfigCommand('!config')).toEqual({ action: 'help' })
+  expect(parseConfigCommand('!config help')).toEqual({ action: 'help' })
+})
+
+test('parseConfigCommand: set role keeps the full text (spaces preserved)', () => {
+  expect(parseConfigCommand('!config role you are a terse reviewer; no edits')).toEqual({
+    action: 'set',
+    delta: { role: 'you are a terse reviewer; no edits' },
+  })
+})
+
+test('parseConfigCommand: role with no text is an error, not an empty set', () => {
+  const r = parseConfigCommand('!config role')
+  expect(r?.action).toBe('error')
+})
+
+test('parseConfigCommand: an over-long role is rejected', () => {
+  const r = parseConfigCommand(`!config role ${'x'.repeat(ROLE_MAX_LEN + 1)}`)
+  expect(r?.action).toBe('error')
+})
+
+test('parseConfigCommand: get with and without a key', () => {
+  expect(parseConfigCommand('!config get')).toEqual({ action: 'get', key: undefined })
+  expect(parseConfigCommand('!config get role')).toEqual({ action: 'get', key: 'role' })
+})
+
+test('parseConfigCommand: reset requires a settable key', () => {
+  expect(parseConfigCommand('!config reset role')).toEqual({ action: 'reset', keys: ['role'] })
+  expect(parseConfigCommand('!config reset')?.action).toBe('error')
+  expect(parseConfigCommand('!config reset humans')?.action).toBe('error')
+})
+
+test('parseConfigCommand: a terminal-only key is refused by name (the trust surface)', () => {
+  for (const key of ['humans', 'token', 'sandbox', 'deny', 'preset', 'runtime']) {
+    const r = parseConfigCommand(`!config ${key} whatever`)
+    expect(r?.action).toBe('error')
+    if (r?.action === 'error') expect(r.message.toLowerCase()).toContain('terminal')
+  }
+})
+
+test('parseConfigCommand: role plus the safety/limit knobs are settable from chat', () => {
+  expect(CHAT_SETTABLE_KEYS).toContain('role')
+  expect(CHAT_SETTABLE_KEYS).toContain('loop-max')
+  expect(CHAT_SETTABLE_KEYS).toContain('rate')
+  expect(CHAT_SETTABLE_KEYS).toContain('approval-timeout')
+})
+
+test('parseConfigCommand: an int knob parses to its canonical field', () => {
+  expect(parseConfigCommand('!config rate 30')).toEqual({ action: 'set', delta: { rateCapPerMin: 30 } })
+  expect(parseConfigCommand('!config loop-max 8')).toEqual({ action: 'set', delta: { loopMaxConsecutive: 8 } })
+})
+
+test('parseConfigCommand: a numeric knob is CLAMPED to its safe range (can\'t disable a guard)', () => {
+  // rate min is 1 — 0 would disable the spam guard.
+  expect(parseConfigCommand('!config rate 0')).toEqual({ action: 'set', delta: { rateCapPerMin: 1 } })
+  // rate max is 120.
+  expect(parseConfigCommand('!config rate 9999')).toEqual({ action: 'set', delta: { rateCapPerMin: 120 } })
+  // loop-max max is 50.
+  expect(parseConfigCommand('!config loop-max 1000')).toEqual({ action: 'set', delta: { loopMaxConsecutive: 50 } })
+})
+
+test('parseConfigCommand: a duration knob accepts 8s / 5m and stores ms', () => {
+  expect(parseConfigCommand('!config loop-cooldown 8s')).toEqual({ action: 'set', delta: { loopCooldownMs: 8000 } })
+  expect(parseConfigCommand('!config approval-timeout 5m')).toEqual({ action: 'set', delta: { approvalTimeoutMs: 300000 } })
+  // a bare integer is treated as ms.
+  expect(parseConfigCommand('!config loop-cooldown 4000')).toEqual({ action: 'set', delta: { loopCooldownMs: 4000 } })
+})
+
+test('parseConfigCommand: a non-numeric value for a numeric knob is an error', () => {
+  expect(parseConfigCommand('!config rate abc')?.action).toBe('error')
+  expect(parseConfigCommand('!config loop-max')?.action).toBe('error')
+})
+
+test('parseConfigCommand: reset maps the chat key to its canonical field', () => {
+  expect(parseConfigCommand('!config reset rate')).toEqual({ action: 'reset', keys: ['rateCapPerMin'] })
+})
+
+test('projectChannelConfig: numeric knobs project and are clamped against junk in the log', () => {
+  const good = rec({ rateCapPerMin: 30 }, '2026-06-20T10:00:00.000Z', 'aaaa')
+  expect(projectChannelConfig([good]).rateCapPerMin).toBe(30)
+  // an out-of-range value somehow in the log is clamped at projection (defense in depth).
+  const junk = rec({ loopMaxConsecutive: 9999 } as any, '2026-06-20T10:00:00.000Z', 'bbbb')
+  expect(projectChannelConfig([junk]).loopMaxConsecutive).toBe(50)
+})
+
+// ─── Phase 3: routing & surface/UX knobs ─────────────────────────────────────
+
+test('parseConfigCommand: require-mention is a boolean knob', () => {
+  expect(parseConfigCommand('!config require-mention off')).toEqual({ action: 'set', delta: { requireMention: false } })
+  expect(parseConfigCommand('!config require-mention on')).toEqual({ action: 'set', delta: { requireMention: true } })
+  expect(parseConfigCommand('!config require-mention yes')).toEqual({ action: 'set', delta: { requireMention: true } })
+  expect(parseConfigCommand('!config require-mention maybe')?.action).toBe('error')
+})
+
+test('parseConfigCommand: workbench is an enum knob', () => {
+  expect(parseConfigCommand('!config workbench quiet')).toEqual({ action: 'set', delta: { workbenchVerbosity: 'quiet' } })
+  expect(parseConfigCommand('!config workbench loud')?.action).toBe('error')
+})
+
+test('parseConfigCommand: ack is a short text knob', () => {
+  expect(parseConfigCommand('!config ack 🔄')).toEqual({ action: 'set', delta: { ackReaction: '🔄' } })
+  expect(parseConfigCommand('!config ack')?.action).toBe('error')
+})
+
+test('parseConfigCommand: mention is a comma-separated regex list, validated', () => {
+  expect(parseConfigCommand('!config mention alice, hey alice')).toEqual({
+    action: 'set',
+    delta: { mentionPatterns: ['alice', 'hey alice'] },
+  })
+  // an invalid regex is rejected, not stored.
+  expect(parseConfigCommand('!config mention [unclosed')?.action).toBe('error')
+})
+
+test('projectChannelConfig: bool/enum/list project, with junk filtered out', () => {
+  expect(projectChannelConfig([rec({ requireMention: false }, '2026-06-20T10:00:00.000Z', 'a')]).requireMention).toBe(false)
+  expect(projectChannelConfig([rec({ workbenchVerbosity: 'verbose' } as any, '2026-06-20T10:00:00.000Z', 'b')]).workbenchVerbosity).toBe('verbose')
+  // an invalid enum value in the log is dropped.
+  expect(projectChannelConfig([rec({ workbenchVerbosity: 'loud' } as any, '2026-06-20T10:00:00.000Z', 'c')]).workbenchVerbosity).toBeUndefined()
+  // a list keeps only valid regexes.
+  const list = projectChannelConfig([rec({ mentionPatterns: ['ok', '[bad'] } as any, '2026-06-20T10:00:00.000Z', 'd')])
+  expect(list.mentionPatterns).toEqual(['ok'])
+})
+
+test('wrapChannelRole: frames the brief as persona, not authority, and includes the text', () => {
+  const wrapped = wrapChannelRole('you are a reviewer')
+  expect(wrapped).toContain('<channel-role>')
+  expect(wrapped).toContain('</channel-role>')
+  expect(wrapped).toContain('you are a reviewer')
+  expect(wrapped.toLowerCase()).toContain('no authority')
+})
+
+// ─── per-thread config: new fields, two-layer resolve, mappers (U1) ────────────
+
+test('wrapChannelGoal: frames the objective, not authority, and includes the text', () => {
+  const wrapped = wrapChannelGoal('ship the auth refactor')
+  expect(wrapped).toContain('<objective>')
+  expect(wrapped).toContain('</objective>')
+  expect(wrapped).toContain('ship the auth refactor')
+})
+
+test('resolveTwoLayerConfig: scope overrides room; absent scope inherits room', () => {
+  const room = { role: 'room persona', model: 'claude-room', loopMaxConsecutive: 4 }
+  const scope = { role: 'thread persona', effort: 'max' as const }
+  const merged = resolveTwoLayerConfig(room, scope)
+  expect(merged.role).toBe('thread persona') // scope wins
+  expect(merged.model).toBe('claude-room')   // inherited from room
+  expect(merged.effort).toBe('max')          // scope-only
+  expect(merged.loopMaxConsecutive).toBe(4)  // inherited
+})
+
+test('resolveTwoLayerConfig: identical layers (scope==room) is a no-op', () => {
+  const cfg = { role: 'x', thinking: 'high' as const }
+  expect(resolveTwoLayerConfig(cfg, cfg)).toEqual(cfg)
+})
+
+test('parseConfigCommand: a leading `room` modifier targets the room overlay', () => {
+  expect(parseConfigCommand('!config room role X')).toEqual({
+    action: 'set', delta: { role: 'X' }, target: 'room',
+  })
+  // bare set has no target (host decides by scope)
+  expect(parseConfigCommand('!config role X')).toEqual({ action: 'set', delta: { role: 'X' } })
+  expect(parseConfigCommand('!config get room')).toEqual({ action: 'get', key: undefined, target: 'room' })
+  expect(parseConfigCommand('!config reset room role')).toEqual({
+    action: 'reset', keys: ['role'], target: 'room',
+  })
+  // `room` is only a modifier, never a settable key on its own
+  expect(parseConfigCommand('!config room')?.action).toBe('error')
+})
+
+test('parseConfigCommand: model is a single token; thinking/effort/mode are enums', () => {
+  expect(parseConfigCommand('!config model claude-opus-4-8')).toEqual({
+    action: 'set', delta: { model: 'claude-opus-4-8' },
+  })
+  // model rejects whitespace / empty
+  expect(parseConfigCommand('!config model claude opus')?.action).toBe('error')
+  expect(parseConfigCommand('!config model')?.action).toBe('error')
+  // thinking / effort / mode accept their enum values and reject others
+  expect(parseConfigCommand('!config thinking high')).toEqual({ action: 'set', delta: { thinking: 'high' } })
+  expect(parseConfigCommand('!config thinking turbo')?.action).toBe('error')
+  expect(parseConfigCommand('!config effort max')).toEqual({ action: 'set', delta: { effort: 'max' } })
+  expect(parseConfigCommand('!config mode bypass')).toEqual({ action: 'set', delta: { permissionPreset: 'bypass' } })
+  expect(parseConfigCommand('!config mode yolo')?.action).toBe('error')
+  // end-goal clamps like a text field
+  expect(parseConfigCommand('!config end-goal ship it')).toEqual({ action: 'set', delta: { endGoal: 'ship it' } })
+})
+
+test('parseConfigCommand: raw permission keys stay terminal-only; mode is allowed', () => {
+  for (const key of ['preset', 'allow', 'deny', 'tiers']) {
+    expect(parseConfigCommand(`!config ${key} whatever`)?.action).toBe('error')
+  }
+  expect(parseConfigCommand('!config mode strict')?.action).toBe('set')
+  expect(CHAT_SETTABLE_KEYS).toContain('mode')
+  expect(CHAT_SETTABLE_KEYS).not.toContain('preset')
+})
+
+test('toThinkingConfig: off→disabled, auto→adaptive, high→enabled+budget, unknown→undefined', () => {
+  expect(toThinkingConfig('off')).toEqual({ type: 'disabled' })
+  expect(toThinkingConfig('auto')).toEqual({ type: 'adaptive' })
+  expect(toThinkingConfig('high')).toEqual({ type: 'enabled', budgetTokens: THINKING_HIGH_BUDGET })
+  expect(toThinkingConfig(undefined)).toBeUndefined()
+  expect(toThinkingConfig('bogus')).toBeUndefined()
+})
+
+test('applyModeToProfile: loosens allow/ask but deny = union(base, preset floor)', () => {
+  const base = { allow: ['Read(**)'], ask: [], deny: ['Bash(curl *)', ...DENY_FLOOR] }
+  const bypassed = applyModeToProfile(base, 'bypass')
+  // bypass loosens allow (edits/writes/bash auto-allowed)
+  expect(bypassed.allow).toContain('Edit(**)')
+  // a room-set deny survives bypass, and the floor is always present
+  expect(bypassed.deny).toContain('Bash(curl *)')
+  expect(bypassed.deny).toContain('Bash(rm -rf *)')
+  // strict tightens: edits/writes/bash denied
+  const strict = applyModeToProfile(base, 'strict')
+  expect(strict.deny).toContain('Edit(**)')
+  expect(strict.deny).toContain('Bash(curl *)') // base deny still unioned in
+})
+
+test('applyModeToProfile: the deny-union invariant holds for EVERY vetted preset', () => {
+  // The security claim is that ANY chat-settable mode unions the room deny + floor;
+  // proving it for all four presets (not just bypass/strict) guards the invariant.
+  const base = { allow: ['Read(**)'], ask: [], deny: ['Bash(curl *)', ...DENY_FLOOR] }
+  for (const preset of ['strict', 'ask-per-edit', 'auto', 'bypass'] as const) {
+    const out = applyModeToProfile(base, preset)
+    expect(out.deny).toContain('Bash(curl *)')   // room-set deny survives every mode
+    expect(out.deny).toContain('Bash(rm -rf *)') // DENY_FLOOR always present
+    expect(out.deny).toContain('Bash(sudo *)')
+  }
+  // ask-per-edit routes edits to ask (not auto-allow); auto auto-allows edits.
+  expect(applyModeToProfile(base, 'ask-per-edit').ask).toContain('Edit(**)')
+  expect(applyModeToProfile(base, 'auto').allow).toContain('Edit(**)')
+})
+
+test('parseContextCommand: list / remove / add / help / error', () => {
+  expect(parseContextCommand('!context')).toEqual({ action: 'list' })
+  expect(parseContextCommand('!context list')).toEqual({ action: 'list' })
+  expect(parseContextCommand('!context remove 2')).toEqual({ action: 'remove', index: 2 })
+  expect(parseContextCommand('!context rm 1')).toEqual({ action: 'remove', index: 1 })
+  expect(parseContextCommand('!context remove x')?.action).toBe('error')
+  expect(parseContextCommand('!context add remember the changelog')).toEqual({
+    action: 'add', text: 'remember the changelog',
+  })
+  expect(parseContextCommand('!context add')?.action).toBe('error')
+  expect(parseContextCommand(`!context add ${'x'.repeat(CONTEXT_NOTE_MAX_LEN + 1)}`)?.action).toBe('error')
+  expect(parseContextCommand('!context help')).toEqual({ action: 'help' })
+  expect(parseContextCommand('hello')).toBeNull()
 })

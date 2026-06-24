@@ -111,6 +111,17 @@ export const turnFold: Fold<TurnFoldState> = {
 }
 
 /**
+ * Resolve the turn (promptHash) an interaction belongs to: itself if it IS the
+ * `turn.prompted`, else its prompt ancestor. Used by the per-turn Workbench to
+ * route a tool/reply event to the right turn's activity log. Returns undefined
+ * if no known turn owns it.
+ */
+export function findTurnForInteraction(state: TurnFoldState, i: Interaction): Hash | undefined {
+  if (i.verb === 'turn.prompted') return i.hash
+  return findPromptAncestor(state, i)
+}
+
+/**
  * Find the turn.prompted ancestor for a child interaction. Phase 1 best-effort
  * lookup: check this interaction's caused_by parents, see if any are a known
  * promptHash; if not, look up the parent and check its caused_by. Bounded at
