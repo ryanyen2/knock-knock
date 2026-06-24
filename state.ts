@@ -15,6 +15,7 @@ import {
   type ActorTiers,
   defaultAccess,
   defaultSettings,
+  DENY_FLOOR,
 } from './lib.ts'
 import type { PermissionProfile } from './agent-adapter.ts'
 
@@ -93,10 +94,17 @@ export function readRoomSettings(agentKey: string, channelId: string): RoomProfi
   if (profile.allow.length + profile.ask.length + profile.deny.length === 0) {
     process.stderr.write(
       `knock-knock: room profile at ${path} parsed to an EMPTY profile — every tool will ` +
-        `default to 'ask' and the deny floor will NOT apply. Use top-level allow/ask/deny ` +
+        `default to 'ask'. Use top-level allow/ask/deny ` +
         `(a { "permissions": { … } } wrapper is also accepted).\n`,
     )
   }
+  // Re-union the current DENY_FLOOR at READ time, not just write time. Presets
+  // expand the floor when a room file is written, but a profile written by an
+  // OLDER build (or hand-authored) would otherwise miss floor entries added
+  // since — including the credential Read/FileShare floor. Unioning here makes
+  // the floor hold for every room on upgrade, and `deny` only ever tightens.
+  // Done after the empty-check so a genuinely empty file still warns.
+  profile.deny = [...new Set([...profile.deny, ...DENY_FLOOR])]
   return profile
 }
 
