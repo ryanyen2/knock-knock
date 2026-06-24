@@ -67,6 +67,13 @@ test('workbenchEntryForTurn: derives status from a single turn', () => {
   ])
   expect(workbenchEntryForTurn(failed, 'p1', () => 'x')?.status).toBe('failed')
 
+  // a DENIED tool call (permission gate fired) is a distinct status path and also
+  // marks the turn failed — exercised separately from 'failed'.
+  const denied: TurnFoldState = new Map([
+    ['p1', turn({ endedAt: 'x', toolCalls: [{ hash: 't', name: 'Edit', inputJson: '{}', status: 'denied' }] })],
+  ])
+  expect(workbenchEntryForTurn(denied, 'p1', () => 'x')?.status).toBe('failed')
+
   // unknown turn → undefined
   expect(workbenchEntryForTurn(new Map(), 'nope', () => undefined)).toBeUndefined()
 })

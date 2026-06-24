@@ -669,6 +669,21 @@ test('applyModeToProfile: loosens allow/ask but deny = union(base, preset floor)
   expect(strict.deny).toContain('Bash(curl *)') // base deny still unioned in
 })
 
+test('applyModeToProfile: the deny-union invariant holds for EVERY vetted preset', () => {
+  // The security claim is that ANY chat-settable mode unions the room deny + floor;
+  // proving it for all four presets (not just bypass/strict) guards the invariant.
+  const base = { allow: ['Read(**)'], ask: [], deny: ['Bash(curl *)', ...DENY_FLOOR] }
+  for (const preset of ['strict', 'ask-per-edit', 'auto', 'bypass'] as const) {
+    const out = applyModeToProfile(base, preset)
+    expect(out.deny).toContain('Bash(curl *)')   // room-set deny survives every mode
+    expect(out.deny).toContain('Bash(rm -rf *)') // DENY_FLOOR always present
+    expect(out.deny).toContain('Bash(sudo *)')
+  }
+  // ask-per-edit routes edits to ask (not auto-allow); auto auto-allows edits.
+  expect(applyModeToProfile(base, 'ask-per-edit').ask).toContain('Edit(**)')
+  expect(applyModeToProfile(base, 'auto').allow).toContain('Edit(**)')
+})
+
 test('parseContextCommand: list / remove / add / help / error', () => {
   expect(parseContextCommand('!context')).toEqual({ action: 'list' })
   expect(parseContextCommand('!context list')).toEqual({ action: 'list' })

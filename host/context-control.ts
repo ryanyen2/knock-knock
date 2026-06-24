@@ -113,7 +113,11 @@ export class ContextControl {
       effect: 'pure',
       caused_by: [target.hash],
     })
-    await this.ctx.discordSend(scopeId, renderContextRemoved(parsed.index))
+    // Echo the removed note's source + summary: numbering is by a stable sort, so
+    // a concurrent add/import/peer-sync between the owner's `!context` list and
+    // this remove could shift indices — showing what actually got removed lets the
+    // owner catch a mis-hit immediately.
+    await this.ctx.discordSend(scopeId, renderContextRemoved(parsed.index, toEntry(target)))
     this.ctx.refreshConfigCard(scopeId)
   }
 }

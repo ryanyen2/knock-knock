@@ -624,9 +624,11 @@ export function renderContextAdded(): string {
   ].join('\n')
 }
 
-/** Terse confirmation after a context note is removed (invalidated). */
-export function renderContextRemoved(index: number): string {
-  return `${GLYPHS.session} Removed context note #${index}. It won't be injected again.`
+/** Terse confirmation after a context note is removed (invalidated). Echoes the
+ *  removed note's source + summary so a concurrent renumber is caught at a glance. */
+export function renderContextRemoved(index: number, removed?: ContextEntry): string {
+  const what = removed ? ` — \`${removed.source}\`: ${quote(removed.summary, 100)}` : ''
+  return `${GLYPHS.session} Removed context note #${index}${what}. It won't be injected again.`
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
