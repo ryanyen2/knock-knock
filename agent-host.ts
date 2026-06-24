@@ -928,9 +928,15 @@ export class AgentHost {
     // Per-thread permission `mode` (owner `!config mode …`): a vetted preset whose
     // allow/ask loosen the room base, but whose deny is UNIONed with the room deny
     // + floor — so a thread loosens what it auto-allows but never drops a
-    // terminal-set deny. Tiers then apply on top (only tighten).
+    // terminal-set deny. Applied ONLY to owner-prompted turns: `mode` is the
+    // owner's convenience for their own task, and `applyModeToProfile` REPLACES
+    // allow/ask, so applying it to a peer/human-prompted turn (an untiered one in
+    // particular) would auto-widen what the agent does on someone else's behalf
+    // past the room floor. A non-owner turn always resolves from the room base,
+    // then its tier narrows it. (Deny still unions either way — the floor holds.)
     const mode = this.channelConfigFor(channelId).permissionPreset
-    const base = mode ? applyModeToProfile(storedProfile, mode) : storedProfile
+    const base =
+      mode && opts.senderKindKind === 'owner' ? applyModeToProfile(storedProfile, mode) : storedProfile
     const turnProfile = resolveProfileForActor(
       base,
       storedProfile.tiers,
