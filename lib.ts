@@ -277,11 +277,37 @@ export function classifyTool(
 /** The non-negotiable deny floor every preset carries: destructive shell and
  *  writes to security-sensitive config. `classifyTool` denies over allow, so even
  *  `bypass` cannot reach these. */
+/**
+ * Credential-bearing path shapes that must never be read or shared, regardless
+ * of room preset. Extension-anchored globs (like a star-dot-pem) match bare and
+ * nested paths because `globToRegExp` lowers a star to dot-star; dotfile and dir
+ * shapes carry a globstar-prefixed nested variant alongside the bare one so an
+ * absolute Read subject (/abs/ws/.env) and a relative one (.env) are both caught.
+ * The
+ * exact set is tuned over time (see plan OQ2); err toward over-blocking — this
+ * is a floor, not a allowlist. `looksLikeSecret` is the content-scan companion.
+ */
+export const SECRET_PATH_GLOBS: string[] = [
+  '**/.env', '**/.env.*', '.env', '.env.*',
+  '*.pem', '*.key', '*.p12', '*.pfx', '*.keystore',
+  '**/id_rsa*', '**/id_ed25519*',
+  '**/.ssh/**', '**/.aws/**', '**/.gnupg/**',
+  '**/.npmrc', '.npmrc',
+  '**/.git-credentials', '.git-credentials',
+]
+
+/** The non-negotiable deny floor every preset carries: destructive shell,
+ *  writes to security-sensitive config, and — for the file-exchange layer — the
+ *  credential floor on both `Read` (the agent's own read tool) and `FileShare`
+ *  (outbound share). Because every preset unions this and `deny` beats `allow`,
+ *  even `bypass` cannot read or share a `.env`/key. */
 export const DENY_FLOOR: string[] = [
   'Bash(rm -rf *)',
   'Bash(sudo *)',
   'Write(~/.claude/**)',
   'Write(~/.ssh/**)',
+  ...SECRET_PATH_GLOBS.map(g => `Read(${g})`),
+  ...SECRET_PATH_GLOBS.map(g => `FileShare(${g})`),
 ]
 
 const READ_TOOLS = ['Read(**)', 'LS(**)', 'Glob(**)', 'Grep(**)']
@@ -289,27 +315,30 @@ const READ_TOOLS = ['Read(**)', 'LS(**)', 'Glob(**)', 'Grep(**)']
 /** Named permission modes. Every one carries the DENY_FLOOR, so a preset's deny
  *  is never empty (the invariant `state.ts` warns about). */
 export const PRESET_MODES: Record<string, PermissionProfile> = {
-  // Read-only: look but don't touch.
+  // Read-only: look but don't touch. Sharing a file out is also off-limits.
   strict: {
     allow: [...READ_TOOLS],
     ask: [],
-    deny: ['Edit(**)', 'Write(**)', 'Bash(*)', ...DENY_FLOOR],
+    deny: ['Edit(**)', 'Write(**)', 'Bash(*)', 'FileShare(**)', ...DENY_FLOOR],
   },
-  // Safe default: reads are free, every edit/write/command prompts the owner.
+  // Safe default: reads are free, every edit/write/command — and every outbound
+  // file share — prompts the owner.
   'ask-per-edit': {
     allow: [...READ_TOOLS],
-    ask: ['Edit(**)', 'Write(**)', 'Bash(*)'],
+    ask: ['Edit(**)', 'Write(**)', 'Bash(*)', 'FileShare(**)'],
     deny: [...DENY_FLOOR],
   },
-  // Auto-accept edits: edits/writes run unprompted, shell commands still ask.
+  // Auto-accept edits: edits/writes run unprompted, shell commands still ask —
+  // and so does sharing a file out (outward-facing, always confirm).
   auto: {
     allow: [...READ_TOOLS, 'Edit(**)', 'Write(**)'],
-    ask: ['Bash(*)'],
+    ask: ['Bash(*)', 'FileShare(**)'],
     deny: [...DENY_FLOOR],
   },
-  // Wide-open but still floored: everything allowed except the deny floor.
+  // Wide-open but still floored: everything allowed except the deny floor (which
+  // still blocks sharing a credential file).
   bypass: {
-    allow: [...READ_TOOLS, 'Edit(**)', 'Write(**)', 'Bash(*)'],
+    allow: [...READ_TOOLS, 'Edit(**)', 'Write(**)', 'Bash(*)', 'FileShare(**)'],
     ask: [],
     deny: [...DENY_FLOOR],
   },
@@ -1436,4 +1465,125 @@ export function pickAnthropicEnv(
     if (typeof value === 'string' && value.length > 0) out[key] = value
   }
   return out
+}
+
+// ─── File-exchange policy (pure) ──────────────────────────────────────────────
+//
+// Decision logic for the file-exchange layer: what an inbound attachment IS
+// (magic-byte sniff, never the sender-declared MIME/extension), whether v1 can
+// handle it, a safe on-disk name, the ingest budget, and a content-level secret
+// scan. All pure — callers pass bytes/samples; no I/O here. The ingest + share
+// synchronizations compose these with the path-based SECRET_PATH_GLOBS floor
+// that classifyTool already enforces.
+
+export type FileKind = 'text' | 'image' | 'gif' | 'pdf' | 'unsupported'
+
+const EXT_FOR_KIND: Record<FileKind, string> = {
+  text: 'txt', image: 'png', gif: 'gif', pdf: 'pdf', unsupported: 'bin',
+}
+
+/** v1-supported kinds — text/code/image/gif/pdf, all natively readable by
+ *  Claude. Audio/video are deferred to v2 (see plan Scope Boundaries). */
+export function isSupportedForV1(kind: FileKind): boolean {
+  return kind !== 'unsupported'
+}
+
+/** Ingest limits. Discord's per-file floor is 10 MiB; we cap there and bound the
+ *  per-message count + total bytes so a boosted upload can't OOM the relay. */
+export const FILE_INGEST_LIMITS = {
+  maxBytesPerFile: 10 * 1024 * 1024,
+  maxFilesPerMessage: 10,
+  maxTotalBytes: 25 * 1024 * 1024,
+} as const
+
+/**
+ * Sniff the true file kind from leading magic bytes — never trust the declared
+ * MIME or the filename extension (both spoofable). Returns 'unsupported' for
+ * anything outside the v1 allowlist, including empty input.
+ */
+export function sniffFileKind(bytes: Uint8Array): FileKind {
+  if (!bytes || bytes.length === 0) return 'unsupported'
+  const b = bytes
+  const at = (sig: number[], off = 0): boolean =>
+    b.length >= off + sig.length && sig.every((v, i) => b[off + i] === v)
+  if (at([0x47, 0x49, 0x46, 0x38])) return 'gif' // "GIF8"
+  if (at([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image' // PNG
+  if (at([0xff, 0xd8, 0xff])) return 'image' // JPEG
+  if (at([0x52, 0x49, 0x46, 0x46]) && at([0x57, 0x45, 0x42, 0x50], 8)) return 'image' // RIFF…WEBP
+  if (at([0x25, 0x50, 0x44, 0x46, 0x2d])) return 'pdf' // "%PDF-"
+  return looksLikeText(b) ? 'text' : 'unsupported'
+}
+
+/** Heuristic: a NUL byte or stray control char in the head sample → binary. */
+function looksLikeText(bytes: Uint8Array): boolean {
+  const n = Math.min(bytes.length, 4096)
+  if (n === 0) return false
+  for (let i = 0; i < n; i++) {
+    const c = bytes[i]!
+    if (c === 0) return false
+    if (c < 0x09 || (c > 0x0d && c < 0x20)) return false
+  }
+  return true
+}
+
+/**
+ * Produce a safe single-segment on-disk filename from an attacker-controlled
+ * attachment name: a sanitized stem + a content-hash suffix + an extension that
+ * is either a sanitized original extension or the sniffed-kind default. Drops
+ * any path (`../`, absolute), leading dots (no hidden files), and odd chars.
+ */
+export function sanitizeAttachmentName(name: string, kind: FileKind, contentHash: string): string {
+  const hash = (contentHash || '').replace(/[^a-f0-9]/gi, '').slice(0, 16) || 'file'
+  const leaf = (name ?? '').replace(/\\/g, '/').split('/').pop() ?? ''
+  const rawExt = leaf.includes('.') ? leaf.split('.').pop()! : ''
+  const safeExt = /^[A-Za-z0-9]{1,8}$/.test(rawExt) ? rawExt.toLowerCase() : EXT_FOR_KIND[kind]
+  const stem = leaf
+    .replace(/\.[^.]*$/, '')
+    .replace(/[^A-Za-z0-9._-]/g, '_')
+    .replace(/^[._]+/, '')
+    .slice(0, 40)
+  const base = stem ? `${stem}-${hash}` : hash
+  return safeExt ? `${base}.${safeExt}` : base
+}
+
+/**
+ * Is this attachment admissible under the ingest budget? Per-file size, the
+ * per-message count, and the running total. Pure — the caller threads the
+ * running total across a message's attachments and checks each in turn.
+ */
+export function withinBudget(
+  candidate: { sizeBytes: number; indexInMessage: number; runningTotalBytes: number },
+  limits: { maxBytesPerFile: number; maxFilesPerMessage: number; maxTotalBytes: number } = FILE_INGEST_LIMITS,
+): { ok: boolean; reason?: 'too-large' | 'too-many' | 'over-total' } {
+  if (candidate.indexInMessage >= limits.maxFilesPerMessage) return { ok: false, reason: 'too-many' }
+  if (candidate.sizeBytes > limits.maxBytesPerFile) return { ok: false, reason: 'too-large' }
+  if (candidate.runningTotalBytes + candidate.sizeBytes > limits.maxTotalBytes)
+    return { ok: false, reason: 'over-total' }
+  return { ok: true }
+}
+
+/** Common secret-token signatures for the content scan (defense-in-depth behind
+ *  the path-based floor). Tuned over time — see plan OQ2. */
+const SECRET_CONTENT_PATTERNS: RegExp[] = [
+  /-----BEGIN (?:RSA |EC |OPENSSH |PGP |DSA )?PRIVATE KEY-----/,
+  /-----BEGIN CERTIFICATE-----/,
+  /\bAKIA[0-9A-Z]{16}\b/,             // AWS access key id
+  /\bASIA[0-9A-Z]{16}\b/,             // AWS temp access key id
+  /\bxox[baprs]-[0-9A-Za-z-]{10,}\b/, // Slack token
+  /\bgh[pousr]_[0-9A-Za-z]{20,}\b/,   // GitHub token
+  /\bsk-ant-[0-9A-Za-z_-]{20,}\b/,    // Anthropic key
+  /\bsk-[A-Za-z0-9]{20,}\b/,          // OpenAI-style secret key
+  /\bAIza[0-9A-Za-z_-]{30,}\b/,       // Google API key
+]
+
+/**
+ * Does this path or content sample look like a credential? The path check
+ * mirrors SECRET_PATH_GLOBS for callers that only have a path; the content scan
+ * catches a secret hiding in an innocuously-named file (a `.env` renamed
+ * `notes.txt`). Pure — caller supplies a decoded head-of-file text sample.
+ */
+export function looksLikeSecret(path: string, sample?: string): boolean {
+  if (path && SECRET_PATH_GLOBS.some(g => globToRegExp(g).test(path))) return true
+  if (sample) return SECRET_CONTENT_PATTERNS.some(re => re.test(sample))
+  return false
 }

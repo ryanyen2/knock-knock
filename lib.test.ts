@@ -40,6 +40,13 @@ import {
   CONTEXT_NOTE_MAX_LEN,
   CHAT_SETTABLE_KEYS,
   ROLE_MAX_LEN,
+  SECRET_PATH_GLOBS,
+  sniffFileKind,
+  isSupportedForV1,
+  sanitizeAttachmentName,
+  withinBudget,
+  looksLikeSecret,
+  FILE_INGEST_LIMITS,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -727,4 +734,96 @@ test('parseContextCommand: list / remove / add / help / error', () => {
   expect(parseContextCommand(`!context add ${'x'.repeat(CONTEXT_NOTE_MAX_LEN + 1)}`)?.action).toBe('error')
   expect(parseContextCommand('!context help')).toEqual({ action: 'help' })
   expect(parseContextCommand('hello')).toBeNull()
+})
+
+// ─── File-exchange policy (U1) ─────────────────────────────────────────────────
+
+const PRESET_NAMES = ['strict', 'ask-per-edit', 'auto', 'bypass'] as const
+
+test('secret floor: Read of a credential file is denied under EVERY preset', () => {
+  for (const name of PRESET_NAMES) {
+    const profile = PRESET_MODES[name]!
+    expect(classifyTool(profile, { toolName: 'Read', subject: '/Users/x/ws/.env' }), name).toBe('deny')
+    expect(classifyTool(profile, { toolName: 'Read', subject: '/Users/x/ws/.env.production' }), name).toBe('deny')
+    expect(classifyTool(profile, { toolName: 'Read', subject: '/Users/x/ws/keys/server.pem' }), name).toBe('deny')
+    expect(classifyTool(profile, { toolName: 'Read', subject: '/home/u/.ssh/id_rsa' }), name).toBe('deny')
+  }
+})
+
+test('secret floor: FileShare of a credential file is denied under EVERY preset', () => {
+  for (const name of PRESET_NAMES) {
+    const profile = PRESET_MODES[name]!
+    expect(classifyTool(profile, { toolName: 'FileShare', subject: '/ws/config/.env' }), name).toBe('deny')
+    expect(classifyTool(profile, { toolName: 'FileShare', subject: '/ws/secret.key' }), name).toBe('deny')
+  }
+})
+
+test('FileShare of an ordinary file: asks by default, denied under strict, allowed under bypass', () => {
+  expect(classifyTool(PRESET_MODES['ask-per-edit']!, { toolName: 'FileShare', subject: '/ws/report.pdf' })).toBe('ask')
+  expect(classifyTool(PRESET_MODES.auto!, { toolName: 'FileShare', subject: '/ws/report.pdf' })).toBe('ask')
+  expect(classifyTool(PRESET_MODES.strict!, { toolName: 'FileShare', subject: '/ws/report.pdf' })).toBe('deny')
+  expect(classifyTool(PRESET_MODES.bypass!, { toolName: 'FileShare', subject: '/ws/report.pdf' })).toBe('allow')
+})
+
+test('SECRET_PATH_GLOBS is unioned into every preset deny (floor invariant)', () => {
+  for (const name of PRESET_NAMES) {
+    const deny = PRESET_MODES[name]!.deny
+    for (const g of SECRET_PATH_GLOBS) {
+      expect(deny, `${name} missing Read(${g})`).toContain(`Read(${g})`)
+      expect(deny, `${name} missing FileShare(${g})`).toContain(`FileShare(${g})`)
+    }
+  }
+})
+
+test('sniffFileKind: decides by magic bytes, not extension', () => {
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0])
+  const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0])
+  const gif = new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61])
+  const pdf = new Uint8Array([0x25, 0x50, 0x44, 0x46, 0x2d, 0x31, 0x2e, 0x37])
+  const webp = new Uint8Array([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50])
+  const text = new Uint8Array([...'hello world\nconst x = 1\n'].map(c => c.charCodeAt(0)))
+  const zip = new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0, 0])
+  expect(sniffFileKind(png)).toBe('image')
+  expect(sniffFileKind(jpeg)).toBe('image')
+  expect(sniffFileKind(gif)).toBe('gif')
+  expect(sniffFileKind(pdf)).toBe('pdf')
+  expect(sniffFileKind(webp)).toBe('image')
+  expect(sniffFileKind(text)).toBe('text')
+  expect(sniffFileKind(zip)).toBe('unsupported')
+  expect(sniffFileKind(new Uint8Array([]))).toBe('unsupported')
+  // a PNG with a .txt name still sniffs as image; a text file with .png still sniffs text
+  expect(isSupportedForV1(sniffFileKind(png))).toBe(true)
+})
+
+test('sanitizeAttachmentName: neutralizes traversal and produces a single safe segment', () => {
+  const a = sanitizeAttachmentName('../../etc/passwd', 'text', 'deadbeefcafe1234')
+  expect(a).not.toContain('/')
+  expect(a).not.toContain('..')
+  expect(a.startsWith('.')).toBe(false)
+  const b = sanitizeAttachmentName('report.pdf', 'pdf', 'abc123')
+  expect(b.endsWith('.pdf')).toBe(true)
+  const c = sanitizeAttachmentName('weird name!@#.PNG', 'image', 'ff00ff00')
+  expect(c.endsWith('.png')).toBe(true)
+  expect(/^[A-Za-z0-9._-]+$/.test(c)).toBe(true)
+})
+
+test('withinBudget: rejects oversize, over-count, and over-total', () => {
+  const L = FILE_INGEST_LIMITS
+  expect(withinBudget({ sizeBytes: 2_000_000, indexInMessage: 0, runningTotalBytes: 0 }).ok).toBe(true)
+  expect(withinBudget({ sizeBytes: L.maxBytesPerFile + 1, indexInMessage: 0, runningTotalBytes: 0 }))
+    .toEqual({ ok: false, reason: 'too-large' })
+  expect(withinBudget({ sizeBytes: 1, indexInMessage: L.maxFilesPerMessage, runningTotalBytes: 0 }))
+    .toEqual({ ok: false, reason: 'too-many' })
+  expect(withinBudget({ sizeBytes: 10, indexInMessage: 1, runningTotalBytes: L.maxTotalBytes }))
+    .toEqual({ ok: false, reason: 'over-total' })
+})
+
+test('looksLikeSecret: matches credential paths and embedded secret tokens', () => {
+  expect(looksLikeSecret('/ws/.env')).toBe(true)
+  expect(looksLikeSecret('/ws/keys/x.pem')).toBe(true)
+  expect(looksLikeSecret('/ws/notes.txt')).toBe(false)
+  // a renamed secret: innocuous path, secret content
+  expect(looksLikeSecret('/ws/notes.txt', 'AWS_KEY=AKIAIOSFODNN7EXAMPLE more text')).toBe(true)
+  expect(looksLikeSecret('/ws/notes.txt', '-----BEGIN OPENSSH PRIVATE KEY-----\nabc')).toBe(true)
+  expect(looksLikeSecret('/ws/notes.txt', 'just ordinary prose about the weather')).toBe(false)
 })
