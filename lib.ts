@@ -19,6 +19,14 @@ export type RoomConfig = {
   participants: Record<string, RoomParticipant> // peer botUserId → info
   humans: string[] // human user IDs also allowed to drive in this room
   approvalActorId?: string // who approves this agent's work; defaults to the agent owner
+  /** This bot's working folder for THIS channel (membership-scoped; per the
+   *  channel-centric authoring model). Falls back to the agent's workspace when
+   *  absent. Projected from `Membership.workspace`. */
+  workspace?: string
+  /** This bot's inline permission profile for THIS channel, projected from
+   *  `Membership.profile`. When present the runtime prefers it over the on-disk
+   *  per-channel settings file. */
+  profile?: RoomProfile
 }
 
 /** OS-level sandbox for an agent's runtime. Confines filesystem writes to the
@@ -63,6 +71,151 @@ export type Access = {
 
 export function defaultAccess(): Access {
   return { agents: {} }
+}
+
+// ─── Authoring model (channel-centric; what setup.ts writes) ──────────────────
+//
+// The runtime `Access` above is AGENT-centric (a channel is nested inside each
+// bot), which forces a shared channel to be duplicated and leaves nowhere to hang
+// a reusable roster. The on-disk config is instead NORMALIZED and channel-centric
+// (see docs/redesign.md):
+//
+//   • roster  — people + peer bots, entered ONCE and referenced by id
+//   • bots    — the agent identities I run; name/avatar live on the platform
+//   • channels — projects = permission boundaries; each lists which of my bots are
+//                MEMBERS (workspace folder + permission profile per project) and
+//                which roster collaborators participate
+//
+// `projectToRuntime` folds this down to the agent-keyed `Access` the relay, hosts,
+// and folds already consume — so the ledger core is untouched. The reshape lives
+// entirely in this projection + setup.ts + state.ts.
+
+export type Platform = 'discord' | 'slack' | 'telegram' | 'whatsapp' | 'imessage'
+
+/** One coding-agent identity I run = one platform app holding a token locally. Its
+ *  name/avatar/description live on the platform and are fetched live, never typed. */
+export type Bot = {
+  platform: Platform
+  tokenEnv: string // NAME of the env var holding this bot's platform token
+  appTokenEnv?: string // Slack socket-mode app-token env name
+  runtime: string
+  sandbox?: SandboxConfig
+  displayName?: string // cached from the platform on connect; cosmetic, non-authoritative
+  blurb?: string // default capability text; a membership may override
+}
+
+/** A human collaborator in the roster (entered once, referenced from channels). */
+export type Person = { platform: Platform; userId: string; label?: string }
+/** A peer bot (someone else's) in the roster — present for discovery, not run here. */
+export type Peer = { platform: Platform; userId: string; blurb: string; label?: string }
+
+/** A roster reference attached to a channel. */
+export type Collaborator =
+  | { kind: 'human'; id: string } // → roster.people[id]
+  | { kind: 'peer'; id: string } //  → roster.peers[id]
+
+/** One of my bots active in one channel — THE permission boundary: this bot's
+ *  workspace folder and allow/ask/deny apply to THIS project only. */
+export type Membership = {
+  bot: string // BotId (key in AuthoringAccess.bots)
+  workspace: string // folder this bot works in for THIS channel
+  profile?: RoomProfile // allow/ask/deny (+ tiers); absent ⇒ resolved from the preset/file
+  preset?: string // named preset the profile was stamped from (setup bookkeeping)
+}
+
+/** A channel = a project = a permission boundary the bots are "invited" to. */
+export type Channel = {
+  platform: Platform
+  channelId: string // the platform's channel id
+  label?: string // friendly project name for the TUI (cosmetic)
+  project?: string // optional cross-platform grouping label (cosmetic; no bridging)
+  members: Membership[] // my bots active here
+  collaborators: Collaborator[] // humans + peer bots, by roster id
+  requireMention?: boolean
+  approvalActorId?: string // override; defaults to the owner of the bot
+}
+
+/** The normalized, channel-centric config written ONLY by setup.ts (same
+ *  prompt-injection invariant as the runtime Access). Keyed `${platform}:${channelId}`. */
+export type AuthoringAccess = {
+  me?: Partial<Record<Platform, string>> // my user id per platform — set once, reused
+  bots: Record<string, Bot>
+  channels: Record<string, Channel>
+  roster: { people: Record<string, Person>; peers: Record<string, Peer> }
+  mentionPatterns?: string[]
+  ackReaction?: string
+}
+
+export function defaultAuthoringAccess(): AuthoringAccess {
+  return { bots: {}, channels: {}, roster: { people: {}, peers: {} } }
+}
+
+/** The globally-unique key for a channel (closes the cross-platform id-collision gap). */
+export function channelKey(platform: string, channelId: string): string {
+  return `${platform}:${channelId}`
+}
+
+/**
+ * Fold the channel-centric authoring shape down to the agent-keyed runtime
+ * `Access` the relay/hosts/folds consume. Pure (unit-tested). Each bot becomes one
+ * runtime agent; each channel it is a member of becomes a `RoomConfig` carrying the
+ * membership's per-project `workspace` and inline `profile`, plus the channel's
+ * collaborators resolved against the roster into `participants`/`humans`.
+ */
+export function projectToRuntime(a: AuthoringAccess): Access {
+  const agents: Record<string, AgentConfig> = {}
+  for (const [botId, bot] of Object.entries(a.bots)) {
+    // Channels where this bot is a member → its rooms.
+    const rooms: Record<string, RoomConfig> = {}
+    let firstWorkspace = ''
+    for (const ch of Object.values(a.channels)) {
+      if (ch.platform !== bot.platform) continue
+      const membership = ch.members.find(m => m.bot === botId)
+      if (!membership) continue
+      if (!firstWorkspace) firstWorkspace = membership.workspace
+
+      const participants: Record<string, RoomParticipant> = {}
+      const humans: string[] = []
+      for (const c of ch.collaborators) {
+        if (c.kind === 'peer') {
+          const peer = a.roster.peers[c.id]
+          if (peer && peer.platform === bot.platform) {
+            participants[peer.userId] = { blurb: peer.blurb, ...(peer.label ? { name: peer.label } : {}) }
+          }
+        } else {
+          const person = a.roster.people[c.id]
+          if (person && person.platform === bot.platform) humans.push(person.userId)
+        }
+      }
+
+      rooms[ch.channelId] = {
+        requireMention: ch.requireMention ?? false,
+        participants,
+        humans,
+        ...(ch.approvalActorId ? { approvalActorId: ch.approvalActorId } : {}),
+        workspace: membership.workspace,
+        ...(membership.profile ? { profile: membership.profile } : {}),
+      }
+    }
+
+    agents[botId] = {
+      ownerUserId: a.me?.[bot.platform] ?? '',
+      blurb: bot.blurb ?? '',
+      runtime: bot.runtime,
+      workspace: firstWorkspace,
+      tokenEnv: bot.tokenEnv,
+      platform: bot.platform,
+      rooms,
+      ...(bot.appTokenEnv ? { appTokenEnv: bot.appTokenEnv } : {}),
+      ...(bot.sandbox ? { sandbox: bot.sandbox } : {}),
+      ...(bot.displayName ? { name: bot.displayName } : {}),
+    }
+  }
+  return {
+    agents,
+    ...(a.mentionPatterns ? { mentionPatterns: a.mentionPatterns } : {}),
+    ...(a.ackReaction ? { ackReaction: a.ackReaction } : {}),
+  }
 }
 
 /**
@@ -1391,7 +1544,7 @@ export function matchesMentionPattern(text: string, patterns?: string[]): boolea
  * room owns it. A served room id resolves to itself; a thread resolves to its
  * parent (via the `resolved` memo first, then the `parentOf` probe).
  */
-export function resolveRoomForScope(
+export function resolveChannelForScope(
   scopeId: string,
   rooms: Record<string, RoomConfig>,
   resolved: ReadonlyMap<string, string>,

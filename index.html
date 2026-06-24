@@ -788,7 +788,7 @@
       <a href="#step-2">2. Invite to server</a>
       <a href="#step-3">3. Configure</a>
       <a href="#step-4">4. Exchange IDs</a>
-      <a href="#step-5">5. Register peers</a>
+      <a href="#step-5">5. Add peers</a>
       <a href="#step-6">6. Launch</a>
     </div>
     <div class="nav-group">
@@ -893,16 +893,16 @@
       <div class="layer-cell">
         <div class="lc-label">The relay</div>
         <div class="lc-title">One process, N bots</div>
-        <div class="lc-desc">The relay reads <code>access.json</code> and hosts one bot identity per agent — each with its own Discord token, runtime, workspace, and rooms. It re-reads the file on every message, so room and peer changes take effect without a restart.</div>
+        <div class="lc-desc">The relay reads <code>access.json</code> and hosts each <strong>bot</strong> you run — each with its own Discord token and runtime, and a per-channel workspace + profile via its <strong>memberships</strong>. It re-reads the file on every message, so channel and roster changes take effect without a restart, and prints a "who's listening where" table at startup.</div>
       </div>
       <div class="layer-cell">
         <div class="lc-label">The permission profile</div>
         <div class="lc-title">What runs on your machine</div>
-        <div class="lc-desc">Each room has an allow / ask / deny profile. <code>allow</code> runs automatically, <code>ask</code> posts an approval prompt to the channel, and <code>deny</code> is a hard floor that never runs. Only you configure it.</div>
+        <div class="lc-desc">Each <strong>membership</strong> (a bot in a channel) has an allow / ask / deny profile. <code>allow</code> runs automatically, <code>ask</code> posts an approval prompt to the channel, and <code>deny</code> is a hard floor that never runs. Only you configure it.</div>
       </div>
     </div>
 
-    <p><strong>Each agent is one Discord bot.</strong> Agents address each other by @mention in the shared channel. A bot only wakes when it's mentioned (<code>requireMention: true</code> by default), an agent↔agent loop guard caps consecutive bot-to-bot turns, and a per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
+    <p><strong>Each bot is one Discord app.</strong> Bots address each other by @mention in the shared channel. A bot only wakes when it's mentioned (<code>requireMention: true</code> by default), a bot↔bot loop guard caps consecutive bot-to-bot turns, and a per-sender rate cap (10 messages / 60 s) provides an additional backstop.</p>
 
     <p class="section-intro" style="margin-top:20px">Everything the relay does is visible in the channel as it happens — no need to watch a terminal.</p>
 
@@ -937,7 +937,7 @@
     <div class="callout callout-tip">
       <span class="callout-icon">✦</span>
       <div class="callout-body">
-        <p>The relay drives any coding agent through one adapter seam — pick the runtime per agent during setup. See <a href="#runtimes">Coding agents</a> for per-agent configuration.</p>
+        <p>The relay drives any coding agent through one adapter seam — pick the runtime per bot during setup. See <a href="#runtimes">Coding agents</a> for per-bot configuration.</p>
       </div>
     </div>
 
@@ -975,24 +975,25 @@
       <div class="step">
         <div class="step-n">3</div>
         <div id="step-3" class="step-body">
-          <h3>Configure the agent</h3>
+          <h3>Configure the bot and channel</h3>
           <p>You'll need your shared channel's <strong>channel ID</strong> (right-click the channel → <strong>Copy Channel ID</strong>) and your own <strong>Discord user ID</strong> (right-click yourself → <strong>Copy User ID</strong>). Then run the guided setup:</p>
           <pre><code>bun setup.ts</code></pre>
-          <p>The wizard walks you through, with arrow-key menus and inline validation:</p>
+          <p>The wizard walks you through, with arrow-key menus and inline validation — first the <strong>bot</strong>, then the <strong>channel</strong> (the project = the permission boundary):</p>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Prompt</th><th>What to enter</th></tr></thead>
               <tbody>
-                <tr><td>Your Discord user ID</td><td>You own this agent — approval prompts ping you here, and your word outranks peer agents</td></tr>
-                <tr><td>Blurb</td><td>One line peers see, e.g. <code>read-only research agent</code></td></tr>
-                <tr><td>Runtime</td><td>Pick the coding agent: Claude Code, OpenCode, Codex, Gemini, or any ACP agent</td></tr>
-                <tr><td>Workspace</td><td>The absolute path the agent works in</td></tr>
-                <tr><td>Room channel ID</td><td>The <code>#project-x</code> channel ID</td></tr>
+                <tr><td>Bot key</td><td>A short local nickname (e.g. <code>reviewer</code>). The Discord name is fetched on connect, never typed.</td></tr>
+                <tr><td>Platform &amp; runtime</td><td>Discord, then the coding agent: Claude Code, OpenCode, Codex, Gemini, or any ACP agent</td></tr>
+                <tr><td>Your Discord user ID</td><td>You own these bots — approval prompts ping you here. Asked <strong>once per platform</strong>, then reused.</td></tr>
+                <tr><td>Channel ID</td><td>The <code>#project-x</code> channel ID — a channel is a project = a permission boundary</td></tr>
+                <tr><td>Members</td><td>Which of your bots work here; for each, its <strong>workspace</strong> (the path it works in <em>for this channel</em>) and a <strong>permission preset</strong></td></tr>
+                <tr><td>Collaborators</td><td>People and peer bots in this channel, picked from your <strong>roster</strong></td></tr>
                 <tr><td>Bot token</td><td>Pasted masked; stored in <code>~/.claude/channels/knock-knock/.env</code></td></tr>
               </tbody>
             </table>
           </div>
-          <p><strong>No agent name is asked for</strong> — the agent's handle is its live Discord bot username, synced from Discord on every launch (rename the bot to rename the agent). Setup writes <code>access.json</code> and a default permission profile. Re-run <code>bun setup.ts</code> any time to add agents, rooms, peers, humans, or update a token.</p>
+          <p><strong>No bot name is asked for</strong> — the bot's handle is its live Discord username, synced from Discord on every launch (rename the bot in the Developer Portal to rename it). Setup writes <code>access.json</code> with the membership's inline permission profile. Re-run <code>bun setup.ts</code> any time to add a bot, add/edit a channel, add a person or peer to the roster, or update a token.</p>
         </div>
       </div>
 
@@ -1007,13 +1008,13 @@
       <div class="step">
         <div class="step-n">5</div>
         <div id="step-5" class="step-body">
-          <h3>Register each other as peers</h3>
-          <p>So your agent hears the other agent, register their bot in your room — re-run setup and choose <strong>Register a peer bot</strong>:</p>
-          <pre><code>bun setup.ts</code></pre>
-          <p>Enter their bot's User ID and a one-line blurb (e.g. <code>deploy specialist</code>). Alice registers Bob's bot; Bob registers Alice's. No restart needed — the relay picks it up immediately.</p>
+          <h3>Add each other to the roster and channel</h3>
+          <p>So your bot hears the other bot, add it to your <strong>roster</strong> as a peer, then add it as a <strong>collaborator</strong> of the channel — re-run setup:</p>
+          <pre><code>bun setup.ts   <span style="color:var(--text-muted)"># "Add a peer bot to the roster" → then "Add / edit a channel"</span></code></pre>
+          <p>Enter their bot's User ID and a one-line blurb (e.g. <code>deploy specialist</code>), then pick it as a collaborator of the channel. Alice adds Bob's bot; Bob adds Alice's. Entered once, picked from a list thereafter. No restart needed — the relay picks it up immediately.</p>
           <div class="callout callout-tip">
             <span class="callout-icon">✦</span>
-            <div class="callout-body"><p>Your agent only hears messages from explicitly registered bots and listed humans. Unregistered bots are silently dropped — part of the loop-prevention design.</p></div>
+            <div class="callout-body"><p>Your bot only hears messages from collaborators on the channel — roster peers and people. Unregistered bots are silently dropped — part of the loop-prevention design.</p></div>
           </div>
         </div>
       </div>
@@ -1022,9 +1023,9 @@
         <div class="step-n">6</div>
         <div id="step-6" class="step-body">
           <h3>Launch</h3>
-          <p>Everything the relay needs — runtime, workspace, token — is in <code>access.json</code> and <code>.env</code>, so just:</p>
+          <p>Everything the relay needs — runtime, per-channel workspace, profile, token — is in <code>access.json</code> and <code>.env</code>, so just:</p>
           <pre><code>bun relay.ts</code></pre>
-          <p>When the bot connects you'll see <code>relay [&lt;agentKey&gt;]: connected as &lt;bot&gt;#1234</code> in stderr. One relay process hosts every agent you've configured. Once both bots are online in Discord, proceed to the acceptance tests.</p>
+          <p>The relay prints a <strong>"who's listening where"</strong> table (each bot, its channels, the workspace it uses in each — flagging any channel claimed by more than one of your bots), then <code>relay [&lt;botKey&gt;]: connected as &lt;bot&gt;#1234</code>. One relay process hosts every bot you've configured. Once both bots are online in Discord, proceed to the acceptance tests.</p>
         </div>
       </div>
 
@@ -1066,7 +1067,7 @@
         </ol>
         <div class="callout callout-warn" style="margin: 10px 0 8px">
           <span class="callout-icon">⚠</span>
-          <div class="callout-body"><p>Have a third person click Allow — they get "Not authorized." Only the room's owner can approve.</p></div>
+          <div class="callout-body"><p>Have a third person click Allow — they get "Not authorized." Only the bot's owner can approve.</p></div>
         </div>
         <div class="pass">✓ Pass — request waited for Bob's tap; only Bob could approve.</div>
       </div>
@@ -1171,7 +1172,7 @@
 
     <!-- Coding agents -->
     <h2 id="runtimes">Coding agents</h2>
-    <p class="section-intro">The relay drives any coding agent through one adapter seam. Pick the runtime per agent during <code>bun setup.ts</code>.</p>
+    <p class="section-intro">The relay drives any coding agent through one adapter seam. Pick the runtime per bot during <code>bun setup.ts</code>.</p>
 
     <div class="table-wrap">
       <table>
@@ -1194,31 +1195,42 @@
 
     <!-- access.json -->
     <h2 id="access-json">access.json reference</h2>
-    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>bun setup.ts</code> — you rarely need to edit it by hand. One entry per agent identity.</p>
+    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>bun setup.ts</code> — you rarely need to edit it by hand. Normalized into <code>me</code>, <code>bots</code>, <code>channels</code>, and <code>roster</code>.</p>
 
     <pre><code>{
-  <span class="t-ky">"agents"</span>: {
-    <span class="t-ky">"research-bot"</span>: {
-      <span class="t-ky">"name"</span>: <span class="t-st">"agent-alice"</span>,                  <span class="t-cm">// live Discord username; filled on connect</span>
-      <span class="t-ky">"ownerUserId"</span>: <span class="t-st">"184695080709324800"</span>,   <span class="t-cm">// your Discord user ID</span>
-      <span class="t-ky">"blurb"</span>: <span class="t-st">"read-only research agent for project-x"</span>,
-      <span class="t-ky">"runtime"</span>: <span class="t-st">"claude-sdk"</span>,
-      <span class="t-ky">"workspace"</span>: <span class="t-st">"/Users/alice/repos/project-x"</span>,
+  <span class="t-ky">"me"</span>: { <span class="t-ky">"discord"</span>: <span class="t-st">"184695080709324800"</span> },   <span class="t-cm">// owner id per platform — set once</span>
+
+  <span class="t-ky">"bots"</span>: {
+    <span class="t-ky">"reviewer"</span>: {
+      <span class="t-ky">"platform"</span>: <span class="t-st">"discord"</span>,
       <span class="t-ky">"tokenEnv"</span>: <span class="t-st">"DISCORD_BOT_TOKEN"</span>,        <span class="t-cm">// NAME of the .env var holding the token</span>
-      <span class="t-ky">"rooms"</span>: {
-        <span class="t-ky">"846209781206941736"</span>: {
-          <span class="t-ky">"requireMention"</span>: <span class="t-kw">true</span>,         <span class="t-cm">// only wake when @mentioned</span>
-          <span class="t-ky">"participants"</span>: {             <span class="t-cm">// peer bots this agent will hear</span>
-            <span class="t-ky">"987654321098765432"</span>: {
-              <span class="t-ky">"name"</span>: <span class="t-st">"agent-bob"</span>,
-              <span class="t-ky">"blurb"</span>: <span class="t-st">"deploy specialist"</span>
-            }
-          },
-          <span class="t-ky">"humans"</span>: [],                   <span class="t-cm">// human IDs also allowed to drive</span>
-          <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// who may approve; defaults to ownerUserId</span>
-        }
-      }
+      <span class="t-ky">"runtime"</span>: <span class="t-st">"claude-sdk"</span>,
+      <span class="t-ky">"blurb"</span>: <span class="t-st">"read-only research agent"</span>        <span class="t-cm">// displayName is fetched from Discord on connect</span>
     }
+  },
+
+  <span class="t-ky">"channels"</span>: {                              <span class="t-cm">// keyed `platform:channelId` — a channel = a project = a permission boundary</span>
+    <span class="t-ky">"discord:846209781206941736"</span>: {
+      <span class="t-ky">"platform"</span>: <span class="t-st">"discord"</span>,
+      <span class="t-ky">"channelId"</span>: <span class="t-st">"846209781206941736"</span>,
+      <span class="t-ky">"label"</span>: <span class="t-st">"#project-x"</span>,
+      <span class="t-ky">"members"</span>: [                          <span class="t-cm">// my bots here — each with its own workspace + profile</span>
+        {
+          <span class="t-ky">"bot"</span>: <span class="t-st">"reviewer"</span>,
+          <span class="t-ky">"workspace"</span>: <span class="t-st">"/Users/alice/repos/project-x"</span>,
+          <span class="t-ky">"preset"</span>: <span class="t-st">"ask-per-edit"</span>,
+          <span class="t-ky">"profile"</span>: { <span class="t-ky">"allow"</span>: [<span class="t-st">"Read(**)"</span>], <span class="t-ky">"ask"</span>: [<span class="t-st">"Bash(*)"</span>], <span class="t-ky">"deny"</span>: [<span class="t-st">"Bash(rm -rf *)"</span>] }
+        }
+      ],
+      <span class="t-ky">"collaborators"</span>: [ { <span class="t-ky">"kind"</span>: <span class="t-st">"peer"</span>, <span class="t-ky">"id"</span>: <span class="t-st">"deploy-bot"</span> } ],
+      <span class="t-ky">"requireMention"</span>: <span class="t-kw">true</span>,
+      <span class="t-ky">"approvalActorId"</span>: <span class="t-st">"184695080709324800"</span>  <span class="t-cm">// optional; defaults to me[platform]</span>
+    }
+  },
+
+  <span class="t-ky">"roster"</span>: {                                <span class="t-cm">// entered once, referenced by id from channels</span>
+    <span class="t-ky">"people"</span>: { <span class="t-ky">"alice"</span>: { <span class="t-ky">"platform"</span>: <span class="t-st">"discord"</span>, <span class="t-ky">"userId"</span>: <span class="t-st">"184695080709324800"</span> } },
+    <span class="t-ky">"peers"</span>:  { <span class="t-ky">"deploy-bot"</span>: { <span class="t-ky">"platform"</span>: <span class="t-st">"discord"</span>, <span class="t-ky">"userId"</span>: <span class="t-st">"987654321098765432"</span>, <span class="t-ky">"blurb"</span>: <span class="t-st">"deploy specialist"</span> } }
   }
 }</code></pre>
 
@@ -1234,24 +1246,24 @@
             <td>Token wrong or not loaded. Re-run <code>bun setup.ts</code> → "Save / update a bot token", then restart the relay — <code>.env</code> is read at startup.</td>
           </tr>
           <tr>
-            <td>Agent never sees room messages</td>
-            <td>(a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't registered as a participant; (c) <code>requireMention: true</code> and the message didn't @mention your bot.</td>
+            <td>Bot never sees channel messages</td>
+            <td>(a) MESSAGE CONTENT INTENT not enabled in the Developer Portal; (b) the peer bot isn't a collaborator on the channel; (c) <code>requireMention: true</code> and the message didn't @mention your bot.</td>
           </tr>
           <tr>
             <td>No approval prompt appears</td>
-            <td>The room's <code>approvalActorId</code> / agent <code>ownerUserId</code> isn't set — re-run <code>bun setup.ts</code> and reconfigure the room.</td>
+            <td>The owner id (<code>me.discord</code>) isn't set, or the channel's <code>approvalActorId</code> override is wrong — re-run <code>bun setup.ts</code>.</td>
           </tr>
           <tr>
             <td>✅ reaction does nothing</td>
-            <td>Only the room owner's reaction counts (verified by user ID). Make sure you're reacting as the user ID set in <code>ownerUserId</code>.</td>
+            <td>Only the bot owner's reaction counts (verified by user ID). Make sure you're reacting as the user ID set in <code>me</code> for that platform.</td>
           </tr>
           <tr>
-            <td>Agent skipped at startup</td>
-            <td><code>relay: agent "x" skipped</code> means its <code>tokenEnv</code> isn't set in <code>.env</code>, or its <code>workspace</code> is empty. Re-run <code>bun setup.ts</code> to fix it.</td>
+            <td>Bot missing from the startup "who's listening where" table</td>
+            <td>Its <code>tokenEnv</code> isn't set in <code>.env</code>, or it isn't a <strong>member</strong> of any channel. Re-run <code>bun setup.ts</code> to fix it.</td>
           </tr>
           <tr>
             <td>Two bots stop replying to each other</td>
-            <td>Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns. An owner/human message resets it.</td>
+            <td>Expected — the loop guard caps bot↔bot chatter after 4 consecutive turns. An owner/human message resets it.</td>
           </tr>
         </tbody>
       </table>
@@ -1260,7 +1272,7 @@
     <!-- Security -->
     <h2 id="security">Security model</h2>
 
-    <p>Peer agents connect to the channel as Discord bots, so the relay can't simply ignore bot senders. Several mechanisms keep each machine owner in control.</p>
+    <p>Peer bots connect to the channel as Discord bots, so the relay can't simply ignore bot senders. Several mechanisms keep each machine owner in control.</p>
 
     <div class="table-wrap">
       <table>
@@ -1271,28 +1283,28 @@
             <td>For the Claude SDK, <code>deny</code> rules reach <code>disallowedTools</code> and block the tool before execution. For ACP agents, the relay matches the same rules on every permission request — a denied command is auto-rejected and the owner never even sees it.</td>
           </tr>
           <tr>
-            <td>Participant allowlist</td>
-            <td>Only explicitly registered peer bots and listed humans can drive an agent. Everyone else is silently dropped.</td>
+            <td>Collaborator allowlist</td>
+            <td>Only the channel's collaborators — roster peer bots and listed people — can drive a bot. Everyone else is silently dropped.</td>
           </tr>
           <tr>
             <td>Self-ignore guard</td>
             <td>The relay drops every message whose sender ID matches its own bot ID — prevents self-loops.</td>
           </tr>
           <tr>
-            <td>Agent↔agent loop guard</td>
-            <td>A local per-room heuristic caps consecutive agent-to-agent turns (default 4); an owner or human message resets the counter.</td>
+            <td>Bot↔bot loop guard</td>
+            <td>A local per-scope heuristic caps consecutive bot-to-bot turns (default 4); an owner or human message resets the counter.</td>
           </tr>
           <tr>
             <td>Rate cap</td>
-            <td>Max 10 inbound messages per sender per 60 s. A runaway agent hits this ceiling before causing damage.</td>
+            <td>Max 10 inbound messages per sender per 60 s. A runaway bot hits this ceiling before causing damage.</td>
           </tr>
           <tr>
             <td>Prompt-injection protection</td>
-            <td><code>access.json</code> is only ever written from your terminal by <code>bun setup.ts</code>, never from a channel message — so access changes stay out of reach of untrusted input.</td>
+            <td><code>access.json</code> (including the inline membership profiles) is only ever written from your terminal by <code>bun setup.ts</code>, never from a channel message — so access changes stay out of reach of untrusted input.</td>
           </tr>
           <tr>
             <td>Owner-only approval</td>
-            <td>Button clicks and ✅ reactions are verified against the room's approver (<code>approvalActorId</code>, defaulting to <code>ownerUserId</code>). Each agent's prompts route to that agent's owner. Anyone else's action is rejected.</td>
+            <td>Button clicks and ✅ reactions are verified against the channel's approver (<code>approvalActorId</code>, defaulting to the owner <code>me[platform]</code>). Each bot's prompts route to that bot's owner. Anyone else's action is rejected.</td>
           </tr>
         </tbody>
       </table>
@@ -1320,7 +1332,7 @@
     <a href="#step-1" style="padding-left: 18px; font-size: 12px">1. Create your bot</a>
     <a href="#step-2" style="padding-left: 18px; font-size: 12px">2. Invite to server</a>
     <a href="#step-3" style="padding-left: 18px; font-size: 12px">3. Configure</a>
-    <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Register peers</a>
+    <a href="#step-5" style="padding-left: 18px; font-size: 12px">5. Add peers</a>
     <a href="#step-6" style="padding-left: 18px; font-size: 12px">6. Launch</a>
     <a href="#acceptance-tests">Acceptance tests</a>
     <a href="#version-control">Version control &amp; conflicts</a>

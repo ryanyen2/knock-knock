@@ -1,23 +1,25 @@
 # knock-knock
 
-**Agent Channels — your agents collaborate with other people's agents through shared Discord rooms.**
+**Agent Channels — your bots collaborate with other people's bots through shared Discord channels.**
 
-Your agent and a collaborator's agent each run on your own machines, connected to the same Discord channel. They can ask each other questions, request work, and answer each other directly — while every action that touches your machine still goes through *your own* permission rules. Nobody hands anyone else control of their machine.
+Your bot and a collaborator's bot each run on your own machines, connected to the same Discord channel. They can ask each other questions, request work, and answer each other directly — while every action that touches your machine still goes through *your own* permission rules. Nobody hands anyone else control of their machine.
 
-**The channel is the permission boundary.**
+**The channel is the project — and the permission boundary.**
 
 ---
 
 ## How it works
 
-- Each person runs **one Discord bot per agent** — that bot is the agent's identity in the room. One relay process can host several agents at once.
-- Agents address each other by `@mention` in the shared channel.
-- **Each task runs in its own thread.** A top-level `@mention` opens a Discord **thread** for that task; the agent does its work there, and the original message keeps a 🏁/⚠️ status reaction. The parent channel — the **room** — is what owns permissions, the roster, and the allowlist; threads inherit it. So the channel stays a readable index of tasks, and each task has its own space, activity log, and agent session.
-- **Routine reads flow automatically** — if answering only needs tools in the agent's `allow` list, the agent just answers.
-- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the thread*, `@mention`ing the owner. The owner clicks **Allow / Deny** or reacts ✅ / ❌.
-- **The `deny` list is a hard floor** — it is auto-rejected before the owner ever sees it, and cannot be reached even by an approved request. The floor is the room's, so a threaded task is governed by the same profile as a top-level one.
+The config is **channel-centric** and normalized into four nouns: a **bot** (one coding-agent identity you run = one Discord/Slack app), a **channel** (a platform channel = a project = a permission boundary), a **membership** (one of your bots active in one channel, carrying that bot's workspace folder + allow/ask/deny profile *for that project*), and a **roster** (people + peer bots you collaborate with, entered once and referenced by id). A **thread** is a single task inside a channel.
 
-The relay is **agent-agnostic** and **multi-agent**: one process can host several bot identities at once, each with its own Discord token, runtime (Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent), workspace, and rooms. See **[Getting started with different agents](docs/getting-started-agents.md)** for per-agent runtime setup, multi-agent collaboration, and the deny-floor caveat.
+- Each person runs **one Discord bot per coding-agent identity** — that bot is your identity in the channel. One relay process can host several bots at once.
+- Bots address each other by `@mention` in the shared channel.
+- **Each task runs in its own thread.** A top-level `@mention` opens a Discord **thread** for that task; the bot does its work there, and the original message keeps a 🏁/⚠️ status reaction. The bot's workspace and permissions come from its **membership** on the parent channel; threads inherit them. So the channel stays a readable index of tasks, and each task has its own space, activity log, and agent session.
+- **Routine reads flow automatically** — if answering only needs tools in the membership's `allow` list, the bot just answers.
+- **Work requests are gated** — if a tool is in the `ask` list, an approval prompt posts *in the thread*, `@mention`ing the owner. The owner clicks **Allow / Deny** or reacts ✅ / ❌.
+- **The `deny` list is a hard floor** — it is auto-rejected before the owner ever sees it, and cannot be reached even by an approved request. The floor lives on the membership, so a threaded task is governed by the same profile as a top-level one.
+
+The relay is **agent-agnostic** and **multi-bot**: one process can host several bots at once, each with its own Discord token and runtime (Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent), and a per-channel workspace + profile via its memberships. See **[Getting started with different agents](docs/getting-started-agents.md)** for per-agent runtime setup, multi-agent collaboration, and the deny-floor caveat.
 
 **Beyond request → reply, the relay adds three collaboration features:**
 
@@ -34,7 +36,7 @@ The relay is **agent-agnostic** and **multi-agent**: one process can host severa
 ## Prerequisites
 
 - [Bun](https://bun.sh) installed (`curl -fsSL https://bun.sh/install | bash`)
-- A Discord server (guild) that **both collaborators are members of**, with one channel to use as the room
+- A Discord server (guild) that **both collaborators are members of**, with one channel to use as the project
 - **Discord Developer Mode on** (User Settings → Advanced → Developer Mode) so you can copy IDs
 - For the default `claude-sdk` runtime: `ANTHROPIC_API_KEY` set, or an existing `claude` login (`claude login`)
 
@@ -43,13 +45,13 @@ The relay is **agent-agnostic** and **multi-agent**: one process can host severa
 ## Quick start
 
 ```bash
-bun setup.ts                  # interactive: configure an agent → room → token
-bun relay.ts                  # start the relay
+bun setup.ts                  # interactive: bot → channel (workspace + preset) → token
+bun relay.ts                  # start the relay (prints who's listening where)
 ```
 
-`bun setup.ts` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run, then an action menu once an agent exists. Re-run it any time to add agents, rooms, peers, humans, or bot tokens.
+`bun setup.ts` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run (bot → channel → token → ledger), then a status dashboard + action menu once a bot exists. Re-run it any time to add a bot, add/edit a channel, add a person or peer to the roster, or save a token.
 
-> **Want a guided, top-to-bottom walkthrough?** The **[Setup guide](docs/setup.md)** takes you from zero to a running group chat step by step — platform setup, picking a runtime, choosing a permission preset, verifying it works, and adding a teammate's agent — linking into the deep docs as it goes. Start there if this is your first time.
+> **Want a guided, top-to-bottom walkthrough?** The **[Setup guide](docs/setup.md)** takes you from zero to a running group chat step by step — platform setup, picking a runtime, choosing a permission preset, verifying it works, and adding a teammate's bot — linking into the deep docs as it goes. Start there if this is your first time.
 
 ---
 
@@ -79,78 +81,76 @@ At [discord.com/developers/applications](https://discord.com/developers/applicat
 
 In Discord (Developer Mode on): find your bot in the member list → right-click → **Copy User ID**. You'll exchange this with your collaborator in step 5.
 
-## 4. Configure your agent and save your token
+## 4. Configure your bot and channel, and save your token
 
 You'll need the **channel ID** of `#project-x` (right-click the channel → **Copy Channel ID**) and **your own Discord user ID** (right-click yourself → **Copy User ID**).
 
 ```bash
-bun setup.ts                  # guided wizard: identity → room → token
+bun setup.ts                  # guided wizard: bot → channel (workspace + preset) → token
 ```
 
 The wizard asks for:
 
-- **Your Discord user ID** — the human owner; approval prompts ping this ID
-- **Blurb** — one line peers see, e.g. `read-only research agent for project-x`
-- **Runtime** — arrow-key pick (`claude-sdk`, `claude-acp`, `opencode`, `codex`, `gemini`, or `acp`)
-- **Workspace** — the absolute path your agent works in
-- **Sandbox** — optionally confine the agent's writes to the workspace / block network at the OS level (ACP runtimes; see [Permissions & security](docs/security-and-permissions.md))
-- **Room channel ID** — the `#project-x` channel ID
-- **What the agent may do** — pick a **permission preset** (strict / ask-per-edit / auto / bypass); writes a `settings.json` profile (`allow` / `ask` / `deny`)
-- **Bot token** — masked input; stored in `.env` under the agent's `tokenEnv`
+- **Bot key** — a short local nickname (e.g. `reviewer`). The bot's display name is fetched from Discord on connect, never typed.
+- **Platform & runtime** — Discord (the production path), then the coding agent: arrow-key pick (`claude-sdk`, `claude-acp`, `opencode`, `codex`, `gemini`, or `acp`)
+- **Sandbox** — optionally confine the bot's writes to its workspace / block network at the OS level (ACP runtimes; see [Permissions & security](docs/security-and-permissions.md))
+- **Your Discord user ID** — the owner; approval prompts ping this ID. Asked **once per platform** (`me.discord`), then reused for every bot.
+- **Channel ID** — the `#project-x` channel ID. A channel is the project = the permission boundary.
+- **Members** — which of your bots work in this channel. For each, its **workspace** (the absolute path it works in *for this channel*) and a **permission preset** (strict / ask-per-edit / auto / bypass), expanded inline into the membership's `allow` / `ask` / `deny`.
+- **Collaborators** — people and peer bots in this channel, picked from your **roster** (or "+ add new", which registers them once for reuse)
+- **Bot token** — masked input; stored in `.env` under the bot's `tokenEnv`
 - **Ledger backend** — local SQLite, or remote Postgres for cross-machine collaboration (recommended)
 
-After the first run, re-run `bun setup.ts` to open the action menu for adding rooms, registering peers, allowing humans, or saving/updating a token.
+After the first run, re-run `bun setup.ts` to open the status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, or save/update a token.
 
-> **No agent name is asked for.** The agent's name is its live Discord bot username. To rename the agent, rename the bot in the Discord Developer Portal.
+> **No bot name is asked for.** The bot's name is its live Discord username. To rename it, rename the bot in the Discord Developer Portal.
 
 ## 5. Exchange bot User IDs
 
 Alice tells Bob her bot's User ID; Bob tells Alice his.
 
-## 6. Register each other as peers
+## 6. Add each other to the roster, then to the channel
 
 ```bash
-bun setup.ts                  # choose "Register a peer bot"
+bun setup.ts                  # "Add a peer bot to the roster" → then "Add / edit a channel"
 ```
 
-Alice registers Bob's bot; Bob registers Alice's bot, each with a short blurb (e.g. `deploy specialist`). The relay re-reads the access file on every inbound message, so this takes effect immediately — no restart.
+Alice adds Bob's bot to her **roster** as a peer (id + a short blurb like `deploy specialist`), then adds it as a **collaborator** of `#project-x` (picked from the roster); Bob does the same with Alice's bot. The relay re-reads the access file on every inbound message, so this takes effect immediately — no restart.
 
-## 7. Launch each agent
+## 7. Launch each bot
 
-Everything the relay needs (runtime, workspace, token) lives in `access.json` and `.env`, so just:
+Everything the relay needs (runtime, per-channel workspace, profile, token) lives in `access.json` and `.env`, so just:
 
 ```bash
 bun relay.ts
 ```
 
-When the bot connects you'll see `relay [<agentKey>]: connected as <bot>#1234` in stderr.
+The relay prints a **"who's listening where"** table — each bot, its channels, and the workspace it uses in each — flagging any channel claimed by more than one of your bots, then `relay [<botKey>]: connected as <bot>#1234`.
 
-The room's permission profile is read from:
+Each membership's permission profile is stored **inline** in `access.json` under
+the channel's `members` — no separate per-room file. A channel governs every task
+thread spawned under it, so one profile covers the channel and all its threads.
 
-```
-~/.claude/channels/knock-knock/rooms/<agentKey>/<channelId>.settings.json
-```
-
-`<channelId>` is the **room** — the parent text channel. Threaded tasks resolve
-back to it, so one profile governs the channel and every task thread under it.
-
-Format:
+The profile keeps the familiar `allow` / `ask` / `deny` shape (plus optional
+per-actor `tiers`):
 
 ```jsonc
 {
-  "_mode": "ask-per-edit",        // the preset this was stamped from (a hint; safe to ignore)
-  "allow": ["Read(**)"],          // auto-approved, no prompt
-  "ask":   ["Bash(*)"],           // posts Allow/Deny buttons to Discord
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"],  // hard floor, never runs
+  "preset": "ask-per-edit",       // the preset this membership was stamped from
+  "profile": {
+    "allow": ["Read(**)"],        // auto-approved, no prompt
+    "ask":   ["Bash(*)"],         // posts Allow/Deny buttons to Discord
+    "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"],  // hard floor, never runs
 
-  // optional: narrow what a peer/human may do on this agent's behalf.
-  // deny is always unioned with the base floor; a tier can only tighten.
-  "tiers": { "agent": { "allow": ["Read(**)"], "ask": [], "deny": ["Edit(**)", "Write(**)", "Bash(*)"] } }
+    // optional: narrow what a peer/human may do on this bot's behalf.
+    // deny is always unioned with the base floor; a tier can only tighten.
+    "tiers": { "agent": { "allow": ["Read(**)"], "ask": [], "deny": ["Edit(**)", "Write(**)", "Bash(*)"] } }
+  }
 }
 ```
 
-You normally don't write this by hand — `bun setup.ts → "Set room permissions"`
-picks a preset and (optionally) per-peer tiers for you. Full guide:
+You normally don't write this by hand — `bun setup.ts` picks a preset (and
+optionally per-peer tiers) per membership for you. Full guide:
 **[Permissions & security](docs/security-and-permissions.md)**.
 
 ---
@@ -163,7 +163,7 @@ Start the relay:
 bun relay.ts
 ```
 
-With the room profile configured as:
+With the membership's profile configured as:
 
 ```jsonc
 { "allow": ["Read(**)"], "ask": ["Bash(*)"], "deny": ["Bash(rm -rf *)", "Bash(sudo *)"] }
@@ -179,7 +179,7 @@ With the room profile configured as:
 
 `@mention` the bot: *"run the test suite"*
 
-**Pass:** in the task thread, an Allow/Deny prompt appears mentioning the owner. A non-owner clicking Allow gets "Not authorized." The owner clicking Allow runs the command and the result is posted. (The deny floor is the parent room's profile — the thread inherits it.)
+**Pass:** in the task thread, an Allow/Deny prompt appears mentioning the owner. A non-owner clicking Allow gets "Not authorized." The owner clicking Allow runs the command and the result is posted. (The deny floor is the membership's profile on the parent channel — the thread inherits it.)
 
 ### T3 — Hard deny floor
 
@@ -220,10 +220,10 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 | Symptom | Likely cause / fix |
 |---------|--------------------|
 | Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts`, choose "Save / update a bot token", and check `~/.claude/channels/knock-knock/.env`. |
-| Agent never sees room messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the channel isn't in the agent's `rooms`. |
-| No approval prompt appears | The room's `approvalActorId` / agent `ownerUserId` not set — re-run `bun setup.ts` and reconfigure the room. |
-| ✅ reaction does nothing | Only the agent **owner's** reaction counts (verified by user ID). |
-| Agent skipped at startup (`agent "x" skipped`) | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts` → "Save / update a bot token") or its `workspace` is empty (run `bun setup.ts` and re-add/fix the agent). |
+| Bot never sees channel messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the bot isn't a **member** of that channel. |
+| No approval prompt appears | The owner id (`me.discord`) isn't set, or the channel's `approvalActorId` override is wrong — re-run `bun setup.ts`. |
+| ✅ reaction does nothing | Only the bot **owner's** reaction counts (verified by user ID). |
+| Bot missing from the startup "who's listening where" table | Its `tokenEnv` isn't set in `.env` (run `bun setup.ts` → "Save / update a bot token") or it isn't a member of any channel (run `bun setup.ts` → "Add / edit a channel"). |
 | Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns *within a task thread*. An owner/human message resets it. |
 | Agent keeps context between messages | Expected — the relay maintains a session per task thread and resumes it on each turn. |
 | Bot replies in the channel instead of a thread | It lacks **Create Public Threads** / **Send Messages in Threads** permission (re-invite with those, step 2), or the message was a reply inside an existing thread. |
@@ -236,36 +236,54 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 | Flow | Purpose |
 |------|---------|
-| First run | Guided wizard: create an agent, add a room, save a token |
-| Later runs | Action menu: add agents, rooms, peers, humans, or update a bot token |
+| First run | Guided wizard: create a bot, add a channel (workspace + preset + collaborators), save a token, choose ledger |
+| Later runs | Status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, save a token, choose ledger backend, remove |
 
 ### `access.json`
 
-State at `~/.claude/channels/knock-knock/access.json` — one entry per agent:
+State at `~/.claude/channels/knock-knock/access.json` — normalized into `me`, `bots`, `channels`, and `roster`:
 
 ```jsonc
 {
-  "agents": {
-    "research-bot": {
-      "name": "agent-A",                      // live Discord username; filled on connect
-      "ownerUserId": "184695080709324800",    // human owner — approval prompts ping this ID
-      "blurb": "read-only research agent for project-x",
-      "runtime": "claude-sdk",                // claude-sdk | claude-acp | opencode | codex | gemini | acp
-      "workspace": "/Users/alice/repos/project-x",
-      "tokenEnv": "DISCORD_BOT_TOKEN",        // NAME of the .env var holding this bot's token
-      "sandbox": { "fs": "workspace", "network": "deny" },  // optional, ACP runtimes only
-      "rooms": {
-        "846209781206941736": {
-          "requireMention": true,
-          "participants": {
-            "987654321098765432": { "name": "agent-B", "blurb": "deploy specialist" }
-          },
-          "humans": [],
-          "approvalActorId": "184695080709324800"  // who may click Allow/Deny; defaults to ownerUserId
-        }
-      }
+  "me": { "discord": "184695080709324800" },   // owner id per platform — set once
+
+  "bots": {
+    "reviewer": {
+      "platform": "discord",
+      "tokenEnv": "DISCORD_BOT_TOKEN",          // NAME of the .env var holding this bot's token
+      "runtime": "claude-sdk",                  // claude-sdk | claude-acp | opencode | codex | gemini | acp
+      "blurb": "read-only research agent",      // optional; peers see this
+      "sandbox": { "fs": "workspace", "network": "deny" }  // optional, ACP runtimes only
+      // displayName is cached from the platform on connect — never typed
     }
   },
+
+  "channels": {                                 // keyed `${platform}:${channelId}` — a channel = a project = a permission boundary
+    "discord:846209781206941736": {
+      "platform": "discord",
+      "channelId": "846209781206941736",
+      "label": "#project-x",                    // friendly project name (cosmetic)
+      "members": [                              // my bots active here — each carries its own workspace + profile
+        {
+          "bot": "reviewer",
+          "workspace": "/Users/alice/repos/project-x",
+          "preset": "ask-per-edit",
+          "profile": { "allow": ["Read(**)"], "ask": ["Bash(*)"], "deny": ["Bash(rm -rf *)", "Bash(sudo *)"] }
+        }
+      ],
+      "collaborators": [                         // humans + peer bots, by roster id
+        { "kind": "peer", "id": "deploy-bot" }
+      ],
+      "requireMention": true,
+      "approvalActorId": "184695080709324800"    // optional override; defaults to me[platform]
+    }
+  },
+
+  "roster": {                                    // entered once, referenced by id from channels
+    "people": { "alice": { "platform": "discord", "userId": "184695080709324800", "label": "alice" } },
+    "peers":  { "deploy-bot": { "platform": "discord", "userId": "987654321098765432", "blurb": "deploy specialist" } }
+  },
+
   "mentionPatterns": [],   // optional
   "ackReaction": "👀"      // optional
 }
@@ -278,22 +296,22 @@ State at `~/.claude/channels/knock-knock/access.json` — one entry per agent:
 ```
 bun test              # full suite: pure decision logic (lib.test.ts) + the ledger
 bun run typecheck     # tsc --noEmit
-bun relay.ts          # start the relay (reads agents from access.json)
+bun relay.ts          # start the relay (reads bots/channels from access.json)
 bun setup.ts          # interactive setup wizard / menu
 ```
 
-`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), tool classification (`classifyTool`), and the room/scope resolution (`resolveRoomForScope`) — all unit-testable without a live messaging connection. `state.ts` is the only module that does config file I/O. `AgentHost` is the messaging ↔ ledger router (Discord today, via a platform-neutral `MessagingAdapter` seam); its feature clusters live as focused collaborators in `host/` (`Workbench`, `ConflictUI`, `WatchControl`, `SessionSharing`) behind a narrow `HostContext`. The relay's core is **ledger-native** — an append-only DAG of Interactions with folds and synchronizations on top.
+`lib.ts` holds the pure, security-critical decision logic — who may send (`guildSenderAllowed`), who may approve (`approverForAgent`), tool classification (`classifyTool`), and the channel/scope resolution (`resolveChannelForScope`) — all unit-testable without a live messaging connection. `state.ts` is the only module that does config file I/O. `AgentHost` is the messaging ↔ ledger router (Discord today, via a platform-neutral `MessagingAdapter` seam); its feature clusters live as focused collaborators in `host/` (`Workbench`, `ConflictUI`, `WatchControl`, `SessionSharing`) behind a narrow `HostContext`. The relay's core is **ledger-native** — an append-only DAG of Interactions with folds and synchronizations on top.
 
-**Room vs scope.** An interaction's `channel` is the task **scope** (a thread, or a plain channel); permission profiles, the roster, and routing are keyed by the **room** (the parent channel). `AgentHost.roomForScope` is the one seam between them — and permission classification always resolves scope→room, so a threaded task can never slip the deny floor. See [`docs/knock-knock-ledger-model.md`](docs/knock-knock-ledger-model.md) for the full architecture.
+**Channel vs scope.** An interaction's `channel` is the task **scope** (a thread, or a plain channel); the workspace, permission profile, roster, and routing come from the bot's **membership** on the parent **channel** (the project). `AgentHost.roomForScope` is the one seam between them — and permission classification always resolves scope→channel, so a threaded task can never slip the deny floor. See [`docs/knock-knock-ledger-model.md`](docs/knock-knock-ledger-model.md) for the full architecture.
 
 ---
 
 ## Security notes
 
-- **Presets, tiers & sandbox.** Pick a permission preset (strict / ask-per-edit / auto / bypass) per room, narrow what peers may do with per-actor tiers, and optionally confine an ACP agent at the OS level (workspace-only writes, network off). Full friendly guide: **[Permissions & security](docs/security-and-permissions.md)**.
-- **Owner-only approval.** Button clicks and ✅ reactions are verified against the room's `approvalActorId` (defaults to the agent's `ownerUserId`); anyone else's click is rejected. Each agent's prompts route to *that agent's* owner.
+- **Presets, tiers & sandbox.** Pick a permission preset (strict / ask-per-edit / auto / bypass) per **membership** (a bot in a channel), narrow what peers may do with per-actor tiers, and optionally confine an ACP agent at the OS level (workspace-only writes, network off). Full friendly guide: **[Permissions & security](docs/security-and-permissions.md)**.
+- **Owner-only approval.** Button clicks and ✅ reactions are verified against the channel's `approvalActorId` (defaults to the owner, `me[platform]`); anyone else's click is rejected. Each bot's prompts route to *that bot's* owner.
 - **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode), or be **OS-sandboxed**. Every preset keeps the floor — even `bypass`. See [the deny-floor caveat](docs/getting-started-agents.md).
-- **Prompt-injection protection.** `access.json`, room profiles, and `settings.json` are written only from your terminal (the setup CLI) and are never mutated from channel messages — all access, permission, and backend changes are out of reach of untrusted input.
+- **Prompt-injection protection.** `access.json` (including the inline membership profiles) and `settings.json` are written only from your terminal (the setup CLI) and are never mutated from channel messages — all access, permission, and backend changes are out of reach of untrusted input.
 - **Agent↔agent loop guard.** A local per-scope heuristic caps consecutive agent-to-agent turns (default 4) within a task thread; an owner/human message resets it.
 - **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).
 

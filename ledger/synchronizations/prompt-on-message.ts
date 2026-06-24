@@ -33,10 +33,19 @@ export type AgentForChannel = {
 }
 
 export type PromptOnMessageOpts = {
-  /** Resolve the agent for a channel; null if no agent listens here. */
-  getAgentForChannel: (channelId: ChannelId) => AgentForChannel | undefined
+  /** Resolve the agent for a channel; null if no agent listens here.
+   *  `preferAgentKey` is the bot the inbound was addressed to (stamped on the
+   *  message); the resolver routes to it when it serves the channel, so two of my
+   *  bots in one channel don't cross-handle each other's messages. */
+  getAgentForChannel: (channelId: ChannelId, preferAgentKey?: string) => AgentForChannel | undefined
   /** Optional clock for tests. */
   now?: () => number
+}
+
+/** The bot a `channel.message` was addressed to, stamped by the admitting host. */
+function targetAgentHint(patch: unknown): string | undefined {
+  const args = (patch as { intent?: { args?: { targetAgent?: unknown } } })?.intent?.args
+  return typeof args?.targetAgent === 'string' ? args.targetAgent : undefined
 }
 
 export function promptOnMessage(opts: PromptOnMessageOpts): Synchronization {
@@ -47,7 +56,7 @@ export function promptOnMessage(opts: PromptOnMessageOpts): Synchronization {
       i.verb === 'channel.message' &&
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
     fire: async (i, ctx) => {
-      const agentInfo = opts.getAgentForChannel(i.channel)
+      const agentInfo = opts.getAgentForChannel(i.channel, targetAgentHint(i.patch))
       if (!agentInfo) return // no agent listens on this channel
 
       // The sender's role-in-channel is snapshotted on the inbound

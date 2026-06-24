@@ -13,7 +13,7 @@ import {
   DEFAULT_PRESET,
   expandPreset,
   resolveProfileForActor,
-  resolveRoomForScope,
+  resolveChannelForScope,
   resolveReactionScope,
   resolveLedgerConfig,
   loopGuard,
@@ -49,9 +49,12 @@ import {
   formatAttachedFilesBlock,
   parseShareCommand,
   FILE_INGEST_LIMITS,
+  channelKey,
+  projectToRuntime,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
+  type AuthoringAccess,
 } from './lib.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
@@ -155,27 +158,103 @@ test('resolveProfileForActor: deny is the union of base + all applicable tiers',
   expect(out.deny).toContain('Write(/etc/**)')
 })
 
-// ─── resolveRoomForScope ─────────────────────────────────────────────────────
+// ─── resolveChannelForScope ─────────────────────────────────────────────────────
 
 const ROOMS: Record<string, RoomConfig> = {
   ROOM1: { requireMention: true, participants: {}, humans: [] },
 }
 
-test('resolveRoomForScope: a served room id resolves to itself', () => {
-  expect(resolveRoomForScope('ROOM1', ROOMS, new Map(), () => undefined)).toBe('ROOM1')
+test('resolveChannelForScope: a served room id resolves to itself', () => {
+  expect(resolveChannelForScope('ROOM1', ROOMS, new Map(), () => undefined)).toBe('ROOM1')
 })
 
-test('resolveRoomForScope: a thread resolves to its parent via the memo', () => {
+test('resolveChannelForScope: a thread resolves to its parent via the memo', () => {
   const memo = new Map([['THREAD1', 'ROOM1']])
-  expect(resolveRoomForScope('THREAD1', ROOMS, memo, () => undefined)).toBe('ROOM1')
+  expect(resolveChannelForScope('THREAD1', ROOMS, memo, () => undefined)).toBe('ROOM1')
 })
 
-test('resolveRoomForScope: a thread resolves to its parent via the parentOf probe', () => {
-  expect(resolveRoomForScope('THREAD1', ROOMS, new Map(), id => (id === 'THREAD1' ? 'ROOM1' : undefined))).toBe('ROOM1')
+test('resolveChannelForScope: a thread resolves to its parent via the parentOf probe', () => {
+  expect(resolveChannelForScope('THREAD1', ROOMS, new Map(), id => (id === 'THREAD1' ? 'ROOM1' : undefined))).toBe('ROOM1')
 })
 
-test('resolveRoomForScope: an unresolved scope returns undefined (fail-restrictive)', () => {
-  expect(resolveRoomForScope('UNKNOWN', ROOMS, new Map(), () => undefined)).toBeUndefined()
+test('resolveChannelForScope: an unresolved scope returns undefined (fail-restrictive)', () => {
+  expect(resolveChannelForScope('UNKNOWN', ROOMS, new Map(), () => undefined)).toBeUndefined()
+})
+
+// ─── projectToRuntime (channel-centric authoring → agent-keyed runtime) ───────
+
+const AUTHORING: AuthoringAccess = {
+  me: { discord: 'OWNER_D', slack: 'OWNER_S' },
+  bots: {
+    reviewer: { platform: 'discord', tokenEnv: 'REVIEWER_TOKEN', runtime: 'claude-sdk', blurb: 'reviews code' },
+    builder: { platform: 'slack', tokenEnv: 'BUILDER_TOKEN', appTokenEnv: 'BUILDER_APP', runtime: 'acp' },
+  },
+  channels: {
+    'discord:C_INFRA': {
+      platform: 'discord',
+      channelId: 'C_INFRA',
+      members: [{ bot: 'reviewer', workspace: '/repos/infra', profile: { allow: ['Read(**)'], ask: [], deny: ['Bash(*)'] } }],
+      collaborators: [{ kind: 'human', id: 'alice' }, { kind: 'peer', id: 'carol' }],
+      requireMention: true,
+    },
+    'discord:C_WEB': {
+      platform: 'discord',
+      channelId: 'C_WEB',
+      members: [{ bot: 'reviewer', workspace: '/repos/web' }],
+      collaborators: [{ kind: 'human', id: 'alice' }],
+    },
+    'slack:C_Z': {
+      platform: 'slack',
+      channelId: 'C_Z',
+      members: [{ bot: 'builder', workspace: '/repos/z' }],
+      collaborators: [{ kind: 'human', id: 'bob' }],
+    },
+  },
+  roster: {
+    people: {
+      alice: { platform: 'discord', userId: 'U_ALICE' },
+      bob: { platform: 'slack', userId: 'U_BOB' },
+    },
+    peers: { carol: { platform: 'discord', userId: 'U_CAROL', blurb: 'docs writer', label: 'carol-bot' } },
+  },
+}
+
+test('projectToRuntime: each bot becomes one runtime agent with platform + token + owner', () => {
+  const rt = projectToRuntime(AUTHORING)
+  expect(Object.keys(rt.agents).sort()).toEqual(['builder', 'reviewer'])
+  expect(rt.agents.reviewer!.platform).toBe('discord')
+  expect(rt.agents.reviewer!.ownerUserId).toBe('OWNER_D') // from me[platform], not re-typed
+  expect(rt.agents.builder!.ownerUserId).toBe('OWNER_S')
+  expect(rt.agents.builder!.appTokenEnv).toBe('BUILDER_APP')
+})
+
+test('projectToRuntime: a bot is a member only of its own-platform channels (per-channel workspace)', () => {
+  const rt = projectToRuntime(AUTHORING)
+  // reviewer is in both discord channels, not the slack one.
+  expect(Object.keys(rt.agents.reviewer!.rooms).sort()).toEqual(['C_INFRA', 'C_WEB'])
+  expect(rt.agents.reviewer!.rooms.C_INFRA!.workspace).toBe('/repos/infra')
+  expect(rt.agents.reviewer!.rooms.C_WEB!.workspace).toBe('/repos/web')
+  // builder only sees its slack channel.
+  expect(Object.keys(rt.agents.builder!.rooms)).toEqual(['C_Z'])
+})
+
+test('projectToRuntime: collaborators resolve from the roster into participants/humans', () => {
+  const rt = projectToRuntime(AUTHORING)
+  const infra = rt.agents.reviewer!.rooms.C_INFRA!
+  expect(infra.humans).toEqual(['U_ALICE']) // person id → platform userId
+  expect(infra.participants.U_CAROL).toEqual({ blurb: 'docs writer', name: 'carol-bot' })
+  expect(infra.requireMention).toBe(true)
+})
+
+test('projectToRuntime: inline membership profile is carried onto the room', () => {
+  const rt = projectToRuntime(AUTHORING)
+  expect(rt.agents.reviewer!.rooms.C_INFRA!.profile).toEqual({ allow: ['Read(**)'], ask: [], deny: ['Bash(*)'] })
+  expect(rt.agents.reviewer!.rooms.C_WEB!.profile).toBeUndefined() // no inline profile set
+})
+
+test('channelKey: namespaces a channel id by platform', () => {
+  expect(channelKey('discord', 'C1')).toBe('discord:C1')
+  expect(channelKey('slack', 'C1')).not.toBe(channelKey('discord', 'C1'))
 })
 
 // ─── resolveReactionScope ────────────────────────────────────────────────────

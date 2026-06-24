@@ -43,7 +43,7 @@ import {
   approverForAgent,
   isShareSessionCommand,
   isResumeSessionCommand,
-  resolveRoomForScope,
+  resolveChannelForScope,
   resolveReactionScope,
   resolveProfileForActor,
   threadNameFromPrompt,
@@ -343,7 +343,7 @@ export class AgentHost {
    */
   roomForScope(scopeId: ChannelId): ChannelId | undefined {
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    const roomId = resolveRoomForScope(scopeId, liveAgent.rooms, this.scopeToRoom, id =>
+    const roomId = resolveChannelForScope(scopeId, liveAgent.rooms, this.scopeToRoom, id =>
       this.messaging.parentOfSync(id),
     )
     // Memoize a freshly-probed thread→parent mapping so the next lookup is cheap.
@@ -796,7 +796,11 @@ export class AgentHost {
   auditProfileForScope(agentKey: string, scopeId: ChannelId): PermissionProfile | undefined {
     const roomId = this.roomForScope(scopeId)
     if (!roomId) return undefined
-    const base = readRoomSettings(agentKey, roomId)
+    // Prefer the membership's inline profile (channel-centric authoring shape);
+    // fall back to the on-disk per-channel settings file — same precedence the
+    // enforced session profile uses, so the audit matches enforcement.
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const base = liveAgent.rooms[roomId]?.profile ?? readRoomSettings(agentKey, roomId)
     const mode = this.channelConfigFor(scopeId).permissionPreset
     return mode ? applyModeToProfile(base, mode) : base
   }
@@ -970,7 +974,17 @@ export class AgentHost {
         intent: {
           channel: this.messaging.platform,
           op: 'received',
-          args: { text: m.text, messageId: m.ref.id, ...(attachmentMeta ? { attachments: attachmentMeta } : {}) },
+          // Stamp WHICH bot this inbound is for: only the host whose mention-gate
+          // passed reaches this admit, so this is the bot the user addressed.
+          // prompt-on-message routes the drive to it instead of array-first —
+          // so two of my bots in one channel don't cross-handle each other's
+          // messages. attachments (URL-free) ride along for the ingest sync.
+          args: {
+            text: m.text,
+            messageId: m.ref.id,
+            targetAgent: this.key,
+            ...(attachmentMeta ? { attachments: attachmentMeta } : {}),
+          },
         },
       },
       effect: 'external',
@@ -1273,12 +1287,16 @@ export class AgentHost {
     const existing = this.sessions.get(channelId)
     if (existing) return existing
 
-    // The adapter's deny floor (applyPolicy) is the real enforcement point —
-    // read the ROOM's profile, resolving scope→room so a threaded session is
-    // governed by the same floor as a top-level one.
-    const profile = readRoomSettings(this.key, this.roomForScope(channelId) ?? channelId)
+    // The adapter's deny floor (applyPolicy) is the real enforcement point. Prefer
+    // the membership's inline profile (channel-centric authoring shape); fall back
+    // to the on-disk per-channel settings file. Resolve scope→room either way so a
+    // threaded session is governed by the same floor as a top-level one.
+    const profile = room.profile ?? readRoomSettings(this.key, this.roomForScope(channelId) ?? channelId)
+    // Workspace is membership-scoped: a bot can work in a different folder per
+    // channel/project. Fall back to the bot's default workspace when unset.
+    const workspace = room.workspace ?? liveAgent.workspace
     const adapter = makeAdapter(liveAgent.runtime, {
-      workspace: liveAgent.workspace,
+      workspace,
       watchTools: this.watchControl.toolsFor(channelId),
       sandbox: liveAgent.sandbox,
     })
@@ -1335,7 +1353,7 @@ export class AgentHost {
     const binding = readSessionBinding(this.key, channelId)
     if (binding) {
       const runtimeOk = sessionRuntimeForAgent(liveAgent.runtime) === binding.runtime
-      const workspaceOk = !binding.workspace || binding.workspace === liveAgent.workspace
+      const workspaceOk = !binding.workspace || binding.workspace === workspace
       if (runtimeOk && workspaceOk) {
         created.driver.bindSession(binding.sessionId)
         this.ui.note(this.key, `rebinding ${binding.runtime} session ${binding.sessionId.slice(0, 8)} in ${channelId}`)

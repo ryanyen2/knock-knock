@@ -192,10 +192,17 @@ for (const [key, agent] of selectedEntries) {
     )
     continue
   }
+  if (Object.keys(agent.rooms).length === 0) {
+    process.stderr.write(
+      `relay: bot "${key}" skipped — it isn't a member of any channel, so it has\n` +
+        `  nothing to listen to. Add it to a channel with \`bun setup.ts\`.\n`,
+    )
+    continue
+  }
   if (!agent.workspace) {
     process.stderr.write(
-      `relay: agent "${key}" skipped — workspace is not set.\n` +
-        `  Run \`bun setup.ts\` to configure it.\n`,
+      `relay: bot "${key}" skipped — no workspace folder set for its channels.\n` +
+        `  Run \`bun setup.ts\` → add/edit channel to set one.\n`,
     )
     continue
   }
@@ -208,6 +215,40 @@ for (const [key, agent] of selectedEntries) {
 if (hosts.length === 0) {
   process.stderr.write('relay: no agents could be started — check token env vars above.\n')
   process.exit(1)
+}
+
+// ─── Who's listening where ──────────────────────────────────────────────────
+// "Which bot is actually listening?" should never be a mystery. Print a compact
+// map of every started bot → the channels it serves (and the folder it works in
+// per channel). A channel claimed by more than one started bot is flagged: an
+// @mention routes to the addressed bot, but with @mention not required both will
+// respond — usually you want require-mention on for shared channels.
+{
+  const lines: string[] = ['relay: listening —']
+  const claimants = new Map<string, string[]>() // channelId → bot keys
+  for (const { key } of bootEntries) {
+    const agent = access.agents[key]
+    if (!agent) continue
+    const rooms = Object.entries(agent.rooms)
+    lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime}`)
+    if (rooms.length === 0) lines.push('      (no channels — add one with `bun setup.ts`)')
+    for (const [channelId, room] of rooms) {
+      lines.push(
+        `      #${channelId}  →  ${room.workspace ?? agent.workspace}` +
+          (room.requireMention ? '  (@mention required)' : ''),
+      )
+      claimants.set(channelId, [...(claimants.get(channelId) ?? []), key])
+    }
+  }
+  for (const [channelId, bots] of claimants) {
+    if (bots.length > 1) {
+      lines.push(
+        `  ⚠ channel #${channelId} has ${bots.length} bots (${bots.join(', ')}); ` +
+          `@mention each by name. Without require-mention, all of them respond.`,
+      )
+    }
+  }
+  process.stderr.write(lines.join('\n') + '\n')
 }
 
 // Synchronizations — behavior is one new file per synchronization (rubric #2).
@@ -281,12 +322,17 @@ synchronizer.register(
 )
 synchronizer.register(
   promptOnMessage({
-    getAgentForChannel: channelId => {
+    getAgentForChannel: (channelId, preferAgentKey) => {
+      // Route to the bot the message was addressed to when it serves this channel;
+      // otherwise the first serving host (back-compat for un-stamped messages).
+      let fallback: ReturnType<AgentHost['getAgentForChannel']>
       for (const h of hosts) {
         const r = h.getAgentForChannel(channelId)
-        if (r) return r
+        if (!r) continue
+        if (preferAgentKey && r.agentKey === preferAgentKey) return r
+        fallback ??= r
       }
-      return undefined
+      return fallback
     },
   }),
 )

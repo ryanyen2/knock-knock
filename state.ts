@@ -4,18 +4,21 @@
  * No top-level side effects; safe to import without touching Discord.
  */
 
-import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, renameSync, rmSync, existsSync, copyFileSync } from 'fs'
 import { homedir } from 'os'
 import { join, dirname } from 'path'
 import {
   type Access,
   type AgentConfig,
+  type AuthoringAccess,
   type KnockSettings,
   type RoomProfile,
   type ActorTiers,
   defaultAccess,
+  defaultAuthoringAccess,
   defaultSettings,
   DENY_FLOOR,
+  projectToRuntime,
 } from './lib.ts'
 import type { PermissionProfile } from './agent-adapter.ts'
 
@@ -108,16 +111,28 @@ export function readRoomSettings(agentKey: string, channelId: string): RoomProfi
   return profile
 }
 
-/** Read the access file. Missing → defaults; corrupt → moved aside, then defaults. */
+/**
+ * Read the access file as the agent-keyed RUNTIME shape the relay/hosts consume.
+ *
+ * access.json is authored in the normalized, channel-centric `AuthoringAccess`
+ * shape (a `bots` table + `channels` + `roster`); this projects it down via
+ * `projectToRuntime`. A legacy file written in the agent-keyed shape (top-level
+ * `agents`, no `bots`) is still honored as-is, so an existing config keeps working
+ * without a migration step.
+ *
+ * Missing → defaults; corrupt → moved aside, then defaults.
+ */
 export function readAccessFile(): Access {
   try {
-    const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Partial<Access>
+    const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
+    if (isAuthoringShape(parsed)) return projectToRuntime(parseAuthoringAccess(parsed))
+    // Legacy agent-keyed shape — honor as-is.
     return {
       agents: parsed.agents && typeof parsed.agents === 'object'
         ? (parsed.agents as Record<string, AgentConfig>)
         : {},
-      mentionPatterns: parsed.mentionPatterns,
-      ackReaction: parsed.ackReaction,
+      mentionPatterns: parsed.mentionPatterns as string[] | undefined,
+      ackReaction: parsed.ackReaction as string | undefined,
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
@@ -129,6 +144,63 @@ export function readAccessFile(): Access {
   }
 }
 
+/** A parsed access.json is in the new authoring shape iff it has a `bots` table. */
+function isAuthoringShape(parsed: Record<string, unknown>): boolean {
+  return !!parsed.bots && typeof parsed.bots === 'object' && !Array.isArray(parsed.bots)
+}
+
+/** Coerce raw JSON into a well-formed `AuthoringAccess`, dropping malformed parts.
+ *  Lenient like `parseProfile`/`parseSettings`: a missing table becomes empty. */
+export function parseAuthoringAccess(parsed: Record<string, unknown>): AuthoringAccess {
+  const obj = (v: unknown): Record<string, unknown> =>
+    v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+  const roster = obj(parsed.roster)
+  return {
+    ...(parsed.me && typeof parsed.me === 'object' ? { me: parsed.me as AuthoringAccess['me'] } : {}),
+    bots: obj(parsed.bots) as AuthoringAccess['bots'],
+    channels: obj(parsed.channels) as AuthoringAccess['channels'],
+    roster: {
+      people: obj(roster.people) as AuthoringAccess['roster']['people'],
+      peers: obj(roster.peers) as AuthoringAccess['roster']['peers'],
+    },
+    ...(Array.isArray(parsed.mentionPatterns) ? { mentionPatterns: parsed.mentionPatterns as string[] } : {}),
+    ...(typeof parsed.ackReaction === 'string' ? { ackReaction: parsed.ackReaction } : {}),
+  }
+}
+
+/** Read access.json as the channel-centric AUTHORING shape (what setup.ts edits).
+ *  A missing file or a legacy agent-keyed file → a fresh empty authoring config. */
+export function readAuthoringAccess(): AuthoringAccess {
+  try {
+    const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
+    if (isAuthoringShape(parsed)) return parseAuthoringAccess(parsed)
+    // A legacy agent-keyed file is not auto-migrated, and the next save would
+    // overwrite it. Preserve it once (access.json.legacy) so no config is lost.
+    const backup = ACCESS_FILE + '.legacy'
+    if (!existsSync(backup)) {
+      try {
+        copyFileSync(ACCESS_FILE, backup)
+        process.stderr.write(
+          `knock-knock: legacy access.json detected — backed up to ${backup}. ` +
+            `Setup now uses the channel-centric shape; re-add your bots/channels.\n`,
+        )
+      } catch {}
+    }
+    return defaultAuthoringAccess()
+  } catch {
+    return defaultAuthoringAccess()
+  }
+}
+
+/** Persist the channel-centric authoring config (atomic, 0600). */
+export function saveAuthoringAccess(a: AuthoringAccess): void {
+  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  const tmp = ACCESS_FILE + '.tmp'
+  writeFileSync(tmp, JSON.stringify(a, null, 2) + '\n', { mode: 0o600 })
+  renameSync(tmp, ACCESS_FILE)
+}
+
+/** Persist a legacy agent-keyed runtime Access (retained for transitional callers). */
 export function saveAccess(a: Access): void {
   mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
   const tmp = ACCESS_FILE + '.tmp'
