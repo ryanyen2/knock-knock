@@ -758,9 +758,12 @@ export class AgentHost {
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     const roomId = this.roomForScope(scopeId)
     const room = roomId ? liveAgent.rooms[roomId] : undefined
-    if (!room || sessionRuntimeForAgent(liveAgent.runtime) !== summary.runtime) {
+    // The coding agent is membership-scoped (the bot is a portal), so resume
+    // compatibility is judged against this channel's effective runtime.
+    const effectiveRuntime = room?.runtime ?? liveAgent.runtime
+    if (!room || sessionRuntimeForAgent(effectiveRuntime) !== summary.runtime) {
       await action.respond(
-        `This agent (${liveAgent.runtime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
+        `This agent (${effectiveRuntime}) can't resume a ${summary.runtime} session — try "share session" to import its context instead.`,
         { ephemeral: true },
       )
       return
@@ -1307,7 +1310,12 @@ export class AgentHost {
     // Workspace is membership-scoped: a bot can work in a different folder per
     // channel/project. Fall back to the bot's default workspace when unset.
     const workspace = room.workspace ?? liveAgent.workspace
-    const adapter = makeAdapter(liveAgent.runtime, {
+    // The bot is a PORTAL: the coding agent is membership-scoped too. A channel
+    // may point this bot at a different runtime (claude-sdk here, codex there);
+    // fall back to the bot's default runtime. Terminal-written, so it's fixed for
+    // the session's life (a change takes effect on relay restart).
+    const runtime = room.runtime ?? liveAgent.runtime
+    const adapter = makeAdapter(runtime, {
       workspace,
       watchTools: this.watchControl.toolsFor(channelId),
       sandbox: liveAgent.sandbox,
@@ -1319,7 +1327,7 @@ export class AgentHost {
         blurb: liveAgent.blurb,
       },
       rosterLines: buildRosterLinesForRoom(room),
-      canWatch: runtimeSelfArmsWatches(liveAgent.runtime),
+      canWatch: runtimeSelfArmsWatches(runtime),
     }
     const created: Session = {
       driver: new Driver(
@@ -1364,7 +1372,7 @@ export class AgentHost {
     // id is caught at run time by the adapter's graceful fresh-session fallback.
     const binding = readSessionBinding(this.key, channelId)
     if (binding) {
-      const runtimeOk = sessionRuntimeForAgent(liveAgent.runtime) === binding.runtime
+      const runtimeOk = sessionRuntimeForAgent(runtime) === binding.runtime
       const workspaceOk = !binding.workspace || binding.workspace === workspace
       if (runtimeOk && workspaceOk) {
         created.driver.bindSession(binding.sessionId)

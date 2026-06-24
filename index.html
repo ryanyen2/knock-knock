@@ -989,7 +989,7 @@
                 <tr><td>Channel ID</td><td>The <code>#project-x</code> channel ID — a channel is a project = a permission boundary</td></tr>
                 <tr><td>Members</td><td>Which of your bots work here; for each, its <strong>workspace</strong> (the path it works in <em>for this channel</em>) and a <strong>permission preset</strong></td></tr>
                 <tr><td>Collaborators</td><td>People and peer bots in this channel, picked from your <strong>roster</strong></td></tr>
-                <tr><td>Bot token</td><td>Pasted masked; stored in <code>~/.claude/channels/knock-knock/.env</code></td></tr>
+                <tr><td>Bot token</td><td>Pasted masked; stored in <code>~/.knock-knock/.env</code></td></tr>
               </tbody>
             </table>
           </div>
@@ -1195,7 +1195,7 @@
 
     <!-- access.json -->
     <h2 id="access-json">access.json reference</h2>
-    <p>State at <code>~/.claude/channels/knock-knock/access.json</code>. Written by <code>bun setup.ts</code> — you rarely need to edit it by hand. Normalized into <code>me</code>, <code>bots</code>, <code>channels</code>, and <code>roster</code>.</p>
+    <p>State at <code>~/.knock-knock/access.json</code>. Written by <code>bun setup.ts</code> — you rarely need to edit it by hand. Normalized into <code>me</code>, <code>bots</code>, <code>channels</code>, and <code>roster</code>.</p>
 
     <pre><code>{
   <span class="t-ky">"me"</span>: { <span class="t-ky">"discord"</span>: <span class="t-st">"184695080709324800"</span> },   <span class="t-cm">// owner id per platform — set once</span>

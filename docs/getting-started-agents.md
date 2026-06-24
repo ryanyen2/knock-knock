@@ -320,7 +320,7 @@ start** rather than silently splitting history onto a local SQLite ledger.
 3. Prefer `sslmode=verify-full` (Neon presents a valid cert, and it avoids a
    `pg` deprecation warning that `sslmode=require` now triggers).
 4. Set the **same** URL on **both** machines — in
-   `~/.claude/channels/knock-knock/.env`:
+   `~/.knock-knock/.env`:
    ```
    KNOCK_KNOCK_LEDGER_URL=postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=verify-full
    ```

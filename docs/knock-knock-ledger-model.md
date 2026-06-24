@@ -477,7 +477,7 @@ buttons (clicking a pre-restart button does the right thing).
 
 **Q. Can I see the full event list for a channel?**
 Today, by reading the SQLite file at
-`~/.claude/channels/knock-knock/ledger.sqlite` (or the Postgres table) and
+`~/.knock-knock/ledger.sqlite` (or the Postgres table) and
 running the listed queries. A `/timeline` slash command that prints a
 human story is on the roadmap.
 

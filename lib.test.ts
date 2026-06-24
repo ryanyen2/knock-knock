@@ -252,6 +252,22 @@ test('projectToRuntime: inline membership profile is carried onto the room', () 
   expect(rt.agents.reviewer!.rooms.C_WEB!.profile).toBeUndefined() // no inline profile set
 })
 
+test('projectToRuntime: a per-channel runtime override is carried onto the room (bot = portal)', () => {
+  // The same bot drives codex in one channel and its default elsewhere.
+  const a: AuthoringAccess = {
+    bots: { rev: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {
+      'discord:A': { platform: 'discord', channelId: 'A', members: [{ bot: 'rev', workspace: '/a', runtime: 'codex' }], collaborators: [] },
+      'discord:B': { platform: 'discord', channelId: 'B', members: [{ bot: 'rev', workspace: '/b' }], collaborators: [] },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  const rt = projectToRuntime(a)
+  expect(rt.agents.rev!.runtime).toBe('claude-sdk') // bot default unchanged
+  expect(rt.agents.rev!.rooms.A!.runtime).toBe('codex') // per-channel override
+  expect(rt.agents.rev!.rooms.B!.runtime).toBeUndefined() // falls back to the bot default
+})
+
 test('channelKey: namespaces a channel id by platform', () => {
   expect(channelKey('discord', 'C1')).toBe('discord:C1')
   expect(channelKey('slack', 'C1')).not.toBe(channelKey('discord', 'C1'))

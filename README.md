@@ -219,7 +219,7 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts`, choose "Save / update a bot token", and check `~/.claude/channels/knock-knock/.env`. |
+| Bot shows offline in Discord | Token wrong or not loaded. Re-run `bun setup.ts`, choose "Save / update a bot token", and check `~/.knock-knock/.env`. |
 | Bot never sees channel messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the bot isn't a **member** of that channel. |
 | No approval prompt appears | The owner id (`me.discord`) isn't set, or the channel's `approvalActorId` override is wrong — re-run `bun setup.ts`. |
 | ✅ reaction does nothing | Only the bot **owner's** reaction counts (verified by user ID). |
@@ -241,7 +241,7 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 ### `access.json`
 
-State at `~/.claude/channels/knock-knock/access.json` — normalized into `me`, `bots`, `channels`, and `roster`:
+State at `~/.knock-knock/access.json` — normalized into `me`, `bots`, `channels`, and `roster`:
 
 ```jsonc
 {

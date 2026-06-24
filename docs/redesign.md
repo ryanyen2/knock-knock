@@ -270,6 +270,21 @@ Flows:
 
 ---
 
+## Follow-ups (post-review, owner-requested)
+
+- **Storage moved to `~/.knock-knock/`** (was `~/.claude/channels/knock-knock`). knock-knock
+  is agent-agnostic, so nesting state under *Claude's* dir was misleading and collided with
+  the Claude Code harness's own `.claude/`. One shared store (not per-bot), keyed by bot.
+  `KNOCK_KNOCK_STATE_DIR` still overrides. All docs/HTML updated.
+- **Bot is a PORTAL, not tied to one coding agent.** `Bot.runtime` is the default;
+  `Membership.runtime` overrides it **per channel** (same bot → `claude-sdk` here, `codex`
+  there). Effective runtime = `Membership.runtime ?? Bot.runtime`, resolved in
+  `getOrCreateSession` (also used for resume-compat + watch capability). Setup asks the coding
+  agent per member; relay table + dashboard show overrides. **Terminal-written, not
+  chat-settable** — runtime picks which local binary runs with workspace access.
+- **Env lives in ONE place: `~/.knock-knock/.env`** — global, not per-cwd/per-channel. Set
+  once, reused from any folder. (See the env-health additions in setup.)
+
 ## Status (engineering log)
 
 - **Slice 1 — DONE.** `AuthoringAccess` + `Bot`/`Channel`/`Membership`/`Person`/`Peer`/

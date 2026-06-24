@@ -71,6 +71,60 @@ const RUNTIMES = [
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
+/** What auth each coding agent needs beyond the platform bot token. The agent runs
+ *  in the relay's process env (loaded once from ~/.knock-knock/.env), so saving the
+ *  key there makes it available to EVERY bot/channel using that runtime — set once,
+ *  reused everywhere, regardless of which folder you launch from. */
+const RUNTIME_AUTH: Record<string, { envVar?: string; hint: string }> = {
+  'claude-sdk': { envVar: 'ANTHROPIC_API_KEY', hint: 'or an existing `claude` login' },
+  'claude-acp': { envVar: 'ANTHROPIC_API_KEY', hint: 'or an existing `claude` login' },
+  codex: { envVar: 'OPENAI_API_KEY', hint: 'your OpenAI API key' },
+  gemini: { hint: 'run `gemini` once to log in — no env var needed' },
+  opencode: { hint: 'configure opencode auth per its docs' },
+  acp: { hint: 'auth is handled by your KNOCK_KNOCK_ACP_COMMAND agent' },
+}
+
+/** Offer to save a coding agent's API key into ~/.knock-knock/.env when it isn't
+ *  already set. A shared key (e.g. ANTHROPIC_API_KEY) is asked once, then reused. */
+async function ensureRuntimeAuth(runtime: string, force = false): Promise<void> {
+  const auth = RUNTIME_AUTH[runtime]
+  if (!auth) return
+  if (!auth.envVar) { p.log.info(`${runtime}: ${auth.hint}.`); return }
+  if (isTokenSet(auth.envVar) && !force) { p.log.success(`${auth.envVar} already set ${color.dim('✓')}`); return }
+  const save = force || orCancel(await p.confirm({
+    message: `${runtime} needs ${auth.envVar} (${auth.hint}). Save it to .env now?`,
+    initialValue: true,
+  }))
+  if (!save) { p.log.info(`Set ${auth.envVar} before starting the relay (${auth.hint}).`); return }
+  const val = orCancel(await p.password({ message: auth.envVar, validate: required })).trim()
+  setToken(auth.envVar, val)
+  p.log.success(`Saved ${auth.envVar} to .env ${color.dim(`· ***${val.slice(-4)}`)}`)
+}
+
+/** All coding-agent API-key env vars in use (bot defaults + per-channel overrides). */
+function runtimeKeysInUse(a: AuthoringAccess): Array<{ runtime: string; envVar: string }> {
+  const runtimes = new Set<string>()
+  for (const b of Object.values(a.bots)) runtimes.add(b.runtime)
+  for (const ch of Object.values(a.channels)) for (const m of ch.members) if (m.runtime) runtimes.add(m.runtime)
+  const out: Array<{ runtime: string; envVar: string }> = []
+  for (const r of runtimes) {
+    const v = RUNTIME_AUTH[r]?.envVar
+    if (v && !out.some(o => o.envVar === v)) out.push({ runtime: r, envVar: v })
+  }
+  return out
+}
+
+/** Menu action: save/update a coding-agent API key in ~/.knock-knock/.env. */
+async function saveCodingAgentKey(a: AuthoringAccess): Promise<void> {
+  const keys = runtimeKeysInUse(a)
+  if (keys.length === 0) { p.log.info('No coding agent in use needs an API key (they use their own login).'); return }
+  const runtime = keys.length === 1 ? keys[0]!.runtime : (orCancel(await p.select({
+    message: 'Save the API key for which coding agent?',
+    options: keys.map(k => ({ value: k.runtime, label: k.runtime, hint: `${k.envVar}${isTokenSet(k.envVar) ? ' ✓' : ' ✗ missing'}` })),
+  })) as string)
+  await ensureRuntimeAuth(runtime, true)
+}
+
 /** Messaging platforms a bot can speak. Discord is production-tested; the rest are
  *  walking skeletons pending live verification (docs/messaging-platforms.md). */
 const PLATFORMS: Array<{ value: Platform; label: string; hint: string }> = [
@@ -266,10 +320,11 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
   await ensureMe(a, platform)
 
   const runtime = orCancel(await p.select({
-    message: 'Which coding agent powers this bot?',
+    message: 'Which coding agent powers this bot? (its default — switchable per channel)',
     options: RUNTIMES,
     initialValue: 'claude-sdk',
   }))
+  await ensureRuntimeAuth(runtime)
 
   const blurb = orCancel(await p.text({
     message: 'One-line description peers see (optional)',
@@ -445,7 +500,23 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
     })).trim()
     if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
     const preset = await pickPreset(prev?.preset ?? DEFAULT_PRESET)
-    members.push({ bot: botKey, workspace, preset, profile: profileFromPreset(preset) })
+    // The bot is a portal: pick which local coding agent drives it HERE. Default
+    // is the bot's own runtime; override to use a different agent in this project.
+    const botDefault = a.bots[botKey]!.runtime
+    const runtime = orCancel(await p.select({
+      message: `Coding agent for ${botKey} in THIS channel`,
+      options: RUNTIMES,
+      initialValue: prev?.runtime ?? botDefault,
+    }))
+    if (runtime !== botDefault) await ensureRuntimeAuth(runtime)
+    members.push({
+      bot: botKey,
+      workspace,
+      preset,
+      profile: profileFromPreset(preset),
+      // Store only when it differs from the bot default, to keep access.json clean.
+      ...(runtime !== botDefault ? { runtime } : {}),
+    })
   }
   ch.members = members
 
@@ -640,7 +711,8 @@ function statusReport(a: AuthoringAccess): string {
     const head = `  ${color.cyan(ch.label ?? `#${ch.channelId}`)}  ${color.dim(ch.platform)}${ch.requireMention === false ? color.dim(' · no @mention') : ''}`
     lines.push(head)
     for (const m of ch.members) {
-      lines.push(`      ${m.bot}  ${color.dim(`·${m.preset ?? DEFAULT_PRESET}·`)}  ${color.dim(m.workspace)}`)
+      const agentNote = m.runtime ? color.dim(` · ${m.runtime}`) : ''
+      lines.push(`      ${m.bot}  ${color.dim(`·${m.preset ?? DEFAULT_PRESET}·`)}  ${color.dim(m.workspace)}${agentNote}`)
     }
     if (ch.collaborators.length) {
       const names = ch.collaborators.map(c => {
@@ -657,6 +729,16 @@ function statusReport(a: AuthoringAccess): string {
     const peers = Object.values(a.roster.peers).map(x => x.label ?? x.userId)
     if (people.length) lines.push(`  ${color.dim('people')} ${people.join(', ')}`)
     if (peers.length) lines.push(`  ${color.dim('peers ')} ${peers.join(', ')}`)
+  }
+
+  const authKeys = runtimeKeysInUse(a)
+  if (authKeys.length > 0) {
+    lines.push('')
+    lines.push(color.bold('CODING-AGENT AUTH') + color.dim('  (one key per agent, shared by all bots)'))
+    for (const k of authKeys) {
+      const mark = isTokenSet(k.envVar) ? color.green('✓') : color.red('✗ missing')
+      lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${k.envVar} ${mark}`)
+    }
   }
 
   lines.push('')
@@ -680,6 +762,8 @@ function finishWithNextSteps(a: AuthoringAccess): void {
   const noChannel = Object.keys(a.bots).filter(k => !memberOf.has(k))
   if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Save a bot token"`)
   if (noChannel.length) tips.push(`${color.yellow('!')} ${noChannel.join(', ')} isn't a member of any channel — add it to one`)
+  const noKey = runtimeKeysInUse(a).filter(k => !isTokenSet(k.envVar))
+  if (noKey.length) tips.push(`${color.yellow('!')} API key missing: ${noKey.map(k => k.envVar).join(', ')} — run setup → "Save a coding-agent API key" (or use the agent's own login)`)
   tips.push(`${color.green('→')} Start the relay: ${color.cyan('bun relay.ts')} ${color.dim('(prints who listens where)')}`)
   tips.push(`${color.green('→')} Tune a thread in-chat (owner): ${color.cyan('!config role <text>')} — ${color.cyan('!config help')}`)
   p.note(tips.join('\n'), 'Next steps')
@@ -712,7 +796,7 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAuthoringAccess()), 'Current setup')
 
-  const TASK_ORDER = ['bot', 'bot-edit', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'token', 'ledger', 'bot-remove'] as const
+  const TASK_ORDER = ['bot', 'bot-edit', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'token', 'api-key', 'ledger', 'bot-remove'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
@@ -728,6 +812,7 @@ async function interactiveMenu(): Promise<void> {
         { value: 'peer', label: 'Add a peer bot to the roster' },
         { value: 'roster-remove', label: 'Remove a roster entry', hint: 'person or peer (drops it from channels too)' },
         { value: 'token', label: 'Save / update a bot token' },
+        { value: 'api-key', label: 'Save / update a coding-agent API key', hint: 'e.g. ANTHROPIC_API_KEY / OPENAI_API_KEY' },
         { value: 'ledger', label: 'Choose ledger backend', hint: 'local SQLite or remote Postgres' },
         { value: 'bot-remove', label: 'Remove a bot' },
       ],
@@ -750,6 +835,7 @@ async function interactiveMenu(): Promise<void> {
         if (platform) await addPeer(a, platform)
       } else if (task === 'roster-remove') await removeRosterEntry(a)
       else if (task === 'token') await saveBotToken(a)
+      else if (task === 'api-key') await saveCodingAgentKey(a)
       else if (task === 'ledger') await collectLedger()
       else if (task === 'bot-remove') await removeBot(a)
     }

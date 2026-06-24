@@ -27,6 +27,10 @@ export type RoomConfig = {
    *  `Membership.profile`. When present the runtime prefers it over the on-disk
    *  per-channel settings file. */
   profile?: RoomProfile
+  /** The coding agent driving this bot in THIS channel (membership-scoped).
+   *  Falls back to the agent's default `runtime` when absent. Projected from
+   *  `Membership.runtime`. */
+  runtime?: string
 }
 
 /** OS-level sandbox for an agent's runtime. Confines filesystem writes to the
@@ -121,6 +125,12 @@ export type Membership = {
   workspace: string // folder this bot works in for THIS channel
   profile?: RoomProfile // allow/ask/deny (+ tiers); absent ⇒ resolved from the preset/file
   preset?: string // named preset the profile was stamped from (setup bookkeeping)
+  /** Which local coding agent drives this bot IN THIS channel. The bot is a
+   *  PORTAL; its `runtime` is only the default. A membership may point the same
+   *  bot at a different coding agent per project (claude-sdk here, codex there).
+   *  Absent ⇒ the bot's default runtime. Terminal-written (setup), never from
+   *  chat — it selects which local binary runs with your workspace access. */
+  runtime?: string
 }
 
 /** A channel = a project = a permission boundary the bots are "invited" to. */
@@ -195,6 +205,7 @@ export function projectToRuntime(a: AuthoringAccess): Access {
         ...(ch.approvalActorId ? { approvalActorId: ch.approvalActorId } : {}),
         workspace: membership.workspace,
         ...(membership.profile ? { profile: membership.profile } : {}),
+        ...(membership.runtime ? { runtime: membership.runtime } : {}),
       }
     }
 

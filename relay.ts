@@ -230,11 +230,13 @@ if (hosts.length === 0) {
     const agent = access.agents[key]
     if (!agent) continue
     const rooms = Object.entries(agent.rooms)
-    lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime}`)
+    lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime} (default)`)
     if (rooms.length === 0) lines.push('      (no channels — add one with `bun setup.ts`)')
     for (const [channelId, room] of rooms) {
+      // Show the per-channel coding agent only when it overrides the bot default.
+      const agentNote = room.runtime && room.runtime !== agent.runtime ? `  [${room.runtime}]` : ''
       lines.push(
-        `      #${channelId}  →  ${room.workspace ?? agent.workspace}` +
+        `      #${channelId}  →  ${room.workspace ?? agent.workspace}${agentNote}` +
           (room.requireMention ? '  (@mention required)' : ''),
       )
       claimants.set(channelId, [...(claimants.get(channelId) ?? []), key])
