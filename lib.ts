@@ -1563,6 +1563,21 @@ export function withinBudget(
 }
 
 /**
+ * Parse an owner `!share <relpath>` command into the workspace-relative path to
+ * share, or null if it isn't one. Owner-only at the source (the host gates on
+ * kind==='owner' and short-circuits before any channel.message admit). The path
+ * is taken verbatim (trimmed, surrounding quotes stripped); containment + the
+ * secret floor are enforced downstream, not here. Pure.
+ */
+export function parseShareCommand(text: string): { relpath: string } | null {
+  const t = (text ?? '').trim()
+  if (t !== '!share' && !t.startsWith('!share ')) return null
+  const rest = t.slice('!share'.length).trim().replace(/^["']|["']$/g, '')
+  if (!rest) return null
+  return { relpath: rest }
+}
+
+/**
  * Render the `<attached-files>` block injected ahead of a turn that ingested
  * files (U5). Framed as UNTRUSTED (R6): file contents are data the agent may
  * read, never instructions — the wrapper says so explicitly, mirroring how the

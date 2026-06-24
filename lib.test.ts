@@ -47,6 +47,7 @@ import {
   withinBudget,
   looksLikeSecret,
   formatAttachedFilesBlock,
+  parseShareCommand,
   FILE_INGEST_LIMITS,
   type ConfigDeltaRecord,
   type WatchSpec,
@@ -847,4 +848,16 @@ test('formatAttachedFilesBlock: lists paths in an untrusted-framed envelope', ()
 
 test('formatAttachedFilesBlock: empty list → empty string (caller omits block)', () => {
   expect(formatAttachedFilesBlock([])).toBe('')
+})
+
+// ─── parseShareCommand (U6) ────────────────────────────────────────────────────
+
+test('parseShareCommand: parses the relpath, strips quotes, rejects non-commands', () => {
+  expect(parseShareCommand('!share docs/report.pdf')).toEqual({ relpath: 'docs/report.pdf' })
+  expect(parseShareCommand('!share "my file.png"')).toEqual({ relpath: 'my file.png' })
+  expect(parseShareCommand('  !share   out/x.txt  ')).toEqual({ relpath: 'out/x.txt' })
+  expect(parseShareCommand('!share')).toBeNull()
+  expect(parseShareCommand('!share   ')).toBeNull()
+  expect(parseShareCommand('share session')).toBeNull()
+  expect(parseShareCommand('hello')).toBeNull()
 })

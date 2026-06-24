@@ -50,6 +50,7 @@ import { retryOnReaction } from './ledger/synchronizations/retry-on-reaction.ts'
 import { resumeOnWatch } from './ledger/synchronizations/resume-on-watch.ts'
 import { captureWorkspaceEdit } from './ledger/synchronizations/capture-workspace-edit.ts'
 import { ingestAttachment } from './ledger/synchronizations/ingest-attachment.ts'
+import { shareFile } from './ledger/synchronizations/share-file.ts'
 import { writeBackVersionable } from './ledger/synchronizations/write-back-versionable.ts'
 import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
@@ -392,6 +393,42 @@ synchronizer.register(
       const tmp = `${absPath}.knock-tmp-${process.pid}`
       writeFileSync(tmp, content)
       renameSync(tmp, absPath)
+    },
+  }),
+)
+// Outbound file share: an owner `!share <relpath>` admits a file.shared request;
+// this sync resolves it inside the workspace, refuses credentials (secret floor),
+// classifies FileShare, and sends under the channel claim (cross-relay dedup).
+synchronizer.register(
+  shareFile({
+    resolveFile: async (scope, relpath) => {
+      for (const h of hosts) {
+        if (!h.roomForScope(scope)) continue
+        return h.resolveShareFile(scope, relpath)
+      }
+      return { error: 'no agent serves this scope' }
+    },
+    classify: (scope, relpath) => {
+      for (const h of hosts) {
+        if (!h.roomForScope(scope)) continue
+        return h.classifyShareFor(scope, relpath)
+      }
+      return 'deny'
+    },
+    send: async (scope, _holder, name, bytes) => {
+      for (const h of hosts) {
+        if (!h.roomForScope(scope)) continue
+        return h.sendFileToScope(scope, name, bytes)
+      }
+      return false
+    },
+    note: (scope, text) => {
+      for (const h of hosts) {
+        if (h.roomForScope(scope)) {
+          h.noteToScope(scope, text)
+          return
+        }
+      }
     },
   }),
 )

@@ -18,6 +18,7 @@
  */
 
 import { makeMessagingAdapter } from './adapters-msg/index.ts'
+import { outboundFileNotice } from './messaging-fallback.ts'
 import type {
   MessagingAdapter,
   MessageRef,
@@ -50,6 +51,8 @@ import {
   wrapChannelRole,
   wrapChannelGoal,
   formatAttachedFilesBlock,
+  parseShareCommand,
+  classifyTool,
   applyModeToProfile,
   toThinkingConfig,
   DEFAULT_LOOP_GUARD,
@@ -71,8 +74,8 @@ import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
 import { parseVersionableId } from './ledger/artifacts/versionable.ts'
-import { join, relative, resolve, isAbsolute, dirname } from 'path'
-import { mkdirSync, writeFileSync } from 'fs'
+import { join, relative, resolve, isAbsolute, dirname, basename } from 'path'
+import { mkdirSync, writeFileSync, readFileSync } from 'fs'
 import type { DriveTurnHandle } from './ledger/synchronizations/drive-turn.ts'
 import type { ConflictCardPost } from './ledger/synchronizations/conflict-card.ts'
 import {
@@ -507,6 +510,81 @@ export class AgentHost {
     else this.pendingIngestedByScope.delete(scope)
   }
 
+  // ─── Outbound file share (U6) ──────────────────────────────────────────────────
+
+  /** Owner `!share <relpath>`: admit a file.shared request the share-file sync
+   *  acts on. Owner-gated at the call site (handleInbound). */
+  async handleShareCommand(scope: ChannelId, text: string, requesterId: string): Promise<void> {
+    const parsed = parseShareCommand(text)
+    if (!parsed) {
+      this.noteToScope(scope, 'usage: `!share <path-in-workspace>`')
+      return
+    }
+    const prior = await this.store.latestInChannel(scope)
+    await admit(this.store, {
+      actor: requesterId,
+      role: 'owner',
+      channel: scope,
+      target: { artifactId: discordArtifact(scope), anchor: { kind: 'none' } },
+      verb: 'file.shared',
+      patch: {
+        kind: 'external',
+        intent: {
+          channel: this.messaging.platform,
+          op: 'requested',
+          args: { relpath: parsed.relpath, requestedBy: 'owner' },
+        },
+      },
+      effect: 'external',
+      caused_by: prior ? [prior.hash] : [],
+    })
+  }
+
+  /** Read `relpath` from the agent's workspace for an outbound share. Containment
+   *  (relativizeWorkspacePath rejects `..`/absolute/escape) lives here. */
+  async resolveShareFile(
+    scope: ChannelId,
+    relpath: string,
+  ): Promise<{ name: string; bytes: Uint8Array } | { error: string }> {
+    const ws = (this.getAccess().agents[this.key] ?? this.agent).workspace
+    if (!ws || !this.roomForScope(scope)) return { error: 'no workspace for this scope' }
+    const abs = isAbsolute(relpath) ? relpath : resolve(ws, relpath)
+    const rel = this.relativizeWorkspacePath(scope, abs)
+    if (!rel) return { error: 'path is outside the workspace' }
+    try {
+      const bytes = new Uint8Array(readFileSync(join(ws, rel)))
+      return { name: basename(rel), bytes }
+    } catch {
+      return { error: 'file not found or unreadable' }
+    }
+  }
+
+  /** Classify a FileShare of `relpath` against the room profile for `scope`
+   *  (scope→room, thread mode applied). 'deny' is the secret floor; fail to
+   *  'deny' when the scope is unserved. */
+  classifyShareFor(scope: ChannelId, relpath: string): 'allow' | 'ask' | 'deny' {
+    const profile = this.auditProfileForScope(this.key, scope)
+    if (!profile) return 'deny'
+    return classifyTool(profile, { toolName: 'FileShare', subject: relpath })
+  }
+
+  /** Send a file out to a scope. Honors the outbound capability; degrades to a
+   *  text notice where the platform can't attach files. Returns whether it was
+   *  handled (sent, or a notice posted). */
+  async sendFileToScope(scope: ChannelId, name: string, bytes: Uint8Array): Promise<boolean> {
+    const caps = this.messaging.capabilities()
+    if (!caps.files?.outbound) {
+      const notice = outboundFileNotice([{ name }], caps)
+      if (notice) await this.messaging.send(scope, notice).catch(() => {})
+      return true
+    }
+    const ref = await this.messaging
+      .send(scope, `shared \`${name}\``, { files: [{ name, data: bytes }] })
+      .catch(() => undefined)
+    if (ref) this.noteBotMsg(ref.id)
+    return !!ref
+  }
+
   /** write-back-versionable asks "where on disk does this vers: artifact live?"
    *  Undefined when this host doesn't serve the artifact's scope. */
   resolveVersionablePath(artifactId: string): string | undefined {
@@ -818,6 +896,20 @@ export class AgentHost {
       this.scopeToRoom.set(controlScope, roomId)
       await this.contextControl.handleCommand(controlScope, m.text).catch(e =>
         this.ui.error(this.key, `context command: ${e}`),
+      )
+      return
+    }
+
+    // ─── Owner file share (!share <relpath>) — short-circuit before any admit ──
+    // Owner-only and NOT admitted as a channel.message: the owner curates what
+    // leaves the machine, so this is the consent. The share-file sync still
+    // refuses a credential path/content (the secret floor holds even for the
+    // owner). Agent-initiated sharing (a share_file tool → interactive consent)
+    // is a deferred fast-follow (plan OQ1); it admits the same request shape.
+    if (kind === 'owner' && (m.text === '!share' || m.text.startsWith('!share '))) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.handleShareCommand(controlScope, m.text, m.authorId).catch(e =>
+        this.ui.error(this.key, `share command: ${e}`),
       )
       return
     }
