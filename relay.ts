@@ -231,6 +231,53 @@ synchronizer.register(
     },
   }),
 )
+// File ingest is registered BEFORE prompt-on-message ON PURPOSE: the synchronizer
+// fires subs sequentially and awaits each, so a message that carries attachments
+// has its files downloaded + materialized + recorded as file.received *before*
+// the turn is prompted — so deliver-attachments (U5) can feed them into the same
+// turn (the "@bot summarize this PDF" flow), not the next one. downloadAttachment
+// is timeout-bounded so a hung fetch can't stall the turn indefinitely.
+synchronizer.register(
+  ingestAttachment({
+    filesInbound: scope => {
+      for (const h of hosts) {
+        const cap = h.inboundFileCap(scope)
+        if (cap) return cap
+      }
+      return undefined
+    },
+    loadAttachments: (scope, hash) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        const atts = h.loadInboundAttachments(hash)
+        if (atts.length) return atts
+      }
+      return []
+    },
+    download: async (scope, att) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        return h.downloadInboundAttachment(att)
+      }
+      return undefined
+    },
+    materialize: async (scope, safeName, bytes) => {
+      for (const h of hosts) {
+        const rel = await h.materializeAttachment(scope, safeName, bytes)
+        if (rel) return rel
+      }
+      return undefined
+    },
+    note: (scope, text) => {
+      for (const h of hosts) {
+        if (h.inboundFileCap(scope)) {
+          h.noteToScope(scope, text)
+          return
+        }
+      }
+    },
+  }),
+)
 synchronizer.register(
   promptOnMessage({
     getAgentForChannel: channelId => {
@@ -345,51 +392,6 @@ synchronizer.register(
       const tmp = `${absPath}.knock-tmp-${process.pid}`
       writeFileSync(tmp, content)
       renameSync(tmp, absPath)
-    },
-  }),
-)
-// File ingest: a human's inbound attachment → bytes downloaded at receive time
-// (URLs expire), magic-byte-sniffed, secret-scanned, materialized inside the
-// agent workspace, recorded as file.received. Deps fan out across hosts; the one
-// serving the scope answers (loadAttachments is empty on a non-receiving peer).
-synchronizer.register(
-  ingestAttachment({
-    filesInbound: scope => {
-      for (const h of hosts) {
-        const cap = h.inboundFileCap(scope)
-        if (cap) return cap
-      }
-      return undefined
-    },
-    loadAttachments: (scope, hash) => {
-      for (const h of hosts) {
-        if (!h.inboundFileCap(scope)) continue
-        const atts = h.loadInboundAttachments(hash)
-        if (atts.length) return atts
-      }
-      return []
-    },
-    download: async (scope, att) => {
-      for (const h of hosts) {
-        if (!h.inboundFileCap(scope)) continue
-        return h.downloadInboundAttachment(att)
-      }
-      return undefined
-    },
-    materialize: async (scope, safeName, bytes) => {
-      for (const h of hosts) {
-        const rel = await h.materializeAttachment(scope, safeName, bytes)
-        if (rel) return rel
-      }
-      return undefined
-    },
-    note: (scope, text) => {
-      for (const h of hosts) {
-        if (h.inboundFileCap(scope)) {
-          h.noteToScope(scope, text)
-          return
-        }
-      }
     },
   }),
 )

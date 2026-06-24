@@ -386,7 +386,9 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
    *  URL. Returns undefined on failure (the caller surfaces a fetch-failed note). */
   async downloadAttachment(url: string): Promise<Uint8Array | undefined> {
     try {
-      const res = await fetch(url)
+      // Bounded: ingest runs inline ahead of the turn (see relay registration
+      // order), so a hung fetch must not stall the turn indefinitely.
+      const res = await fetch(url, { signal: AbortSignal.timeout(15_000) })
       if (!res.ok) return undefined
       return new Uint8Array(await res.arrayBuffer())
     } catch {
