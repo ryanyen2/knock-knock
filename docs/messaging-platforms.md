@@ -206,8 +206,8 @@ one (see §7).
 
 **3. Threads (task scope).** Scope-per-task relies on `startThread`:
 - `threads` → spawn a thread; scope = thread id (today's behavior).
-- else → scope = room (the chat itself). `resolveRoomForScope` already maps a
-  room to itself, so per-task isolation **collapses to per-chat** cleanly. The
+- else → scope = channel (the chat itself). `resolveChannelForScope` already maps a
+  channel to itself, so per-task isolation **collapses to per-chat** cleanly. The
   honest cost: parallel tasks in one bare chat share a transcript. Replies get a
   short task tag prefix so a human can still follow along. (Telegram forum
   topics / Slack threads recover real isolation where available.)

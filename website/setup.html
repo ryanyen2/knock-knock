@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>knock-knock — setup guide</title>
-<meta name="description" content="Set up knock-knock step by step: install, create a bot on your chat platform, pick a coding agent, choose what it may do, verify it works, and add a teammate's agent to the same group chat." />
+<meta name="description" content="Set up knock-knock step by step: install, create a bot on your chat platform, pick a coding agent, choose what it may do, verify it works, and add a teammate's bot to the same group chat." />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231D1D1F'/%3E%3Ccircle cx='16' cy='13' r='7' fill='none' stroke='%23FBFBFD' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='13' r='2.6' fill='%23FBFBFD'/%3E%3Cpath d='M16 20v6' stroke='%23FBFBFD' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
 <link rel="stylesheet" href="styles.css" />
@@ -51,7 +51,7 @@
   <div class="wrap-narrow">
     <p class="eyebrow reveal">Setup guide</p>
     <h1 class="reveal">Set up knock-knock.</h1>
-    <p class="lede reveal">From nothing to a running group chat: install, connect a chat platform, pick a coding agent, decide what it may do, verify it works, then add a teammate's agent. Follow it top to bottom the first time; skim it later.</p>
+    <p class="lede reveal">From nothing to a running group chat: install, connect a chat platform, pick a coding agent, decide what it may do, verify it works, then add a teammate's bot. Follow it top to bottom the first time; skim it later.</p>
     <nav class="toc reveal" aria-label="On this page">
       <a href="#model"><b>01</b> The model</a>
       <a href="#prereqs"><b>02</b> Prerequisites</a>
@@ -70,15 +70,16 @@
 
   <!-- 01 MODEL -->
   <section class="gsec reveal" id="model">
-    <h2>The model in four words</h2>
-    <p class="gsec-lede">Learn these four nouns and the rest of the setup reads plainly. Everything you configure hangs off them.</p>
+    <h2>The model in five words</h2>
+    <p class="gsec-lede">Learn these five nouns and the rest of the setup reads plainly. Everything you configure hangs off them.</p>
     <div class="defs">
-      <div class="def"><h3><span class="def-k">Agent</span></h3><p>One bot identity the relay runs: its messaging token, its coding runtime, its workspace folder, and its rooms. You can run several at once.</p></div>
-      <div class="def"><h3><span class="def-k">Owner</span></h3><p>The human who controls an agent. Approvals go to its owner. Only the owner can approve, stop, or resolve conflicts for it.</p></div>
-      <div class="def"><h3><span class="def-k">Room</span></h3><p>The parent channel an agent serves. The room owns the permission profile, the roster, and the allowlist.</p></div>
-      <div class="def"><h3><span class="def-k">Peer</span></h3><p>Another person's agent in the same room. Agents address each other by name with an <code>@mention</code>.</p></div>
+      <div class="def"><h3><span class="def-k">Bot</span></h3><p>One coding-agent identity you run = one Discord app holding a token locally. Its name lives on the platform and is fetched on connect — never typed. Has a runtime and an optional OS sandbox. Run several at once.</p></div>
+      <div class="def"><h3><span class="def-k">Channel</span></h3><p>A platform channel = <strong>a project = a permission boundary</strong>. The thing a bot is invited to.</p></div>
+      <div class="def"><h3><span class="def-k">Membership</span></h3><p>One of your bots active in one channel. It carries that bot's <strong>workspace folder</strong> and its <strong>allow/ask/deny</strong> profile <em>for that project</em>.</p></div>
+      <div class="def"><h3><span class="def-k">Roster</span></h3><p>Your address-book of <strong>people</strong> and <strong>peer bots</strong>, each entered once and picked from a list thereafter. No re-pasting IDs.</p></div>
+      <div class="def"><h3><span class="def-k">Owner</span></h3><p>You — one user id per platform, entered once and reused as the owner of every bot. Approvals go to the owner; only the owner can approve, stop, or resolve conflicts.</p></div>
     </div>
-    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div>A <strong>room</strong> is the parent channel; a <strong>scope</strong> is one task inside it. A top-level <code>@mention</code> opens a task thread, but the permission profile always lives on the room, so a threaded task is governed by the same rules as a top-level one.</div></div>
+    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div>A <strong>channel</strong> is the project; a <strong>thread</strong> is one task inside it. A top-level <code>@mention</code> opens a task thread, but the workspace and permission profile always come from the bot's <strong>membership</strong> on the parent channel, so a threaded task is governed by the same rules as a top-level one.</div></div>
   </section>
 
   <!-- 02 PREREQUISITES -->
@@ -89,7 +90,7 @@
       <li class="gstep"><div><h4>A chat platform you can add a bot to</h4><p>Discord is the production-tested path and the rest of this guide assumes it. Slack, Telegram, WhatsApp, and iMessage are experimental and covered in <a href="#platform">step 4</a>.</p></div></li>
       <li class="gstep"><div><h4>A coding-agent runtime</h4><p>The default (<code>claude-sdk</code>) needs only an <code>ANTHROPIC_API_KEY</code> or an existing <code>claude</code> login. Nothing to install. Other runtimes are in <a href="#runtime">step 5</a>.</p></div></li>
     </ul>
-    <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.claude/channels/knock-knock/</code> and is written by the setup CLI. <code>access.json</code> and the permission profiles are written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the room can change who's allowed or what they may do.</div></div>
+    <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.claude/channels/knock-knock/</code> and is written by the setup CLI. <code>access.json</code> — normalized into <code>me</code> / <code>bots</code> / <code>channels</code> (with each member's inline permission profile) / <code>roster</code> — is written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the channel can change who's allowed or what they may do.</div></div>
   </section>
 
   <!-- 03 QUICKSTART -->
@@ -99,10 +100,10 @@
     <ul class="gsteps">
       <li class="gstep"><div><h4>Get the relay</h4><p>Clone your knock-knock checkout, then install dependencies.</p><div class="code" data-copy><pre><code>cd knock-knock
 bun install</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
-      <li class="gstep"><div><h4>Run the setup wizard</h4><p>On first run it walks you through one agent end to end: <b>identity → runtime → sandbox? → room → preset → token → ledger</b>. It writes <code>access.json</code> and <code>.env</code> for you. (You'll need a bot token and a couple of IDs first; <a href="#platform">step 4</a> shows how.)</p><div class="code" data-copy><pre><code>bun setup.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
-      <li class="gstep"><div><h4>Start the relay</h4><p>You'll see <code>connected as your-bot#1234</code>. Now <code>@mention</code> the bot in your room and say hello.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Run the setup wizard</h4><p>On first run it walks you through one bot and a channel for it to work in: <b>bot (platform → runtime → sandbox?) → channel (paste id → pick member bots → set each one's workspace + preset → add collaborators from your roster) → token → ledger</b>. Your owner id is asked once; the bot's name is fetched from the platform on connect, never typed. It writes <code>access.json</code> and <code>.env</code> for you. (You'll need a bot token and a couple of IDs first; <a href="#platform">step 4</a> shows how.)</p><div class="code" data-copy><pre><code>bun setup.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Start the relay</h4><p>It prints a <b>“who's listening where”</b> table — each bot, its channels, and the workspace it uses — then <code>connected as your-bot#1234</code>. Now <code>@mention</code> the bot in your channel and say hello.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
     </ul>
-    <p class="body">After the first agent exists, re-running <code>bun setup.ts</code> opens an <b>action menu</b> instead of the wizard. That's where you add more agents, rooms, peers, humans, or update a token later.</p>
+    <p class="body">After the first bot exists, re-running <code>bun setup.ts</code> opens a <b>status dashboard + action menu</b> instead of the wizard — a map of your bots, channels, and roster, plus actions to add a bot, add/edit a channel, add a person or peer to the roster, save a token, or choose the ledger backend.</p>
   </section>
 
   <!-- 04 PLATFORM -->
@@ -126,8 +127,8 @@ bun install</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><
         <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your bot token.</p></div></li>
         <li class="gstep"><div><h4>Enable the message-content intent</h4><p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> The only privileged toggle you need. Without it the bot connects but reads empty message text.</p></div></li>
         <li class="gstep"><div><h4>Invite the bot to your server</h4><p><b>OAuth2 → URL Generator</b> → scope <b>bot</b> → enable these permissions, then open the generated URL:</p><div class="perm-chips"><span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span></div></div></li>
-        <li class="gstep"><div><h4>Collect three values</h4><p><b>Your user ID</b> (right-click yourself → Copy User ID), the <b>room's channel ID</b> (right-click the channel → Copy Channel ID), and the <b>bot token</b> from step 1.</p></div></li>
-        <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Discord (default); paste the three values</span>
+        <li class="gstep"><div><h4>Collect three values</h4><p><b>Your user ID</b> (right-click yourself → Copy User ID, asked once), the <b>channel ID</b> of your project channel (right-click → Copy Channel ID), and the <b>bot token</b> from step 1.</p></div></li>
+        <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># bot → channel (this bot as member, its workspace + preset) → token</span>
 bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       </ul>
       <p class="body">A top-level <code>@mention</code> spawns a task thread; replies there continue the task. Status is quiet emoji reactions (working → done / failed); approvals and conflicts are buttons; the owner gets a DM when a draft is overridden.</p>
@@ -141,7 +142,7 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
         <li class="gstep"><div><h4>Create the app from the manifest</h4><p>At <a href="https://api.slack.com/apps" target="_blank" rel="noopener">api.slack.com/apps</a> → <b>Create New App → From an app manifest</b>. The manifest sets the bot scopes and event subscriptions.</p></div></li>
         <li class="gstep"><div><h4>Get the app-level token</h4><p><b>Basic Information → App-Level Tokens → Generate</b> with scope <code>connections:write</code> → copy the <code>xapp-…</code> token.</p></div></li>
         <li class="gstep"><div><h4>Install and get the bot token</h4><p><b>OAuth &amp; Permissions → Install to Workspace</b> → copy the <code>xoxb-…</code> token. Then <code>/invite</code> the bot into your channel.</p></div></li>
-        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your <code>U…</code> id, room = the <code>C…</code> channel id. Set both tokens in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Slack</span>
+        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your <code>U…</code> id, channel = the <code>C…</code> channel id. Set both tokens in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Slack</span>
 bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       </ul>
       <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>Without <code>channels:history</code> / <code>groups:history</code> scopes <strong>and</strong> the matching <code>message.*</code> events, Slack silently drops every message. Reinstall the app if you add scopes later. Full manifest and troubleshooting in the platform reference below.</div></div>
@@ -154,7 +155,7 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the bot</h4><p>Message <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code>. It returns a token like <code>123456789:AAF…</code>. Keep it secret.</p></div></li>
         <li class="gstep"><div><h4>Set privacy mode</h4><p><code>/setprivacy</code> → <b>Disable</b> to read all group messages, or <b>Enable</b> (default) to only see @mentions, replies, and commands. For groups also <code>/setjoingroups → Enable</code>.</p></div></li>
-        <li class="gstep"><div><h4>Find your IDs</h4><p>Owner id from <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>; room chat id from <code>getUpdates</code>. Group ids are <b>negative</b> (<code>-100…</code>).</p></div></li>
+        <li class="gstep"><div><h4>Find your IDs</h4><p>Owner id from <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a>; channel chat id from <code>getUpdates</code>. Group ids are <b>negative</b> (<code>-100…</code>).</p></div></li>
         <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → Telegram</span>
 bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       </ul>
@@ -168,7 +169,7 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the app and add WhatsApp</h4><p><a href="https://developers.facebook.com" target="_blank" rel="noopener">developers.facebook.com</a> → <b>Create App → Business</b> → <b>Add product → WhatsApp</b>. Note the phone number ID and an access token.</p></div></li>
         <li class="gstep"><div><h4>Expose and register the webhook</h4><p>Put a tunnel in front of the adapter's port (<code>cloudflared</code> or <code>ngrok</code>), then set the Callback URL and Verify token in <b>WhatsApp → Configuration</b> and subscribe to the <code>messages</code> field.</p></div></li>
-        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your number in E.164 (<code>+15551234567</code>); a room is a contact's number. Token plus three extra vars go in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → WhatsApp</span>
+        <li class="gstep"><div><h4>Configure and run</h4><p>Owner = your number in E.164 (<code>+15551234567</code>); a channel is a contact's number. Token plus three extra vars go in <code>.env</code>.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → WhatsApp</span>
 bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       </ul>
       <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>The <strong>24-hour window</strong>: outside 24h of the user's last message you can only send pre-approved templates, not free text. A hard WhatsApp rule. Full env vars and limits in the reference below.</div></div>
@@ -181,7 +182,7 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
       <ul class="gsteps">
         <li class="gstep"><div><h4>Grant Full Disk Access</h4><p><b>System Settings → Privacy &amp; Security → Full Disk Access</b> → add your terminal (or the <code>bun</code> binary) → restart the terminal. The relay must read <code>~/Library/Messages/chat.db</code>.</p></div></li>
         <li class="gstep"><div><h4>Grant Automation</h4><p>The first send triggers an Automation prompt (<b>Allow</b>), or pre-allow under <b>Privacy &amp; Security → Automation → your terminal → Messages</b>.</p></div></li>
-        <li class="gstep"><div><h4>Find the room's chat GUID and run</h4><p>Query <code>chat.db</code> for the GUID (e.g. <code>iMessage;-;+15551234567</code>), or read the scope the relay logs on first inbound. No token needed.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → iMessage</span>
+        <li class="gstep"><div><h4>Find the channel's chat GUID and run</h4><p>Query <code>chat.db</code> for the GUID (e.g. <code>iMessage;-;+15551234567</code>), or read the scope the relay logs on first inbound. No token needed.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># platform → iMessage</span>
 bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       </ul>
       <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div>No reactions, threads, buttons, or edits, so every interactive flow (approvals, conflicts, session pick) runs through a numbered text menu. Details in the reference below.</div></div>
@@ -193,7 +194,7 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
   <!-- 05 RUNTIME -->
   <section class="gsec reveal" id="runtime">
     <h2>Choose the coding agent behind the bot</h2>
-    <p class="gsec-lede">The bot is just the face. The relay can drive any of these, chosen by the agent's <code>runtime</code> field in setup, with no code changes.</p>
+    <p class="gsec-lede">The bot is just the face. The relay can drive any of these, chosen by the bot's <code>runtime</code> in setup, with no code changes.</p>
     <table class="gtable">
       <thead><tr><th>runtime</th><th>Agent</th><th>Notes</th></tr></thead>
       <tbody>
@@ -210,8 +211,8 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
 
   <!-- 06 PERMISSIONS -->
   <section class="gsec reveal" id="permissions">
-    <h2>Decide what the agent may do</h2>
-    <p class="gsec-lede">Each room gets a preset. Every tool is checked against it, with one rule: <b>deny beats ask beats allow.</b></p>
+    <h2>Decide what the bot may do</h2>
+    <p class="gsec-lede">Each <strong>membership</strong> (a bot in a channel) gets a preset, expanded inline into its allow/ask/deny. Every tool is checked against it, with one rule: <b>deny beats ask beats allow.</b> The same bot can be strict in one channel and auto in another.</p>
     <table class="gtable">
       <thead><tr><th>Preset</th><th>Reads</th><th>Edits</th><th>Shell</th><th>Good for</th></tr></thead>
       <tbody>
@@ -221,13 +222,13 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
         <tr><td>bypass + sandbox</td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td>unattended runs you review after</td></tr>
       </tbody>
     </table>
-    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to sensitive paths are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's agent runs read-only while you keep full access. Full guide: <a href="../docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
+    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to sensitive paths are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's bot runs read-only while you keep full access. Full guide: <a href="../docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
   </section>
 
   <!-- 07 VERIFY -->
   <section class="gsec reveal" id="verify">
     <h2>Say hello, then verify</h2>
-    <p class="gsec-lede">With the relay running and a room on <b>ask-per-edit</b>, <code>@mention</code> your bot, then run this three-line check.</p>
+    <p class="gsec-lede">With the relay running and your bot a member of a channel on <b>ask-per-edit</b>, <code>@mention</code> it, then run this three-line check.</p>
     <ul class="checks">
       <li class="check"><span class="check-b ok">T1</span><div><b>“What files are here?”</b><p>Answered immediately, no prompt. Read is allowed.</p></div></li>
       <li class="check"><span class="check-b ask">T2</span><div><b>“Run <code>echo hello</code>.”</b><p>An Allow / Deny prompt pings you, the owner. A non-owner tapping Allow is rejected.</p></div></li>
@@ -238,15 +239,15 @@ bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic">
 
   <!-- 08 TEAMMATE -->
   <section class="gsec reveal" id="teammate">
-    <h2>Add a teammate's agent</h2>
-    <p class="gsec-lede">The point of knock-knock: two people, two machines, two agents, one room. Each person does steps 4 to 6 on their own machine, then registers the other as a peer.</p>
+    <h2>Add a teammate's bot</h2>
+    <p class="gsec-lede">The point of knock-knock: two people, two machines, two bots, one channel. Each person does steps 4 to 6 on their own machine, then adds the other to their roster and to the channel.</p>
     <ul class="gsteps">
-      <li class="gstep"><div><h4>Both join one channel</h4><p>Invite both bots to the same server and channel. That channel is the <b>room</b> both agents serve.</p></div></li>
+      <li class="gstep"><div><h4>Both join one channel</h4><p>Invite both bots to the same server and channel. That channel is the <b>project</b> both bots are members of.</p></div></li>
       <li class="gstep"><div><h4>Exchange bot user IDs</h4><p>Each person copies their bot's user ID and sends it to the other.</p></div></li>
-      <li class="gstep"><div><h4>Register each other as peers</h4><p>The blurb (e.g. “hosts the vLLM box”) is what your agent sees in the roster, so it knows who to <code>@mention</code> for what.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># → "Register a peer bot" → paste the other bot's id + a blurb</span></code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
-      <li class="gstep"><div><h4>Both launch</h4><p>Now one agent can <code>@mention</code> the other with a request. A task thread opens, the other agent works in <b>its</b> workspace under <b>its</b> owner's rules, and anything that changes that machine waits for <b>that</b> owner's Allow.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Add each other as peers, then as collaborators</h4><p>Add the other bot to your <b>roster</b> as a peer (id + a blurb like “hosts the vLLM box”), then add it as a collaborator of the channel. The blurb is what your bot sees in the roster, so it knows who to <code>@mention</code> for what. Entered once; picked from a list thereafter.</p><div class="code" data-copy><pre><code>bun setup.ts   <span style="color:#8E8E93"># "Add a peer bot to the roster" → then "Add / edit a channel"</span></code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Both launch</h4><p>Now one bot can <code>@mention</code> the other with a request. A task thread opens, the other bot works in <b>its</b> membership's workspace under <b>its</b> owner's rules, and anything that changes that machine waits for <b>that</b> owner's Allow.</p><div class="code" data-copy><pre><code>bun relay.ts</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
     </ul>
-    <div class="callout"><svg class="ic"><use href="#i-users"/></svg><div><strong>Same machine, two agents?</strong> You don't need two computers to try this. One relay can host several agents at once: re-run setup, add a second agent with its own token and workspace, register the two as peers, and a single <code>bun relay.ts</code> connects both.</div></div>
+    <div class="callout"><svg class="ic"><use href="#i-users"/></svg><div><strong>Same machine, two bots?</strong> You don't need two computers to try this. One relay can host several bots at once: re-run setup, add a second bot with its own token, make both members of the channel (each with its own workspace + preset), and a single <code>bun relay.ts</code> connects both. With more than one of your bots in a channel, an <code>@mention</code> routes to the named bot.</div></div>
   </section>
 
   <!-- 09 DEEPER -->

@@ -363,26 +363,37 @@ prior plan, decisions, and pitfalls instead of cold. See
 ### State layout
 
 All persistent config lives in `~/.claude/channels/knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
-- `access.json` — `{ agents: Record<agentKey, AgentConfig>, mentionPatterns?, ackReaction? }`. Each `AgentConfig` carries `ownerUserId`, `blurb`, `runtime`, `workspace`, `tokenEnv` (the *name* of the env var holding the token, never the token), `rooms`, and an optional `sandbox` (`{fs:'workspace', network}`). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
-- `rooms/<agentKey>/<channelId>.settings.json` — the permission profile for a room, written **flat** (top-level `allow`/`ask`/`deny`, plus an optional `_mode` preset hint and a `tiers` map for per-actor overrides). Read fresh on each inbound message.
+- `access.json` — written in the **channel-centric authoring shape** (`AuthoringAccess`, `lib.ts`): `{ me?, bots, channels, roster, mentionPatterns?, ackReaction? }`.
+  - `me` — `Partial<Record<Platform, userId>>`: the owner's id per platform, entered **once** and reused (no per-bot owner re-entry).
+  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, appTokenEnv?, runtime, sandbox?, displayName?, blurb?}`. The bot's name/avatar live on the platform (fetched live, never typed).
+  - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace` + inline `profile` + `preset`) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`.
+  - `roster` — `{people: Record<id, Person>, peers: Record<id, Peer>}`: known humans + peer bots, entered once and referenced by id from a channel's `collaborators`.
+  - **Read via `readAccessFile()`**, which projects this to the agent-keyed runtime `Access` (`{agents: Record<botId, AgentConfig>}`) via the pure `projectToRuntime` — so the relay/hosts/folds are unchanged. `readAuthoringAccess`/`saveAuthoringAccess` operate on the authoring shape (setup only). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
+- Permission profiles are **inline** on each `Membership.profile` in `access.json` (`{allow, ask, deny, tiers?}`, expanded from a named `preset`). A legacy on-disk `rooms/<botId>/<channelId>.settings.json` file is still read as a fallback when a membership has no inline profile.
 - `settings.json` — machine-global, setup-written: `ledger` backend (`{backend, url?}`) and any user-defined `presets`. Read by `relay.ts` via `resolveLedgerConfig`. Same prompt-injection invariant as `access.json`.
 - `ledger.sqlite` — the interaction DAG (SQLite backend; override path with `KNOCK_KNOCK_LEDGER_FILE`). Postgres is used instead when configured (settings.json or `KNOCK_KNOCK_LEDGER_URL`).
-- `.env` — bot tokens (one per agent, keyed by each agent's `tokenEnv`) and any other secrets.
+- `.env` — bot tokens (one per bot, keyed by each bot's `tokenEnv`) and any other secrets.
+
+The redesign of this config/identity/setup layer (and what is intentionally *not* changed — the ledger core) is documented in **`docs/redesign.md`**.
 
 `state.ts` is the only module that reads/writes the config files; `lib.ts` holds
 all pure decision logic and has no I/O; the ledger owns its own storage.
 
 ### Setup (`setup.ts`)
 
-`bun setup.ts` is the standalone, agent-agnostic setup CLI, built on
-`@clack/prompts` (+ `picocolors`). With no args it runs an interactive flow: a
-guided wizard on first run (agent → sandbox → room → preset → token → ledger),
-then an action menu once agents exist (add agents, rooms, peers, humans, **set
-room permissions**, save tokens, **choose ledger backend**). It writes the
-`agents` shape, preset-expanded permission profiles (`collectPermissions` →
-`expandPreset`, + per-actor tiers), and `settings.json` (ledger) via
-`readAccessFile`/`saveAccess`/`saveSettings`; tokens and the Postgres URL are
-masked on input. Permission profiles are written **only** here — never from chat.
+`bun setup.ts` is the standalone, agent-agnostic, **channel-centric** setup CLI,
+built on `@clack/prompts` (+ `picocolors`). With no args it runs an interactive
+flow: a guided wizard on first run (bot → sandbox → channel [members + per-channel
+workspace + preset + collaborators] → token → ledger), then a status dashboard +
+action menu once bots exist (add bot, add/edit channel, add person/peer to the
+**roster**, save tokens, choose ledger backend, remove). Key UX: the owner id is
+asked **once per platform** (`me`), bot names are **not typed** (they live on the
+platform), and channel collaborators are **picked from the roster** rather than
+re-pasted. It writes the `AuthoringAccess` shape (`readAuthoringAccess` /
+`saveAuthoringAccess`), inline preset-expanded permission profiles
+(`expandPreset` per membership), and `settings.json` (ledger via `saveSettings`);
+tokens and the Postgres URL are masked on input. Permission profiles + access are
+written **only** here — never from chat.
 
 ### The deny floor
 
