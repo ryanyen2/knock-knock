@@ -1,5 +1,5 @@
 Major:
-- [ ] thread level configuration
+- [F] thread level configuration
 - [ ] file and attachement sharing
 - [ ] need to have the good meta prompt, or inject role-based instruction to provide context on what they are doing
 - [ ] current setup path is a bit redudant and confusing
@@ -10,6 +10,7 @@ Done Need test:
 - [ ] other coding agents 
 - [ ] other social media platform
 - [ ] watch
+- [ ] sandbox?
 
 
 the conflict is not on the artifact but the action(artifact)
