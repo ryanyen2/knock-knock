@@ -626,9 +626,19 @@ async function collectPermissions(access: Access, agentKey?: string, channelId?:
 
   const mode = await pickPreset()
 
+  // File exchange (see docs/file-exchange.md): the preset already governs
+  // outbound sharing via FileShare (ask by default, deny under strict, allow
+  // under bypass), and the credential floor (.env / keys / .ssh / …) can be
+  // neither read NOR shared under ANY preset — it lives in the deny floor and is
+  // not disableable here. To auto-allow sharing a specific area, add e.g.
+  // FileShare(reports/**) as an extra allow pattern below.
+  p.log.info(
+    'File sharing: outbound shares follow FileShare (ask by default); credential files (.env, keys) can never be read or shared, regardless of preset.',
+  )
+
   const extraAllow = orCancel(await p.text({
     message: 'Extra allow patterns (comma-separated, optional)',
-    placeholder: 'e.g. Bash(bun *), WebFetch(**)',
+    placeholder: 'e.g. Bash(bun *), WebFetch(**), FileShare(reports/**)',
   })).trim()
   const extraDeny = orCancel(await p.text({
     message: 'Extra deny patterns (comma-separated, optional) — only tightens the floor',
