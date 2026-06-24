@@ -49,6 +49,7 @@ import {
   matchesMentionPattern,
   wrapChannelRole,
   wrapChannelGoal,
+  formatAttachedFilesBlock,
   applyModeToProfile,
   toThinkingConfig,
   DEFAULT_LOOP_GUARD,
@@ -148,6 +149,10 @@ export class AgentHost {
    *  turn.prompted subscriber (DmCourier kickoff) and the turn.replied
    *  subscriber (ack cleanup). */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
+  /** Per-scope ingested files not yet delivered into a turn (U5). Fed by the
+   *  file.received subscriber, drained by runTurnForChannel; an entry is removed
+   *  only after the turn succeeds, so a failed turn re-offers it. */
+  private readonly pendingIngestedByScope = new Map<ChannelId, { relpath: string; kind: string; hash: Hash }[]>()
   /** §4.2 conflict card post + button resolution. */
   private readonly conflictUI: ConflictUI
   /** Watch arm/disarm/list — owner `!watch` and the agent MCP tool. */
@@ -299,6 +304,11 @@ export class AgentHost {
     this.storeUnsub = this.store.subscribe(i => {
       if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
       if (i.verb === 'turn.prompted') void this.onTurnPrompted(i.hash, i.caused_by[0])
+      // file.received is admitted within the same wave as its channel.message,
+      // BEFORE the turn is prompted (ingest is registered ahead of
+      // prompt-on-message). Store fanout is synchronous, so buffering here means
+      // the very turn the file rode in on can see it (peekPendingIngested).
+      else if (i.verb === 'file.received') this.bufferIngestedFile(i)
     })
   }
 
@@ -452,6 +462,44 @@ export class AgentHost {
    *  rejected). Fire-and-forget. */
   noteToScope(scope: ChannelId, text: string): void {
     void this.messaging.send(scope, text).catch(() => {})
+  }
+
+  // ─── Ingested-file delivery (U5) ──────────────────────────────────────────────
+
+  /** Buffer a file.received so the next turn in its scope learns the path. */
+  private bufferIngestedFile(i: import('./ledger/interaction.ts').Interaction): void {
+    if (i.patch.kind !== 'external') return
+    const args = i.patch.intent.args as { relpath?: string; kind?: string } | undefined
+    if (!args?.relpath) return
+    const list = this.pendingIngestedByScope.get(i.channel) ?? []
+    if (list.some(f => f.hash === i.hash)) return // idempotent (replay/double-fanout)
+    list.push({ relpath: args.relpath, kind: args.kind ?? 'file', hash: i.hash })
+    // Bound: cap per-scope pending so a flood can't grow unboundedly; keep newest.
+    if (list.length > 50) list.splice(0, list.length - 50)
+    this.pendingIngestedByScope.set(i.channel, list)
+  }
+
+  /** The scope's not-yet-delivered ingested files + their hashes. Does NOT clear
+   *  — runTurnForChannel confirms delivery only after the turn succeeds. */
+  peekPendingIngested(scope: ChannelId): {
+    files: { relpath: string; kind: string }[]
+    freshHashes: Hash[]
+  } {
+    const list = this.pendingIngestedByScope.get(scope) ?? []
+    return {
+      files: list.map(f => ({ relpath: f.relpath, kind: f.kind })),
+      freshHashes: list.map(f => f.hash),
+    }
+  }
+
+  /** Drop the named ingested files from the scope's pending buffer (called after
+   *  a turn genuinely succeeds, so a failed turn re-offers them). */
+  confirmIngestedDelivered(scope: ChannelId, hashes: readonly Hash[]): void {
+    if (hashes.length === 0) return
+    const drop = new Set(hashes)
+    const list = (this.pendingIngestedByScope.get(scope) ?? []).filter(f => !drop.has(f.hash))
+    if (list.length) this.pendingIngestedByScope.set(scope, list)
+    else this.pendingIngestedByScope.delete(scope)
   }
 
   /** write-back-versionable asks "where on disk does this vers: artifact live?"
@@ -1043,7 +1091,13 @@ export class AgentHost {
     // ahead of any imported shared-context, read per-turn so a mid-session change
     // takes effect next turn (it rides the Driver's per-turn contextPrefix slot).
     const personaPrefix = this.personaBlocksFor(channelId)
-    const contextPrefix = [personaPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') || undefined
+    // Ingested files (U5): an <attached-files> untrusted block ahead of the
+    // envelope, so the turn the file rode in on can read it. Peeked here, dropped
+    // only after the turn succeeds (mirrors imported-context delivery).
+    const ingested = this.peekPendingIngested(channelId)
+    const attachedFilesPrefix = ingested.files.length ? formatAttachedFilesBlock(ingested.files) : undefined
+    const contextPrefix =
+      [personaPrefix, attachedFilesPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') || undefined
 
     // Per-turn runtime knobs (model/thinking/effort), resolved per-thread. The
     // claude-sdk adapter honors them; ACP self-manages and ignores them.
@@ -1092,6 +1146,7 @@ export class AgentHost {
     // 'failed') re-injects the context next time instead of silently losing it.
     if (outcome === 'done') {
       this.sessionSharing.confirmDelivered(channelId, pendingCtx.freshHashes)
+      this.confirmIngestedDelivered(channelId, ingested.freshHashes)
     }
 
     return { chunks, error: turnError }

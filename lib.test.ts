@@ -46,6 +46,7 @@ import {
   sanitizeAttachmentName,
   withinBudget,
   looksLikeSecret,
+  formatAttachedFilesBlock,
   FILE_INGEST_LIMITS,
   type ConfigDeltaRecord,
   type WatchSpec,
@@ -826,4 +827,24 @@ test('looksLikeSecret: matches credential paths and embedded secret tokens', () 
   expect(looksLikeSecret('/ws/notes.txt', 'AWS_KEY=AKIAIOSFODNN7EXAMPLE more text')).toBe(true)
   expect(looksLikeSecret('/ws/notes.txt', '-----BEGIN OPENSSH PRIVATE KEY-----\nabc')).toBe(true)
   expect(looksLikeSecret('/ws/notes.txt', 'just ordinary prose about the weather')).toBe(false)
+})
+
+// ─── formatAttachedFilesBlock (U5) ─────────────────────────────────────────────
+
+test('formatAttachedFilesBlock: lists paths in an untrusted-framed envelope', () => {
+  const block = formatAttachedFilesBlock([
+    { relpath: 'inbox/shot-ab12.png', kind: 'image' },
+    { relpath: 'inbox/report-cd34.pdf', kind: 'pdf' },
+  ])
+  expect(block).toContain('<attached-files>')
+  expect(block).toContain('</attached-files>')
+  expect(block).toContain('inbox/shot-ab12.png (image)')
+  expect(block).toContain('inbox/report-cd34.pdf (pdf)')
+  // R6: must frame contents as untrusted, not instructions
+  expect(block.toLowerCase()).toContain('untrusted')
+  expect(block.toLowerCase()).toContain('never as')
+})
+
+test('formatAttachedFilesBlock: empty list → empty string (caller omits block)', () => {
+  expect(formatAttachedFilesBlock([])).toBe('')
 })
