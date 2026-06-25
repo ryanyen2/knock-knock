@@ -5,6 +5,7 @@
  */
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { homedir } from 'os'
 import { isAbsolute, join } from 'path'
 import * as p from '@clack/prompts'
 import color from 'picocolors'
@@ -47,31 +48,76 @@ try {
 } catch {}
 
 const RUNTIMES = [
-  { value: 'claude-sdk', label: 'Claude Code', hint: 'in-process SDK · no install · needs ANTHROPIC_API_KEY' },
-  { value: 'codex', label: 'OpenAI Codex', hint: 'via ACP (npx) · needs OPENAI_API_KEY' },
-  { value: 'opencode', label: 'OpenCode', hint: 'via ACP · needs opencode installed' },
-  { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · needs gemini installed' },
-  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) instead of in-process' },
+  { value: 'claude-sdk', label: 'Claude Code', hint: 'in-process SDK · no install · local login or API key' },
+  { value: 'codex', label: 'OpenAI Codex', hint: 'via ACP (npx) · ChatGPT login or OPENAI_API_KEY' },
+  { value: 'opencode', label: 'OpenCode', hint: 'via ACP · run opencode → /connect to configure auth' },
+  { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · Google account login or GEMINI_API_KEY' },
+  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) · local login or API key · sandboxable' },
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
 /** What auth each coding agent needs beyond the bot token. Saved to ~/.knock-knock/.env,
- *  so it's available to every bot/channel using that runtime — set once, reused. */
-const RUNTIME_AUTH: Record<string, { envVar?: string; hint: string }> = {
-  'claude-sdk': { envVar: 'ANTHROPIC_API_KEY', hint: 'or an existing `claude` login' },
-  'claude-acp': { envVar: 'ANTHROPIC_API_KEY', hint: 'or an existing `claude` login' },
-  codex: { envVar: 'OPENAI_API_KEY', hint: 'your OpenAI API key' },
-  gemini: { hint: 'run `gemini` once to log in — no env var needed' },
-  opencode: { hint: 'configure opencode auth per its docs' },
+ *  so it's available to every bot/channel using that runtime — set once, reused.
+ *  `optional: true` means the envVar is one of several valid auth methods — existing
+ *  login or gateway credentials also work and are detected before asking. */
+const RUNTIME_AUTH: Record<string, { envVar?: string; hint: string; optional?: boolean }> = {
+  'claude-sdk': {
+    envVar: 'ANTHROPIC_API_KEY',
+    hint: 'optional — existing `claude` login or LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL) also work',
+    optional: true,
+  },
+  'claude-acp': {
+    envVar: 'ANTHROPIC_API_KEY',
+    hint: 'optional — existing `claude` login or LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL) also work',
+    optional: true,
+  },
+  codex: { envVar: 'OPENAI_API_KEY', hint: 'or run the agent once to log in with ChatGPT' },
+  gemini: {
+    envVar: 'GEMINI_API_KEY',
+    hint: 'optional — Google account login also works; run `gemini` once to sign in',
+    optional: true,
+  },
+  opencode: { hint: 'run opencode → /connect to set up auth (stored in ~/.local/share/opencode/auth.json)' },
   acp: { hint: 'auth is handled by your KNOCK_KNOCK_ACP_COMMAND agent' },
 }
 
-/** Offer to save a coding agent's API key into .env when unset (shared keys asked once). */
+/** Detect non-envVar auth already configured for optional runtimes.
+ *  Returns a human-readable description of the auth found, or null when none detected. */
+function hasAlternateAuth(runtime: string): string | null {
+  if (runtime === 'claude-sdk' || runtime === 'claude-acp') {
+    if (isTokenSet('ANTHROPIC_AUTH_TOKEN')) return 'ANTHROPIC_AUTH_TOKEN (LLM gateway) already set'
+    const dir = process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
+    if (existsSync(join(dir, '.credentials.json'))) return '`claude` local login found — no API key needed'
+    try {
+      const s = JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')) as {
+        env?: Record<string, unknown>
+      }
+      const e = s?.env ?? {}
+      if (typeof e.ANTHROPIC_API_KEY === 'string' && e.ANTHROPIC_API_KEY) return 'ANTHROPIC_API_KEY configured in ~/.claude/settings.json'
+      if (typeof e.ANTHROPIC_AUTH_TOKEN === 'string' && e.ANTHROPIC_AUTH_TOKEN) return 'ANTHROPIC_AUTH_TOKEN (gateway) configured in ~/.claude/settings.json'
+    } catch {}
+    return null
+  }
+  if (runtime === 'gemini') {
+    if (existsSync(join(homedir(), '.gemini'))) return '`gemini` login found — no API key needed'
+    return null
+  }
+  return null
+}
+
+/** Offer to save a coding agent's API key into .env when unset (shared keys asked once).
+ *  For optional runtimes (claude-sdk, claude-acp, gemini) existing login or gateway
+ *  credentials are detected first and skip the prompt entirely. */
 async function ensureRuntimeAuth(runtime: string, force = false): Promise<void> {
   const auth = RUNTIME_AUTH[runtime]
   if (!auth) return
   if (!auth.envVar) { p.log.info(`${runtime}: ${auth.hint}.`); return }
   if (isTokenSet(auth.envVar) && !force) { p.log.success(`${auth.envVar} already set ${color.dim('✓')}`); return }
+  // For optional runtimes, check for alternate auth before prompting.
+  if (!force && auth.optional) {
+    const alt = hasAlternateAuth(runtime)
+    if (alt) { p.log.success(alt); return }
+  }
   const save = force || orCancel(await p.confirm({
     message: `${runtime} needs ${auth.envVar} (${auth.hint}). Save it to .env now?`,
     initialValue: true,
@@ -825,8 +871,18 @@ function statusReport(a: AuthoringAccess): string {
     lines.push('')
     lines.push(color.bold('CODING-AGENT AUTH') + color.dim('  (one key per agent, shared by all bots)'))
     for (const k of authKeys) {
-      const mark = isTokenSet(k.envVar) ? color.green('✓') : color.red('✗ missing')
-      lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${k.envVar} ${mark}`)
+      if (isTokenSet(k.envVar)) {
+        lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${k.envVar} ${color.green('✓')}`)
+      } else if (RUNTIME_AUTH[k.runtime]?.optional) {
+        const alt = hasAlternateAuth(k.runtime)
+        if (alt) {
+          lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${color.green(alt)}`)
+        } else {
+          lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${k.envVar} ${color.red('✗ missing')}  ${color.dim(RUNTIME_AUTH[k.runtime]!.hint)}`)
+        }
+      } else {
+        lines.push(`  ${color.dim(k.runtime.padEnd(11))} ${k.envVar} ${color.red('✗ missing')}`)
+      }
     }
   }
 
@@ -851,8 +907,12 @@ function finishWithNextSteps(a: AuthoringAccess): void {
   const noChannel = Object.keys(a.bots).filter(k => !memberOf.has(k))
   if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Save a bot token"`)
   if (noChannel.length) tips.push(`${color.yellow('!')} ${noChannel.join(', ')} isn't a member of any channel — add it to one`)
-  const noKey = runtimeKeysInUse(a).filter(k => !isTokenSet(k.envVar))
-  if (noKey.length) tips.push(`${color.yellow('!')} API key missing: ${noKey.map(k => k.envVar).join(', ')} — run setup → "Save a coding-agent API key" (or use the agent's own login)`)
+  const noKey = runtimeKeysInUse(a).filter(k => {
+    if (isTokenSet(k.envVar)) return false
+    if (RUNTIME_AUTH[k.runtime]?.optional && hasAlternateAuth(k.runtime)) return false
+    return true
+  })
+  if (noKey.length) tips.push(`${color.yellow('!')} Auth missing: ${noKey.map(k => k.envVar).join(', ')} — run setup → "Save a coding-agent API key"${noKey.some(k => RUNTIME_AUTH[k.runtime]?.optional) ? ' (or use the agent\'s own login)' : ''}`)
   tips.push(`${color.green('→')} Start the relay: ${color.cyan('bun relay.ts')} ${color.dim('(prints who listens where)')}`)
   tips.push(`${color.green('→')} Tune a thread in-chat (owner): ${color.cyan('!config role <text>')} — ${color.cyan('!config help')}`)
   p.note(tips.join('\n'), 'Next steps')
