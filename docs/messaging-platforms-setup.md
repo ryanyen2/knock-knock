@@ -2,39 +2,74 @@
 
 knock-knock connects a coding agent to a chat surface through one
 platform-neutral `MessagingAdapter` seam (`adapters-msg/`). Five platforms are
-supported today; each is one adapter file plus capability-driven degradation.
+supported; each is one adapter file plus capability-driven degradation.
 
 This page is the **per-platform prerequisite** to [the setup guide](setup.md):
 how to create the platform app/bot, which tokens it produces, the exact env-var
 **names** the CLI expects, the scopes/permissions to turn on, and how to find
-the **channel/scope id** and your **owner id**. Once you have those, you run the
-three-command path from [setup.md](setup.md):
+the **channel/scope id** and your **owner id**. Once you have those, run:
 
 ```bash
 knock-knock setup    # add the bot, paste the id, save the token(s)
 knock-knock relay    # connect and go
 ```
 
-For the architecture behind this — why each platform sorts into transport vs.
-tool, what degrades, and the capabilities matrix — see
+For the architecture and the capabilities rationale see
 [messaging-platforms-roadmap.md](messaging-platforms-roadmap.md).
 
-**Fidelity at a glance:**
+---
 
-| Platform | Cadence | Fidelity |
-|----------|---------|----------|
-| **Discord** | live | full (buttons · reactions · threads · DM · files) |
-| **Slack** | live | full (inbound files only; outbound upload pending) |
-| **Telegram** | live | near-parity (whitelist reactions, cold-DM, 64-byte callbacks) |
-| **GitHub** | async (~60 s) | degraded (no buttons/DM/pin; text-numbered approvals) |
-| **Notion** | async (~seconds) | heavily degraded (no reactions/buttons/DM/edit/inline files) |
+## What each platform supports
 
-> **One owner id per platform.** Your owner id (`me.<platform>`) is asked **once
-> per platform** in setup and reused as the owner of every bot on it. Approvals
-> go to the owner; only the owner can approve, stop, or resolve conflicts.
+The table below shows every capability the `MessagingAdapter` seam exposes.
+Capability-driven degradation means the host **never branches on platform name**
+— it branches on these flags, so an unsupported feature degrades gracefully
+(buttons → numbered text, reactions → text status, DM → @mention in-scope, etc.).
+
+| Capability | Discord | Slack | Telegram | GitHub | Notion |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Inbound transport** | WebSocket gateway | Socket Mode WS | long-poll | poll ~60 s | poll ~10 s |
+| **Send / post** | ✅ | ✅ | ✅ | ✅ (comment) | ✅ (comment) |
+| **Edit in place** | ✅ | ✅ | ✅ | ✅ (comment) | ❌ re-posts |
+| **Reactions** | any emoji | any emoji | whitelist (11) | whitelist (8 names) | ❌ none |
+| **Approval buttons** | ✅ native | ✅ Block Kit | ✅ inline kbd | ❌ numbered text | ❌ numbered text |
+| **Task threads** | ✅ Discord thread | ✅ thread reply | ✅ forum topic | ✅ issue / PR | ❌ comment-only |
+| **Pin message** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **Direct message owner** | ✅ | ✅ | ⚠️ must /start | ❌ (→ @mention) | ❌ |
+| **Typing indicator** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **Inbound file attachments** | ✅ (10 MiB) | ✅ | ✅ (20 MiB) | ❌ deferred | ❌ deferred |
+| **Outbound file share** | ✅ | ❌ pending | ✅ | ❌ deferred | ❌ deferred |
+| **Max message length** | 2 000 chars | ~3 800 chars | 4 096 chars | 65 536 chars | ~2 000 chars |
+| **Setup tokens** | 1 | **2** | 1 | 1 | 1 |
+| **Recommended use** | live collab | live collab | live collab | async / PR work | async doc work |
+
+### Terminology correspondence
+
+Every platform uses its own vocabulary for the same structural concepts.
+knock-knock names are on the left; platform synonyms are on the right.
+
+| knock-knock | Discord | Slack | Telegram | GitHub | Notion |
+|---|---|---|---|---|---|
+| **bot** | bot user | bot user / app | bot account | machine user / GitHub App | internal integration |
+| **room** (permission boundary) | text channel | channel | group / supergroup | repository | database or page |
+| **scope** (one task) | thread | thread (`thread_ts`) | forum topic | issue or pull request | page (comment thread) |
+| **@mention bot** | @BotName | @appname or `<@botId>` | @botusername | @machine-user-login | @integration-name |
+| **approval button** | ActionRow button | Block Kit button | inline keyboard | reply with `1` / `/approve` | reply with `1` / `/approve` |
+| **reaction** | emoji reaction | emoji reaction (name) | emoji reaction (whitelist) | reaction (`+1`, `eyes`, …) | — (not supported) |
+| **DM owner** | Direct Message | Direct Message | DM (user must /start first) | — (falls back to @mention) | — (not supported) |
+| **pin** | Pinned Message | Pinned Message | Pinned Message | — (not supported) | — (not supported) |
+| **primary token** | Bot Token | Bot User OAuth Token (`xoxb-…`) | Bot Token | Personal Access Token | Integration Secret (`ntn_…`) |
+| **extra token** | — | App-Level Token (`xapp-…`) | — | — | — |
+| **channel/room id** | snowflake (17–20 digits) | `C0123ABCD` | negative int / `-100…` | `owner/repo` | 32 hex chars from URL |
+| **owner id** | user snowflake | member id (`U0123ABCD`) | numeric user id | GitHub login (username) | Notion user id |
+
+> **One owner id per platform.** Your owner id (`me.<platform>`) is asked
+> **once per platform** in setup and reused as the owner of every bot on it.
+> Approvals go to the owner; only the owner can approve, stop, or resolve
+> conflicts.
 
 > **Config is never settable from chat.** `access.json` / `settings.json` are
-> written **only** by `knock-knock setup`, never from a message — so nothing
+> written **only** by `knock-knock setup`, never from a chat message — so nothing
 > said in a channel can change who's allowed or what they may do. This
 > prompt-injection invariant holds on every platform.
 
@@ -42,139 +77,345 @@ tool, what degrades, and the capabilities matrix — see
 
 ## Discord
 
-The live, production-tested surface — full fidelity.
+The live, production-tested surface — full fidelity. **Start here if you are new
+to knock-knock.**
 
-**What you create:** a Discord *application* with a *bot* user, invited to a
-server you manage.
+### What you are creating
 
-**Tokens & env vars:**
+A Discord **Application** (the container), with a **Bot user** inside it
+(the identity that joins your server), invited to a **server (guild)** you own
+or manage.
 
-| Env var | Value | Where |
-|---------|-------|-------|
-| `DISCORD_BOT_TOKEN` | the bot token | Developer Portal → Bot → Reset Token |
+```
+discord.com/developers/applications
+  └── New Application  →  name it
+        └── Bot tab  →  Reset Token  →  copy the token  (keep this secret)
+              └── OAuth2 → URL Generator  →  invite to server
+```
 
-**Required scopes / config toggles:**
+### Step-by-step
 
-- **Bot → Privileged Gateway Intents → MESSAGE CONTENT INTENT** — on. Without it
-  the bot connects but reads empty message text.
-- **OAuth2 → URL Generator** → scope `bot` → bot permissions: View Channels ·
-  Send Messages · Send Messages in Threads · Create Public Threads · Read
-  Message History · Add Reactions · Manage Messages. Open the generated URL to
-  add the bot. (Threads + Manage Messages matter: each task runs in its own
-  thread and the config card / Workbench are pinned messages.)
+**Step 1 — Create the application and bot**
 
-**How to get the channel id:** turn on **Settings → Advanced → Developer Mode**,
-then right-click the project channel → **Copy Channel ID** — a 17–20 digit
-snowflake.
+1. Open [discord.com/developers/applications](https://discord.com/developers/applications)
+   and click **New Application**. Give it a name (this becomes the bot's default
+   username; you can change it later under **Bot → Username**).
+2. In the left sidebar click **Bot**.
+3. Click **Reset Token** → confirm → **copy the token immediately** — it is shown
+   only once. If you lose it, reset it again (invalidates the old one).
 
-**How to find your owner id:** right-click yourself → **Copy User ID** (a
-snowflake). Asked once per platform.
+**Step 2 — Enable the message-content intent**
 
-**Gotchas:**
+Still on the **Bot** tab, scroll down to **Privileged Gateway Intents** and turn
+on **MESSAGE CONTENT INTENT**. Without it the bot connects to the gateway but
+receives empty message text — it will appear deaf.
 
-- MESSAGE CONTENT INTENT off ⇒ the bot is silent / reads empty text.
-- Manage Messages is needed to pin the config card and Workbench.
+**Step 3 — Generate an invite URL and add the bot to your server**
 
-**Then:** run `knock-knock setup`, choose **Discord**, paste the channel id, and
-save the token (`DISCORD_BOT_TOKEN`).
+1. In the left sidebar click **OAuth2 → URL Generator**.
+2. Under **Scopes** check `bot`.
+3. Under **Bot Permissions** check:
+   - View Channels
+   - Send Messages
+   - Send Messages in Threads
+   - Create Public Threads
+   - Read Message History
+   - Add Reactions
+   - Manage Messages _(needed to pin the config card and Workbench)_
+4. Copy the generated URL, paste it in a browser, pick your server, and click
+   **Authorize**.
+
+**Step 4 — Enable Developer Mode so you can copy IDs**
+
+On your Discord client: **User Settings → Advanced → Developer Mode** → on.
+Right-clicking any channel, message, or user now shows a **Copy ID** option.
+
+**Step 5 — Collect the three values you need for setup**
+
+| What | How to get it |
+|------|---------------|
+| **Bot token** | Developer Portal → your application → **Bot → Reset Token** |
+| **Channel ID** | In your server, right-click the project channel → **Copy Channel ID** — a 17–20 digit snowflake like `1234567890123456789` |
+| **Your user ID** (owner) | Right-click yourself in any server → **Copy User ID** — same snowflake format. Asked once. |
+
+**Step 6 — Run setup and relay**
+
+```bash
+knock-knock setup    # choose Discord → paste channel id → pick bot → set workspace + preset → save token
+knock-knock relay    # bot comes online; @mention it
+```
+
+### Tokens & env vars
+
+| Env var | Token type | Where |
+|---------|-----------|-------|
+| `DISCORD_BOT_TOKEN` | Bot Token | Developer Portal → **Bot → Reset Token** |
+
+### Gotchas
+
+- **MESSAGE CONTENT INTENT off** → bot connects but reads empty text; the relay
+  logs "empty message" and does nothing.
+- **Manage Messages not checked** → the bot can't pin the config card or
+  Workbench; pinning silently fails.
+- **Bot not invited to the server** → bot comes online but the channel ID lookup
+  fails on startup.
+- **Wrong channel ID** (e.g. copied the server ID instead) → relay starts but no
+  messages arrive.
 
 ---
 
 ## Slack
 
-Full-fidelity over **Socket Mode** (an outbound WebSocket, no public server) —
-the platform the seam was modeled on.
+Full-fidelity over **Socket Mode** — an outbound WebSocket, so no public server
+is needed. Socket Mode is a Discord-gateway twin and was the platform the seam
+was modeled on.
 
-**What you create:** a Slack app (from scratch or from a manifest) installed to
-your workspace, running in Socket Mode.
+### What you are creating
 
-**Tokens & env vars:** Slack needs **two** tokens.
+A Slack **app** installed to your workspace, running in **Socket Mode**. Slack
+apps need **two** tokens: a `xoxb-` Bot User OAuth Token for API calls, and a
+`xapp-` App-Level Token to open the Socket Mode WebSocket.
 
-| Env var | Value | Where |
-|---------|-------|-------|
-| `SLACK_BOT_TOKEN` | Bot User OAuth Token (`xoxb-…`) | OAuth & Permissions → install to workspace |
-| `SLACK_APP_TOKEN` | App-Level Token (`xapp-…`), scope `connections:write` | Basic Information → App-Level Tokens |
+```
+api.slack.com/apps
+  └── Create New App → From scratch
+        ├── Socket Mode  (generates xapp-)
+        ├── OAuth & Permissions  (installs app → generates xoxb-)
+        └── Event Subscriptions + Interactivity  (enable)
+```
 
-In setup, `SLACK_APP_TOKEN` is stored as the bot's `secretEnv.appToken` (the
-`xoxb-` token is the primary `tokenEnv`).
+### Step-by-step
 
-**Required scopes / config toggles:**
+**Step 1 — Create the app**
 
-- **Socket Mode** — enable it. This generates the `xapp-` App-Level Token
-  (scope `connections:write`).
-- **Event Subscriptions** — on. Bot events: `message.channels`,
-  `message.groups`, `message.im`, `message.mpim`, `app_mention`,
-  `reaction_added`.
-- **Interactivity & Shortcuts** — on (so Block Kit buttons fire).
-- **Bot Token Scopes** (OAuth & Permissions): `app_mentions:read`,
-  `channels:history`, `groups:history`, `im:history`, `mpim:history`,
-  `chat:write`, `reactions:read`, `reactions:write`, `pins:write`, `files:read`,
-  `files:write`.
-- **Install to Workspace**, then `/invite` the bot to each channel you want it in.
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New
+   App → From scratch**.
+2. Name the app and pick your workspace. Click **Create App**.
 
-**How to get the channel id:** open the channel → channel name → **About** →
-**Channel ID** at the bottom — looks like `C0123ABCD`.
+**Step 2 — Enable Socket Mode and generate the App-Level Token (`xapp-`)**
 
-**How to find your owner id:** click your avatar → **Profile** → **⋯** → **Copy
-member ID** — looks like `U0123ABCD`.
+1. In the left sidebar under **Settings** click **Socket Mode**.
+2. Toggle **Enable Socket Mode** → on.
+3. A dialog asks you to create an **App-Level Token**. Name it anything
+   (e.g. `relay-socket`), add the scope `connections:write`, and click **Generate**.
+4. Copy the token — it starts with `xapp-`. This is `SLACK_APP_TOKEN`.
 
-**Gotchas:**
+**Step 3 — Add bot token scopes**
 
-- **Two tokens** (`xoxb-` + `xapp-`); both must be saved or `connect` fails fast
-  with a missing-`appToken` error.
-- **Re-install the app after adding scopes** — Slack only grants scopes present
-  at install time.
-- **Outbound file upload is not supported yet** (inbound attachments are); a
-  `!share` posts a short notice instead of the file.
+1. In the left sidebar under **Features** click **OAuth & Permissions**.
+2. Scroll to **Scopes → Bot Token Scopes** and add:
 
-**Then:** run `knock-knock setup`, choose **Slack**, paste the channel id
-(`C…`), and save both tokens (`SLACK_BOT_TOKEN` + `SLACK_APP_TOKEN`).
+   ```
+   app_mentions:read   channels:history   groups:history
+   im:history          mpim:history       chat:write
+   reactions:read      reactions:write    pins:write
+   files:read          files:write
+   ```
+
+**Step 4 — Enable Event Subscriptions**
+
+1. In the left sidebar click **Event Subscriptions** → toggle **Enable Events** →
+   on. (Socket Mode apps don't need a Request URL — leave it blank.)
+2. Under **Subscribe to bot events** add:
+
+   ```
+   message.channels   message.groups   message.im
+   message.mpim       app_mention      reaction_added
+   ```
+
+3. Click **Save Changes**.
+
+**Step 5 — Enable Interactivity (for approval buttons)**
+
+1. In the left sidebar click **Interactivity & Shortcuts** → toggle on.
+2. Leave Request URL empty (Socket Mode handles it). Click **Save Changes**.
+
+**Step 6 — Install the app to your workspace and get the Bot Token (`xoxb-`)**
+
+1. In the left sidebar click **OAuth & Permissions**.
+2. Click **Install to Workspace → Allow**.
+3. Copy the **Bot User OAuth Token** — starts with `xoxb-`. This is
+   `SLACK_BOT_TOKEN`.
+
+> **Re-install after adding scopes.** Slack only grants scopes present at
+> install time. If you add scopes later, go back to OAuth & Permissions and
+> click **Reinstall to Workspace**.
+
+**Step 7 — Invite the bot to your channel**
+
+In Slack, open the target channel and type:
+```
+/invite @your-app-name
+```
+The bot will not receive messages from channels it hasn't been invited to.
+
+**Step 8 — Collect the values you need for setup**
+
+| What | How to get it |
+|------|---------------|
+| `SLACK_BOT_TOKEN` | OAuth & Permissions → **Bot User OAuth Token** (`xoxb-…`) |
+| `SLACK_APP_TOKEN` | Settings → Basic Information → **App-Level Tokens** → your token (`xapp-…`) |
+| **Channel ID** | Open the channel in Slack → click the channel name → **About** tab → scroll to the bottom → **Channel ID** (looks like `C0123ABCD`). Or: right-click the channel in the sidebar → **Copy link** — the ID is the last path segment. |
+| **Your member ID** (owner) | Click your avatar → **Profile** → **⋯ (More)** → **Copy member ID** (looks like `U0123ABCD`). Asked once. |
+
+**Step 9 — Run setup and relay**
+
+```bash
+knock-knock setup    # choose Slack → paste channel id → pick bot → workspace + preset
+                     #   → save SLACK_BOT_TOKEN
+                     #   → save SLACK_APP_TOKEN (prompted as "app-level token")
+knock-knock relay
+```
+
+### Tokens & env vars
+
+| Env var | Token type | Starts with | Where |
+|---------|-----------|-------------|-------|
+| `SLACK_BOT_TOKEN` | Bot User OAuth Token | `xoxb-` | OAuth & Permissions → install workspace |
+| `SLACK_APP_TOKEN` | App-Level Token | `xapp-` | Basic Information → App-Level Tokens |
+
+Both tokens are required. `knock-knock setup` saves both; `connect` fails fast
+with a clear error if either is missing.
+
+### Gotchas
+
+- **Two tokens, not one** — the most common mistake is saving only `xoxb-` and
+  forgetting the `xapp-`. The relay will print "missing appToken secret" at
+  startup.
+- **Re-install the app after adding scopes** — see step 6.
+- **Bot not `/invite`d to the channel** → no messages arrive; the bot is in the
+  workspace but not the channel.
+- **Outbound file sharing (`!share`) not yet implemented** — `!share <path>` will
+  post a notice instead of sending the file; inbound attachments work fine.
+- **No typing indicator** — the Slack web API has no equivalent of Discord's
+  typing event (it was RTM-only and is deprecated); the 👀 reaction signals
+  "working" instead.
 
 ---
 
 ## Telegram
 
-Near-parity over `getUpdates` long-poll (no public server).
+Near-parity over `getUpdates` long-poll — no public server needed. Reactions use
+a fixed whitelist; **forum topics** are the thread analogue.
 
-**What you create:** a Telegram bot via **@BotFather**.
+### What you are creating
 
-**Tokens & env vars:**
+A Telegram **bot account**, created through **@BotFather** (Telegram's own bot
+that manages bot registration). The bot is added to a **group** or **supergroup**
+(the room); if you want per-task threads, you need a **supergroup with Topics
+enabled** (Topics = Telegram's forum-topic feature).
 
-| Env var | Value | Where |
-|---------|-------|-------|
-| `TELEGRAM_BOT_TOKEN` | the bot token (`<id>:<secret>`) | @BotFather → `/newbot` |
+```
+Telegram → message @BotFather
+  └── /newbot  →  choose name + username  →  copy token
+        └── /mybots → your bot → Bot Settings → Group Privacy → Turn off
+              └── Add bot to group / supergroup → make it admin (for reactions)
+```
 
-No extra secret.
+### Step-by-step
 
-**Required scopes / config toggles:**
+**Step 1 — Create the bot with @BotFather**
 
-- **@BotFather → /mybots → your bot → Bot Settings → Group Privacy → Turn off.**
-  With Group Privacy *on* (the default) the bot sees only messages that
-  @mention it — it appears "deaf" in groups.
-- **Make the bot a group ADMIN** — required to receive reaction events
-  (`message_reaction`).
-- **Forum topics** (the thread analogue) require a **supergroup with Topics
-  enabled**; group = room, topic = scope.
+1. Open Telegram and start a conversation with
+   [@BotFather](https://t.me/BotFather).
+2. Send `/newbot`. BotFather asks for:
+   - A **display name** (e.g. "My Coding Bot") — shown in the chat header.
+   - A **username** (must end in `bot`, e.g. `my_coding_bot`) — used for
+     @mentions.
+3. BotFather replies with the **bot token** in the format `<id>:<secret>` (e.g.
+   `7123456789:AAFxxx…`). Copy it. This is `TELEGRAM_BOT_TOKEN`.
 
-**How to get the chat id:** add the bot to the group, then either DM
-[@userinfobot](https://t.me/userinfobot) the forwarded message, or call
-`getUpdates` on the Bot API and read `chat.id`. Group ids are **negative**;
-supergroups are prefixed `-100…`.
+**Step 2 — Disable Group Privacy (critical)**
 
-**How to find your owner id:** DM [@userinfobot](https://t.me/userinfobot) — it
-replies with your numeric user id.
+With Group Privacy **on** (the Telegram default), the bot only sees messages
+that directly @mention it — everything else is invisible to it.
 
-**Gotchas:**
+1. Message @BotFather → `/mybots` → pick your bot →
+   **Bot Settings → Group Privacy → Turn off**.
+2. BotFather confirms "Privacy mode is disabled".
 
-- **The bot can only DM users who have `/start`ed it.** So `/start` your own bot
-  in a DM, or approval DMs and override DMs degrade to an in-scope `@mention`
-  reply.
-- **Privacy mode on ⇒ the bot looks "deaf"** in groups — disable it via
-  BotFather.
-- Reactions need the bot to be a **group admin**.
+> If you skip this step the bot will appear "deaf" to most group messages.
 
-**Then:** run `knock-knock setup`, choose **Telegram**, paste the chat id (often
-negative / `-100…`), and save the token (`TELEGRAM_BOT_TOKEN`).
+**Step 3 — Set up the group (room)**
+
+Two options:
+
+| Option | Threads? | Setup |
+|--------|----------|-------|
+| Plain group / supergroup | No (all messages at room scope) | Just create a Telegram group and add the bot |
+| Supergroup with Topics | Yes (each topic = one task) | Create a **supergroup** → **Edit → Topics → enable** |
+
+For the room ID (needed by setup), the quickest method: after adding the bot,
+DM [@userinfobot](https://t.me/userinfobot) a message forwarded from the group —
+it replies with `chat_id`. Group IDs are **negative** integers (e.g. `-1001234567890`).
+
+**Step 4 — Make the bot a group admin (required for reactions)**
+
+In the group → tap the group name → **Administrators → Add Administrator** →
+pick your bot. Reactions (`message_reaction` updates) are only delivered to
+admins.
+
+**Step 5 — /start the bot yourself (required for DMs)**
+
+In a private chat with your bot, send `/start`. This opens the DM channel.
+The relay can only send you approval DMs and override notifications if you've
+opened this channel. If you don't, those messages fall back to an @mention in
+the task scope.
+
+**Step 6 — Collect the values you need for setup**
+
+| What | How to get it |
+|------|---------------|
+| `TELEGRAM_BOT_TOKEN` | @BotFather → `/newbot` reply, format `<id>:<secret>` |
+| **Chat ID** (room) | Forward a group message to [@userinfobot](https://t.me/userinfobot); or call `https://api.telegram.org/bot<token>/getUpdates` in a browser after posting a message to the group |
+| **Your user ID** (owner) | DM [@userinfobot](https://t.me/userinfobot) — it replies with your numeric user id (e.g. `123456789`). Asked once. |
+
+**Step 7 — Run setup and relay**
+
+```bash
+knock-knock setup    # choose Telegram → paste chat id (often -100…) → bot → workspace + preset → save token
+knock-knock relay
+```
+
+### Tokens & env vars
+
+| Env var | Token type | Format | Where |
+|---------|-----------|--------|-------|
+| `TELEGRAM_BOT_TOKEN` | Bot Token | `<numeric_id>:<secret>` | @BotFather → `/newbot` |
+
+### Reaction whitelist
+
+Telegram only allows reactions from a fixed set. knock-knock maps its control
+glyphs to the closest permitted emoji:
+
+| knock-knock glyph | Telegram emoji | Meaning |
+|---|---|---|
+| 👀 | 👀 | working / saw message |
+| 🏁 | 🎉 | done |
+| ⚠️ | 😱 | failed |
+| ⏹ | 👎 | stopped |
+| 🛑 | 👎 | stop signal |
+| ✅ | 👍 | approved |
+| ❌ | 👎 | denied |
+
+Any glyph not in the whitelist (`👍 👎 ❤️ 🔥 🎉 🤔 😱 🙏 👏 🤩 👀`) is skipped
+and status falls back to a text note.
+
+### Gotchas
+
+- **Group Privacy on (default)** → bot is "deaf" to most messages. Disable via
+  BotFather (step 2).
+- **Bot not group admin** → reaction events (`message_reaction`) are not
+  delivered; status reactions silently fail.
+- **Cold DM** → if you never `/start`ed the bot in a private chat, DMs fail;
+  override / approval messages fall back to an in-scope @mention.
+- **64-byte callback limit on buttons** — Telegram inline keyboard `callback_data`
+  is capped at 64 bytes; the adapter maps long action IDs through an internal
+  side table, so this is transparent to you.
+- **Topics / forum scope** — reaction events on a topic carry no `message_thread_id`
+  in the Telegram API; this means control reactions (✅/❌/🛑) on a task in a forum
+  topic are surfaced at room scope, not topic scope. This is a known Telegram API
+  limitation.
 
 ---
 
@@ -183,102 +424,263 @@ negative / `-100…`), and save the token (`TELEGRAM_BOT_TOKEN`).
 An **async transport** (~60 s latency) over Notifications-API polling — best for
 PR-cadence coding and the agent-to-agent-over-issues pattern, not live chat.
 
-**What you create:** a **dedicated machine-user GitHub account** (a separate
-login that acts as the bot) with a **Personal Access Token**. The repo is the
-room; an issue / PR is the per-task scope (`owner/repo#n`, resolved
-automatically).
+### What you are creating
 
-**Tokens & env vars:**
+A **dedicated machine-user GitHub account** (a separate GitHub login that acts
+as the bot identity). You register that account as a **collaborator** on your
+repo, and give it a **Personal Access Token**. The repository is the room; each
+issue or pull request is a task scope.
 
-| Env var | Value | Where |
-|---------|-------|-------|
-| `GITHUB_BOT_TOKEN` | a PAT on the machine-user account | github.com/settings/tokens |
+```
+github.com → create a second account  (the "machine user")
+  └── Invite machine user as collaborator on your repo
+        └── Sign in as machine user → Settings → Developer Settings → Tokens
+              └── Create PAT with repo + notifications scopes
+```
 
-No extra secret. Token scopes:
+> **Why a separate account?** GitHub comments are posted as the token's owner.
+> Using a dedicated account means the bot's replies are clearly attributed and
+> don't clutter your personal activity feed.
 
-- **Classic PAT:** `repo` + `notifications`.
-- **Fine-grained PAT:** Issues **R/W**, Pull requests **R/W**, Contents **R/W**,
-  Metadata **R**.
+### Step-by-step
 
-**Required config:**
+**Step 1 — Create the machine-user account**
 
-- The machine-user must be a **collaborator / org member of the repo** so
-  @mentions notify it and it can post comments.
+Create a second GitHub account at [github.com/join](https://github.com/join).
+Pick a name that makes it clear it's a bot (e.g. `acme-coding-bot`). GitHub
+requires a unique email address — use an alias or a `+tag` variant.
 
-**How to get the channel id:** the channel **is the repo** — `owner/repo`. You
-register only the repo; each task scope (`owner/repo#issue`) is derived
-automatically when the bot is mentioned in an issue or PR.
+**Step 2 — Invite the machine user as a collaborator**
 
-**How to find your owner id:** your **GitHub login** (username).
+In your repository: **Settings → Collaborators and teams → Add people** →
+search for the machine-user login → **Add collaborator**. The machine user
+must accept the invite (sign in as them and accept via the email or the
+[github.com/notifications](https://github.com/notifications) page).
 
-**Gotchas:**
+**Step 3 — Create a Personal Access Token for the machine user**
 
-- **~60 s latency floor** (`X-Poll-Interval`) — right for async coding, wrong
-  for live chat.
-- **Public repos are an open prompt-injection surface** — anyone can @mention
-  the bot. Restrict to allowed authors (sender allowlist by author association)
-  before pointing it at a public repo.
-- **Approvals arrive as a numbered text reply** ("reply `1` to allow") rather
-  than buttons; the host wiring that turns that reply back into an action is a
-  known pending item (see the roadmap's "buttons-as-text" task).
-- A **GitHub App identity** (`name[bot]`, higher rate ceiling) is a future
-  option; v1 is the PAT machine-user.
+Sign in as the machine user, then:
 
-**Then:** run `knock-knock setup`, choose **GitHub**, paste the repo id
-(`owner/repo`), and save the token (`GITHUB_BOT_TOKEN`).
+- **Classic PAT:**
+  [github.com/settings/tokens](https://github.com/settings/tokens) →
+  **Generate new token (classic)** → check `repo` and `notifications` →
+  **Generate token** → copy.
+
+- **Fine-grained PAT (recommended):**
+  [github.com/settings/tokens](https://github.com/settings/tokens) →
+  **Fine-grained tokens → Generate new token** → scope to the specific
+  repository → grant:
+  - Issues: **Read and write**
+  - Pull requests: **Read and write**
+  - Contents: **Read and write**
+  - Metadata: **Read**
+  - Notifications: **Read**
+
+This token is `GITHUB_BOT_TOKEN`.
+
+**Step 4 — Collect the values you need for setup**
+
+| What | How to get it |
+|------|---------------|
+| `GITHUB_BOT_TOKEN` | Machine user → Settings → Developer Settings → **Personal access tokens** |
+| **Repo ID** (channel) | Simply `owner/repo` — e.g. `acme/my-project`. No numeric ID needed; you type it in setup. |
+| **Your GitHub login** (owner) | Your personal GitHub username (e.g. `octocat`). Asked once. |
+
+**Step 5 — Run setup and relay**
+
+```bash
+knock-knock setup    # choose GitHub → type owner/repo → pick bot → workspace + preset → save token
+knock-knock relay
+```
+
+### Tokens & env vars
+
+| Env var | Token type | Starts with | Where |
+|---------|-----------|-------------|-------|
+| `GITHUB_BOT_TOKEN` | Personal Access Token | `ghp_` (classic) or `github_pat_` (fine-grained) | Machine user → Settings → Developer Settings |
+
+### How scopes map
+
+| GitHub concept | knock-knock concept |
+|---|---|
+| repository | **room** (permission boundary; profile per repo) |
+| issue or pull request | **scope** (one task) |
+| comment on issue/PR | message |
+| bot posting a comment | `send` |
+| editing a comment | `edit` |
+| `@machine-user-login` | @mention bot |
+| issue/PR number suffix | scope id (`owner/repo#123`) |
+
+The task scope id is derived **automatically** when someone @mentions the bot in
+an issue or PR — you never type issue numbers in setup.
+
+### Approval flow (no native buttons)
+
+GitHub has no interactive button API in comments. Approvals and session-pick
+choices degrade to a numbered menu:
+
+```
+The bot wants to run: bash("npm test")
+
+  1 — Allow
+  2 — Deny
+
+Reply with the number to choose.
+```
+
+Reply with `1` or `2` in the same issue/PR thread. The host detects it and
+routes it as an approval action.
+
+### Gotchas
+
+- **~60 s latency floor** (`X-Poll-Interval` from the Notifications API) — right
+  for async coding, wrong for live chat.
+- **Public repos are an open prompt-injection surface** — anyone can @mention the
+  bot on a public repo. The sender allowlist restricts to collaborators/members;
+  **do not point the bot at a public repo without reviewing who can trigger it.**
+- **REST quota** — each new mention fetches comment history; watch usage with a
+  busy public repo. A GitHub App identity (higher rate ceiling) is a deferred
+  fast-follow; v1 is a PAT machine-user.
+- **No DM** — approval DMs fall back to an @mention comment in the issue/PR
+  thread.
+- **No pin, no buttons** — conflict cards and session-pick use numbered text menus.
 
 ---
 
 ## Notion
 
-A **heavily-degraded async transport** over comment/page polling (~seconds, no
-reactions/buttons/DM/edit/inline files). Honest verdict from the build: Notion
-is **often better used as an MCP tool than a chat transport** — use it as a
-transport only when the conversation genuinely lives in Notion.
+A **heavily-degraded async transport** over comment/page polling (~10 s). Honest
+recommendation from the build: **Notion is often better used as an MCP tool than
+a chat transport** — use it as a transport only when the conversation genuinely
+lives in Notion.
 
-**What you create (CRITICAL — two steps, both required):**
+### What you are creating
 
-1. **Create an internal integration** at
-   [notion.so/my-integrations](https://www.notion.so/my-integrations) with
-   capabilities **Read content**, **Insert content**, **Read comments**,
-   **Insert comments**, and **Read user information**. This yields the
-   integration secret.
-2. **Share each page or database with the integration.** Open the page/DB →
-   **•••** → **Connections** → add your integration. **Without sharing, the
-   integration sees nothing** — no token grants implicit access.
+A Notion **internal integration** (a server-to-server credential scoped to your
+workspace), connected to specific pages or databases. Unlike the other platforms
+there is no "bot account" — the integration itself posts as a named entity.
 
-**Tokens & env vars:**
+```
+notion.so/my-integrations  →  New integration
+  ├── Name it + pick workspace
+  ├── Capabilities: Read/Insert content, Read/Insert comments, Read user info
+  └── Copy Internal Integration Secret  (ntn_…)
+        ↓
+  For EACH page or database the bot should watch:
+  Open page → ••• (top-right) → Connections → add your integration
+```
 
-| Env var | Value | Where |
-|---------|-------|-------|
-| `NOTION_TOKEN` | the internal integration secret (`ntn_…`) | the integration's settings |
+> **The sharing step is mandatory.** A valid token that has not been connected
+> to a page sees nothing — no error, just silence. This is the single most
+> common failure mode.
 
-No extra secret.
+### Step-by-step
 
-**How to get the channel id:** a **page or database id** — 32 hex characters.
-Copy the page link (**•••** → **Copy link**) and take the trailing id from the
-URL.
+**Step 1 — Create the internal integration**
 
-**How to find your owner id:** your Notion user id — call
-`GET /v1/users` with the integration token (e.g. via the Notion API) and find
-your entry, or read it from a `people` mention you've authored.
+1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) and
+   click **+ New integration**.
+2. Give it a name (e.g. "knock-knock relay"), pick your workspace, and upload an
+   icon if you like.
+3. Under **Capabilities** enable:
+   - **Read content**
+   - **Insert content**
+   - **Read comments**
+   - **Insert comments**
+   - **Read user information**
+4. Click **Submit**. On the next page copy the **Internal Integration Secret** —
+   it starts with `ntn_`. This is `NOTION_TOKEN`.
 
-**Gotchas:**
+**Step 2 — Share each page or database with the integration**
 
-- **Sharing is mandatory** — re-read step 2. The single most common failure is a
-  valid token that sees no pages because the page was never connected to the
-  integration.
-- **Heavily degraded transport:** no reactions, no buttons (approvals are
-  numbered text), no DM, no in-place edit (the bot re-posts instead of editing),
-  no inline file blocks; polling cadence is seconds.
-- **Cold start ignores the pre-existing comment backlog** — it begins from the
-  comments that arrive after it connects.
-- The **custom-agents / Workers bridge** (Notion summoning the relay) needs a
-  Business/Enterprise workspace and a reachable relay; it's a future option, not
-  v1. v1 is local-pure comment/DB polling.
+For **every** page or database you want the bot to watch:
 
-**Then:** run `knock-knock setup`, choose **Notion**, paste the page/database id
-(32 hex), and save the token (`NOTION_TOKEN`).
+1. Open the page in Notion.
+2. Click **•••** (the three-dot menu in the top-right corner).
+3. Click **Connections → Add connections** → search for your integration name →
+   select it.
+4. Confirm that you see the integration name appear under Connections.
+
+> Repeat this for each project page or database. The relay only polls pages
+> that have been connected.
+
+**Step 3 — Find the page or database ID**
+
+The ID is the 32 hex characters at the end of the page URL:
+
+```
+https://www.notion.so/My-Page-Title-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+                                     ↑─────────── this part ───────────↑
+```
+
+Strip the hyphens — Notion sometimes shows it with hyphens in the URL, but
+`knock-knock setup` accepts either format.
+
+**Step 4 — Find your Notion user ID**
+
+Call the Notion API with your token to list workspace users:
+
+```bash
+curl -H "Authorization: Bearer ntn_YOUR_TOKEN" \
+     -H "Notion-Version: 2022-06-28" \
+     https://api.notion.com/v1/users
+```
+
+Find your entry in the JSON and copy the `"id"` field — a UUID like
+`a1b2c3d4-e5f6-7890-abcd-ef1234567890`. This is asked once as your owner id.
+
+Alternatively: in Notion, create a new page, type `@` and start typing your
+name, hover over your entry in the dropdown — the URL in your browser's status
+bar shows your user ID.
+
+**Step 5 — Run setup and relay**
+
+```bash
+knock-knock setup    # choose Notion → paste page/database id → bot → workspace + preset → save token
+knock-knock relay
+```
+
+### Tokens & env vars
+
+| Env var | Token type | Starts with | Where |
+|---------|-----------|-------------|-------|
+| `NOTION_TOKEN` | Internal Integration Secret | `ntn_` | notion.so/my-integrations → your integration |
+
+### How scopes map
+
+| Notion concept | knock-knock concept |
+|---|---|
+| database or top-level page | **room** (permission boundary) |
+| page (or database row as page) | **scope** (one task) |
+| comment on a page | message |
+| integration posting a comment | `send` |
+| @integration-name in a comment | @mention bot |
+
+### Approval flow (no native buttons)
+
+Same as GitHub — no interactive button API. Approvals degrade to a numbered
+text menu in a comment; reply with the number in the same page thread.
+
+### Gotchas
+
+- **Sharing is mandatory** — if the page isn't connected to the integration (step
+  2), the relay polls nothing and no messages are received. No error is shown.
+- **Cold start ignores existing comments** — on first connect the relay records
+  all current comments as "seen" and only responds to new ones. Pre-existing
+  discussion is not replayed.
+- **~10 s polling latency** (Notion's comment API is rate-limited to ~3 req/s;
+  the adapter spaces requests to stay under the ceiling).
+- **No reactions, no buttons, no DM, no edit** — status is conveyed in text
+  appended to comments; approvals are numbered text menus; the bot re-posts
+  instead of editing.
+- **`edit()` always returns false** — Notion's comment API does not support
+  updating an existing comment; each "edit" is a new comment.
+- **File exchange deferred** — Notion's file upload API is multi-step; inbound
+  and outbound file handling is not yet wired.
+- **Workers bridge (future)** — a Notion Worker + External Agents API
+  integration that lets Notion summon the relay bidirectionally requires a
+  Business/Enterprise workspace and a publicly reachable relay endpoint; it is a
+  planned fast-follow, not v1.
 
 ---
 
@@ -290,3 +692,13 @@ masks and saves the token(s) into `~/.knock-knock/.env`, and `knock-knock relay`
 connects. Choosing the coding agent behind the bot, presets, and the deny floor
 are covered there and in
 [getting-started-agents.md](getting-started-agents.md).
+
+### Quick reference: which platform to use?
+
+| Goal | Best platform |
+|------|---------------|
+| Live, interactive collaboration with full approval UX | **Discord** or **Slack** |
+| Async PR review / agent-to-agent-over-issues | **GitHub** |
+| Team that already lives in Telegram | **Telegram** |
+| Conversation genuinely happening on a Notion page | **Notion** (with expectations set) |
+| Need OS sandbox + untrusted work | Any platform + `claude-acp` runtime + `sandbox` config |
