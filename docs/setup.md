@@ -53,10 +53,11 @@ tables, and a channel references bots and roster entries by id.
 
 ## 2. Prerequisites
 
-- **[Bun](https://bun.sh)** installed. Check with `bun --version`; if that fails:
-  ```bash
-  curl -fsSL https://bun.sh/install | bash
-  ```
+- **macOS or Linux.** The prebuilt `knock-knock` CLI (installed in
+  [step 1](#3-quickstart-from-zero-to-a-reply)) embeds the Bun runtime, so there
+  is nothing else to install. **[Bun](https://bun.sh)** (`curl -fsSL
+  https://bun.sh/install | bash`) is needed *only* if you install via npm or run
+  from a source checkout.
 - **A Discord account and a server you can add a bot to.** Discord is the live
   messaging platform this guide uses throughout.
 - **A coding-agent runtime.** The default (`claude-sdk`) needs only an
@@ -104,12 +105,18 @@ see at a glance what's set. The bot's **workspace** (the project folder it edits
 The fastest path to seeing it work, solo, on Discord. Three commands and a few
 answers.
 
-> **Step 1 — Get the relay**
-> Clone your knock-knock checkout, then install dependencies:
+> **Step 1 — Install knock-knock**
+> One CLI with the Bun runtime embedded — nothing else to install:
 > ```bash
-> cd knock-knock
-> bun install
+> brew install ryanyen2/tap/knock-knock
 > ```
+> No Homebrew? The install script (macOS & Linux, verifies the checksum):
+> ```bash
+> curl -fsSL https://raw.githubusercontent.com/ryanyen2/knock-knock/main/packaging/install.sh | bash
+> ```
+> Also available: a `.deb` on the [Releases](https://github.com/ryanyen2/knock-knock/releases)
+> page, `npm install -g knock-knock` (needs Bun), or from source
+> (`git clone https://github.com/ryanyen2/knock-knock && cd knock-knock && bun install`).
 
 > **Step 2 — Run the setup wizard**
 > ```bash

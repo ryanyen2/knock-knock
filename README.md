@@ -382,6 +382,14 @@ As long as BotB and BotB2 are connected to the same relay (and the same thread?)
 
 ---
 
+## Contributing & releasing
+
+Dev loop, and how a git tag becomes a published release + Homebrew formula
+(version/tag alignment, the nfpm `expand: true` gotcha, the `HOMEBREW_TAP_TOKEN`
+setup, and the re-run gotchas) are in **[CONTRIBUTING.md](CONTRIBUTING.md)**.
+
+---
+
 ## Forked from
 
 Anthropic's official Discord channel plugin (`discord@claude-plugins-official`). The discord.js connection patterns and message chunking come from that plugin.

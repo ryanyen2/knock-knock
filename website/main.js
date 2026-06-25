@@ -128,7 +128,7 @@
     document.body.classList.add('reduced');
     document.querySelectorAll('.flow-msg').forEach((m) => m.classList.add('is-in'));
     document.querySelectorAll('.flow-note').forEach((n) => n.classList.add('is-on'));
-    document.querySelectorAll('.hero-block-feat').forEach((b) => b.classList.add('is-in'));
+    document.querySelectorAll('.hero-chat .msg').forEach((m) => m.classList.add('is-in'));
     const bar = document.getElementById('flowBar'); if (bar) bar.style.width = '100%';
     if (location.hash && location.hash.length > 1) {
       const t = document.querySelector(location.hash);
@@ -187,67 +187,33 @@
 
   window.addEventListener('load', () => ScrollTrigger.refresh());
 
-  /* ─────────────  HERO FEATURE BLOCKS: scroll-reveal + step dots  ───────────── */
-  (function initFeatureBlocks() {
-    const blocks = document.querySelectorAll('.hero-block-feat');
-    const dots   = document.querySelectorAll('.hero-step-dot');
-
-    if (!blocks.length || reduced) {
-      blocks.forEach(b => b.classList.add('is-in'));
-      return;
-    }
-    if (!('IntersectionObserver' in window)) {
-      blocks.forEach(b => b.classList.add('is-in'));
-      return;
-    }
-
-    // Reveal + step-dot highlight
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach(e => {
-        if (!e.isIntersecting) return;
-        e.target.classList.add('is-in');
-        // find which feature block (0-indexed) → dot index is featIdx+1 (dot 0 = headline)
-        const idx = Array.from(blocks).indexOf(e.target);
-        if (idx >= 0 && dots.length) {
-          dots.forEach((d, i) => d.classList.toggle('is-active', i === idx + 1));
-        }
-      });
-    }, { rootMargin: '0px 0px -30% 0px', threshold: 0.4 });
-
-    // Dot 0 active while headline block is in view
-    const leadBlock = document.querySelector('.hero-block-lead');
-    if (leadBlock) {
-      const leadIO = new IntersectionObserver((entries) => {
-        if (entries[0].isIntersecting) {
-          dots.forEach((d, i) => d.classList.toggle('is-active', i === 0));
-        }
-      }, { rootMargin: '0px 0px -40% 0px', threshold: 0.3 });
-      leadIO.observe(leadBlock);
-    }
-
-    blocks.forEach(b => io.observe(b));
+  /* ─────────────  HERO CHAT: staggered message reveal  ───────────── */
+  (function initHeroChatReveal() {
+    const msgs = Array.from(document.querySelectorAll('.hero-chat .msg'));
+    if (!msgs.length) return;
+    // Stagger each message: first at 500ms, then +350ms each
+    msgs.forEach((m, i) => m.style.setProperty('--md', (500 + i * 350) + 'ms'));
+    window.addEventListener('load', () => msgs.forEach(m => m.classList.add('is-in')));
   })();
 
-  /* ─────────────  HERO VISUAL PARALLAX: gentle drift while scrolling features  ───────────── */
+  /* ─────────────  HERO VISUAL PARALLAX: visual drifts slower than page  ───────────── */
   (function initHeroParallax() {
-    if (reduced) return;
-    const track = document.getElementById('heroCopyTrack');
-    const visual = document.getElementById('heroVisual');
-    if (!track || !visual) return;
-    // Visual drifts up 60px over the full hero scroll — much slower than page
+    const visual = document.getElementById('heroVisualWrap');
+    if (!visual) return;
+    // Visual drifts up 80px over the full hero height — creates floating depth effect
     gsap.to(visual, {
-      y: -60,
+      y: -80,
       ease: 'none',
       scrollTrigger: {
-        trigger: track,
+        trigger: '.hero',
         start: 'top top',
         end: 'bottom bottom',
-        scrub: 2,
+        scrub: 1.5,
       },
     });
   })();
 
-  /* ═════════════  NETWORK DIAGRAM — DOM-measured paths, bidirectional pulses  ═════════════ */
+  /* ═════════════  NETWORK DIAGRAM — platform → chat → agent flow  ═════════════ */
   (function initNetwork() {
     if (typeof anime === 'undefined') return;
     if (reduced) return;
@@ -257,23 +223,20 @@
     const chatWrap  = document.getElementById('heroChatWrap');
     if (!container || !svg || !chatWrap) return;
 
-    // Dynamic path arrays built from DOM measurements
-    let aPathEls = [], pPathEls = [];
+    let platPaths = [], agentPaths = [];
     let pathsBuilt = false;
 
-    // Build bezier paths from node right-edges → chat left-edge (agents)
-    // and chat right-edge → node left-edges (platforms)
     function buildPaths() {
       svg.querySelectorAll('.net-edge').forEach(e => e.remove());
-      aPathEls = []; pPathEls = [];
+      platPaths = []; agentPaths = [];
 
-      const cr   = container.getBoundingClientRect();
-      const chat = chatWrap.getBoundingClientRect();
+      const cr    = container.getBoundingClientRect();
+      const chat  = chatWrap.getBoundingClientRect();
       if (!cr.width || !chat.width) return false;
 
-      const cx0 = chat.left   - cr.left;   // chat left x (relative to container)
-      const cx1 = chat.right  - cr.left;   // chat right x
-      const cy0 = chat.top    - cr.top;    // chat top y
+      const cx0   = chat.left  - cr.left;
+      const cx1   = chat.right - cr.left;
+      const cy0   = chat.top   - cr.top;
       const chatH = chat.height;
 
       function makeEdge(x0, y0, x1, y1, id) {
@@ -281,123 +244,150 @@
         const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
         path.setAttribute('class', 'net-edge');
         path.id = id;
-        // Cubic bezier: horizontal handles keep entry/exit tangent smooth
         path.setAttribute('d',
           `M ${x0.toFixed(1)},${y0.toFixed(1)} ` +
           `C ${midX.toFixed(1)},${y0.toFixed(1)} ` +
           `${midX.toFixed(1)},${y1.toFixed(1)} ` +
           `${x1.toFixed(1)},${y1.toFixed(1)}`
         );
-        // Insert before pulse circles so pulses render on top
         svg.insertBefore(path, svg.firstChild);
         return path;
       }
 
-      // Agent nodes → chat left edge
-      const leftCards = Array.from(
-        document.querySelectorAll('#netNodesLeft .net-node-card:not(.net-node-dim)')
-      );
-      leftCards.forEach((card, i) => {
-        const nr  = card.getBoundingClientRect();
-        const nx  = nr.right  - cr.left;
-        const ny  = nr.top + nr.height / 2 - cr.top;
-        // Distribute connection points on chat left edge (skip 14px for border-radius)
-        const cy  = cy0 + 14 + (chatH - 28) * (i + 1) / (leftCards.length + 1);
-        aPathEls.push(makeEdge(nx, ny, cx0, cy, 'ea-' + i));
-      });
-
-      // Chat right edge → platform nodes
-      const rightCards = Array.from(
+      // Platform nodes (left) → chat left edge
+      const platCards = Array.from(
         document.querySelectorAll('#netNodesPlatform .net-node-card:not(.net-node-dim)')
       );
-      rightCards.forEach((card, i) => {
-        const nr  = card.getBoundingClientRect();
-        const nx  = nr.left   - cr.left;
-        const ny  = nr.top + nr.height / 2 - cr.top;
-        const cy  = cy0 + 14 + (chatH - 28) * (i + 1) / (rightCards.length + 1);
-        pPathEls.push(makeEdge(cx1, cy, nx, ny, 'ep-' + i));
+      platCards.forEach((card, i) => {
+        const nr = card.getBoundingClientRect();
+        const nx = nr.right - cr.left;
+        const ny = nr.top + nr.height / 2 - cr.top;
+        const cy = cy0 + 14 + (chatH - 28) * (i + 1) / (platCards.length + 1);
+        platPaths.push(makeEdge(nx, ny, cx0, cy, 'ep-' + i));
       });
 
-      pathsBuilt = aPathEls.length > 0 && pPathEls.length > 0;
+      // Chat right edge → agent nodes (right)
+      const agentCards = Array.from(
+        document.querySelectorAll('#netNodesAgents .net-node-card:not(.net-node-dim)')
+      );
+      agentCards.forEach((card, i) => {
+        const nr = card.getBoundingClientRect();
+        const nx = nr.left - cr.left;
+        const ny = nr.top + nr.height / 2 - cr.top;
+        const cy = cy0 + 14 + (chatH - 28) * (i + 1) / (agentCards.length + 1);
+        agentPaths.push(makeEdge(cx1, cy, nx, ny, 'ea-' + i));
+      });
+
+      pathsBuilt = platPaths.length > 0 && agentPaths.length > 0;
       return pathsBuilt;
     }
 
-    // Animate a pulse dot along a path; dir: 1=forward, -1=reverse
-    function runPulse(pulseId, pathEl, dir, dur, onDone) {
-      const el = document.getElementById(pulseId);
-      if (!el || !pathEl) { if (onDone) onDone(); return; }
-      const len   = pathEl.getTotalLength();
-      const proxy = { t: dir > 0 ? 0 : 1 };
+    // Animate pulse dot + traveling ring glow along a path (always forward 0→len)
+    function animatePath(pathEl, pulseEl, dur, onComplete) {
+      if (!pathEl || !pulseEl) { if (onComplete) onComplete(); return; }
+      const len = pathEl.getTotalLength();
+      if (len < 1) { if (onComplete) onComplete(); return; }
+
+      const d    = pathEl.getAttribute('d');
+      const TAIL = Math.min(len * 0.32, 68);
+
+      // Outer soft ring (wide, transparent glow)
+      const outer = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      outer.setAttribute('d', d);
+      outer.style.cssText = 'fill:none;stroke:rgba(16,120,163,0.2);stroke-width:4;stroke-linecap:round;pointer-events:none;';
+      outer.setAttribute('opacity', 0);
+
+      // Inner bright line
+      const inner = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      inner.setAttribute('d', d);
+      inner.style.cssText = 'fill:none;stroke:rgba(16,120,163,0.62);stroke-width:1.5;stroke-linecap:round;pointer-events:none;';
+      inner.setAttribute('opacity', 0);
+
+      // Insert glow below pulse dots
+      svg.insertBefore(inner, svg.firstChild);
+      svg.insertBefore(outer, svg.firstChild);
+
+      const proxy = { pos: 0 };
       anime({
         targets: proxy,
-        t: dir > 0 ? 1 : 0,
+        pos: len,
         duration: dur,
-        easing: 'easeInOutQuad',
+        easing: 'easeInOutSine',
         update() {
-          const pt   = pathEl.getPointAtLength(proxy.t * len);
-          const prog = dir > 0 ? proxy.t : 1 - proxy.t;
-          const op   = prog < 0.08 ? prog / 0.08 : prog > 0.88 ? (1 - prog) / 0.12 : 1;
-          el.setAttribute('cx', pt.x);
-          el.setAttribute('cy', pt.y);
-          el.setAttribute('opacity', op.toFixed(3));
+          const pos  = proxy.pos;
+          const prog = pos / len;
+          const fade = prog < 0.08 ? prog / 0.08 : prog > 0.88 ? (1 - prog) / 0.12 : 1;
+
+          // Move pulse dot
+          const pt = pathEl.getPointAtLength(Math.min(pos, len));
+          pulseEl.setAttribute('cx', pt.x);
+          pulseEl.setAttribute('cy', pt.y);
+          pulseEl.setAttribute('opacity', (fade * 0.85).toFixed(3));
+
+          // Draw trailing glow: segment from (pos-TAIL) to pos
+          const ts = Math.max(0, pos - TAIL);
+          const sl = pos - ts;
+          const rl = Math.max(0, len - pos);
+          if (sl > 0.5) {
+            const da = `0 ${ts.toFixed(1)} ${sl.toFixed(1)} ${rl.toFixed(1)}`;
+            outer.setAttribute('stroke-dasharray', da);
+            outer.setAttribute('opacity', (fade * 0.28).toFixed(3));
+            inner.setAttribute('stroke-dasharray', da);
+            inner.setAttribute('opacity', (fade * 0.62).toFixed(3));
+          }
         },
         complete() {
-          el.setAttribute('opacity', 0);
-          if (onDone) onDone();
+          pulseEl.setAttribute('opacity', 0);
+          outer.remove();
+          inner.remove();
+          if (onComplete) onComplete();
         },
       });
     }
 
-    // Rim-glow the chat when a forward pulse arrives at a platform
     function triggerChatRim() {
       chatWrap.classList.remove('rim-active');
       void chatWrap.offsetWidth;
       chatWrap.classList.add('rim-active');
     }
 
-    // Launch one message: agent→chat (forward), then chat→platform (forward)
-    // Optionally fire a reverse ack after
-    function launchMessage() {
-      if (!pathsBuilt || !aPathEls.length || !pPathEls.length) return;
-      const ai   = Math.floor(Math.random() * aPathEls.length);
-      const pi   = Math.floor(Math.random() * pPathEls.length);
-      const aDur = 820 + Math.random() * 280;
-      const pDur = 760 + Math.random() * 280;
-
-      runPulse('pa-' + ai, aPathEls[ai], 1, aDur, () => {
-        runPulse('pp-' + pi, pPathEls[pi], 1, pDur, () => {
-          triggerChatRim();
-        });
-      });
-
-      // 35% chance: reverse ack after forward completes
-      if (Math.random() < 0.35) {
-        setTimeout(() => {
-          const rpi = Math.floor(Math.random() * pPathEls.length);
-          const rai = Math.floor(Math.random() * aPathEls.length);
-          const rDur = 640 + Math.random() * 200;
-          runPulse('pp-' + rpi, pPathEls[rpi], -1, rDur, () => {
-            runPulse('pa-' + rai, aPathEls[rai], -1, rDur + Math.random() * 80, null);
-          });
-        }, aDur + pDur + 300 + Math.random() * 500);
-      }
+    function activateAgent(idx) {
+      const cards = document.querySelectorAll('#netNodesAgents .net-node-card:not(.net-node-dim)');
+      const dot   = cards[idx] && cards[idx].querySelector('.net-dot-agent');
+      if (!dot) return;
+      dot.classList.remove('is-working');
+      void dot.offsetWidth;
+      dot.classList.add('is-working');
+      setTimeout(() => dot.classList.remove('is-working'), 1400);
     }
 
-    // 4 staggered independent streams
+    // One message flow: platform → chat (glow) then chat → agent (glow), agent lights up
+    function launchMessage() {
+      if (!pathsBuilt || !platPaths.length || !agentPaths.length) return;
+      const pi   = Math.floor(Math.random() * platPaths.length);
+      const ai   = Math.floor(Math.random() * agentPaths.length);
+      const pDur = 900 + Math.random() * 300;
+      const aDur = 720 + Math.random() * 250;
+
+      const platPulse  = document.getElementById('pp-' + pi);
+      const agentPulse = document.getElementById('pa-' + ai);
+
+      animatePath(platPaths[pi], platPulse, pDur, () => {
+        triggerChatRim();
+        setTimeout(() => {
+          animatePath(agentPaths[ai], agentPulse, aDur, () => {
+            activateAgent(ai);
+          });
+        }, 160);
+      });
+    }
+
     function startScheduler() {
-      [0, 380, 780, 1380].forEach(delay => {
+      [0, 420, 870, 1530].forEach(delay => {
         setTimeout(function tick() {
           launchMessage();
-          setTimeout(tick, 1050 + Math.random() * 1100);
+          setTimeout(tick, 1100 + Math.random() * 1050);
         }, delay);
-      });
-    }
-
-    // Animate dash-offset so edges appear to stream (re-queries dynamic paths)
-    function startEdgeFlow() {
-      svg.querySelectorAll('.net-edge').forEach((edge, i) => {
-        anime({ targets: edge, strokeDashoffset: [0, -12],
-                duration: 900 + i * 45, loop: true, easing: 'linear' });
       });
     }
 
@@ -405,24 +395,16 @@
     new IntersectionObserver(([entry]) => {
       if (!entry.isIntersecting || started) return;
       started = true;
-      // Small delay: let reveal animation settle before measuring layout
       setTimeout(() => {
-        if (buildPaths()) {
-          startEdgeFlow();
-          setTimeout(startScheduler, 250);
-        }
+        if (buildPaths()) setTimeout(startScheduler, 250);
       }, 300);
     }, { threshold: 0.1 }).observe(container);
 
-    // Rebuild paths on resize (debounced 180ms)
     let resizeTimer;
     window.addEventListener('resize', () => {
       if (!started) return;
       clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        svg.querySelectorAll('.net-edge').forEach(e => anime.remove(e));
-        if (buildPaths()) startEdgeFlow();
-      }, 180);
+      resizeTimer = setTimeout(() => { buildPaths(); }, 180);
     });
   })();
 
