@@ -208,9 +208,48 @@ if (hosts.length === 0) {
   process.exit(1)
 }
 
+<<<<<<< Updated upstream:relay.ts
 // Synchronizations — behavior is one new file per synchronization (rubric #2).
 // The host-dependent ones close over the hosts array; the first host that
 // claims a channel handles it.
+=======
+// ─── Who's listening where ──────────────────────────────────────────────────
+// Print every started bot → channels it serves; flag channels claimed by >1 bot.
+{
+  const lines: string[] = ['relay: listening —']
+  const claimants = new Map<string, string[]>() // channelId → bot keys
+  for (const { key } of bootEntries) {
+    const agent = access.agents[key]
+    if (!agent) continue
+    const rooms = Object.entries(agent.rooms)
+    lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime} (default)`)
+    if (rooms.length === 0) lines.push('      (no channels — add one with `knock-knock setup`)')
+    for (const [channelId, room] of rooms) {
+      const agentNote = room.runtime && room.runtime !== agent.runtime ? `  [${room.runtime}]` : ''
+      lines.push(
+        `      #${channelId}  →  ${room.workspace ?? agent.workspace}${agentNote}` +
+          (room.requireMention ? '  (@mention required)' : ''),
+      )
+      claimants.set(channelId, [...(claimants.get(channelId) ?? []), key])
+    }
+  }
+  for (const [channelId, bots] of claimants) {
+    if (bots.length > 1) {
+      lines.push(
+        `  ⚠ channel #${channelId} has ${bots.length} bots (${bots.join(', ')}); ` +
+          `@mention each by name. Without require-mention, all of them respond.`,
+      )
+    }
+  }
+  process.stderr.write(lines.join('\n') + '\n')
+}
+
+// Index hosts by agent key for O(1) actor-keyed dispatch (drive, post, capture).
+const hostsByKey = new Map(hosts.map(h => [h.agentKey, h]))
+
+// Synchronizations — one behavior per file. Per-turn syncs resolve by the
+// turn's actor (= agentKey) so co-resident bots each drive and post their own turns.
+>>>>>>> Stashed changes:src/relay.ts
 const synchronizer = new Synchronizer(store, engine)
 synchronizer.register(
   classifyOnToolRequest({
@@ -229,6 +268,51 @@ synchronizer.register(
     },
   }),
 )
+<<<<<<< Updated upstream:relay.ts
+=======
+// Registered BEFORE prompt-on-message ON PURPOSE: subs fire sequentially and are
+// awaited, so attachments are recorded as file.received before the turn is
+// prompted — the same turn the file rode in on can see it.
+synchronizer.register(
+  ingestAttachment({
+    filesInbound: (scope, targetAgent) => {
+      const host =
+        (targetAgent ? hostsByKey.get(targetAgent) : undefined) ??
+        hosts.find(h => h.inboundFileCap(scope))
+      return host?.inboundFileCap(scope)
+    },
+    loadAttachments: (scope, hash) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        const atts = h.loadInboundAttachments(hash)
+        if (atts.length) return atts
+      }
+      return []
+    },
+    download: async (scope, att) => {
+      for (const h of hosts) {
+        if (!h.inboundFileCap(scope)) continue
+        return h.downloadInboundAttachment(att)
+      }
+      return undefined
+    },
+    materialize: async (scope, safeName, bytes, targetAgent) => {
+      const host =
+        (targetAgent ? hostsByKey.get(targetAgent) : undefined) ??
+        hosts.find(h => h.inboundFileCap(scope))
+      return host?.materializeAttachment(scope, safeName, bytes)
+    },
+    note: (scope, text) => {
+      for (const h of hosts) {
+        if (h.inboundFileCap(scope)) {
+          h.noteToScope(scope, text)
+          return
+        }
+      }
+    },
+  }),
+)
+>>>>>>> Stashed changes:src/relay.ts
 synchronizer.register(
   promptOnMessage({
     getAgentForChannel: channelId => {
@@ -242,28 +326,20 @@ synchronizer.register(
 )
 synchronizer.register(
   driveTurn({
-    getDriveHandle: channelId => {
-      for (const h of hosts) {
-        const handle = h.getDriveHandle(channelId)
-        if (handle) return handle
-      }
-      return undefined
-    },
+    getDriveHandle: (channelId, agentKey) =>
+      hostsByKey.get(agentKey)?.getDriveHandle(channelId),
     getByHash: hash => store.getByHash(hash),
   }),
 )
 synchronizer.register(
   postOnReply({
-    discordSend: async (channelId, text) => {
-      for (const h of hosts) {
-        if (h.getAgentForChannel(channelId)) {
-          return h.discordSend(channelId, text)
-        }
-      }
-      return undefined
+    discordSend: async (channelId, text, agentKey) => {
+      const host = hostsByKey.get(agentKey)
+      if (!host) return undefined
+      return host.discordSend(channelId, text)
     },
-    maxMessageLength: channelId =>
-      hosts.find(h => h.getAgentForChannel(channelId))?.maxMessageLength,
+    maxMessageLength: (channelId, agentKey) =>
+      hostsByKey.get(agentKey)?.maxMessageLength,
   }),
 )
 synchronizer.register(
@@ -313,23 +389,20 @@ synchronizer.register(applySupersession())
 // relays sharing one Postgres ledger converge without Discord conversation.
 synchronizer.register(
   captureWorkspaceEdit({
-    relativize: (scope, absPath) => {
-      for (const h of hosts) {
-        const rel = h.relativizeWorkspacePath(scope, absPath)
-        if (rel) return rel
-      }
-      return undefined
-    },
+    relativize: (scope, absPath, agentKey) =>
+      hostsByKey.get(agentKey)?.relativizeWorkspacePath(scope, absPath),
   }),
 )
 synchronizer.register(
   writeBackVersionable({
-    resolvePath: artifactId => {
+    resolvePaths: artifactId => {
+      const seen = new Set<string>()
+      const paths: string[] = []
       for (const h of hosts) {
         const abs = h.resolveVersionablePath(artifactId)
-        if (abs) return abs
+        if (abs && !seen.has(abs)) { seen.add(abs); paths.push(abs) }
       }
-      return undefined
+      return paths
     },
     readFile: async absPath => {
       try {
@@ -383,8 +456,22 @@ const PILL_VERBS = new Set([
 store.subscribe(i => {
   if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
   if (!PILL_VERBS.has(i.verb)) return
+<<<<<<< Updated upstream:relay.ts
   const host = hosts.find(h => h.getAgentForChannel(i.channel))
   host?.updatePill(i.channel)
+=======
+  // Route workbench updates to the agent that owns the turn; fall back to the
+  // first serving host for interactions whose actor is a human/external sender.
+  const host = hostsByKey.get(i.actor) ?? hosts.find(h => h.getAgentForChannel(i.channel))
+  if (!host) return
+  let promptHash: string | undefined
+  try {
+    promptHash = findTurnForInteraction(engine.get<TurnFoldState>(TURN_FOLD), i)
+  } catch {
+    promptHash = undefined
+  }
+  if (promptHash) host.updateWorkbench(i.channel, promptHash)
+>>>>>>> Stashed changes:src/relay.ts
 })
 
 // Now connect each host's messaging adapter — messages will start flowing into

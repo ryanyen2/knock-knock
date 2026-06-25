@@ -35,10 +35,17 @@ import {
 } from '../artifacts/versionable.ts'
 
 export type CaptureWorkspaceEditDeps = {
+<<<<<<< Updated upstream:ledger/synchronizations/capture-workspace-edit.ts
   /** Make `absFilePath` relative to the agent serving `scope`'s workspace, or
    *  undefined when the file is outside the workspace / the scope is unserved.
    *  Workspace-relative keeps the artifact id stable across machines. */
   relativize: (scope: string, absFilePath: string) => string | undefined
+=======
+  /** `absFilePath` relative to `agentKey`'s workspace for `scope`, or undefined
+   *  when outside the workspace / scope unserved. Using the editing agent's own
+   *  workspace keeps the artifact id stable and containment correct per bot. */
+  relativize: (scope: string, absFilePath: string, agentKey: string) => string | undefined
+>>>>>>> Stashed changes:src/ledger/synchronizations/capture-workspace-edit.ts
 }
 
 export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchronization {
@@ -60,8 +67,13 @@ export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchroniz
 
       const intent = parseEditIntent(parent.patch.intent.op, parent.patch.intent.args)
       if (!intent) return
+<<<<<<< Updated upstream:ledger/synchronizations/capture-workspace-edit.ts
       const relPath = deps.relativize(i.channel, intent.filePath)
       if (!relPath) return // outside the workspace, or scope not served here
+=======
+      const relPath = deps.relativize(i.channel, intent.filePath, i.actor)
+      if (!relPath) return // containment: outside the workspace / scope unserved
+>>>>>>> Stashed changes:src/ledger/synchronizations/capture-workspace-edit.ts
 
       const artifactId = versionableArtifactId(i.channel, relPath)
       const state = ctx.engine.get<VersionableFoldState>(VERSIONABLE_FOLD)

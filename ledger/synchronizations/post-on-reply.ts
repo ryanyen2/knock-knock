@@ -31,6 +31,7 @@ import {
 } from '../render/reply-annotations.ts'
 
 export type PostOnReplyOpts = {
+<<<<<<< Updated upstream:ledger/synchronizations/post-on-reply.ts
   /**
    * Send a chunk to Discord. Returns the posted message id (best-effort).
    * Failures throw — the claim is released on throw via withClaim's finally.
@@ -42,6 +43,13 @@ export type PostOnReplyOpts = {
    *  falls back to the safe default. */
   maxMessageLength?: (channelId: string) => number | undefined
   /** TTL for the claim while we're posting. */
+=======
+  /** Send a chunk via the agent that authored the reply (agentKey = turn actor). */
+  discordSend: (channelId: string, text: string, agentKey: string) => Promise<string | undefined>
+  /** The platform's hard message-length cap for the agent posting the reply. */
+  maxMessageLength?: (channelId: string, agentKey: string) => number | undefined
+  /** TTL for the claim while posting. */
+>>>>>>> Stashed changes:src/ledger/synchronizations/post-on-reply.ts
   claimTtlMs?: number
   /**
    * Map an actor id to a display handle for the §4.3 attribution line.
@@ -98,13 +106,18 @@ export function postOnReply(opts: PostOnReplyOpts): Synchronization {
         i.target.artifactId,
         i.hash,
         async () => {
+<<<<<<< Updated upstream:ledger/synchronizations/post-on-reply.ts
           // The turn.replied carries the full reply (the Driver's chunks were
           // re-joined for the ledger record), and we append annotations on top,
           // so split here to stay under the platform's hard limit. Sent
           // sequentially under the held claim, preferring paragraph/newline cuts.
           const limit = chunkLimitFor(opts.maxMessageLength?.(i.channel))
+=======
+          // Split to stay under the platform's hard limit; sent sequentially.
+          const limit = chunkLimitFor(opts.maxMessageLength?.(i.channel, i.actor))
+>>>>>>> Stashed changes:src/ledger/synchronizations/post-on-reply.ts
           for (const part of chunk(finalText, limit, 'newline')) {
-            await opts.discordSend(i.channel, part)
+            await opts.discordSend(i.channel, part, i.actor)
           }
         },
         ttl,

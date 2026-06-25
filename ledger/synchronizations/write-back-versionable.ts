@@ -16,9 +16,16 @@ import { withClaim } from '../artifacts/external.ts'
 import { VERSIONABLE_FOLD, projectVersionable, isVersionableEdit, type VersionableFoldState } from '../artifacts/versionable.ts'
 
 export type WriteBackVersionableDeps = {
+<<<<<<< Updated upstream:ledger/synchronizations/write-back-versionable.ts
   /** Resolve a `vers:<scope>/<rel>` artifact to an absolute path on this machine,
    *  or undefined when the scope is not served here. */
   resolvePath: (artifactId: ArtifactId) => string | undefined
+=======
+  /** All absolute paths this artifact maps to (one per serving agent/workspace).
+   *  With bots sharing a workspace the list has one entry; with distinct workspaces
+   *  every copy must converge, so all paths are written (content-compared, idempotent). */
+  resolvePaths: (artifactId: ArtifactId) => string[]
+>>>>>>> Stashed changes:src/ledger/synchronizations/write-back-versionable.ts
   /** Read the file's current contents, or undefined if absent/unreadable. */
   readFile: (absPath: string) => Promise<string | undefined>
   /** Write the file atomically. */
@@ -31,19 +38,25 @@ export function writeBackVersionable(deps: WriteBackVersionableDeps): Synchroniz
     matches: isVersionableEdit,
     fire: async (i, ctx) => {
       const artifactId = i.target.artifactId
-      const absPath = deps.resolvePath(artifactId)
-      if (!absPath) return // not served on this machine
+      const paths = deps.resolvePaths(artifactId)
+      if (paths.length === 0) return // not served on this machine
 
       const state = ctx.engine.get<VersionableFoldState>(VERSIONABLE_FOLD)
       const { text } = projectVersionable(state, artifactId)
 
+<<<<<<< Updated upstream:ledger/synchronizations/write-back-versionable.ts
       // Serialize the disk write across relays. The claim holder is this edit's
       // hash; if another relay holds it, skip — it will write the same bytes.
+=======
+      // Serialize disk writes across relays; write to every serving workspace.
+>>>>>>> Stashed changes:src/ledger/synchronizations/write-back-versionable.ts
       const claimKey = `extp:file/${artifactId}` as ArtifactId
       await withClaim(ctx.store, claimKey, i.hash, async () => {
-        const current = await deps.readFile(absPath)
-        if (current === text) return // already converged — no write
-        await deps.writeFile(absPath, text)
+        for (const absPath of paths) {
+          const current = await deps.readFile(absPath)
+          if (current === text) continue // already converged — no write
+          await deps.writeFile(absPath, text)
+        }
       })
     },
   }

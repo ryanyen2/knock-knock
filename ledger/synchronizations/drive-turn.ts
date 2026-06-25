@@ -35,6 +35,7 @@ export type DriveTurnHandle = {
 }
 
 export type DriveTurnOpts = {
+<<<<<<< Updated upstream:ledger/synchronizations/drive-turn.ts
   /**
    * Resolve a handle that owns the adapter + recorder for this channel.
    * Returns undefined if no agent is registered for the channel.
@@ -44,6 +45,11 @@ export type DriveTurnOpts = {
    * Look up an admitted interaction by hash. Used to fetch the originating
    * channel.message via the prompt's caused_by parent for the prompt text.
    */
+=======
+  /** Resolve the handle for the agent that owns this turn (agentKey = turn actor). */
+  getDriveHandle: (channelId: string, agentKey: string) => DriveTurnHandle | undefined
+  /** Look up an admitted interaction by hash. */
+>>>>>>> Stashed changes:src/ledger/synchronizations/drive-turn.ts
   getByHash: (hash: Hash) => Promise<Interaction | undefined>
 }
 
@@ -54,7 +60,7 @@ export function driveTurn(opts: DriveTurnOpts): Synchronization {
       i.verb === 'turn.prompted' &&
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
     fire: async (prompted, _ctx) => {
-      const handle = opts.getDriveHandle(prompted.channel)
+      const handle = opts.getDriveHandle(prompted.channel, prompted.actor)
       if (!handle) return // no live agent — nothing to drive
 
       const inboundHash = prompted.caused_by[0]
