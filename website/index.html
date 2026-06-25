@@ -48,10 +48,10 @@
       <span class="brand-name">knock-knock</span>
     </a>
     <nav class="nav-links" aria-label="Sections">
+      <a href="#network">Platforms</a>
       <a href="#flow">How it works</a>
       <a href="#control">Control</a>
       <a href="#cases">Use cases</a>
-      <a href="#levels">Levels</a>
       <a href="setup.html">Setup</a>
     </nav>
     <a href="#start" class="btn btn-primary btn-sm nav-cta">Get started</a>
@@ -63,13 +63,12 @@
 <!-- ═══════════  HERO  ═══════════ -->
 <section class="hero" id="hero">
   <div class="hero-copy">
-    <p class="eyebrow reveal">A relay for collaborating agents</p>
     <h1 class="hero-title reveal">
-      Your agents. Their agents.<br /><span class="grad">One channel.</span>
+      Local agents.<br /><span class="grad">Shared channel.</span>
     </h1>
     <p class="hero-sub reveal">
-      knock-knock puts each teammate's local environment in one group chat. What
-      runs on <em>your</em> machine stays <em>your</em> call.
+      Your coding agent runs on your machine. Your teammate's runs on theirs.
+      knock-knock connects both through the chat you already use. No server, no shared codebase, no cloud in the middle.
     </p>
     <div class="hero-cta reveal">
       <a href="#start" class="btn btn-primary btn-lg">Get started</a>
@@ -114,6 +113,216 @@
             <span class="react"><svg class="ic"><use href="#i-thread"/></svg> task thread</span>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════  NETWORK DIAGRAM  ═══════════ -->
+<section class="network" id="network" aria-label="How agents and platforms connect through knock-knock">
+  <div class="wrap">
+    <header class="network-head">
+      <h2 class="network-title reveal">One relay. Any agent. Any platform.</h2>
+      <p class="network-sub reveal">Connect whichever coding agent your team uses to whichever chat platform you already live in. Each connection is local. The relay runs on your machine, not ours.</p>
+    </header>
+
+    <!-- SVG network graph — agents left, relay center, platforms right -->
+    <div class="network-stage reveal" id="networkStage" aria-hidden="true">
+      <svg class="network-svg" id="networkSvg" viewBox="0 0 880 440" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <!-- pulse gradient: a traveling dot along each path -->
+          <radialGradient id="pulse-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#1078A3" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#1078A3" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="node-glow" x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+          <filter id="hub-glow" x="-60%" y="-60%" width="220%" height="220%">
+            <feGaussianBlur stdDeviation="6" result="blur"/>
+            <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+          </filter>
+          <!-- clip path so pulses don't overflow -->
+          <clipPath id="graph-clip">
+            <rect x="0" y="0" width="880" height="440"/>
+          </clipPath>
+        </defs>
+
+        <g clip-path="url(#graph-clip)">
+
+        <!-- ── AGENT NODES (left column, x=110) ── -->
+        <!-- Claude Code -->
+        <g class="net-node agent-node" data-id="claude" transform="translate(110,68)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#D97557"/>
+            <path d="M7 8l5-3 5 3v8l-5 3-5-3V8z" fill="none" stroke="#fff" stroke-width="1.5" stroke-linejoin="round"/>
+            <circle cx="12" cy="12" r="2" fill="#fff"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Claude Code</text>
+        </g>
+
+        <!-- Codex -->
+        <g class="net-node agent-node" data-id="codex" transform="translate(110,154)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#10A37F"/>
+            <path d="M6 9l6-3 6 3v6l-6 3-6-3V9z" fill="none" stroke="#fff" stroke-width="1.5"/>
+            <path d="M12 6v12M6 9l6 3 6-3" stroke="#fff" stroke-width="1"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Codex</text>
+        </g>
+
+        <!-- OpenCode -->
+        <g class="net-node agent-node" data-id="opencode" transform="translate(110,240)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#6366F1"/>
+            <path d="M8 12a4 4 0 1 0 8 0 4 4 0 0 0-8 0z" stroke="#fff" stroke-width="1.5" fill="none"/>
+            <path d="M15.5 8.5L17 7" stroke="#fff" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <text class="node-label" x="2" y="5">OpenCode</text>
+        </g>
+
+        <!-- Gemini -->
+        <g class="net-node agent-node" data-id="gemini" transform="translate(110,326)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#1A73E8"/>
+            <path d="M12 4l2 6 6 2-6 2-2 6-2-6-6-2 6-2 2-6z" fill="#fff"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Gemini CLI</text>
+        </g>
+
+        <!-- Any ACP -->
+        <g class="net-node agent-node agent-any" data-id="acp" transform="translate(110,372)">
+          <rect class="node-bg node-bg-dim" x="-54" y="-18" width="108" height="36" rx="8"/>
+          <text class="node-label node-label-sm" x="-10" y="5">any ACP agent</text>
+        </g>
+
+        <!-- ── HUB (center, x=440, y=220) ── -->
+        <g class="net-hub" id="netHub" transform="translate(440,220)">
+          <circle class="hub-ring hub-ring-3" r="56" opacity="0.06"/>
+          <circle class="hub-ring hub-ring-2" r="44" opacity="0.10"/>
+          <circle class="hub-ring hub-ring-1" r="32" opacity="0.18"/>
+          <circle class="hub-core" r="22"/>
+          <!-- knock-knock icon -->
+          <svg x="-11" y="-18" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="9.5" r="6.5" stroke="white" stroke-width="2" fill="none"/>
+            <circle cx="12" cy="9.5" r="2.3" fill="white"/>
+            <path d="M12 16v5.5" stroke="white" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <text class="hub-label" y="32">knock-knock</text>
+        </g>
+
+        <!-- ── PLATFORM NODES (right column, x=770) ── -->
+        <!-- Discord -->
+        <g class="net-node platform-node" data-id="discord" transform="translate(770,68)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#5865F2"/>
+            <path d="M9 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0zM12 12a1.5 1.5 0 1 0 3 0 1.5 1.5 0 0 0-3 0z" fill="#fff"/>
+            <path d="M8.5 7C9.8 6.5 11 6 12 6s2.2.5 3.5 1c.8 1.6 1.3 3.3 1.5 5-.5.4-1.2.8-2 1l-.5-.8c-.7.2-1.3.3-2 .3s-1.3-.1-2-.3l-.5.8c-.8-.2-1.5-.6-2-1 .2-1.7.7-3.4 1.5-5z" stroke="#fff" stroke-width="1" fill="none"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Discord</text>
+          <text class="node-tag" x="2" y="19">full fidelity</text>
+        </g>
+
+        <!-- Slack -->
+        <g class="net-node platform-node" data-id="slack" transform="translate(770,154)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#4A154B"/>
+            <rect x="6" y="11" width="4" height="4" rx="1" fill="#E01E5A"/>
+            <rect x="11" y="6" width="4" height="4" rx="1" fill="#36C5F0"/>
+            <rect x="14" y="11" width="4" height="4" rx="1" fill="#2EB67D"/>
+            <rect x="11" y="14" width="4" height="4" rx="1" fill="#ECB22E"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Slack</text>
+          <text class="node-tag" x="2" y="19">full fidelity</text>
+        </g>
+
+        <!-- Telegram -->
+        <g class="net-node platform-node" data-id="telegram" transform="translate(770,240)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#229ED9"/>
+            <path d="M5 12l2 1 9-6-7 7 1 3 2-3 3 2 2-8-12 4z" fill="#fff"/>
+          </svg>
+          <text class="node-label" x="2" y="5">Telegram</text>
+          <text class="node-tag" x="2" y="19">near-parity</text>
+        </g>
+
+        <!-- GitHub -->
+        <g class="net-node platform-node" data-id="github" transform="translate(770,326)">
+          <rect class="node-bg" x="-54" y="-22" width="108" height="44" rx="10"/>
+          <svg x="-46" y="-11" width="22" height="22" viewBox="0 0 24 24" fill="none">
+            <rect width="24" height="24" rx="5" fill="#24292E"/>
+            <path d="M12 4a8 8 0 0 0-2.53 15.59c.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.17-.89-1.17-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.71 1.22 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.77-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.64 7.64 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.19c0 .21.15.46.55.38A8 8 0 0 0 12 4z" fill="#fff"/>
+          </svg>
+          <text class="node-label" x="2" y="5">GitHub</text>
+          <text class="node-tag" x="2" y="19">async</text>
+        </g>
+
+        <!-- Notion -->
+        <g class="net-node platform-node" data-id="notion" transform="translate(770,372)">
+          <rect class="node-bg node-bg-dim" x="-54" y="-18" width="108" height="36" rx="8"/>
+          <text class="node-label node-label-sm" x="-10" y="5">Notion (async)</text>
+        </g>
+
+        <!-- ── CONNECTION PATHS ── -->
+        <!-- agent → hub: 4 main + 1 dim -->
+        <path class="net-edge" id="e-claude"    d="M 164,68  C 290,68  310,220  418,220" />
+        <path class="net-edge" id="e-codex"     d="M 164,154 C 280,154 310,220  418,220" />
+        <path class="net-edge" id="e-opencode"  d="M 164,240 C 270,240 320,220  418,220" />
+        <path class="net-edge" id="e-gemini"    d="M 164,326 C 280,300 310,240  418,220" />
+        <path class="net-edge net-edge-dim" id="e-acp" d="M 164,372 C 260,350 310,260 418,220" />
+
+        <!-- hub → platform: 4 main + 1 dim -->
+        <path class="net-edge" id="e-discord"  d="M 462,220 C 570,220 620,68  716,68" />
+        <path class="net-edge" id="e-slack"    d="M 462,220 C 570,210 630,154 716,154" />
+        <path class="net-edge" id="e-telegram" d="M 462,220 C 560,220 640,230 716,240" />
+        <path class="net-edge" id="e-github"   d="M 462,220 C 570,240 620,300 716,326" />
+        <path class="net-edge net-edge-dim" id="e-notion" d="M 462,220 C 560,260 630,340 716,372" />
+
+        <!-- ── PULSE DOTS (one per main edge, animated by JS) ── -->
+        <circle class="net-pulse" id="p-claude"   r="4" />
+        <circle class="net-pulse" id="p-codex"    r="4" />
+        <circle class="net-pulse" id="p-opencode" r="4" />
+        <circle class="net-pulse" id="p-gemini"   r="4" />
+        <circle class="net-pulse" id="p-discord"  r="4" />
+        <circle class="net-pulse" id="p-slack"    r="4" />
+        <circle class="net-pulse" id="p-telegram" r="4" />
+        <circle class="net-pulse" id="p-github"   r="4" />
+
+        </g><!-- /clip -->
+      </svg>
+
+      <!-- Legend below the graph -->
+      <div class="network-legend">
+        <span class="nl-item"><span class="nl-dot nl-dot-agent"></span>Coding agent</span>
+        <span class="nl-item"><span class="nl-dot nl-dot-hub"></span>knock-knock relay (runs locally)</span>
+        <span class="nl-item"><span class="nl-dot nl-dot-platform"></span>Chat platform</span>
+      </div>
+    </div>
+
+    <!-- Three callouts below the diagram -->
+    <div class="network-callouts">
+      <div class="ncall reveal">
+        <span class="ncall-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
+        <h3>No server. No tunnel.</h3>
+        <p>The relay runs on your laptop and borrows the platform's own WebSocket as its event bus. Discord, Slack, and Telegram open outbound connections - you never expose a port.</p>
+      </div>
+      <div class="ncall reveal">
+        <span class="ncall-ic"><svg class="ic"><use href="#i-box"/></svg></span>
+        <h3>Your codebase stays yours.</h3>
+        <p>Nothing leaves your filesystem unless your agent decides to and you approve it. Two teammates can collaborate on a repo neither has pushed to a shared server.</p>
+      </div>
+      <div class="ncall reveal">
+        <span class="ncall-ic"><svg class="ic"><use href="#i-bolt"/></svg></span>
+        <h3>Any agent, any runtime.</h3>
+        <p>Claude Code, Codex, OpenCode, Gemini - or any agent that speaks ACP. Platform is orthogonal to runtime. The same bot can drive different agents in different channels.</p>
       </div>
     </div>
   </div>
@@ -269,7 +478,7 @@
           <li class="flow-note is-on" data-note="0"><h3>It starts in a shared channel</h3><p>Everyone runs their own agent on their own machine, in one channel. Maya hosts the GPU box. You and Devin build against it.</p></li>
           <li class="flow-note" data-note="1"><h3>Anyone can knock</h3><p>An <code>@mention</code> to another person's agent is a request. It cannot reach into their machine on its own.</p></li>
           <li class="flow-note" data-note="2"><h3>A thread per task</h3><p>Each request opens its own thread with its own activity log, so the channel stays a clean index.</p></li>
-          <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in — <b>○ planned, ◐ in progress, ✓ done</b> — above every step as it goes.</p></li>
+          <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in (<b>○ planned, ◐ in progress, ✓ done</b>) above every step as it goes.</p></li>
           <li class="flow-note" data-note="4"><h3>You decide who comes in</h3><p>Anything that changes the machine waits for the owner's <b>Allow</b>. The prompt pings only the owner.</p></li>
           <li class="flow-note" data-note="5"><h3>Approved once, not forever</h3><p><b>Allow</b> runs the command a single time. The next one asks again. Approval never becomes a standing key.</p></li>
           <li class="flow-note" data-note="6"><h3>The deny floor never blinks</h3><p>Destructive commands are blocked before anyone sees them. It reads the real command, so it can't be smuggled past in a chain.</p></li>
@@ -490,7 +699,7 @@
         <div class="step-body">
           <h3>Install knock-knock</h3>
           <div class="code" data-copy><pre><code>brew install ryanyen2/tap/knock-knock</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-          <p class="step-note">A single CLI with the Bun runtime embedded — nothing else to install. No Homebrew? The <a href="setup.html#quickstart">install script, <code>.deb</code>, or npm</a> work too. You'll also want a Discord server you can add a bot to, with Developer Mode on.</p>
+          <p class="step-note">A single CLI with the Bun runtime embedded, nothing else to install. No Homebrew? The <a href="setup.html#quickstart">install script, <code>.deb</code>, or npm</a> work too. You'll also want a Discord server you can add a bot to, with Developer Mode on.</p>
         </div>
       </li>
       <li class="step reveal">
@@ -526,7 +735,7 @@
           <span class="chip">GitHub <i>async</i></span>
           <span class="chip">Notion <i>async</i></span>
         </div>
-        <p class="plat-note">Discord and Slack are full-fidelity and live; Telegram is near-parity; GitHub and Notion are async, degraded transports. One clean adapter seam — <a href="setup.html#platform">per-platform setup</a>.</p>
+        <p class="plat-note">Discord and Slack are full-fidelity and live; Telegram is near-parity; GitHub and Notion are async, degraded transports. One clean adapter seam: <a href="setup.html#platform">per-platform setup</a>.</p>
       </div>
       <div class="plat-row">
         <h4>Runtimes behind the bot</h4>
@@ -547,12 +756,12 @@
 <!-- ═══════════  CLOSER  ═══════════ -->
 <section class="closer">
   <div class="wrap closer-inner">
-    <p class="closer-knock reveal">Knock, knock.</p>
-    <p class="closer-who reveal">Who's there?</p>
-    <h2 class="closer-answer reveal">Your agents, ready when you are.</h2>
+    <p class="closer-pre reveal">Each machine stays local.</p>
+    <h2 class="closer-answer reveal">Your team's agents,<br>working on the same problem.</h2>
+    <p class="closer-sub reveal">No shared server. No uploaded codebase. Just a chat that lets every agent reach every teammate, on their terms.</p>
     <div class="closer-cta reveal">
       <a href="#start" class="btn btn-primary btn-lg">Get started</a>
-      <a href="https://github.com/ryanyen2/knock-knock#readme" class="btn btn-ghost btn-lg">Read the deep docs</a>
+      <a href="https://github.com/ryanyen2/knock-knock#readme" class="btn btn-ghost btn-lg">Read the docs <svg class="ic"><use href="#i-arrow"/></svg></a>
     </div>
   </div>
 </section>
@@ -579,6 +788,7 @@
 
 <script src="vendor/gsap.min.js"></script>
 <script src="vendor/ScrollTrigger.min.js"></script>
+<script src="vendor/anime.min.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

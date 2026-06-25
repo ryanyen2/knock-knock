@@ -87,7 +87,7 @@
         if (l) l.setAttribute('aria-current', 'true');
       });
     }, { rootMargin: '-45% 0px -50% 0px' });
-    ['flow', 'control', 'cases', 'levels', 'start'].forEach((id) => {
+    ['network', 'flow', 'control', 'cases', 'levels', 'start'].forEach((id) => {
       const s = document.getElementById(id); if (s) navIO.observe(s);
     });
   }
@@ -185,6 +185,125 @@
   }
 
   window.addEventListener('load', () => ScrollTrigger.refresh());
+
+  /* ═════════════  NETWORK DIAGRAM — anime.js pulse animation  ═════════════ */
+  (function initNetwork() {
+    if (typeof anime === 'undefined') return;
+
+    // Pulse dots that travel along each SVG path
+    const routes = [
+      // agent → hub (left to right along each path)
+      { pulseId: 'p-claude',   pathId: 'e-claude',   delay: 0,    dur: 1800 },
+      { pulseId: 'p-codex',    pathId: 'e-codex',    delay: 400,  dur: 1700 },
+      { pulseId: 'p-opencode', pathId: 'e-opencode', delay: 900,  dur: 1600 },
+      { pulseId: 'p-gemini',   pathId: 'e-gemini',   delay: 200,  dur: 1900 },
+      // hub → platform (right half)
+      { pulseId: 'p-discord',  pathId: 'e-discord',  delay: 1100, dur: 1600 },
+      { pulseId: 'p-slack',    pathId: 'e-slack',    delay: 700,  dur: 1700 },
+      { pulseId: 'p-telegram', pathId: 'e-telegram', delay: 1400, dur: 1800 },
+      { pulseId: 'p-github',   pathId: 'e-github',   delay: 300,  dur: 2000 },
+    ];
+
+    // Wait for the network section to enter the viewport before starting
+    const stage = document.getElementById('networkStage');
+    if (!stage) return;
+
+    let started = false;
+    const startAnimations = () => {
+      if (started) return;
+      started = true;
+
+      routes.forEach(({ pulseId, pathId, delay, dur }) => {
+        const pulse = document.getElementById(pulseId);
+        const path  = document.getElementById(pathId);
+        if (!pulse || !path) return;
+
+        const length = path.getTotalLength();
+
+        const runPulse = (extraDelay) => {
+          // reset to start of path
+          const startPt = path.getPointAtLength(0);
+          pulse.setAttribute('cx', startPt.x);
+          pulse.setAttribute('cy', startPt.y);
+
+          anime({
+            targets: {},
+            progress: [0, 1],
+            duration: dur,
+            delay: extraDelay,
+            easing: 'easeInOutSine',
+            update: (anim) => {
+              const p = anim.animations[0].currentValue;
+              const pt = path.getPointAtLength(p * length);
+              pulse.setAttribute('cx', pt.x);
+              pulse.setAttribute('cy', pt.y);
+              pulse.setAttribute('opacity', p < 0.05 ? p / 0.05 : p > 0.9 ? (1 - p) / 0.1 : 1);
+            },
+            complete: () => {
+              // loop with a pause at the end
+              setTimeout(() => runPulse(0), 600 + Math.random() * 1200);
+            },
+          });
+        };
+
+        runPulse(delay);
+      });
+
+      // Hub ring pulse
+      const rings = document.querySelectorAll('.hub-ring');
+      if (rings.length) {
+        rings.forEach((ring, i) => {
+          anime({
+            targets: ring,
+            opacity: [0.04, 0.18, 0.04],
+            duration: 2400 + i * 600,
+            delay: i * 300,
+            loop: true,
+            easing: 'easeInOutSine',
+            direction: 'alternate',
+          });
+        });
+
+        // Hub core gentle scale pulse
+        const core = document.querySelector('.hub-core');
+        if (core) {
+          anime({
+            targets: core,
+            r: [22, 24, 22],
+            duration: 2800,
+            loop: true,
+            easing: 'easeInOutSine',
+            direction: 'alternate',
+          });
+        }
+      }
+
+      // Edge dash-offset animation (make the dashes appear to flow)
+      const edges = document.querySelectorAll('.net-edge:not(.net-edge-dim)');
+      edges.forEach((edge, i) => {
+        anime({
+          targets: edge,
+          strokeDashoffset: [0, -18],
+          duration: 1200 + i * 80,
+          loop: true,
+          easing: 'linear',
+        });
+      });
+    };
+
+    if (reduced) {
+      // In reduced-motion mode, just show static diagram (no animation)
+      routes.forEach(({ pulseId }) => {
+        const p = document.getElementById(pulseId);
+        if (p) p.setAttribute('opacity', '0');
+      });
+      return;
+    }
+
+    new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) startAnimations();
+    }, { threshold: 0.2 }).observe(stage);
+  })();
 
   if (location.hash && location.hash.length > 1) {
     const target = document.querySelector(location.hash);
