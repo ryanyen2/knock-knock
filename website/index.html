@@ -316,7 +316,7 @@
       <div class="cell cell-floor reveal">
         <span class="cell-ic"><svg class="ic"><use href="#i-shield"/></svg></span>
         <h3>The deny floor is always on</h3>
-        <p>Destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to sensitive paths (<code>~/.ssh</code>) are blocked under even the most permissive setup. Checked first, against the real command.</p>
+        <p>Destructive shell (<code>rm -rf</code>, <code>sudo</code>), writes to sensitive paths (<code>~/.ssh</code>), and reading or sharing any credential file (<code>.env</code>, <code>*.key</code>, <code>~/.aws</code>) are blocked under even the most permissive setup. Checked first, against the real command.</p>
         <p class="cell-fine">One honest caveat: the floor only holds if the agent asks before acting. The default Claude runtime does. For others, keep ask-first mode, or add the OS sandbox.</p>
       </div>
 
@@ -424,10 +424,10 @@
           <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="no">deny</b></li><li>Shell <b class="no">deny</b></li></ul>
           <p class="best">Best for untrusted collaborators, public research.</p>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile</div><pre><code>{
+        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
   "allow": ["Read(**)"],
   "ask":   [],
-  "deny":  ["Edit(**)", "Write(**)", "Bash(*)"]
+  "deny":  ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"]
 }</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
 
@@ -438,10 +438,10 @@
           <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ask">ask</b></li><li>Shell <b class="ask">ask</b></li></ul>
           <p class="best">Best for day-to-day work, first time out.</p>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile</div><pre><code>{
+        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
   "allow": ["Read(**)"],
-  "ask":   ["Edit(**)", "Write(**)", "Bash(*)"],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]
+  "ask":   ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
 }</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
 
@@ -452,10 +452,10 @@
           <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ok">allow</b></li><li>Shell <b class="ask">ask</b></li></ul>
           <p class="best">Best for solo flow on a project you trust.</p>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile</div><pre><code>{
+        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
   "allow": ["Read(**)", "Edit(**)", "Write(**)"],
-  "ask":   ["Bash(*)"],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)"]
+  "ask":   ["Bash(*)", "FileShare(**)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
 }</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
 
@@ -467,9 +467,9 @@
           <p class="best">Best for unattended jobs you'll review after.</p>
         </div>
         <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
-  "allow": ["Read(**)", "Edit(**)", "Write(**)", "Bash(*)"],
+  "allow": ["Read(**)", "Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
   "ask":   [],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Write(~/.ssh/**)"]
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Write(~/.ssh/**)", "Read(**/.env)", "FileShare(**/.env)"]
 }</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
     </div>
@@ -488,9 +488,9 @@
       <li class="step reveal">
         <span class="step-n">1</span>
         <div class="step-body">
-          <h3>Install Bun</h3>
-          <div class="code" data-copy><pre><code>curl -fsSL https://bun.sh/install | bash</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-          <p class="step-note">You'll also want a Discord server you can add a bot to, with Developer Mode on.</p>
+          <h3>Install knock-knock</h3>
+          <div class="code" data-copy><pre><code>brew install ryanyen2/tap/knock-knock</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+          <p class="step-note">A single CLI with the Bun runtime embedded — nothing else to install. No Homebrew? The <a href="setup.html#quickstart">install script, <code>.deb</code>, or npm</a> work too. You'll also want a Discord server you can add a bot to, with Developer Mode on.</p>
         </div>
       </li>
       <li class="step reveal">
@@ -520,9 +520,13 @@
       <div class="plat-row">
         <h4>Platforms</h4>
         <div class="chips">
-          <span class="chip chip-ready">Discord <i>ready</i></span>
+          <span class="chip chip-ready">Discord <i>full</i></span>
+          <span class="chip chip-ready">Slack <i>full</i></span>
+          <span class="chip">Telegram <i>near-parity</i></span>
+          <span class="chip">GitHub <i>async</i></span>
+          <span class="chip">Notion <i>async</i></span>
         </div>
-        <p class="plat-note">Discord is the live surface. The messaging layer is a clean adapter seam — another platform is one adapter away.</p>
+        <p class="plat-note">Discord and Slack are full-fidelity and live; Telegram is near-parity; GitHub and Notion are async, degraded transports. One clean adapter seam — <a href="setup.html#platform">per-platform setup</a>.</p>
       </div>
       <div class="plat-row">
         <h4>Runtimes behind the bot</h4>
@@ -566,6 +570,7 @@
       <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Security</a>
       <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/getting-started-agents.md">Agents</a>
       <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/session-sharing.md">Session sharing</a>
+      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md">File exchange</a>
       <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/knock-knock-watches.md">Watches</a>
     </nav>
     <span class="footer-note">The channel is the door. You hold the key.</span>

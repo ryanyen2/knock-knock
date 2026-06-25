@@ -59,7 +59,7 @@
       <a href="#model"><b>01</b> The model</a>
       <a href="#prereqs"><b>02</b> Prerequisites</a>
       <a href="#quickstart"><b>03</b> Quickstart</a>
-      <a href="#platform"><b>04</b> Platform</a>
+      <a href="#platform"><b>04</b> Platforms</a>
       <a href="#runtime"><b>05</b> Runtime</a>
       <a href="#permissions"><b>06</b> Permissions</a>
       <a href="#verify"><b>07</b> Verify</a>
@@ -89,8 +89,8 @@
   <section class="gsec reveal" id="prereqs">
     <h2>Prerequisites</h2>
     <ul class="gsteps">
-      <li class="gstep"><div><h4>Install Bun</h4><p>Check with <code>bun --version</code>. If that fails:</p><div class="code" data-copy><pre><code>curl -fsSL https://bun.sh/install | bash</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
-      <li class="gstep"><div><h4>A chat platform you can add a bot to</h4><p>knock-knock runs on Discord. Setting up the bot and copying the IDs you need is covered in <a href="#platform">step 4</a>.</p></div></li>
+      <li class="gstep"><div><h4>macOS or Linux</h4><p>The prebuilt <code>knock-knock</code> CLI — installed in the <a href="#quickstart">quickstart</a> below — embeds the Bun runtime, so there's nothing else to install. <strong>Bun</strong> (<code>curl -fsSL https://bun.sh/install | bash</code>) is needed only if you install via npm or run from a source checkout.</p></div></li>
+      <li class="gstep"><div><h4>A chat platform you can add a bot to</h4><p>knock-knock supports Discord, Slack, Telegram, GitHub, and Notion. Creating the app and copying the token(s) and id you need is covered per-platform in <a href="#platform">step 4</a>.</p></div></li>
       <li class="gstep"><div><h4>A coding-agent runtime</h4><p>The default (<code>claude-sdk</code>) needs only an <code>ANTHROPIC_API_KEY</code> or an existing <code>claude</code> login. Nothing to install. Other runtimes are in <a href="#runtime">step 5</a>.</p></div></li>
     </ul>
     <div class="callout"><svg class="ic"><use href="#i-shield"/></svg><div>knock-knock has <strong>no <code>config.json</code> you hand-edit</strong>. Everything lives under <code>~/.knock-knock/</code> and is written by the setup CLI. <code>access.json</code> — normalized into <code>me</code> / <code>bots</code> / <code>channels</code> (with each member's inline permission profile) / <code>roster</code> — is written <strong>only from your terminal</strong>, never from a chat message, so nothing said in the channel can change who's allowed or what they may do.</div></div>
@@ -101,8 +101,7 @@
     <h2>Quickstart: from zero to a reply</h2>
     <p class="gsec-lede">The fastest path to seeing it work, solo, on Discord. Three commands and a few answers.</p>
     <ul class="gsteps">
-      <li class="gstep"><div><h4>Get the relay</h4><p>Clone your knock-knock checkout, then install dependencies.</p><div class="code" data-copy><pre><code>cd knock-knock
-bun install</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+      <li class="gstep"><div><h4>Install knock-knock</h4><p>One CLI with the Bun runtime embedded — nothing else to install.</p><div class="code" data-copy><pre><code>brew install ryanyen2/tap/knock-knock</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div><p>No Homebrew? The install script works on macOS &amp; Linux and verifies the checksum:</p><div class="code" data-copy><pre><code>curl -fsSL https://raw.githubusercontent.com/ryanyen2/knock-knock/main/packaging/install.sh | bash</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div><p>Also available: a <code>.deb</code> on the <a href="https://github.com/ryanyen2/knock-knock/releases" target="_blank" rel="noopener">Releases</a> page, <code>npm install -g knock-knock</code> (needs Bun), or from source (<code>git clone … &amp;&amp; bun install</code>).</p></div></li>
       <li class="gstep"><div><h4>Run the setup wizard</h4><p>On first run it walks you through one bot and a channel for it to work in: <b>bot (platform → runtime → sandbox?) → channel (paste id → pick member bots → set each one's workspace + preset → add collaborators from your roster) → token → ledger</b>. Your owner id is asked once; the bot's name is fetched from the platform on connect, never typed. It writes <code>access.json</code> and <code>.env</code> for you. (You'll need a bot token and a couple of IDs first; <a href="#platform">step 4</a> shows how.)</p><div class="code" data-copy><pre><code>knock-knock setup</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
       <li class="gstep"><div><h4>Start the relay</h4><p>It prints a <b>“who's listening where”</b> table — each bot, its channels, and the workspace it uses — then <code>connected as your-bot#1234</code>. Now <code>@mention</code> the bot in your channel and say hello.</p><div class="code" data-copy><pre><code>knock-knock relay</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
     </ul>
@@ -111,22 +110,69 @@ bun install</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><
 
   <!-- 04 PLATFORM -->
   <section class="gsec reveal" id="platform">
-    <h2>Connect your chat platform</h2>
-    <p class="gsec-lede">knock-knock runs on Discord. Here's the full walk-through, from creating the application to copying the IDs you need.</p>
+    <h2>Supported platforms</h2>
+    <p class="gsec-lede">knock-knock connects through one platform-neutral adapter seam. Five platforms are supported today, in descending fidelity: <b>Discord</b> and <b>Slack</b> are full-fidelity and live; <b>Telegram</b> is near-parity; <b>GitHub</b> and <b>Notion</b> are async and degraded. Create the app, grab the token(s) and id, then run setup. Full reference: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/messaging-platforms-setup.md">messaging-platforms-setup.md</a>.</p>
 
     <!-- DISCORD -->
     <div class="ppanel" data-panel="discord">
-      <div class="ppanel-h"><h3>Discord</h3><span class="tag ready">production-tested</span></div>
+      <div class="ppanel-h"><h3>Discord</h3><span class="tag ready">full · live</span></div>
       <p>Prerequisites: a Discord server you can manage, and <b>Developer Mode</b> on (Settings → Advanced → Developer Mode) so you can copy IDs.</p>
       <ul class="gsteps">
-        <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your bot token.</p></div></li>
+        <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your <code>DISCORD_BOT_TOKEN</code>.</p></div></li>
         <li class="gstep"><div><h4>Enable the message-content intent</h4><p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> The only privileged toggle you need. Without it the bot connects but reads empty message text.</p></div></li>
         <li class="gstep"><div><h4>Invite the bot to your server</h4><p><b>OAuth2 → URL Generator</b> → scope <b>bot</b> → enable these permissions, then open the generated URL:</p><div class="perm-chips"><span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span></div></div></li>
-        <li class="gstep"><div><h4>Collect three values</h4><p><b>Your user ID</b> (right-click yourself → Copy User ID, asked once), the <b>channel ID</b> of your project channel (right-click → Copy Channel ID), and the <b>bot token</b> from step 1.</p></div></li>
-        <li class="gstep"><div><h4>Configure and run</h4><div class="code" data-copy><pre><code>knock-knock setup   <span style="color:#8E8E93"># bot → channel (this bot as member, its workspace + preset) → token</span>
-knock-knock relay</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div></div></li>
+        <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — right-click the channel → Copy Channel ID (a 17–20 digit snowflake). <b>Owner id</b> — right-click yourself → Copy User ID (asked once per platform).</p></div></li>
       </ul>
-      <p class="body">A top-level <code>@mention</code> spawns a task thread; replies there continue the task. Status is quiet emoji reactions (working → done / failed); approvals and conflicts are buttons; the owner gets a DM when a draft is overridden.</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Discord</b>, paste the channel id, and save <code>DISCORD_BOT_TOKEN</code>. A top-level <code>@mention</code> spawns a task thread; status is quiet emoji reactions; approvals and conflicts are buttons; the owner gets a DM when a draft is overridden.</p>
+    </div>
+
+    <!-- SLACK -->
+    <div class="ppanel" data-panel="slack">
+      <div class="ppanel-h"><h3>Slack</h3><span class="tag ready">full · live</span></div>
+      <p>Full fidelity over <b>Socket Mode</b> — an outbound WebSocket, no public server. Needs <b>two</b> tokens. (Inbound files work; outbound upload is pending.)</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the app &amp; enable Socket Mode</h4><p>Create a Slack app for your workspace, then <b>Socket Mode → on</b> — this generates the App-Level Token <code>SLACK_APP_TOKEN</code> (<code>xapp-…</code>, scope <code>connections:write</code>).</p></div></li>
+        <li class="gstep"><div><h4>Subscribe to events &amp; turn on interactivity</h4><p><b>Event Subscriptions → on</b>, bot events:</p><div class="perm-chips"><span>message.channels</span><span>message.groups</span><span>message.im</span><span>message.mpim</span><span>app_mention</span><span>reaction_added</span></div><p style="margin-top:10px"><b>Interactivity &amp; Shortcuts → on</b> (so Block Kit buttons fire).</p></div></li>
+        <li class="gstep"><div><h4>Add bot token scopes, then install</h4><p>OAuth &amp; Permissions → Bot Token Scopes:</p><div class="perm-chips"><span>app_mentions:read</span><span>channels:history</span><span>groups:history</span><span>im:history</span><span>mpim:history</span><span>chat:write</span><span>reactions:read</span><span>reactions:write</span><span>pins:write</span><span>files:read</span><span>files:write</span></div><p style="margin-top:10px"><b>Install to Workspace</b> (this yields <code>SLACK_BOT_TOKEN</code>, <code>xoxb-…</code>), then <code>/invite</code> the bot to each channel.</p></div></li>
+        <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — channel name → About → Channel ID (<code>C0123ABCD</code>). <b>Owner id</b> — your avatar → Profile → ⋯ → Copy member ID (<code>U0123ABCD</code>).</p></div></li>
+      </ul>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Slack</b>, paste the channel id, and save <b>both</b> tokens (<code>SLACK_BOT_TOKEN</code> + <code>SLACK_APP_TOKEN</code>, stored as the bot's app-token secret). Gotcha: <b>re-install after adding scopes</b>, and both tokens must be saved or connect fails fast.</p>
+    </div>
+
+    <!-- TELEGRAM -->
+    <div class="ppanel" data-panel="telegram">
+      <div class="ppanel-h"><h3>Telegram</h3><span class="tag exp">near-parity · live</span></div>
+      <p>Live over <code>getUpdates</code> long-poll (no public server). One token, minor degrades (whitelist reactions, cold-DM).</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the bot via BotFather</h4><p>DM <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code> → copy the token (<code>&lt;id&gt;:&lt;secret&gt;</code>). This is your <code>TELEGRAM_BOT_TOKEN</code>. No extra secret.</p></div></li>
+        <li class="gstep"><div><h4>Disable Group Privacy &amp; make it admin</h4><p><b>BotFather → /mybots → Bot Settings → Group Privacy → Turn off</b> (else the bot sees only @mentions and looks "deaf"). Make the bot a <b>group admin</b> to receive reactions. Forum topics (the thread analogue) need a <b>supergroup with Topics enabled</b>.</p></div></li>
+        <li class="gstep"><div><h4>Collect the chat id and your owner id</h4><p><b>Chat id</b> — via <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> or <code>getUpdates</code>; groups are <b>negative</b>, supergroups <code>-100…</code>. <b>Owner id</b> — DM @userinfobot for your numeric user id.</p></div></li>
+      </ul>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Telegram</b>, paste the chat id, and save <code>TELEGRAM_BOT_TOKEN</code>. Gotcha: the bot can only DM users who have <code>/start</code>ed it — <code>/start</code> your own bot so approval DMs reach you.</p>
+    </div>
+
+    <!-- GITHUB -->
+    <div class="ppanel" data-panel="github">
+      <div class="ppanel-h"><h3>GitHub</h3><span class="tag exp">async · degraded</span></div>
+      <p>Async transport (~60 s) over Notifications polling — best for PR-cadence coding and agent-to-agent-over-issues, not live chat. The repo is the room; an issue / PR is the task scope (automatic).</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Make a machine-user &amp; a PAT</h4><p>Create a <b>dedicated machine-user account</b> to act as the bot, then a Personal Access Token at github.com/settings/tokens. Scopes: classic <code>repo</code> + <code>notifications</code>, or fine-grained Issues R/W + Pull requests R/W + Contents R/W + Metadata R. This is your <code>GITHUB_BOT_TOKEN</code>. No extra secret.</p></div></li>
+        <li class="gstep"><div><h4>Add the machine-user to the repo</h4><p>The machine-user must be a <b>collaborator / org member</b> of the repo so @mentions notify it and it can comment.</p></div></li>
+        <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is the repo — <code>owner/repo</code> (each task scope <code>owner/repo#issue</code> is derived automatically). <b>Owner id</b> is your GitHub login.</p></div></li>
+      </ul>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>GitHub</b>, paste <code>owner/repo</code>, and save <code>GITHUB_BOT_TOKEN</code>. Gotchas: <b>~60 s latency</b>; <b>public repos are an injection surface</b> — restrict to allowed authors; approvals arrive as a numbered text reply (host wiring is a known pending item).</p>
+    </div>
+
+    <!-- NOTION -->
+    <div class="ppanel" data-panel="notion">
+      <div class="ppanel-h"><h3>Notion</h3><span class="tag exp">async · heavily degraded</span></div>
+      <p>Async over comment/page polling (~seconds, no reactions/buttons/DM/edit/inline files). Honest verdict: <b>often better used as an MCP tool than a chat transport</b>.</p>
+      <ul class="gsteps">
+        <li class="gstep"><div><h4>Create the integration</h4><p>At <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener">notion.so/my-integrations</a> create an internal integration with capabilities <b>Read content</b>, <b>Insert content</b>, <b>Read comments</b>, <b>Insert comments</b>, <b>Read user information</b>. It yields the secret <code>NOTION_TOKEN</code> (<code>ntn_…</code>). No extra secret.</p></div></li>
+        <li class="gstep"><div><h4>Share each page/database with it (required)</h4><p>Open the page or database → <b>••• → Connections → add your integration</b>. <b>Without sharing, the integration sees nothing</b> — the token alone grants no access. This is the single most common failure.</p></div></li>
+        <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is a page or database id — 32 hex chars from the page link's trailing id. <b>Owner id</b> is your Notion user id (find it via <code>GET /v1/users</code> with the token).</p></div></li>
+      </ul>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Notion</b>, paste the page/database id, and save <code>NOTION_TOKEN</code>. Gotcha: cold-start ignores the pre-existing comment backlog; the Workers/External-Agents bridge needs Business/Enterprise and is a future option.</p>
     </div>
   </section>
 
@@ -161,7 +207,8 @@ knock-knock relay</code></pre><button class="copy" aria-label="Copy"><svg class=
         <tr><td>bypass + sandbox</td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td>unattended runs you review after</td></tr>
       </tbody>
     </table>
-    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>) and writes to sensitive paths are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's bot runs read-only while you keep full access. Full guide: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
+    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>), writes to sensitive paths, and reading or sharing any credential file (<code>.env</code>, <code>*.key</code>, <code>~/.aws</code>) are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's bot runs read-only while you keep full access. Full guide: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
+    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div><strong>Files move through the same gate.</strong> Attach a file and the relay saves it into the bot's workspace for the agent to read; share one back with the owner command <code>!share &lt;path&gt;</code>. Both are typed as a <code>FileShare</code> permission, and the secret floor refuses reading or sharing a credential no matter the preset. See <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md">File exchange</a>.</div></div>
   </section>
 
   <!-- 07 VERIFY -->
@@ -194,9 +241,11 @@ knock-knock relay</code></pre><button class="copy" aria-label="Copy"><svg class=
     <h2>Go deeper</h2>
     <p class="gsec-lede">Once the basics work, these are the features worth knowing about. Each has a dedicated guide.</p>
     <div class="dlinks">
+      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/messaging-platforms-setup.md"><b><svg class="ic"><use href="#i-book"/></svg> Messaging platform setup</b><span>Create the app and get the token(s) for Discord, Slack, Telegram, GitHub, or Notion — the per-platform prerequisite to setup.</span></a>
       <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/getting-started-agents.md"><b><svg class="ic"><use href="#i-book"/></svg> Different agents &amp; cross-machine</b><span>Per-runtime install/auth, multi-agent collaboration, and a shared Postgres ledger for working across machines.</span></a>
       <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md"><b><svg class="ic"><use href="#i-shield"/></svg> Permissions &amp; security</b><span>Presets, per-peer tiers, the deny floor, the OS sandbox, and the prompt-injection invariant.</span></a>
       <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/session-sharing.md"><b><svg class="ic"><use href="#i-book"/></svg> Session sharing</b><span>Start a teammate's agent from the plan and decisions in one of your local coding sessions.</span></a>
+      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md"><b><svg class="ic"><use href="#i-book"/></svg> File exchange</b><span>Attach a file for the agent to read, or <code>!share</code> one back — gated by the same permission floor.</span></a>
       <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/knock-knock-watches.md"><b><svg class="ic"><use href="#i-book"/></svg> Watches</b><span>Let a turn defer and be resumed by the world: a file changing, a job finishing, a deadline passing.</span></a>
       <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/reactions-and-versioning.md"><b><svg class="ic"><use href="#i-book"/></svg> Reactions &amp; versioning</b><span>The reaction vocabulary, equal-role conflict cards, and how the ledger versions every action.</span></a>
     </div>

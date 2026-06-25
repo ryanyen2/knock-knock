@@ -273,7 +273,19 @@ export class AgentHost {
   }
 
   async start(token: string): Promise<void> {
-    await this.messaging.connect(token)
+    // Resolve any extra secrets the adapter declared (Slack app token, GitHub App
+    // key, …) from the bot's secretEnv map → process.env, keyed by logical name.
+    // Single-token adapters (Discord, Telegram) declare none and get {}.
+    const secrets: Record<string, string> = {}
+    const needed = this.messaging.requiredSecrets ?? []
+    const secretEnv = this.agent.secretEnv ?? {}
+    for (const name of needed) {
+      const envName = secretEnv[name]
+      const value = envName ? process.env[envName] : undefined
+      if (value) secrets[name] = value
+      else this.ui.note(this.key, `missing secret "${name}" (set ${envName ?? `secretEnv.${name}`})`)
+    }
+    await this.messaging.connect(token, secrets)
     this.ui.connected(this.key, this.messaging.botLabel ?? this.messaging.botUserId ?? this.key)
   }
 

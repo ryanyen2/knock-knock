@@ -40,6 +40,10 @@ export type AgentConfig = {
   runtime: string // 'claude-sdk' | 'opencode' | 'codex' | 'gemini' | 'acp' | …
   workspace: string // absolute path of the agent's working directory
   tokenEnv: string // NAME of the env var holding this bot's platform token
+  /** Logical-secret-name → env-var-NAME for any secrets beyond the primary token
+   *  (e.g. Slack `{ appToken: 'SLACK_APP_TOKEN' }`). Resolved by the host and
+   *  handed to `MessagingAdapter.connect`; single-token platforms omit it. */
+  secretEnv?: Record<string, string>
   /** Messaging platform this agent speaks; defaults to 'discord'. */
   platform?: string
   rooms: Record<string, RoomConfig>
@@ -63,14 +67,17 @@ export function defaultAccess(): Access {
 // channels (projects = permission boundaries, listing member bots + collaborators).
 // `projectToRuntime` folds it down to the agent-keyed runtime `Access`.
 
-/** Messaging platforms knock-knock can speak. Discord is the live surface. */
-export type Platform = 'discord'
+/** Messaging platforms knock-knock can speak. Discord is the live surface;
+ *  Slack/Telegram/GitHub/Notion are brought online per `docs/messaging-platforms-roadmap.md`
+ *  as new `adapters-msg/*.ts` behind the same seam — the core never branches on the name. */
+export type Platform = 'discord' | 'slack' | 'telegram' | 'github' | 'notion'
 
 /** One coding-agent identity I run = one platform app holding a token locally.
  *  Name/avatar/description live on the platform, fetched live, never typed. */
 export type Bot = {
   platform: Platform
   tokenEnv: string // NAME of the env var holding this bot's platform token
+  secretEnv?: Record<string, string> // logical-name → env-var-NAME for extra secrets (e.g. Slack app token)
   runtime: string
   sandbox?: SandboxConfig
   displayName?: string // cached from the platform on connect; cosmetic, non-authoritative
@@ -175,6 +182,7 @@ export function projectToRuntime(a: AuthoringAccess): Access {
       runtime: bot.runtime,
       workspace: firstWorkspace,
       tokenEnv: bot.tokenEnv,
+      ...(bot.secretEnv ? { secretEnv: bot.secretEnv } : {}),
       platform: bot.platform,
       rooms,
       ...(bot.sandbox ? { sandbox: bot.sandbox } : {}),

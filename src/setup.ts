@@ -106,11 +106,141 @@ async function saveCodingAgentKey(a: AuthoringAccess): Promise<void> {
   await ensureRuntimeAuth(runtime, true)
 }
 
-/** Discord is the live surface; id prompts and the token env name are Discord-shaped. */
-const DISCORD_TOKEN_ENV = 'DISCORD_BOT_TOKEN'
-const CHANNEL_ID_PROMPT = {
-  message: 'Channel ID (right-click channel → Copy Channel ID)',
-  placeholder: '846209781206941736',
+// ─── Platform descriptors ───────────────────────────────────────────────────
+// Everything platform-shaped lives here so the flows below stay platform-neutral
+// (mirrors the runtime MessagingAdapter seam). See docs/messaging-platforms-setup.md.
+
+/** Build a simple required + regex validator. */
+function mkValidate(re: RegExp, msg: string): (v?: string) => string | undefined {
+  return (v?: string) => {
+    const s = (v ?? '').trim()
+    if (!s) return 'Required.'
+    return re.test(s) ? undefined : msg
+  }
+}
+
+/** Notion ids are 32 hex chars, with or without dashes. */
+function notionId(v?: string): string | undefined {
+  const s = (v ?? '').trim().replace(/-/g, '')
+  if (!s) return 'Required.'
+  return /^[0-9a-f]{32}$/i.test(s) ? undefined : 'A Notion ID is 32 hex characters (copy the page link).'
+}
+
+/** An extra secret a platform needs beyond the primary token (e.g. Slack's app token). */
+type SecretSpec = { name: string; envBase: string; label: string; howto: string }
+
+type PlatformSpec = {
+  value: Platform
+  label: string
+  hint: string
+  tokenEnvBase: string // base env-var NAME for the primary token
+  tokenHowto: string // where to get the primary token
+  secrets: SecretSpec[] // extra secrets → bot.secretEnv (logical name → env var)
+  idLabel: string // channel/scope id prompt
+  idPlaceholder: string
+  idValidate: (v?: string) => string | undefined
+  ownerLabel: string // owner/me id prompt
+  ownerPlaceholder: string
+  ownerValidate: (v?: string) => string | undefined
+  memberIdLabel: string // roster person/peer id prompt
+  notes: string[] // post-setup reminders printed after adding a bot/channel
+}
+
+const PLATFORMS: Record<Platform, PlatformSpec> = {
+  discord: {
+    value: 'discord', label: 'Discord', hint: 'full-fidelity · gateway WebSocket',
+    tokenEnvBase: 'DISCORD_BOT_TOKEN',
+    tokenHowto: 'discord.com/developers → your app → Bot → Reset Token',
+    secrets: [],
+    idLabel: 'Channel ID (right-click channel → Copy Channel ID)',
+    idPlaceholder: '846209781206941736',
+    idValidate: discordId,
+    ownerLabel: 'Your Discord user ID (you own these bots — approval prompts ping you)',
+    ownerPlaceholder: '184695080709324800',
+    ownerValidate: discordId,
+    memberIdLabel: 'Their Discord user ID',
+    notes: [],
+  },
+  slack: {
+    value: 'slack', label: 'Slack', hint: 'full-fidelity · Socket Mode',
+    tokenEnvBase: 'SLACK_BOT_TOKEN',
+    tokenHowto: 'api.slack.com/apps → OAuth & Permissions → Bot User OAuth Token (xoxb-)',
+    secrets: [{
+      name: 'appToken', envBase: 'SLACK_APP_TOKEN', label: 'Slack app-level token (xapp-)',
+      howto: 'api.slack.com/apps → Basic Information → App-Level Tokens → scope connections:write',
+    }],
+    idLabel: 'Slack channel ID (channel name → About → Channel ID)',
+    idPlaceholder: 'C0123ABCD',
+    idValidate: mkValidate(/^[CGD][A-Z0-9]{6,}$/i, 'Slack channel IDs look like C0123ABCD.'),
+    ownerLabel: 'Your Slack member ID (avatar → Profile → ⋯ → Copy member ID)',
+    ownerPlaceholder: 'U0123ABCD',
+    ownerValidate: mkValidate(/^[UW][A-Z0-9]{6,}$/i, 'Slack member IDs look like U0123ABCD.'),
+    memberIdLabel: 'Their Slack member ID (U0123ABCD)',
+    notes: [
+      'Enable Socket Mode, Event Subscriptions, and Interactivity in your Slack app.',
+      'Invite the bot to each channel: /invite @yourbot.',
+    ],
+  },
+  telegram: {
+    value: 'telegram', label: 'Telegram', hint: 'near-parity · long-poll',
+    tokenEnvBase: 'TELEGRAM_BOT_TOKEN',
+    tokenHowto: '@BotFather → /newbot → copy the HTTP API token',
+    secrets: [],
+    idLabel: 'Telegram chat ID (negative for groups; -100… for supergroups)',
+    idPlaceholder: '-1001234567890',
+    idValidate: mkValidate(/^-?\d{5,}$/, 'Telegram chat IDs are integers (often negative).'),
+    ownerLabel: 'Your Telegram user ID (DM @userinfobot)',
+    ownerPlaceholder: '184695080',
+    ownerValidate: mkValidate(/^\d{4,}$/, 'Telegram user IDs are numeric.'),
+    memberIdLabel: 'Their Telegram user ID (numeric)',
+    notes: [
+      'BotFather → disable Group Privacy so the bot sees group messages.',
+      'Make the bot a group admin for reactions; /start it yourself to receive DMs.',
+    ],
+  },
+  github: {
+    value: 'github', label: 'GitHub', hint: 'async (~60s) · issues / PRs',
+    tokenEnvBase: 'GITHUB_BOT_TOKEN',
+    tokenHowto: 'github.com → Settings → Developer settings → PAT (scopes: repo, notifications) on a machine-user account',
+    secrets: [],
+    idLabel: 'Repository (owner/repo)',
+    idPlaceholder: 'acme/widgets',
+    idValidate: mkValidate(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/repo, e.g. acme/widgets.'),
+    ownerLabel: 'Owner GitHub login (the allowed @mentioner)',
+    ownerPlaceholder: 'octocat',
+    ownerValidate: mkValidate(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/, 'A GitHub login (letters, digits, hyphens).'),
+    memberIdLabel: 'Their GitHub login',
+    notes: [
+      'The bot account must be a collaborator/member of the repo.',
+      '~60s latency; on public repos restrict to allowed authors.',
+    ],
+  },
+  notion: {
+    value: 'notion', label: 'Notion', hint: 'async · degraded · page comments',
+    tokenEnvBase: 'NOTION_TOKEN',
+    tokenHowto: 'notion.so/my-integrations → New integration → Internal Integration Secret (ntn_…)',
+    secrets: [],
+    idLabel: 'Notion page or database ID (32 hex chars from the page link)',
+    idPlaceholder: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
+    idValidate: notionId,
+    ownerLabel: 'Your Notion user ID (from GET /v1/users)',
+    ownerPlaceholder: '',
+    ownerValidate: (v?: string) => ((v ?? '').trim() ? undefined : 'Required.'),
+    memberIdLabel: 'Their Notion user ID',
+    notes: [
+      'CRITICAL: share each page/database with the integration (Page → ••• → Connections) — or it sees nothing.',
+      'Enable integration capabilities: Read/Insert content, Read/Insert comments, Read user info.',
+    ],
+  },
+}
+
+/** Pick a platform (used when adding a bot). */
+async function pickPlatform(): Promise<Platform> {
+  return orCancel(await p.select({
+    message: 'Which messaging platform does this bot speak?',
+    options: Object.values(PLATFORMS).map(s => ({ value: s.value, label: s.label, hint: s.hint })),
+    initialValue: 'discord' as Platform,
+  })) as Platform
 }
 
 // ─── Small helpers ─────────────────────────────────────────────────────────────
@@ -136,12 +266,28 @@ function slugify(s: string, taken: Set<string> = new Set()): string {
   return `${base}-${i}`
 }
 
-/** Env-var name for a bot's token: the bare name unless another bot claims it (then suffixed). */
-function deriveTokenEnv(key: string, a: AuthoringAccess): string {
-  const prefix = DISCORD_TOKEN_ENV
-  const suffixed = `${prefix}_${key.toUpperCase().replace(/-/g, '_')}`
-  const bareTaken = Object.entries(a.bots).some(([k, b]) => k !== key && b.tokenEnv === prefix)
-  return bareTaken ? suffixed : prefix
+/** Env-var names already claimed by other bots (primary tokens + extra secrets). */
+function envTaken(a: AuthoringAccess, exceptKey: string): Set<string> {
+  const taken = new Set<string>()
+  for (const [k, b] of Object.entries(a.bots)) {
+    if (k === exceptKey) continue
+    taken.add(b.tokenEnv)
+    for (const v of Object.values(b.secretEnv ?? {})) taken.add(v)
+  }
+  return taken
+}
+
+/** A bare env-var name unless it's taken, in which case suffix it with the bot key. */
+function deriveEnv(base: string, key: string, taken: Set<string>): string {
+  if (!taken.has(base)) return base
+  return `${base}_${key.toUpperCase().replace(/-/g, '_')}`
+}
+
+/** Is a bot fully credentialed — primary token AND every declared secret set? */
+function botFullyTokened(bot: Bot): boolean {
+  if (!isTokenSet(bot.tokenEnv)) return false
+  for (const env of Object.values(bot.secretEnv ?? {})) if (!isTokenSet(env)) return false
+  return true
 }
 
 // ─── Validators ─────────────────────────────────────────────────────────────────
@@ -208,15 +354,15 @@ function setToken(tokenEnv: string, token: string): void {
 // ─── Owner identity (set once per platform) ───────────────────────────────────
 
 /** Ensure `me[platform]` is known — the owner pinged for approvals. Asked once per platform. */
-async function ensureMe(a: AuthoringAccess): Promise<string> {
-  const existing = a.me?.discord
+async function ensureMe(a: AuthoringAccess, spec: PlatformSpec): Promise<string> {
+  const existing = a.me?.[spec.value]
   if (existing) return existing
   const id = orCancel(await p.text({
-    message: 'Your Discord user ID (you own these bots — approval prompts ping you)',
-    placeholder: '184695080709324800',
-    validate: discordId,
+    message: spec.ownerLabel,
+    placeholder: spec.ownerPlaceholder,
+    validate: spec.ownerValidate,
   })).trim()
-  a.me = { ...(a.me ?? {}), discord: id }
+  a.me = { ...(a.me ?? {}), [spec.value]: id }
   return id
 }
 
@@ -252,8 +398,9 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     },
   })).trim()
 
-  const platform: Platform = 'discord'
-  await ensureMe(a)
+  const platform = await pickPlatform()
+  const spec = PLATFORMS[platform]
+  await ensureMe(a, spec)
 
   const runtime = orCancel(await p.select({
     message: 'Which coding agent powers this bot? (its default — switchable per channel)',
@@ -282,17 +429,28 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
   }
 
-  const tokenEnv = deriveTokenEnv(key, a)
+  const taken = envTaken(a, key)
+  const tokenEnv = deriveEnv(spec.tokenEnvBase, key, taken)
+  taken.add(tokenEnv)
+  const secretEnv: Record<string, string> = {}
+  for (const s of spec.secrets) {
+    const env = deriveEnv(s.envBase, key, taken)
+    secretEnv[s.name] = env
+    taken.add(env)
+  }
 
   a.bots[key] = {
     platform,
     tokenEnv,
+    ...(Object.keys(secretEnv).length ? { secretEnv } : {}),
     runtime,
     ...(blurb ? { blurb } : {}),
     ...(sandbox ? { sandbox } : {}),
   }
   saveAuthoringAccess(a)
-  p.log.success(`Saved bot ${color.cyan(key)} ${color.dim(`· ${platform} · token env: ${tokenEnv}`)}`)
+  const secretNote = spec.secrets.length ? ` (+${spec.secrets.length} secret)` : ''
+  p.log.success(`Saved bot ${color.cyan(key)} ${color.dim(`· ${platform} · token env: ${tokenEnv}${secretNote}`)}`)
+  if (spec.notes.length) p.log.info(spec.notes.join('\n'))
   return key
 }
 
@@ -300,11 +458,12 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
 
 /** Add a human to the roster. Returns the new roster id. */
 async function addPerson(a: AuthoringAccess, platform: Platform): Promise<string | null> {
+  const spec = PLATFORMS[platform]
   const label = orCancel(await p.text({ message: 'Name / label for this person', placeholder: 'alice' })).trim()
   const userId = orCancel(await p.text({
-    message: 'Their Discord user ID',
-    placeholder: '184695080709324800',
-    validate: discordId,
+    message: spec.memberIdLabel,
+    placeholder: spec.ownerPlaceholder,
+    validate: spec.ownerValidate,
   })).trim()
   const id = slugify(label || userId, new Set(Object.keys(a.roster.people)))
   const person: Person = { platform, userId, ...(label ? { label } : {}) }
@@ -316,11 +475,12 @@ async function addPerson(a: AuthoringAccess, platform: Platform): Promise<string
 
 /** Add a peer bot to the roster. Returns the new roster id. */
 async function addPeer(a: AuthoringAccess, platform: Platform): Promise<string | null> {
+  const spec = PLATFORMS[platform]
   const label = orCancel(await p.text({ message: 'Name / label for this peer bot', placeholder: 'deploy-bot' })).trim()
   const userId = orCancel(await p.text({
-    message: "Peer bot's Discord user ID",
-    placeholder: '987654321098765432',
-    validate: discordId,
+    message: `Peer bot's ${spec.label} ${platform === 'github' ? 'login' : 'user ID'}`,
+    placeholder: spec.ownerPlaceholder || '987654321098765432',
+    validate: spec.ownerValidate,
   })).trim()
   const blurb = orCancel(await p.text({ message: 'What does this peer do?', placeholder: 'deploy specialist', validate: required })).trim()
   const id = slugify(label || userId, new Set(Object.keys(a.roster.peers)))
@@ -373,11 +533,19 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
   const botKeys = Object.keys(a.bots)
   if (botKeys.length === 0) { p.log.error('Add a bot first — a channel needs at least one member bot.'); return }
 
-  const platform: Platform = 'discord'
+  // A channel's platform is its member bots' platform. Pick it when bots span several.
+  const botPlatforms = [...new Set(botKeys.map(k => a.bots[k]!.platform))]
+  const platform: Platform = botPlatforms.length === 1
+    ? botPlatforms[0]!
+    : (orCancel(await p.select({
+        message: 'This channel is on which platform?',
+        options: botPlatforms.map(pl => ({ value: pl, label: PLATFORMS[pl].label })),
+      })) as Platform)
+  const spec = PLATFORMS[platform]
   const channelId = orCancel(await p.text({
-    message: CHANNEL_ID_PROMPT.message,
-    placeholder: CHANNEL_ID_PROMPT.placeholder,
-    validate: discordId,
+    message: spec.idLabel,
+    placeholder: spec.idPlaceholder,
+    validate: spec.idValidate,
   })).trim()
 
   const ck = channelKey(platform, channelId)
@@ -451,6 +619,7 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
   a.channels[ck] = ch
   saveAuthoringAccess(a)
   p.log.success(`Saved channel ${color.cyan(label || channelId)} ${color.dim(`· ${members.length} bot(s) · ${ch.collaborators.length} collaborator(s)`)}`)
+  if (spec.notes.length) p.log.info(spec.notes.join('\n'))
 }
 
 /** Remove a channel. */
@@ -551,13 +720,24 @@ async function saveBotToken(a: AuthoringAccess, botKey?: string): Promise<void> 
   if (keys.length === 0) { p.log.error('Add a bot first.'); return }
   const key = botKey ?? (keys.length === 1 ? keys[0]! : (orCancel(await p.select({
     message: 'Save a token for which bot?',
-    options: keys.map(k => ({ value: k, label: k, hint: isTokenSet(a.bots[k]!.tokenEnv) ? '✓ set' : '✗ missing' })),
+    options: keys.map(k => ({ value: k, label: k, hint: botFullyTokened(a.bots[k]!) ? '✓ set' : '✗ missing' })),
   })) as string))
   const bot = a.bots[key]!
-  p.log.message(color.dim('Get it from: discord.com/developers → your app → Bot → Reset Token'))
-  const token = orCancel(await p.password({ message: `Bot token for ${color.cyan(key)}`, validate: required })).trim()
+  const spec = PLATFORMS[bot.platform]
+  p.log.message(color.dim(`Get it from: ${spec.tokenHowto}`))
+  const token = orCancel(await p.password({ message: `Bot token for ${color.cyan(key)} (${bot.tokenEnv})`, validate: required })).trim()
   setToken(bot.tokenEnv, token)
   p.log.success(`Saved to .env as ${bot.tokenEnv} ${color.dim(`· ***${token.slice(-4)}`)}`)
+
+  // Extra secrets (e.g. Slack's app-level token), keyed by logical name in secretEnv.
+  for (const s of spec.secrets) {
+    const envName = bot.secretEnv?.[s.name]
+    if (!envName) continue
+    p.log.message(color.dim(`Get it from: ${s.howto}`))
+    const val = orCancel(await p.password({ message: `${s.label} (${envName})`, validate: required })).trim()
+    setToken(envName, val)
+    p.log.success(`Saved to .env as ${envName} ${color.dim(`· ***${val.slice(-4)}`)}`)
+  }
 }
 
 // ─── Ledger ───────────────────────────────────────────────────────────────────
@@ -609,7 +789,7 @@ function statusReport(a: AuthoringAccess): string {
   lines.push('')
   lines.push(color.bold('BOTS'))
   for (const [key, bot] of bots) {
-    const mark = isTokenSet(bot.tokenEnv) ? color.green('●') : color.red('○')
+    const mark = botFullyTokened(bot) ? color.green('●') : color.red('○')
     const name = bot.displayName ?? color.dim('(name from platform on connect)')
     lines.push(`  ${mark} ${color.cyan(key)}  ${name}  ${color.dim(bot.platform)}  ${color.dim(bot.runtime)}${bot.sandbox ? color.dim(` · sandbox`) : ''}`)
   }
@@ -666,7 +846,7 @@ function statusReport(a: AuthoringAccess): string {
 
 function finishWithNextSteps(a: AuthoringAccess): void {
   const tips: string[] = []
-  const noToken = Object.entries(a.bots).filter(([, b]) => !isTokenSet(b.tokenEnv)).map(([k]) => k)
+  const noToken = Object.entries(a.bots).filter(([, b]) => !botFullyTokened(b)).map(([k]) => k)
   const memberOf = new Set(Object.values(a.channels).flatMap(c => c.members.map(m => m.bot)))
   const noChannel = Object.keys(a.bots).filter(k => !memberOf.has(k))
   if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Save a bot token"`)
@@ -736,8 +916,8 @@ async function interactiveMenu(): Promise<void> {
       else if (task === 'bot-edit') await editBot(a)
       else if (task === 'channel') await addChannel(a)
       else if (task === 'channel-remove') await removeChannel(a)
-      else if (task === 'person') await addPerson(a, pickRosterPlatform())
-      else if (task === 'peer') await addPeer(a, pickRosterPlatform())
+      else if (task === 'person') await addPerson(a, await pickRosterPlatform(a))
+      else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a))
       else if (task === 'roster-remove') await removeRosterEntry(a)
       else if (task === 'token') await saveBotToken(a)
       else if (task === 'api-key') await saveCodingAgentKey(a)
@@ -749,9 +929,14 @@ async function interactiveMenu(): Promise<void> {
   finishWithNextSteps(readAuthoringAccess())
 }
 
-/** The platform a new roster entry is on. */
-function pickRosterPlatform(): Platform {
-  return 'discord'
+/** The platform a new roster entry is on — inferred from the bots, or asked. */
+async function pickRosterPlatform(a: AuthoringAccess): Promise<Platform> {
+  const platforms = [...new Set(Object.values(a.bots).map(b => b.platform))]
+  if (platforms.length <= 1) return platforms[0] ?? 'discord'
+  return orCancel(await p.select({
+    message: 'This roster entry is on which platform?',
+    options: platforms.map(pl => ({ value: pl, label: PLATFORMS[pl].label })),
+  })) as Platform
 }
 
 // ─── Entry ────────────────────────────────────────────────────────────────────

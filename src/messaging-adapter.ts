@@ -119,8 +119,17 @@ export interface MessagingAdapter {
   /** Stable platform key, stamped onto inbound `channel.message` intents. */
   readonly platform: string
 
+  /** Logical names of ADDITIONAL secrets this adapter needs beyond the primary
+   *  token (e.g. Slack's app-level token, a GitHub App private key). The host
+   *  resolves each from the bot's `secretEnv[<name>]` env var and passes the bundle
+   *  to `connect`. Empty/absent ⇒ single-token platforms (Discord, Telegram). */
+  readonly requiredSecrets?: readonly string[]
+
   // ─── lifecycle ────────────────────────────────────────────────────────────
-  connect(token: string): Promise<void>
+  /** `token` is the primary platform token (from the bot's `tokenEnv`). `secrets`
+   *  carries any `requiredSecrets`, keyed by logical name (resolved by the host
+   *  from `secretEnv`). Single-token adapters ignore `secrets`. */
+  connect(token: string, secrets?: Record<string, string>): Promise<void>
   disconnect(): Promise<void>
   /** Our own user id on this platform once connected (self-message filtering). */
   readonly botUserId: string | undefined

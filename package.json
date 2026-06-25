@@ -29,7 +29,12 @@
     "@agentclientprotocol/sdk": "^0.22.1",
     "@anthropic-ai/claude-agent-sdk": "^0.3.150",
     "@clack/prompts": "^1.4.0",
+    "@notionhq/client": "^5.22.0",
+    "@octokit/rest": "^22.0.1",
+    "@slack/socket-mode": "^2.0.7",
+    "@slack/web-api": "^7.17.0",
     "discord.js": "^14.14.0",
+    "grammy": "^1.44.0",
     "pg": "^8.21.0",
     "picocolors": "^1.1.1",
     "yjs": "^13.6.31"

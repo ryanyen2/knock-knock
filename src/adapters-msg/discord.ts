@@ -127,7 +127,8 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
 
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
-  async connect(token: string): Promise<void> {
+  // Discord is single-token; `secrets` (unused) is part of the seam contract.
+  async connect(token: string, _secrets?: Record<string, string>): Promise<void> {
     await this.client.login(token)
   }
 
