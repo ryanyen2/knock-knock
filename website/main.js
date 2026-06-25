@@ -128,6 +128,7 @@
     document.body.classList.add('reduced');
     document.querySelectorAll('.flow-msg').forEach((m) => m.classList.add('is-in'));
     document.querySelectorAll('.flow-note').forEach((n) => n.classList.add('is-on'));
+    document.querySelectorAll('.hero-block-feat').forEach((b) => b.classList.add('is-in'));
     const bar = document.getElementById('flowBar'); if (bar) bar.style.width = '100%';
     if (location.hash && location.hash.length > 1) {
       const t = document.querySelector(location.hash);
@@ -186,123 +187,243 @@
 
   window.addEventListener('load', () => ScrollTrigger.refresh());
 
-  /* ═════════════  NETWORK DIAGRAM — anime.js pulse animation  ═════════════ */
-  (function initNetwork() {
-    if (typeof anime === 'undefined') return;
+  /* ─────────────  HERO FEATURE BLOCKS: scroll-reveal + step dots  ───────────── */
+  (function initFeatureBlocks() {
+    const blocks = document.querySelectorAll('.hero-block-feat');
+    const dots   = document.querySelectorAll('.hero-step-dot');
 
-    // Pulse dots that travel along each SVG path
-    const routes = [
-      // agent → hub (left to right along each path)
-      { pulseId: 'p-claude',   pathId: 'e-claude',   delay: 0,    dur: 1800 },
-      { pulseId: 'p-codex',    pathId: 'e-codex',    delay: 400,  dur: 1700 },
-      { pulseId: 'p-opencode', pathId: 'e-opencode', delay: 900,  dur: 1600 },
-      { pulseId: 'p-gemini',   pathId: 'e-gemini',   delay: 200,  dur: 1900 },
-      // hub → platform (right half)
-      { pulseId: 'p-discord',  pathId: 'e-discord',  delay: 1100, dur: 1600 },
-      { pulseId: 'p-slack',    pathId: 'e-slack',    delay: 700,  dur: 1700 },
-      { pulseId: 'p-telegram', pathId: 'e-telegram', delay: 1400, dur: 1800 },
-      { pulseId: 'p-github',   pathId: 'e-github',   delay: 300,  dur: 2000 },
-    ];
-
-    // Wait for the network section to enter the viewport before starting
-    const stage = document.getElementById('networkStage');
-    if (!stage) return;
-
-    let started = false;
-    const startAnimations = () => {
-      if (started) return;
-      started = true;
-
-      routes.forEach(({ pulseId, pathId, delay, dur }) => {
-        const pulse = document.getElementById(pulseId);
-        const path  = document.getElementById(pathId);
-        if (!pulse || !path) return;
-
-        const length = path.getTotalLength();
-
-        const runPulse = (extraDelay) => {
-          // reset to start of path
-          const startPt = path.getPointAtLength(0);
-          pulse.setAttribute('cx', startPt.x);
-          pulse.setAttribute('cy', startPt.y);
-
-          anime({
-            targets: {},
-            progress: [0, 1],
-            duration: dur,
-            delay: extraDelay,
-            easing: 'easeInOutSine',
-            update: (anim) => {
-              const p = anim.animations[0].currentValue;
-              const pt = path.getPointAtLength(p * length);
-              pulse.setAttribute('cx', pt.x);
-              pulse.setAttribute('cy', pt.y);
-              pulse.setAttribute('opacity', p < 0.05 ? p / 0.05 : p > 0.9 ? (1 - p) / 0.1 : 1);
-            },
-            complete: () => {
-              // loop with a pause at the end
-              setTimeout(() => runPulse(0), 600 + Math.random() * 1200);
-            },
-          });
-        };
-
-        runPulse(delay);
-      });
-
-      // Hub ring pulse
-      const rings = document.querySelectorAll('.hub-ring');
-      if (rings.length) {
-        rings.forEach((ring, i) => {
-          anime({
-            targets: ring,
-            opacity: [0.04, 0.18, 0.04],
-            duration: 2400 + i * 600,
-            delay: i * 300,
-            loop: true,
-            easing: 'easeInOutSine',
-            direction: 'alternate',
-          });
-        });
-
-        // Hub core gentle scale pulse
-        const core = document.querySelector('.hub-core');
-        if (core) {
-          anime({
-            targets: core,
-            r: [22, 24, 22],
-            duration: 2800,
-            loop: true,
-            easing: 'easeInOutSine',
-            direction: 'alternate',
-          });
-        }
-      }
-
-      // Edge dash-offset animation (make the dashes appear to flow)
-      const edges = document.querySelectorAll('.net-edge:not(.net-edge-dim)');
-      edges.forEach((edge, i) => {
-        anime({
-          targets: edge,
-          strokeDashoffset: [0, -18],
-          duration: 1200 + i * 80,
-          loop: true,
-          easing: 'linear',
-        });
-      });
-    };
-
-    if (reduced) {
-      // In reduced-motion mode, just show static diagram (no animation)
-      routes.forEach(({ pulseId }) => {
-        const p = document.getElementById(pulseId);
-        if (p) p.setAttribute('opacity', '0');
-      });
+    if (!blocks.length || reduced) {
+      blocks.forEach(b => b.classList.add('is-in'));
+      return;
+    }
+    if (!('IntersectionObserver' in window)) {
+      blocks.forEach(b => b.classList.add('is-in'));
       return;
     }
 
+    // Reveal + step-dot highlight
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('is-in');
+        // find which feature block (0-indexed) → dot index is featIdx+1 (dot 0 = headline)
+        const idx = Array.from(blocks).indexOf(e.target);
+        if (idx >= 0 && dots.length) {
+          dots.forEach((d, i) => d.classList.toggle('is-active', i === idx + 1));
+        }
+      });
+    }, { rootMargin: '0px 0px -30% 0px', threshold: 0.4 });
+
+    // Dot 0 active while headline block is in view
+    const leadBlock = document.querySelector('.hero-block-lead');
+    if (leadBlock) {
+      const leadIO = new IntersectionObserver((entries) => {
+        if (entries[0].isIntersecting) {
+          dots.forEach((d, i) => d.classList.toggle('is-active', i === 0));
+        }
+      }, { rootMargin: '0px 0px -40% 0px', threshold: 0.3 });
+      leadIO.observe(leadBlock);
+    }
+
+    blocks.forEach(b => io.observe(b));
+  })();
+
+  /* ─────────────  HERO VISUAL PARALLAX: gentle drift while scrolling features  ───────────── */
+  (function initHeroParallax() {
+    if (reduced) return;
+    const track = document.getElementById('heroCopyTrack');
+    const visual = document.getElementById('heroVisual');
+    if (!track || !visual) return;
+    // Visual drifts up 60px over the full hero scroll — much slower than page
+    gsap.to(visual, {
+      y: -60,
+      ease: 'none',
+      scrollTrigger: {
+        trigger: track,
+        start: 'top top',
+        end: 'bottom bottom',
+        scrub: 2,
+      },
+    });
+  })();
+
+  /* ═════════════  NETWORK DIAGRAM — DOM-measured paths, bidirectional pulses  ═════════════ */
+  (function initNetwork() {
+    if (typeof anime === 'undefined') return;
+    if (reduced) return;
+
+    const container = document.getElementById('heroVisual');
+    const svg       = document.getElementById('networkSvg');
+    const chatWrap  = document.getElementById('heroChatWrap');
+    if (!container || !svg || !chatWrap) return;
+
+    // Dynamic path arrays built from DOM measurements
+    let aPathEls = [], pPathEls = [];
+    let pathsBuilt = false;
+
+    // Build bezier paths from node right-edges → chat left-edge (agents)
+    // and chat right-edge → node left-edges (platforms)
+    function buildPaths() {
+      svg.querySelectorAll('.net-edge').forEach(e => e.remove());
+      aPathEls = []; pPathEls = [];
+
+      const cr   = container.getBoundingClientRect();
+      const chat = chatWrap.getBoundingClientRect();
+      if (!cr.width || !chat.width) return false;
+
+      const cx0 = chat.left   - cr.left;   // chat left x (relative to container)
+      const cx1 = chat.right  - cr.left;   // chat right x
+      const cy0 = chat.top    - cr.top;    // chat top y
+      const chatH = chat.height;
+
+      function makeEdge(x0, y0, x1, y1, id) {
+        const midX = x0 + (x1 - x0) * 0.5;
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('class', 'net-edge');
+        path.id = id;
+        // Cubic bezier: horizontal handles keep entry/exit tangent smooth
+        path.setAttribute('d',
+          `M ${x0.toFixed(1)},${y0.toFixed(1)} ` +
+          `C ${midX.toFixed(1)},${y0.toFixed(1)} ` +
+          `${midX.toFixed(1)},${y1.toFixed(1)} ` +
+          `${x1.toFixed(1)},${y1.toFixed(1)}`
+        );
+        // Insert before pulse circles so pulses render on top
+        svg.insertBefore(path, svg.firstChild);
+        return path;
+      }
+
+      // Agent nodes → chat left edge
+      const leftCards = Array.from(
+        document.querySelectorAll('#netNodesLeft .net-node-card:not(.net-node-dim)')
+      );
+      leftCards.forEach((card, i) => {
+        const nr  = card.getBoundingClientRect();
+        const nx  = nr.right  - cr.left;
+        const ny  = nr.top + nr.height / 2 - cr.top;
+        // Distribute connection points on chat left edge (skip 14px for border-radius)
+        const cy  = cy0 + 14 + (chatH - 28) * (i + 1) / (leftCards.length + 1);
+        aPathEls.push(makeEdge(nx, ny, cx0, cy, 'ea-' + i));
+      });
+
+      // Chat right edge → platform nodes
+      const rightCards = Array.from(
+        document.querySelectorAll('#netNodesPlatform .net-node-card:not(.net-node-dim)')
+      );
+      rightCards.forEach((card, i) => {
+        const nr  = card.getBoundingClientRect();
+        const nx  = nr.left   - cr.left;
+        const ny  = nr.top + nr.height / 2 - cr.top;
+        const cy  = cy0 + 14 + (chatH - 28) * (i + 1) / (rightCards.length + 1);
+        pPathEls.push(makeEdge(cx1, cy, nx, ny, 'ep-' + i));
+      });
+
+      pathsBuilt = aPathEls.length > 0 && pPathEls.length > 0;
+      return pathsBuilt;
+    }
+
+    // Animate a pulse dot along a path; dir: 1=forward, -1=reverse
+    function runPulse(pulseId, pathEl, dir, dur, onDone) {
+      const el = document.getElementById(pulseId);
+      if (!el || !pathEl) { if (onDone) onDone(); return; }
+      const len   = pathEl.getTotalLength();
+      const proxy = { t: dir > 0 ? 0 : 1 };
+      anime({
+        targets: proxy,
+        t: dir > 0 ? 1 : 0,
+        duration: dur,
+        easing: 'easeInOutQuad',
+        update() {
+          const pt   = pathEl.getPointAtLength(proxy.t * len);
+          const prog = dir > 0 ? proxy.t : 1 - proxy.t;
+          const op   = prog < 0.08 ? prog / 0.08 : prog > 0.88 ? (1 - prog) / 0.12 : 1;
+          el.setAttribute('cx', pt.x);
+          el.setAttribute('cy', pt.y);
+          el.setAttribute('opacity', op.toFixed(3));
+        },
+        complete() {
+          el.setAttribute('opacity', 0);
+          if (onDone) onDone();
+        },
+      });
+    }
+
+    // Rim-glow the chat when a forward pulse arrives at a platform
+    function triggerChatRim() {
+      chatWrap.classList.remove('rim-active');
+      void chatWrap.offsetWidth;
+      chatWrap.classList.add('rim-active');
+    }
+
+    // Launch one message: agent→chat (forward), then chat→platform (forward)
+    // Optionally fire a reverse ack after
+    function launchMessage() {
+      if (!pathsBuilt || !aPathEls.length || !pPathEls.length) return;
+      const ai   = Math.floor(Math.random() * aPathEls.length);
+      const pi   = Math.floor(Math.random() * pPathEls.length);
+      const aDur = 820 + Math.random() * 280;
+      const pDur = 760 + Math.random() * 280;
+
+      runPulse('pa-' + ai, aPathEls[ai], 1, aDur, () => {
+        runPulse('pp-' + pi, pPathEls[pi], 1, pDur, () => {
+          triggerChatRim();
+        });
+      });
+
+      // 35% chance: reverse ack after forward completes
+      if (Math.random() < 0.35) {
+        setTimeout(() => {
+          const rpi = Math.floor(Math.random() * pPathEls.length);
+          const rai = Math.floor(Math.random() * aPathEls.length);
+          const rDur = 640 + Math.random() * 200;
+          runPulse('pp-' + rpi, pPathEls[rpi], -1, rDur, () => {
+            runPulse('pa-' + rai, aPathEls[rai], -1, rDur + Math.random() * 80, null);
+          });
+        }, aDur + pDur + 300 + Math.random() * 500);
+      }
+    }
+
+    // 4 staggered independent streams
+    function startScheduler() {
+      [0, 380, 780, 1380].forEach(delay => {
+        setTimeout(function tick() {
+          launchMessage();
+          setTimeout(tick, 1050 + Math.random() * 1100);
+        }, delay);
+      });
+    }
+
+    // Animate dash-offset so edges appear to stream (re-queries dynamic paths)
+    function startEdgeFlow() {
+      svg.querySelectorAll('.net-edge').forEach((edge, i) => {
+        anime({ targets: edge, strokeDashoffset: [0, -12],
+                duration: 900 + i * 45, loop: true, easing: 'linear' });
+      });
+    }
+
+    let started = false;
     new IntersectionObserver(([entry]) => {
-      if (entry.isIntersecting) startAnimations();
-    }, { threshold: 0.2 }).observe(stage);
+      if (!entry.isIntersecting || started) return;
+      started = true;
+      // Small delay: let reveal animation settle before measuring layout
+      setTimeout(() => {
+        if (buildPaths()) {
+          startEdgeFlow();
+          setTimeout(startScheduler, 250);
+        }
+      }, 300);
+    }, { threshold: 0.1 }).observe(container);
+
+    // Rebuild paths on resize (debounced 180ms)
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      if (!started) return;
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        svg.querySelectorAll('.net-edge').forEach(e => anime.remove(e));
+        if (buildPaths()) startEdgeFlow();
+      }, 180);
+    });
   })();
 
   if (location.hash && location.hash.length > 1) {

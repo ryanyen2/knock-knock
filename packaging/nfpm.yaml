@@ -20,7 +20,10 @@ homepage: https://github.com/ryanyen2/knock-knock
 license: MIT
 
 contents:
+  # `expand: true` is REQUIRED — nfpm only substitutes ${BIN} in a contents entry
+  # when the entry opts in (arch/version/name expand unconditionally, contents do not).
   - src: ${BIN}
     dst: /usr/bin/knock-knock
+    expand: true
     file_info:
       mode: 0755
