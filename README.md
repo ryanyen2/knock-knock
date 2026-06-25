@@ -40,7 +40,7 @@ Bun runtime, so there is nothing else to install.
 
 ```bash
 # Homebrew (macOS / Linux)
-brew install ryanyen2/knock-knock/knock-knock
+brew install ryanyen2/tap/knock-knock
 
 # Linux / macOS — install script (latest release, verifies checksum)
 curl -fsSL https://raw.githubusercontent.com/ryanyen2/knock-knock/main/packaging/install.sh | bash

@@ -1,7 +1,8 @@
 # Homebrew formula for knock-knock.
 #
 # This is the source of truth that belongs in a tap repo named
-# `homebrew-knock-knock` (so users run `brew install <owner>/knock-knock/knock-knock`).
+# `homebrew-tap` (so users run `brew install <owner>/tap/knock-knock` — one
+# `knock-knock`, not two).
 # The release workflow (.github/workflows/release.yml) bumps `version` and the
 # four `sha256` values from dist/SHA256SUMS.txt on each tagged release.
 #
