@@ -51,10 +51,15 @@ import {
   FILE_INGEST_LIMITS,
   channelKey,
   projectToRuntime,
+  replyClaimKey,
+  driveClaimKey,
+  isAddressed,
+  isEligibleToReply,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
   type AuthoringAccess,
+  type AddressSignals,
 } from '../src/lib.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
@@ -954,4 +959,42 @@ test('parseShareCommand: parses the relpath, strips quotes, rejects non-commands
   expect(parseShareCommand('!share   ')).toBeNull()
   expect(parseShareCommand('share session')).toBeNull()
   expect(parseShareCommand('hello')).toBeNull()
+})
+
+// ─── Coordination: turn-taking eligibility + claim keys (U1) ───────────────────
+
+test('replyClaimKey / driveClaimKey: deterministic, built from the shared message id (not interaction hash)', () => {
+  // Same channel + platform message id ⇒ byte-identical key regardless of host.
+  expect(replyClaimKey('chan1', 'msgABC')).toBe('coord:reply/chan1/msgABC')
+  expect(replyClaimKey('chan1', 'msgABC')).toBe(replyClaimKey('chan1', 'msgABC'))
+  // The drive key is per-(agent, message): two agents on the same message differ;
+  // the same agent across relays collides (so one relay wins).
+  expect(driveClaimKey('chan1', 'bot002', 'msgABC')).toBe('coord:drive/chan1/bot002/msgABC')
+  expect(driveClaimKey('chan1', 'bot002', 'msgABC')).not.toBe(driveClaimKey('chan1', 'bot101', 'msgABC'))
+  // Different message ⇒ different reply key (per-message election).
+  expect(replyClaimKey('chan1', 'msgABC')).not.toBe(replyClaimKey('chan1', 'msgXYZ'))
+})
+
+test('isAddressed: native mention, reply-to-me, or name-pattern — platform-neutral', () => {
+  const base: AddressSignals = { mentionsBot: false, repliedToMe: false, text: 'hello there' }
+  // native mention path
+  expect(isAddressed({ ...base, mentionsBot: true })).toBe(true)
+  // reply addressing path (platforms with Capabilities.mentions: 'reply')
+  expect(isAddressed({ ...base, repliedToMe: true })).toBe(true)
+  // text/name-pattern path (Capabilities.mentions: 'text')
+  expect(isAddressed({ ...base, text: 'hey scout, status?' }, ['\\bscout\\b'])).toBe(true)
+  // none of the above
+  expect(isAddressed(base, ['\\bscout\\b'])).toBe(false)
+})
+
+test('isEligibleToReply: addressed bots always eligible; broadcast only when require-mention is off', () => {
+  const addressed: AddressSignals = { mentionsBot: true, repliedToMe: false, text: 'x' }
+  const unaddressed: AddressSignals = { mentionsBot: false, repliedToMe: false, text: 'x' }
+  // addressed ⇒ eligible regardless of require-mention
+  expect(isEligibleToReply(addressed, true)).toBe(true)
+  expect(isEligibleToReply(addressed, false)).toBe(true)
+  // unaddressed + require-mention on ⇒ NOT eligible (never reaches the election)
+  expect(isEligibleToReply(unaddressed, true)).toBe(false)
+  // unaddressed + require-mention off ⇒ eligible (broadcast; election decides one winner)
+  expect(isEligibleToReply(unaddressed, false)).toBe(true)
 })

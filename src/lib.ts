@@ -1328,6 +1328,58 @@ export function matchesMentionPattern(text: string, patterns?: string[]): boolea
   return false
 }
 
+// ─── Multi-agent coordination — turn-taking (Problem A) ──────────────────────
+// Mechanism is platform-neutral: claim keys use the platform message id from the
+// MessagingAdapter seam (IncomingMessage.ref.id), NEVER a per-host interaction
+// hash — each host admits its own channel.message stamping a distinct
+// targetAgent, so the hashes differ per host while ref.id is shared across them.
+// All eligibility is SELF-RELATIVE: a relay only knows its own bots, so nothing
+// here takes a global participant set.
+
+/** Deterministic claim key electing WHICH AGENT answers a message (held by
+ *  agentKey so distinct agents contend to a single winner). Identical on every
+ *  relay because it is built only from the shared channel + platform message id. */
+export function replyClaimKey(channel: string, messageId: string): string {
+  return `coord:reply/${channel}/${messageId}`
+}
+
+/** Deterministic claim key electing WHICH RELAY drives a given agent's turn for a
+ *  message (held by relayId so co-serving relays don't double-drive — mirrors
+ *  resume-on-watch's `watchfire/<hash>`). */
+export function driveClaimKey(channel: string, agentKey: string, messageId: string): string {
+  return `coord:drive/${channel}/${agentKey}/${messageId}`
+}
+
+/** The platform-neutral signals a single relay can know about whether THIS bot is
+ *  addressed — all from the MessagingAdapter seam + room config, no global set. */
+export type AddressSignals = {
+  /** Native @mention / app_mention; false on platforms without mentions. */
+  mentionsBot: boolean
+  /** The message replies to one of my prior messages (the `reply` addressing mode). */
+  repliedToMe: boolean
+  /** Raw text, for the name-pattern fallback (the `text` addressing mode). */
+  text: string
+}
+
+/** Is this message explicitly addressed to me? Platform-neutral: reads the seam's
+ *  native-mention and reply signals, falling back to configured name patterns (the
+ *  `Capabilities.mentions: 'text'` path). Never parses platform mention syntax. */
+export function isAddressed(sig: AddressSignals, mentionPatterns?: string[]): boolean {
+  return sig.mentionsBot || sig.repliedToMe || matchesMentionPattern(sig.text, mentionPatterns)
+}
+
+/** Is this bot eligible to reply at all? An addressed bot always is; when
+ *  require-mention is off, an unaddressed bot is also eligible (broadcast). The
+ *  single-winner choice among eligible bots is the ResponderPolicy + claim, not
+ *  this function. */
+export function isEligibleToReply(
+  sig: AddressSignals,
+  requireMention: boolean,
+  mentionPatterns?: string[],
+): boolean {
+  return isAddressed(sig, mentionPatterns) || !requireMention
+}
+
 // ─── Room vs scope ───────────────────────────────────────────────────────────
 // A message lives in a *scope* (thread or plain channel); profile/roster/routing
 // are keyed by the *room* (parent text channel). This is the seam separating them.
