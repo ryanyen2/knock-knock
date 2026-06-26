@@ -87,7 +87,7 @@
         if (l) l.setAttribute('aria-current', 'true');
       });
     }, { rootMargin: '-45% 0px -50% 0px' });
-    ['network', 'flow', 'control', 'cases', 'levels', 'start'].forEach((id) => {
+    ['network', 'flow', 'architecture', 'control', 'cases', 'start'].forEach((id) => {
       const s = document.getElementById(id); if (s) navIO.observe(s);
     });
   }
@@ -123,13 +123,36 @@
     reveals.forEach((el) => el.classList.add('is-in'));
   }
 
+  /* ─────────────  FLOW SCENARIO TABS (shared by both motion modes)  ─────────────
+     Each tab swaps which .flow-scenario is active. In full-motion mode the click
+     handler below also rebuilds the pinned ScrollTrigger; here we expose just the
+     visibility swap so it works in reduced mode too. */
+  const flowTabEls = document.querySelectorAll('.flow-tab');
+  const flowScenarioEls = document.querySelectorAll('.flow-scenario');
+  function setActiveScenario(name) {
+    flowTabEls.forEach((t) => {
+      const on = t.dataset.scenario === name;
+      t.classList.toggle('is-active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    let active = null;
+    flowScenarioEls.forEach((s) => {
+      const on = s.dataset.scenario === name;
+      s.classList.toggle('is-active', on);
+      if (on) active = s;
+    });
+    return active;
+  }
+
   /* ═════════════  REDUCED MOTION: stop before GSAP  ═════════════ */
   if (reduced || !hasGSAP) {
     document.body.classList.add('reduced');
     document.querySelectorAll('.flow-msg').forEach((m) => m.classList.add('is-in'));
     document.querySelectorAll('.flow-note').forEach((n) => n.classList.add('is-on'));
     document.querySelectorAll('.hero-chat .msg').forEach((m) => m.classList.add('is-in'));
-    const bar = document.getElementById('flowBar'); if (bar) bar.style.width = '100%';
+    document.querySelectorAll('.flow-progress span').forEach((b) => (b.style.width = '100%'));
+    // Tabs just swap which scenario is shown — no scroll choreography.
+    flowTabEls.forEach((tab) => tab.addEventListener('click', () => setActiveScenario(tab.dataset.scenario)));
     if (location.hash && location.hash.length > 1) {
       const t = document.querySelector(location.hash);
       if (t) window.addEventListener('load', () => setTimeout(() => t.scrollIntoView(), 60));
@@ -139,25 +162,23 @@
 
   gsap.registerPlugin(ScrollTrigger);
 
-  /* ─────────────  PINNED CHAT SCROLLYTELLING  ───────────── */
+  /* ─────────────  PINNED CHAT SCROLLYTELLING (per active scenario)  ─────────────
+     One pinned ScrollTrigger drives the *active* scenario's beats. Switching tabs
+     kills the current trigger and rebuilds it against the newly-active scenario,
+     since each scenario has its own beat count (and thus its own scroll length). */
   const stage = document.getElementById('flowStage');
-  const track = document.getElementById('flowTrack');
-  const scroller = document.getElementById('flowScroll');
-  const msgs = gsap.utils.toArray('.flow-msg');
-  const notes = gsap.utils.toArray('.flow-note');
-  const bar = document.getElementById('flowBar');
+  let flowST = null;
 
-  if (stage && track && scroller && msgs.length) {
+  function buildFlow(scene) {
+    if (!stage || !scene) return;
+    const scroller = scene.querySelector('.chat-scroll');
+    const track = scene.querySelector('.chat-track');
+    const msgs = gsap.utils.toArray(scene.querySelectorAll('.flow-msg'));
+    const notes = gsap.utils.toArray(scene.querySelectorAll('.flow-note'));
+    const bar = scene.querySelector('.flow-progress span');
+    if (!scroller || !track || !msgs.length) return;
     const n = msgs.length;
     let current = -1;
-
-    const render = (idx) => {
-      if (idx === current) return;
-      current = idx;
-      msgs.forEach((m, i) => m.classList.toggle('is-in', i <= idx));
-      notes.forEach((no, i) => no.classList.toggle('is-on', i === idx));
-      positionTrack(idx);
-    };
 
     // keep the newest revealed message resting near the bottom of the window
     const positionTrack = (idx) => {
@@ -168,7 +189,15 @@
       gsap.to(track, { y: -target, duration: 0.45, ease: 'power2.out', overwrite: true });
     };
 
-    ScrollTrigger.create({
+    const render = (idx) => {
+      if (idx === current) return;
+      current = idx;
+      msgs.forEach((m, i) => m.classList.toggle('is-in', i <= idx));
+      notes.forEach((no, i) => no.classList.toggle('is-on', i === idx));
+      positionTrack(idx);
+    };
+
+    flowST = ScrollTrigger.create({
       trigger: '.flow',
       start: 'top top',
       end: '+=' + n * 360,
@@ -183,6 +212,26 @@
     });
 
     render(0);
+  }
+
+  if (stage) {
+    const initial = document.querySelector('.flow-scenario.is-active') || flowScenarioEls[0];
+    buildFlow(initial);
+
+    // Tab click: tear down the current pinned trigger, swap scenario, rebuild.
+    flowTabEls.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const name = tab.dataset.scenario;
+        if (tab.classList.contains('is-active') && flowST) return; // already showing
+        if (flowST) { flowST.kill(true); flowST = null; }
+        const active = setActiveScenario(name);
+        // restart the scrub from the top of the flow section
+        const y = document.querySelector('.flow').getBoundingClientRect().top + window.scrollY;
+        window.scrollTo({ top: y, behavior: 'auto' });
+        buildFlow(active);
+        ScrollTrigger.refresh();
+      });
+    });
   }
 
   window.addEventListener('load', () => ScrollTrigger.refresh());

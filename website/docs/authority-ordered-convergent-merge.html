@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>authority-ordered-convergent-merge</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="authority-ordered-convergent-merge"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="authority-ordered-convergent-merge"/><meta name="twitter:description" content="Authority-Ordered Convergent Merge (AOCM) A merge layer for local-first collaboration between humans and AI agents."/><meta property="og:description" content="Authority-Ordered Convergent Merge (AOCM) A merge layer for local-first collaboration between humans and AI agents."/><meta property="og:image:alt" content="Authority-Ordered Convergent Merge (AOCM) A merge layer for local-first collaboration between humans and AI agents."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/authority-ordered-convergent-merge"/><meta property="twitter:url" content="https://knock-knock.dev/docs/authority-ordered-convergent-merge"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="Authority-Ordered Convergent Merge (AOCM) A merge layer for local-first collaboration between humans and AI agents."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/authority-ordered-convergent-merge-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/authority-ordered-convergent-merge-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/authority-ordered-convergent-merge-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="authority-ordered-convergent-merge" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-0" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-0" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>authority-ordered-convergent-merge</a></div></nav><h1 class="article-title">authority-ordered-convergent-merge</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-17T14:01:18.000Z">Jun 17, 2026</time><span>18 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="authority-ordered-convergent-merge-aocm">Authority-Ordered Convergent Merge (AOCM)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#authority-ordered-convergent-merge-aocm" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p><em>A merge layer for local-first collaboration between humans and AI agents.</em></p>
+<blockquote>
+<p>This document explains the idea behind knock-knock’s conflict layer the way a
+paper would: the problem, the core concept, the small amount of algebra that
+makes it work, worked examples, and an honest account of what we deliberately
+left out. It is a conceptual companion to the implementation in
+<code>ledger/artifacts/versionable.ts</code>, not a formal specification.</p>
+</blockquote>
+<hr/>
+<h2 id="1-the-setting">1. The setting<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#1-the-setting" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>knock-knock lets several actors edit the same files at the same time. Some of
+those actors are people; some are AI coding agents working on a person’s behalf.
+They do not share a screen and they do not take turns — an agent may be rewriting
+a function while its owner edits the same file from a laptop, and a second agent
+on a second machine edits a third copy. Each machine keeps its <strong>own</strong> local log
+of what happened; there is no shared cloud database that everyone reads from.
+(That was a deliberate goal: <em>local-first</em>, drop the hosted Postgres.)</p>
+<p>The hard question this raises is the oldest one in collaborative editing:</p>
+<blockquote>
+<p>When two edits happen concurrently, what is the resulting document — and will
+every machine agree on it, even though no machine has authoritative state?</p>
+</blockquote>
+<p>CRDTs (we use Yjs) answer the <em>mechanical</em> half: concurrent edits to <strong>different</strong>
+parts of a file can be merged automatically and deterministically. But CRDTs are
+deliberately egalitarian — they merge <em>everything</em>, commutatively, with no notion
+of who made an edit or whether one edit should <em>win</em>. In a setting where an
+<strong>owner</strong> and their <strong>agent</strong> edit the same line, “merge both” is the wrong
+answer. The owner should win, quietly, without a popup. And when two <em>peer</em> agents
+genuinely collide, a person should decide — not a coin flip.</p>
+<p>AOCM is the thin layer that adds <strong>authority</strong> and <strong>conflict</strong> on top of the
+CRDT, while keeping the one property the local-first setting cannot live without:
+<strong>every replica converges to the same document from the operations alone.</strong></p>
+<hr/>
+<h2 id="2-the-core-idea-in-one-paragraph">2. The core idea in one paragraph<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#2-the-core-idea-in-one-paragraph" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Treat the document’s state as a <strong>pure fold over an immutable log of edit
+operations</strong>. Order the operations by a deterministic <strong>total order</strong> — <em>authority
+first, content-hash to break ties</em>. Walk that order and decide which operations
+are <strong>live</strong>: an operation is dropped (excluded) if an earlier, higher-or-equal
+operation both <em>overlaps the same region of text</em> and is <em>concurrent</em> with it.
+Fold only the live operations through the CRDT. Because the order and the
+exclusion test are computed purely from immutable fields every machine already
+has, every machine derives the same live set — and therefore the same document —
+with <strong>no coordinator, no shared database, and no mutable “is this still alive”
+flag</strong>. A genuine collision between two equal-authority peers is the one case the
+fold cannot silently resolve; it is surfaced as a first-class conflict, and is
+later resolved by an ordinary higher-authority operation that the total order
+simply floats to the top.</p>
+<p>The single non-obvious move — the thing that makes it correct — is in §4.</p>
+<hr/>
+<h2 id="3-the-model-and-its-small-algebra">3. The model and its small algebra<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#3-the-model-and-its-small-algebra" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<h3 id="31-operations">3.1 Operations<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#31-operations" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Every edit is an immutable, content-addressed <strong>operation</strong> <code>o</code>. The fields AOCM
+reads are all fixed at creation time:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Field</th><th>Meaning</th></tr></thead><tbody><tr><td><code>role(o)</code></td><td>the social role of the actor: <code>owner</code>, <code>human</code>, or <code>agent</code></td></tr><tr><td><code>hash(o)</code></td><td>the content hash of the operation (globally unique)</td></tr><tr><td><code>parents(o)</code></td><td>the operations this one was created <em>after</em> (its causal history)</td></tr><tr><td><code>intent(o)</code></td><td><em>what</em> the edit does: <code>Write(content)</code> or <code>Edit(old → new)</code></td></tr><tr><td><code>ops(o)</code></td><td>the CRDT (Yjs) update bytes that actually apply the change</td></tr></tbody></table></div>
+<p>Roles carry a fixed numeric <strong>rank</strong>:</p>
+<pre><code>ρ(owner) = 3     ρ(human) = 2     ρ(agent) = 1
+</code></pre>
+<p>The operations of one artifact form a DAG via <code>parents</code> (knock-knock’s
+append-only “ledger”). Nothing here is ever mutated — operations are only ever
+added.</p>
+<h3 id="32-the-total-order--">3.2 The total order  ≺<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#32-the-total-order--" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Sort operations by <strong>authority descending, then hash ascending</strong>:</p>
+<pre><code>o₁ ≺ o₂   ⟺   ρ(o₁) > ρ(o₂)            (strictly higher authority wins)
+              or  ρ(o₁) = ρ(o₂)  and  hash(o₁) &lt; hash(o₂)   (else lower hash)
+</code></pre>
+<p><code>o₁ ≺ o₂</code> reads “<em>o₁ outranks o₂</em>.” Two properties matter:</p>
+<ul>
+<li><strong>It is total.</strong> Because hashes are unique, <em>every</em> pair is comparable. There
+are no ties, and crucially <strong>no antichains</strong> — the failure mode of the
+partial-order design we abandoned (§7).</li>
+<li><strong>It uses only immutable, on-operation fields.</strong> No timestamps, no “how deep in
+the history” counts, nothing that depends on which operations a machine happens
+to have seen so far. Two machines holding the same two operations always order
+them the same way.</li>
+</ul>
+<blockquote>
+<p>The order is used for <em>exactly two</em> things: deciding exclusion (§3.5) and
+rendering conflict branches in a stable order. <strong>It is never used as the order
+in which the CRDT applies edits</strong> — that would be both unnecessary and wrong
+(§4).</p>
+</blockquote>
+<h3 id="33-concurrency--">3.3 Concurrency  ∥<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#33-concurrency--" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Two operations are <strong>concurrent</strong> if neither is in the other’s causal history:</p>
+<pre><code>o₁ ∥ o₂   ⟺   o₁ ∉ ancestors(o₂)  and  o₂ ∉ ancestors(o₁)
+</code></pre>
+<p>Concurrency is what makes a contention <em>possible</em>. If you edited a line, saw my
+edit, and then edited again, your second edit is a <em>descendant</em> of mine — not a
+conflict, just history. Only concurrent operations can interfere.</p>
+<h3 id="34-regions-and-interference--">3.4 Regions and interference  ⋈<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#34-regions-and-interference--" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>This is the part that decides <em>whether two concurrent edits actually clash</em>. We
+compute it on the <strong>common base</strong> — the text the two edits both started from
+(the fold of their shared ancestors).</p>
+<p>Each intent touches a half-open byte <strong>region</strong> of that base text <code>b</code>:</p>
+<pre><code>region(Write(_),     b) = [0, |b|)            a whole-file write spans everything
+region(Edit(old→_),  b) = [i, i + |old|)      where i = b.indexOf(old)
+                        = [0, |b|)             if old is not found (fail safe)
+</code></pre>
+<p>Two concurrent operations <strong>interfere</strong> iff their regions overlap (or both are
+whole-file writes):</p>
+<pre><code>o₁ ⋈ o₂   ⟺   both are Write          (two whole-file rewrites are irreconcilable)
+              or  region(o₁).lo &lt; region(o₂).hi
+                  and region(o₂).lo &lt; region(o₁).hi    (half-open overlap)
+</code></pre>
+<p>A picture, on the base <code>&quot;hello world&quot;</code>:</p>
+<p><img src="./assets/aocm-interference.svg" alt="Interference is region-overlap on the common base: disjoint regions do not interfere; same-region edits do"/></p>
+<p>Interference is a <strong>pure function of immutable intents and the common base</strong>, so
+it too is replica-identical. (Adjacent regions that merely touch at a boundary —
+<code>[4,9)</code> and <code>[9,15)</code> — do <em>not</em> interfere; the intervals are half-open.)</p>
+<h3 id="35-dominance--exclusion-and-the-live-set">3.5 Dominance = exclusion, and the live set<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#35-dominance--exclusion-and-the-live-set" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Now the only decision rule. Operation <code>o₁</code> <strong>dominates</strong> <code>o₂</code> when it outranks it
+<em>and</em> genuinely clashes with it:</p>
+<pre><code>o₁ dominates o₂   ⟺   o₁ ≺ o₂   and   o₁ ∥ o₂   and   o₁ ⋈ o₂
+</code></pre>
+<p>To compute the <strong>live set</strong> <code>L</code>, walk the operations in ≺ order and greedily keep
+each one unless something already kept dominates it:</p>
+<pre><code>LIVE(O):                              # O = every operation for this artifact
+  sort O by ≺                         # authority desc, hash asc
+  kept ← [];  conflicts ← {}
+  for o in O (in ≺ order):
+    d ← the first y in kept with (y ∥ o) and (y ⋈ o)   # an interfering concurrent peer
+    if d is none:
+        kept.append(o)                # nothing clashes — o is live
+    else if ρ(d) = ρ(o):
+        conflicts.add({d, o})         # EQUAL authority → a genuine conflict
+        # o stays excluded; the lower-hash branch d remains live
+    else:
+        pass                          # higher authority d wins — o excluded SILENTLY
+
+  return kept, conflicts
+</code></pre>
+<p>The document state is then just the CRDT fold of the live set, <strong>in any order</strong>:</p>
+<pre><code>STATE(O) = fold_CRDT( LIVE(O).kept )
+</code></pre>
+<p>Three outcomes fall out of this single rule, with no policy knob:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Situation</th><th>What <code>LIVE</code> does</th><th>What the user sees</th></tr></thead><tbody><tr><td><strong>Disjoint</strong> regions (any roles)</td><td>both kept</td><td>both edits merge, silently</td></tr><tr><td>Same region, <strong>different</strong> role</td><td>lower-role op excluded</td><td>higher role wins, silently</td></tr><tr><td>Same region, <strong>equal</strong> role</td><td>one kept, pair recorded in <code>conflicts</code></td><td>a <strong>conflict card</strong> to resolve</td></tr></tbody></table></div>
+<p>The whole pipeline, end to end:</p>
+<pre><button class="expand-button" aria-label="Expand mermaid diagram" data-view-component="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M3.72 3.72a.75.75 0 011.06 1.06L2.56 7h10.88l-2.22-2.22a.75.75 0 011.06-1.06l3.5 3.5a.75.75 0 010 1.06l-3.5 3.5a.75.75 0 11-1.06-1.06l2.22-2.22H2.56l2.22 2.22a.75.75 0 11-1.06 1.06l-3.5-3.5a.75.75 0 010-1.06l3.5-3.5z"></path></svg></button><code class="mermaid" data-clipboard="&quot;flowchart TB\n  E[\&quot;operation admitted&lt;br/>(created locally or arrived from a peer)\&quot;] --> S[\&quot;sort all ops by ≺&lt;br/>(role desc, hash asc)\&quot;]\n  S --> L[\&quot;derive live set:&lt;br/>exclude each op a kept,&lt;br/>concurrent, interfering op dominates\&quot;]\n  L --> F[\&quot;CRDT folds the live set&lt;br/>(order-independent)\&quot;]\n  F --> Q{\&quot;equal-role interference&lt;br/>survives?\&quot;}\n  Q -->|\&quot;no — disjoint, or&lt;br/>resolved by authority\&quot;| D[\&quot;converged state&lt;br/>(identical on every replica)\&quot;]\n  Q -->|\&quot;yes — same region,&lt;br/>equal role\&quot;| C[\&quot;first-class conflict&lt;br/>→ conflict card\&quot;]\n  C --> R[\&quot;owner resolves =&lt;br/>ordinary higher-authority op&lt;br/>the order floats to the top\&quot;]\n  R --> L&quot;">flowchart TB
+  E[&quot;operation admitted&lt;br/>(created locally or arrived from a peer)&quot;] --> S[&quot;sort all ops by ≺&lt;br/>(role desc, hash asc)&quot;]
+  S --> L[&quot;derive live set:&lt;br/>exclude each op a kept,&lt;br/>concurrent, interfering op dominates&quot;]
+  L --> F[&quot;CRDT folds the live set&lt;br/>(order-independent)&quot;]
+  F --> Q{&quot;equal-role interference&lt;br/>survives?&quot;}
+  Q -->|&quot;no — disjoint, or&lt;br/>resolved by authority&quot;| D[&quot;converged state&lt;br/>(identical on every replica)&quot;]
+  Q -->|&quot;yes — same region,&lt;br/>equal role&quot;| C[&quot;first-class conflict&lt;br/>→ conflict card&quot;]
+  C --> R[&quot;owner resolves =&lt;br/>ordinary higher-authority op&lt;br/>the order floats to the top&quot;]
+  R --> L
+</code><div id="mermaid-container" role="dialog"><div id="mermaid-space"><div class="mermaid-content"></div></div></div></pre>
+<hr/>
+<h2 id="4-the-one-subtle-move-exclude-dont-reorder">4. The one subtle move: exclude, don’t reorder<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#4-the-one-subtle-move-exclude-dont-reorder" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Here is the mistake that is easy to make and that we made first: <em>“sort the
+operations by authority and let the CRDT apply them in that order, so the
+owner’s edit lands last and wins.”</em></p>
+<p>It does not work, because <strong>the CRDT is commutative</strong>. Yjs merges a set of updates
+to the same result <em>regardless of the order you apply them in</em> — that is the whole
+point of a CRDT. Applying the owner’s edit “last” changes nothing; the agent’s
+conflicting edit is still in the set, so the merged text still contains both. You
+cannot make one edit win by <em>ordering</em> a structure that ignores order.</p>
+<p>So authority cannot be expressed as an <em>ordering</em> of the CRDT. It has to be
+expressed as <strong>membership</strong>: the dominated operation is <em>left out of the set the
+CRDT folds at all</em>.</p>
+<p><img src="./assets/aocm-exclude-vs-reorder.svg" alt="Reordering a commutative CRDT keeps both edits; excluding the dominated edit from the input set is what makes the owner win"/></p>
+<p>This is why the total order ≺ and the CRDT fold order are <strong>two different
+orders</strong> that must never be conflated. ≺ decides <em>who is in the live set</em>; the
+CRDT folds that set in whatever order it likes. The total order does the
+<em>deciding</em>; the CRDT does the <em>merging</em>; and the two stay strictly separate.</p>
+<p>A pleasant consequence: this is <em>already</em> what the codebase did when a draft was
+manually “superseded” — it filtered the superseded edit out before folding. AOCM
+keeps that exact mechanism and only changes its <strong>persistence</strong>: from a mutable
+<code>superseded</code> flag written into a column, to a predicate <strong>derived</strong> on the fly
+from immutable operations. “Overturn the merge gate” turned out to mean “keep the
+gate’s arbitration; change how it is stored.”</p>
+<hr/>
+<h2 id="5-why-it-converges-the-informal-argument">5. Why it converges (the informal argument)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#5-why-it-converges-the-informal-argument" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>We want: <em>two machines holding the same set of operations produce the same
+document.</em> The argument is short:</p>
+<ol>
+<li><code>LIVE(O)</code> reads only <strong>immutable</strong> fields — <code>role</code>, <code>hash</code>, <code>parents</code>,
+<code>intent</code>. None of them is mutated, and none depends on arrival order or on
+which subset a machine has seen.</li>
+<li>The sort ≺ is <strong>total</strong> (unique hashes), so the walk visits operations in the
+same sequence on every machine. No antichains, no “it depends.”</li>
+<li>The interference test ⋈ is computed on the common base, itself a fold of the
+shared ancestor set — again immutable and shared.</li>
+<li>Therefore <code>LIVE(O)</code> returns the <strong>same</strong> live set and the <strong>same</strong> conflict set
+on every machine that holds <code>O</code>.</li>
+<li>The CRDT folds that identical live set to an identical document, <em>because it is
+order-independent</em>.</li>
+</ol>
+<p>So convergence does not require a coordinator, a lock, a clock, or a shared
+database. It requires only that the machines eventually hold the same operations —
+which is the job of a separate <strong>sync transport</strong> (§7), not of the merge. A
+machine missing one branch simply converges the moment that branch arrives; the
+fold is recomputed and the answer is the same as a fresh replay.</p>
+<p>Notably, there is <strong>no mutable lifecycle flag in the merge path</strong>. The original
+divergence bug was exactly that a “this edit is superseded” UPDATE never
+propagated between machines (Postgres <code>NOTIFY</code> fires on INSERT, not UPDATE). AOCM
+removes the UPDATE entirely: supersession is <em>derived</em>, and the only thing that
+ever crosses the wire is an immutable INSERT.</p>
+<p>The same pattern now closes the divergence for the <em>other</em> superseding paths too
+— turns, approvals, knowledge — which still keep a <code>lifecycle</code> column outside the
+merge (§7). Those concepts can’t drop the UPDATE (their liveness is genuinely
+stateful), so instead the <code>apply-supersession</code> synchronization re-derives it on
+each peer: the <strong>winner</strong> interaction carries its losers in an immutable
+<code>supersedes</code> field, that INSERT crosses <code>NOTIFY</code>, and a peer receiving the winner
+re-applies the lifecycle change locally. The local UPDATE stays for fast local
+reads; convergence rides the operation the store already propagates. The one
+residual limit is shared by all synced state, not specific to the merge: a
+<code>NOTIFY</code> missed during a listener disconnect heals on the peer’s next
+restart-replay, not in the moment.</p>
+<hr/>
+<h2 id="6-worked-examples">6. Worked examples<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#6-worked-examples" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>All examples start from the base text <code>&quot;hello world&quot;</code> (<code>|b| = 11</code>; <code>&quot;hello&quot;</code> is
+<code>[0,5)</code>, <code>&quot;world&quot;</code> is <code>[6,11)</code>).</p>
+<h3 id="ae1--disjoint-edits-merge-silently">AE1 — Disjoint edits merge silently<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae1--disjoint-edits-merge-silently" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Agent A: <code>Edit(hello → HELLO)</code>, region <code>[0,5)</code>. Agent B: <code>Edit(world → WORLD)</code>,
+region <code>[6,11)</code>.
+<code>A ⋈ B</code>? <code>0 &lt; 11</code> ✓ but <code>6 &lt; 5</code> ✗ → <strong>no interference</strong>. Both live.
+<strong>State:</strong> <code>&quot;HELLO WORLD&quot;</code>. No card. (This is the common case, and it is fully
+autonomous — nobody is interrupted.)</p>
+<h3 id="ae2--authority-wins-silently">AE2 — Authority wins, silently<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae2--authority-wins-silently" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Agent: <code>Edit(hello → HI)</code>. Owner: <code>Edit(hello → HEY)</code>. Both region <code>[0,5)</code> → they
+interfere. Order: <code>ρ(owner)=3 > ρ(agent)=1</code>, so the owner sorts first and is kept.
+The agent is concurrent + interfering + lower rank → <strong>excluded silently</strong>.
+<strong>State:</strong> <code>&quot;HEY world&quot;</code>. No card, no popup. The owner’s intent simply stands.</p>
+<h3 id="ae3--equal-peers-collide--a-real-conflict">AE3 — Equal peers collide → a real conflict<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae3--equal-peers-collide--a-real-conflict" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Agent A: <code>Edit(hello → HI)</code>. Agent B: <code>Edit(hello → YO)</code>. Same region, equal rank.
+The lower-hash branch (say A) is kept; the pair <code>{A, B}</code> is recorded as a
+conflict. <strong>State:</strong> <code>&quot;HI world&quot;</code> <em>and</em> a <strong>conflict card</strong> offering “Take A / Take
+B / Write your own.” Each branch row shows what that branch actually contains
+— the captured intent, e.g. the replacement text or a Write snippet, not an
+opaque “~N bytes” — so Take A vs Take B is a real choice. The fold picked a
+deterministic provisional text so every replica shows the same thing, but it
+does not pretend the conflict is resolved. “Write your own” admits the owner’s
+own edit, which (being owner-role and concurrent) dominates both branches and
+clears the region — the card closes (this is AE4 with the owner authoring a
+fresh branch instead of copying one).</p>
+<h3 id="ae4--resolution-is-just-another-operation">AE4 — Resolution is just another operation<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae4--resolution-is-just-another-operation" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>The owner picks branch A on the card. We do <strong>not</strong> flip any flag. We admit an
+<strong>owner-role operation that is a copy of A</strong> — same intent, same parents, so it is
+<em>concurrent</em> with both A and B. Now re-derive: the owner-copy outranks both
+agents, is concurrent with and interferes with both → both agent branches are
+<strong>excluded silently</strong>, and since the exclusions are by <em>higher</em> authority, the
+conflict set is now empty. <strong>State:</strong> A’s text; <strong>conflict cleared</strong>. A second
+machine that later receives this same owner-copy operation re-derives the identical
+result — no UPDATE, no message, just one more INSERT in the log.</p>
+<h3 id="ae6--the-override-still-notifies-a-human">AE6 — The override still notifies a human<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae6--the-override-still-notifies-a-human" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Because supersession is now derived rather than written, we must not <em>lose</em> the
+“your draft was overridden” notice that used to ride on the flag. So a resolution
+(or any authority exclusion that matters socially) also emits an ordinary
+<code>knowledge.append</code> INSERT into the losing agent’s inbox. That INSERT propagates
+like any other operation and triggers the existing direct-message-the-owner path.
+Derivation removed the flag; it did not remove the courtesy.</p>
+<h3 id="ae7--a-whole-file-write-clashes-with-everything">AE7 — A whole-file Write clashes with everything<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#ae7--a-whole-file-write-clashes-with-everything" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Agent A: <code>Edit(world → WORLD)</code>, region <code>[6,11)</code>. Agent B: <code>Write(&quot;totally new&quot;)</code>,
+region <code>[0,11)</code> (a Write spans the file). They overlap → interfere. Equal rank →
+<strong>conflict card</strong>. But if the Write were the <em>owner’s</em>, it would dominate A
+silently and the state would be <code>&quot;totally new&quot;</code>. A whole-file rewrite is honest
+about being a whole-file rewrite: it contends with everything.</p>
+<hr/>
+<h2 id="7-what-we-deliberately-discarded-and-why">7. What we deliberately discarded (and why)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#7-what-we-deliberately-discarded-and-why" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>A core concept is only as trustworthy as its account of its own limits. These are
+the things we considered and chose <em>not</em> to do — each is a real tradeoff, not an
+oversight.</p>
+<p><strong>Whole-file granularity (coarse exclusion).</strong> Today an operation’s region for
+<em>exclusion</em> is whole-op: when a higher-role edit interferes, the <em>entire</em> lower
+op is excluded, not just the overlapping span. The richer design — true
+<em>interval anchors</em>, where exclusion is scoped to the exact overlapping bytes — is
+deferred. The honest mitigation: the interference <em>test</em> is already
+region-aware, so <strong>disjoint edits still merge</strong> regardless; only genuine
+same-region collisions lose the whole lower op. We pay coarseness exactly where
+two people are already fighting over the same span, which is the least surprising
+place to pay it.</p>
+<p><strong>Binary / non-text Writes.</strong> Capture is for text. A Write of non-UTF-8 content
+(detected by a NUL byte) would be mangled through Yjs’s UTF-16 <code>Y.Text</code> and then
+write-back would overwrite the real file with the corrupt round-trip — so capture
+<strong>skips</strong> it rather than corrupt it. The scope is honestly Claude-Code-shaped text
+Edit/Write; binary is out of scope, not silently handled.</p>
+<p><strong>Causal chaining onto the <em>live</em> set only.</strong> A new edit chains its <code>parents</code> onto
+the artifact’s current edits so a sequential edit is a <em>descendant</em> (history, not
+conflict, per §3.3). Earlier this chained onto <em>every</em> slice hash — including
+edits that were dominated or sitting in a conflict. That made the new edit a false
+descendant of a loser, which could mask a real concurrency. It now chains onto the
+<strong>live (kept) hashes only</strong>, so it descends from the live text and stays genuinely
+concurrent with any peer it should contend with. (The fold, the conflict card, and
+write-back all share one membership predicate for “what counts as a versionable
+edit,” so they can never silently disagree about the slice they each read.)</p>
+<p><strong>The partial-order “containment lattice.”</strong> Our first cross-machine design
+ordered operations by set-containment (“a superset of edits dominates a subset”).
+It failed: two agents extending the same history produce <em>maximal sets that are
+neither a subset of the other</em> — an <strong>antichain</strong> — and an antichain has no
+winner, so different machines could pick different text. We replaced the partial
+order with a <strong>total</strong> order whose final key is the content hash, which makes
+every pair comparable by construction. Telling this failure is the point: the
+content-hash tiebreak is not arbitrary decoration, it is the thing that closes
+the antichain.</p>
+<p><strong>A mutable <code>lifecycle</code> flag for the merge.</strong> We kept the <code>lifecycle</code> column for
+the concepts that legitimately use it (turns, approvals, watches, …) and removed
+it <em>only</em> from the merge path. The merge’s liveness is derived. The reason is
+exactly the local-first one: a mutated flag is per-machine state that does not
+propagate, and the whole design is “converge from immutable operations alone.”</p>
+<p><strong>The <code>hold</code> / <code>auto</code> policy knob.</strong> An earlier design had a per-room switch:
+auto-merge concurrent edits, or hold them for the owner. Once interference became
+<em>region-overlap</em>, the knob had nothing to decide — disjoint edits always merge,
+same-region collisions always card — so we dropped it. Uniform behavior, one
+fewer thing to configure or get wrong.</p>
+<p><strong>Cryptographic trust.</strong> The total order’s authority key (<code>role</code>) is <strong>unsigned</strong>.
+That is safe under our stated trust target — a <em>single operator</em> syncing only
+their <em>own</em> machines, where there is no adversary to forge <code>role: owner</code>. In a
+future where operations cross <em>between</em> operators, a forged owner role would win
+silently; closing that needs signing, and signing belongs to the <strong>paired sync
+transport</strong>, not to the merge. We left the order key signing-ready and the
+boundary explicit rather than pretending the merge is Byzantine-tolerant.</p>
+<p><strong>Snapshots / bounded replay.</strong> We re-fold the whole operation slice for an
+artifact on every change. A snapshot/checkpoint scheme would bound replay cost,
+but it is a <em>performance</em> optimization, not a <em>correctness</em> one, and we have not
+measured a replay-latency problem. Deferred until it is one.</p>
+<p><strong>The sync transport itself.</strong> AOCM is the <em>merge</em> layer. <em>How</em> operations travel
+between local stores (anti-entropy have/want exchange, an optional dumb
+store-and-forward relay for the closed-laptop case) is a separate, paired
+concern. AOCM assumes only that operations eventually arrive; it is otherwise
+transport-agnostic. Dropping the hosted database is finished by that transport,
+not by this layer.</p>
+<hr/>
+<h2 id="8-relation-to-prior-art">8. Relation to prior art<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#8-relation-to-prior-art" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>AOCM is a deliberately small synthesis of ideas that already exist, chosen to fit
+a human + AI-agent collaboration setting:</p>
+<ul>
+<li><strong>Matrix State Resolution v2</strong> is the closest relative: authority-weighted
+conflict resolution over an append-only hash-DAG, convergent on every replica
+with no coordinator, via a total order <code>(power, origin_ts, event_id)</code>. We
+<em>simplify</em> it — static roles instead of mutable power levels (no
+duelling-admins failure class), and we <strong>card</strong> equal-authority collisions
+instead of auto-picking, which removes the need for a recency tiebreak.</li>
+<li><strong>eg-walker</strong> (Gentle &amp; Kleppmann, 2025) — a deterministic order over
+concurrent operations via a stable, operation-carried tiebreak; its
+critical-version snapshots are the bounded-replay idea we deferred.</li>
+<li><strong>Categorical patch theory / Pijul</strong> (Mimram &amp; Di Giusto, 2013) — conflicts as
+first-class objects resolved by ordinary <em>later</em> patches, with order-independent
+merge. Our “resolution is just another operation the order floats to the top”
+is the same shape.</li>
+<li><strong>Fugue / FugueMax</strong> (Weidner &amp; Kleppmann, 2023) — informs <em>why</em> a pre-merge
+region-overlap test is the sound notion of interference, rather than comparing
+text after a merge.</li>
+<li><strong>Byzantine / signed CRDTs</strong> (Kleppmann, 2022) — signing closes the
+forgeable-role gap, which is precisely the boundary we pushed to the paired
+transport.</li>
+</ul>
+<p>The contribution is not a new CRDT or a new consistency proof. It is the
+<strong>framing</strong>: in a world where collaborators are humans <em>and</em> their agents, <em>social
+authority is a first-class, immutable merge primitive</em>, expressible as exclusion
+from a commutative CRDT’s input set, ordered by a hash-completed total order, so
+that autonomy is automatic for the common case and human judgment is reserved for
+genuine peer conflict — all converging locally, from immutable operations, with no
+shared database.</p>
+<hr/>
+<h2 id="9-pointers-into-the-implementation">9. Pointers into the implementation<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#9-pointers-into-the-implementation" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Concept here</th><th>Where it lives</th></tr></thead><tbody><tr><td>Total order ≺, <code>ROLE_RANK</code></td><td><code>ledger/interaction.ts</code>, <code>ledger/artifacts/versionable.ts</code> (<code>projectVersionable</code>)</td></tr><tr><td>Region + interference (<code>region</code>, <code>⋈</code>)</td><td><code>ledger/artifacts/versionable.ts</code> (<code>regionOf</code>, <code>interferes</code>)</td></tr><tr><td>Live set / exclusion (<code>LIVE</code>)</td><td><code>ledger/artifacts/versionable.ts</code> (<code>projectVersionable</code>)</td></tr><tr><td>“Admit, don’t arbitrate” for edits</td><td><code>ledger/admit.ts</code></td></tr><tr><td>Conflict surfacing</td><td><code>ledger/synchronizations/conflict-card.ts</code></td></tr><tr><td>Resolution as an ordinary op</td><td><code>ledger/resolve-conflict.ts</code></td></tr><tr><td>Override notice (the INSERT)</td><td><code>ledger/admit.ts</code> (<code>surfaceToInbox</code>), <code>ledger/synchronizations/dm-on-supersede.ts</code></td></tr><tr><td>Convergence / corpus / fuzz battery</td><td><code>ledger/aocm.test.ts</code>, <code>ledger/fold.test.ts</code></td></tr><tr><td>Requirements of record</td><td><code>docs/brainstorms/2026-06-09-anchored-patch-category-conflict-layer-requirements.md</code></td></tr></tbody></table></div></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-0" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#authority-ordered-convergent-merge-aocm" data-for="authority-ordered-convergent-merge-aocm">Authority-Ordered Convergent Merge (AOCM)</a></li><li class="depth-1"><a href="#1-the-setting" data-for="1-the-setting">1. The setting</a></li><li class="depth-1"><a href="#2-the-core-idea-in-one-paragraph" data-for="2-the-core-idea-in-one-paragraph">2. The core idea in one paragraph</a></li><li class="depth-1"><a href="#3-the-model-and-its-small-algebra" data-for="3-the-model-and-its-small-algebra">3. The model and its small algebra</a></li><li class="depth-2"><a href="#31-operations" data-for="31-operations">3.1 Operations</a></li><li class="depth-2"><a href="#32-the-total-order--" data-for="32-the-total-order--">3.2 The total order  ≺</a></li><li class="depth-2"><a href="#33-concurrency--" data-for="33-concurrency--">3.3 Concurrency  ∥</a></li><li class="depth-2"><a href="#34-regions-and-interference--" data-for="34-regions-and-interference--">3.4 Regions and interference  ⋈</a></li><li class="depth-2"><a href="#35-dominance--exclusion-and-the-live-set" data-for="35-dominance--exclusion-and-the-live-set">3.5 Dominance = exclusion, and the live set</a></li><li class="depth-1"><a href="#4-the-one-subtle-move-exclude-dont-reorder" data-for="4-the-one-subtle-move-exclude-dont-reorder">4. The one subtle move: exclude, don’t reorder</a></li><li class="depth-1"><a href="#5-why-it-converges-the-informal-argument" data-for="5-why-it-converges-the-informal-argument">5. Why it converges (the informal argument)</a></li><li class="depth-1"><a href="#6-worked-examples" data-for="6-worked-examples">6. Worked examples</a></li><li class="depth-2"><a href="#ae1--disjoint-edits-merge-silently" data-for="ae1--disjoint-edits-merge-silently">AE1 — Disjoint edits merge silently</a></li><li class="depth-2"><a href="#ae2--authority-wins-silently" data-for="ae2--authority-wins-silently">AE2 — Authority wins, silently</a></li><li class="depth-2"><a href="#ae3--equal-peers-collide--a-real-conflict" data-for="ae3--equal-peers-collide--a-real-conflict">AE3 — Equal peers collide → a real conflict</a></li><li class="depth-2"><a href="#ae4--resolution-is-just-another-operation" data-for="ae4--resolution-is-just-another-operation">AE4 — Resolution is just another operation</a></li><li class="depth-2"><a href="#ae6--the-override-still-notifies-a-human" data-for="ae6--the-override-still-notifies-a-human">AE6 — The override still notifies a human</a></li><li class="depth-2"><a href="#ae7--a-whole-file-write-clashes-with-everything" data-for="ae7--a-whole-file-write-clashes-with-everything">AE7 — A whole-file Write clashes with everything</a></li><li class="depth-1"><a href="#7-what-we-deliberately-discarded-and-why" data-for="7-what-we-deliberately-discarded-and-why">7. What we deliberately discarded (and why)</a></li><li class="depth-1"><a href="#8-relation-to-prior-art" data-for="8-relation-to-prior-art">8. Relation to prior art</a></li><li class="depth-1"><a href="#9-pointers-into-the-implementation" data-for="9-pointers-into-the-implementation">9. Pointers into the implementation</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./" class="internal">knock-knock documentation</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

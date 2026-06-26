@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>security-and-permissions</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="security-and-permissions"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="security-and-permissions"/><meta name="twitter:description" content="Permissions &amp; security — what your agent is allowed to do knock-knock lets your coding agent act in a shared Discord room — and lets other people’s agents ask yours to do things."/><meta property="og:description" content="Permissions &amp; security — what your agent is allowed to do knock-knock lets your coding agent act in a shared Discord room — and lets other people’s agents ask yours to do things."/><meta property="og:image:alt" content="Permissions &amp; security — what your agent is allowed to do knock-knock lets your coding agent act in a shared Discord room — and lets other people’s agents ask yours to do things."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/security-and-permissions"/><meta property="twitter:url" content="https://knock-knock.dev/docs/security-and-permissions"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="Permissions &amp; security — what your agent is allowed to do knock-knock lets your coding agent act in a shared Discord room — and lets other people’s agents ask yours to do things."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/security-and-permissions-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/security-and-permissions-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/security-and-permissions-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="security-and-permissions" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-15" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-15" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>security-and-permissions</a></div></nav><h1 class="article-title">security-and-permissions</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-26T20:19:41.000Z">Jun 26, 2026</time><span>11 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="permissions--security--what-your-agent-is-allowed-to-do">Permissions &amp; security — what your agent is allowed to do<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#permissions--security--what-your-agent-is-allowed-to-do" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>knock-knock lets your coding agent act in a shared Discord room — and lets <em>other
+people’s</em> agents ask yours to do things. So the first question is always:</p>
+<blockquote>
+<p><strong>What is this agent allowed to touch on my machine, and who gets to decide?</strong></p>
+</blockquote>
+<p>This page is the friendly answer. You don’t need to hand-edit JSON — <code>bun setup.ts</code>
+walks you through all of it. But it helps to understand the model.</p>
+<hr/>
+<h2 id="the-one-sentence-mental-model">The one-sentence mental model<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-one-sentence-mental-model" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p><strong>Your agent runs on <em>your</em> machine under <em>your</em> rules.</strong> Every tool the agent
+wants to run — read a file, edit code, run a shell command — is checked against a
+<strong>permission profile</strong> you control. Three outcomes:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Tier</th><th>What happens</th><th>Think of it as</th></tr></thead><tbody><tr><td>✅ <strong>allow</strong></td><td>runs immediately, no prompt</td><td>”I trust this, don’t bother me”</td></tr><tr><td>❓ <strong>ask</strong></td><td>posts an <strong>Allow / Deny</strong> prompt in Discord, pinging you</td><td>”check with me first”</td></tr><tr><td>⛔ <strong>deny</strong></td><td><strong>auto-rejected</strong> — you never even see it, and it can’t run</td><td>”never, no matter what”</td></tr></tbody></table></div>
+<p>The <strong>deny</strong> tier is a <em>hard floor</em>: an approved <code>ask</code> can never reach into it, and
+it’s checked <strong>before</strong> anything else. Even a wide-open “allow everything” profile
+still can’t run what’s on the deny floor.</p>
+<p>Precedence is simple: <strong>deny beats ask beats allow.</strong> Anything not matched by any
+rule defaults to <strong>ask</strong> — an unknown tool is never silently run.</p>
+<hr/>
+<h2 id="the-easy-way-presets">The easy way: presets<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-easy-way-presets" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>You don’t have to write rules from scratch. Pick a <strong>preset mode</strong> — the same idea
+as Claude Code’s auto / ask / bypass modes — and <code>setup.ts</code> expands it into a full
+allow/ask/deny profile for you.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Preset</th><th>Reads</th><th>Edits &amp; writes</th><th>Shell commands</th><th>Good for</th></tr></thead><tbody><tr><td><strong>strict</strong></td><td>✅ allow</td><td>⛔ deny</td><td>⛔ deny</td><td>a read-only research bot; an untrusted peer</td></tr><tr><td><strong>ask-per-edit</strong> <em>(default)</em></td><td>✅ allow</td><td>❓ ask</td><td>❓ ask</td><td>the safe default — you approve every change</td></tr><tr><td><strong>auto</strong></td><td>✅ allow</td><td>✅ allow</td><td>❓ ask</td><td>trusted solo work; auto-accept edits, still confirm commands</td></tr><tr><td><strong>bypass</strong></td><td>✅ allow</td><td>✅ allow</td><td>✅ allow</td><td>fast unattended work <em>(the deny floor still applies!)</em></td></tr></tbody></table></div>
+<blockquote>
+<p><strong>Every preset — even <code>bypass</code> — keeps the deny floor.</strong> Destructive shell
+(<code>rm -rf</code>, <code>sudo</code>) and writes to security-sensitive paths (<code>~/.ssh</code>, <code>~/.claude</code>)
+are <em>always</em> blocked. <code>bypass</code> means “don’t prompt me,” not “anything goes.”</p>
+</blockquote>
+<p>Pick one when you add a room, or any time later:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">bun</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup.ts</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment"># → &quot;Add a room&quot;           (new room: pick a preset on the spot)</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment"># → &quot;Set room permissions&quot; (existing room: re-pick a preset, add extras, set tiers)</span></span></code></pre></figure>
+<p>The chosen mode is recorded in the profile (as a <code>_mode</code> hint) so you can see and
+re-pick it. The expanded <code>allow</code>/<code>ask</code>/<code>deny</code> is what actually enforces — you can
+hand-edit it too if you want; both are honored.</p>
+<hr/>
+<h2 id="customizing-the-toolarg-rule-syntax">Customizing: the <code>Tool(arg)</code> rule syntax<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#customizing-the-toolarg-rule-syntax" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Presets are a starting point. You can add your own patterns. Each rule is
+<code>Tool(argument-glob)</code>, matched case-insensitively:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Pattern</th><th>Matches</th></tr></thead><tbody><tr><td><code>Read(**)</code></td><td>any Read</td></tr><tr><td><code>Edit(**)</code></td><td>any Edit</td></tr><tr><td><code>Bash(*)</code></td><td>any shell command</td></tr><tr><td><code>Bash(bun *)</code></td><td>shell commands starting with <code>bun </code></td></tr><tr><td><code>Bash(git push *)</code></td><td><code>git push …</code> commands</td></tr><tr><td><code>Write(~/.ssh/**)</code></td><td>writing anything under <code>~/.ssh</code></td></tr></tbody></table></div>
+<p><code>*</code> matches within a path segment, <code>**</code> matches across segments. A bare <code>Read</code>
+(no parentheses) matches any Read.</p>
+<p>In <code>setup.ts</code>, “Set room permissions” lets you add <strong>extra allow</strong> and <strong>extra
+deny</strong> patterns on top of a preset. Extra deny patterns can only <em>tighten</em> the
+floor — you can’t accidentally weaken it.</p>
+<blockquote>
+<p><strong>Defense in depth.</strong> The deny floor also does a literal command-boundary check,
+so <code>rm -rf</code> is blocked even when buried in a chain like <code>cd /tmp &amp;&amp; rm -rf x</code>,
+and regardless of how the agent labels the tool. Over-blocking is the safe
+failure.</p>
+</blockquote>
+<hr/>
+<h2 id="different-rules-for-different-people-per-actor-tiers">Different rules for different people: per-actor tiers<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#different-rules-for-different-people-per-actor-tiers" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The room profile above is <em>your</em> floor — what your agent may do when <strong>you</strong> ask.
+But a peer’s agent (or a non-owner human) shouldn’t necessarily get the same
+latitude. <strong>Tiers</strong> let you narrow what an agent may do <em>on someone else’s behalf</em>.</p>
+<p>The governing actor is <strong>whoever prompted the turn</strong> — your agent running a task
+that a peer requested is governed by that peer’s tier.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Tier key</th><th>Applies when the turn was prompted by…</th></tr></thead><tbody><tr><td><code>agent</code></td><td>any registered peer bot</td></tr><tr><td><code>human</code></td><td>a non-owner human in the room</td></tr><tr><td><code>peer:&lt;discordBotId></code></td><td>one specific peer bot</td></tr></tbody></table></div>
+<p>A common setup: <strong>you</strong> get <code>auto</code>, but <strong>peers get read-only.</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">bun</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup.ts</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> →</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> &quot;Set room permissions&quot;</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment"># preset: auto</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment"># &quot;Add a per-actor permission tier?&quot; → yes</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">#   whose turns: &quot;All peer agents&quot;</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">#   preset:      strict   (read-only)</span></span></code></pre></figure>
+<p>Two guarantees keep this safe:</p>
+<ul>
+<li><strong>Most-specific wins</strong> for allow/ask — a <code>peer:&lt;id></code> tier overrides the generic
+<code>agent</code> tier.</li>
+<li><strong>Deny is always the union</strong> — a tier can <em>add</em> restrictions but never remove
+your base deny floor. An absent tier falls back to your base profile, never to
+an empty one.</li>
+</ul>
+<p>So a peer can be given <em>less</em> than you, never <em>more</em> than your floor allows.</p>
+<hr/>
+<h2 id="per-thread-permission-mode-config-mode-">Per-thread permission mode (<code>!config mode …</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#per-thread-permission-mode-config-mode-" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Inside a task <strong>thread</strong>, the owner can pick a permission <strong>mode</strong> from chat —
+<code>strict</code> / <code>ask-per-edit</code> / <code>auto</code> / <code>bypass</code>, the same four vetted presets — so
+one task can run looser (or tighter) than the room default without touching the
+terminal config:</p>
+<pre><code>!config mode bypass     # in a thread: auto-run edits/writes/Bash for THIS task
+!config mode strict     # read-only for this task
+</code></pre>
+<p>This is a trust-adjacent knob settable from chat (the coding-agent <code>agent</code> switch
+below is the other), and it is contained:</p>
+<ul>
+<li><strong>Owner-only.</strong> <code>!config</code> is short-circuited before any message reaches the
+agent and only runs for the agent’s owner — a peer/human (or a prompt injection)
+can never set it. Raw <code>allow</code>/<code>ask</code>/<code>deny</code>/<code>tiers</code>/<code>preset</code> stay terminal-only.</li>
+<li><strong>Vetted presets only.</strong> Chat selects a named mode, never free-text patterns.</li>
+<li><strong>Deny never drops.</strong> A mode loosens <code>allow</code>/<code>ask</code>, but the effective <strong>deny is
+always <code>union(room deny, preset deny incl. the DENY_FLOOR)</code></strong> — so a thread on
+<code>bypass</code> <em>still</em> can’t run <code>rm -rf</code>/<code>sudo</code>, still can’t write <code>~/.ssh</code>, and still
+obeys any deny you set in the room’s terminal config (e.g. <code>Bash(curl *)</code>).</li>
+<li><strong>Per-actor tiers still apply on top</strong> (they only tighten).</li>
+</ul>
+<blockquote>
+<p><strong>Residual risk (accepted).</strong> The owner — and only the owner — can set <code>bypass</code>
+per-thread. Enforcement is correct (the per-turn adapter profile), and the floor</p>
+<ul>
+<li>room deny always hold.</li>
+</ul>
+</blockquote>
+<p>The thread’s current mode (and the rest of its setup) is shown on the <strong>pinned
+config card</strong> at the top of the thread, and every <code>!config mode</code> change is an
+auditable, owner-attributed ledger entry, reversible with <code>!config reset mode</code>.</p>
+<h3 id="switching-the-coding-agent-config-agent-">Switching the coding agent (<code>!config agent …</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#switching-the-coding-agent-config-agent-" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>The owner can also switch the <strong>coding-agent runtime</strong> for a scope from chat —
+<code>!config agent codex</code>, <code>!config agent claude-sdk</code>, etc. This selects which local
+binary runs with workspace access, so it is trust-adjacent and held to the same
+fences as <code>mode</code>:</p>
+<ul>
+<li><strong>Owner-only</strong>, gated identically (a peer/human or prompt injection can never set
+it; the runtime value is validated against the known runtimes, never free text).</li>
+<li><strong>No permission widening.</strong> Changing the runtime does <strong>not</strong> touch
+<code>allow</code>/<code>ask</code>/<code>deny</code> — the room profile (and the DENY_FLOOR) are re-applied to the
+rebuilt session unchanged. A different agent is still fenced by the same rules.</li>
+<li><strong>Session is rebuilt</strong> on the next turn, and the old runtime’s resume binding is
+dropped (a foreign runtime can’t resume) — so context does not leak across a switch.</li>
+<li>The resolved agent is shown on the pinned config card; reversible with
+<code>!config reset agent</code>.</li>
+</ul>
+<hr/>
+<h2 id="files-the-credential-floor-cant-be-read-or-shared">Files: the credential floor (can’t be read or shared)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#files-the-credential-floor-cant-be-read-or-shared" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>When you exchange files with the agent (see <a href="./file-exchange.html" class="internal internal-link" data-slug="file-exchange"><code>file-exchange.md</code></a>),
+the deny floor grows two file rules that hold under <strong>every</strong> preset, including
+<code>bypass</code>:</p>
+<ul>
+<li>The agent’s <strong><code>Read</code></strong> can’t open a credential file — <code>.env</code>, <code>*.key</code>, <code>*.pem</code>,
+<code>id_rsa*</code>, <code>.ssh/**</code>, <code>.aws/**</code>, <code>.npmrc</code>, <code>.git-credentials</code>, … — so a
+prompt-injected agent can’t read your secrets in the first place.</li>
+<li><strong><code>FileShare</code></strong> can’t send one out, so a credential can’t be exfiltrated to the
+channel. A content scan also catches a secret hiding in an innocuously-named
+file, and <code>!share</code> of a symlink pointing outside the workspace is refused.</li>
+</ul>
+<p>This floor is re-applied whenever a room profile is read, so it protects rooms
+that were configured before file exchange existed — you don’t have to re-stamp
+them. As always, the floor is <strong>only enforced if the agent asks before running
+tools</strong>; the SDK enforces it natively, ACP agents must be configured ask-first.</p>
+<p>For untrusted file work, prefer <code>claude-acp</code> with <code>network: 'deny'</code> (below) —
+the in-process <code>claude-sdk</code> can’t be OS-jailed, so it leans on this floor alone.</p>
+<hr/>
+<h2 id="reading-local-sessions-stays-inside-the-workspace">Reading local sessions stays inside the workspace<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#reading-local-sessions-stays-inside-the-workspace" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Session sharing (importing or resuming a local coding-agent session — see
+<a href="./session-sharing.html" class="internal internal-link" data-slug="session-sharing"><code>session-sharing.md</code></a>) reads transcripts off disk, so it is
+held to the same workspace boundary as everything else:</p>
+<ul>
+<li><strong>Import verifies workspace membership first.</strong> Before reading a chosen
+session, the import path confirms the session id belongs to the agent’s
+workspace via the workspace-filtered <code>list()</code>. This closes a cross-workspace
+read leak: the lower-level <code>read(id)</code> scans by bare file stem and isn’t
+workspace-filtered on its own, so a same-stem session in <em>another</em> project
+could otherwise be returned. If the transcript records its own cwd, that is
+re-checked against the workspace too (defense in depth). A session outside the
+workspace is refused, not read.</li>
+<li><strong>Resume bindings are re-validated on restart.</strong> A persisted resume binding is
+only honored if both the runtime <em>and</em> the workspace still match. A workspace
+change clears the binding rather than resuming a session from the <strong>old</strong>
+workspace — a quieter cross-workspace leak the runtime check alone wouldn’t
+catch.</li>
+</ul>
+<hr/>
+<h2 id="why-ask-first-matters-the-one-gotcha">Why “ask-first” matters (the one gotcha)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#why-ask-first-matters-the-one-gotcha" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The deny floor and the ask prompts only work <strong>if the agent asks before running a
+tool.</strong> For the in-process <code>claude-sdk</code> runtime this is automatic. For <strong>ACP
+agents</strong> (OpenCode, Codex, Gemini, Claude-via-ACP), <em>you</em> must make sure the agent
+runs in its normal <strong>ask-first</strong> mode — <strong>never</strong> a “yolo” / auto-approve / bypass
+mode, which skips permission requests entirely and slips the floor.</p>
+<p>Each runtime’s exact config (e.g. OpenCode’s <code>&quot;permission&quot;: { &quot;bash&quot;: &quot;ask&quot; }</code>) is
+in <strong><a href="./getting-started-agents.html" class="internal internal-link alias" data-slug="getting-started-agents">Getting started with agents</a></strong>. The deny floor
+only holds if the agent asks before acting, so a runtime you can’t keep in
+ask-first mode can’t be trusted with the floor — don’t run it in yolo/bypass mode.</p>
+<hr/>
+<h2 id="where-your-settings-live-and-why-theyre-safe">Where your settings live (and why they’re safe)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#where-your-settings-live-and-why-theyre-safe" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>File</th><th>What</th></tr></thead><tbody><tr><td><code>~/.knock-knock/access.json</code></td><td>agents, owners, rooms, peers</td></tr><tr><td><code>~/.knock-knock/rooms/&lt;agent>/&lt;channel>.settings.json</code></td><td>a room’s allow/ask/deny (+ tiers)</td></tr><tr><td><code>~/.knock-knock/settings.json</code></td><td>ledger backend (SQLite or shared Postgres)</td></tr><tr><td><code>~/.knock-knock/.env</code></td><td>bot tokens (chmod 600)</td></tr></tbody></table></div>
+<p><strong>Prompt-injection protection:</strong> every one of these is written <strong>only from your
+terminal</strong> by <code>bun setup.ts</code> — <em>never</em> from a Discord message. Nothing anyone says
+in a channel can change who’s allowed or what your agent may do. Permission
+profiles are re-read on every message, so edits take effect with no restart.</p>
+<p><strong>Tokens are referenced by env-var <em>name</em>, never stored.</strong> <code>access.json</code> holds
+the <em>name</em> of the env var that carries a bot’s token (<code>tokenEnv</code>), not the token
+itself — the value lives in <code>.env</code>. Like everything else in <code>access.json</code>, the
+env-var name is written only by setup, never from chat, so the prompt-injection
+invariant holds for the token reference too.</p>
+<p><strong>Owner-only approval:</strong> the ✅/Allow buttons are verified against the room’s owner
+(by Discord user ID). A peer clicking Allow on your prompt is rejected.</p>
+<hr/>
+<h2 id="how-it-all-resolves-at-a-glance">How it all resolves, at a glance<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#how-it-all-resolves-at-a-glance" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<pre><code>a message arrives → which room? (a thread resolves to its parent channel)
+  → load that room's profile (allow/ask/deny + tiers)
+  → narrow it by WHO prompted the turn (owner = full floor; peer = their tier)
+  → the agent asks to run a tool
+      → classifyTool: deny? ask? allow?
+           deny  → auto-rejected (you never see it)
+           ask   → Allow/Deny prompt pings you in Discord
+           allow → runs
+</code></pre>
+<p>A threaded task is always governed by its <strong>parent room’s</strong> floor — it can never
+degrade to an empty profile or escape the deny floor.</p>
+<hr/>
+<h2 id="recommended-setups">Recommended setups<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#recommended-setups" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>You’re…</th><th>Suggested config</th></tr></thead><tbody><tr><td><strong>Solo, trusted work</strong></td><td>preset <code>auto</code></td></tr><tr><td><strong>Solo, hands-off / unattended</strong></td><td>preset <code>bypass</code> (the deny floor still holds); review the work after</td></tr><tr><td><strong>Collaborating with a trusted peer</strong></td><td>your room preset <code>auto</code>/<code>ask-per-edit</code>; peer tier <code>ask-per-edit</code></td></tr><tr><td><strong>Letting an untrusted peer’s agent reach yours</strong></td><td>room preset <code>strict</code> or <code>ask-per-edit</code>; peer tier <code>strict</code> (read-only)</td></tr><tr><td><strong>Running an ACP agent you can’t force ask-first</strong></td><td>don’t — the deny floor only holds if the agent asks, so keep it in ask-first mode (never yolo/bypass)</td></tr></tbody></table></div>
+<hr/>
+<h2 id="verify-it-in-30-seconds">Verify it in 30 seconds<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#verify-it-in-30-seconds" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>With a room on <code>ask-per-edit</code> (allow <code>Read</code>, ask <code>Bash</code>, deny <code>rm -rf</code>/<code>sudo</code>):</p>
+<ul>
+<li><strong>T1 — Auto:</strong> <em>“what files are here?”</em> → answered immediately, no prompt. ✅</li>
+<li><strong>T2 — Gated:</strong> <em>“run the tests”</em> → an Allow/Deny prompt pings you; a non-owner
+clicking Allow is rejected. ❓</li>
+<li><strong>T3 — Hard deny:</strong> <em>“delete everything with rm -rf”</em> → <strong>blocked, no prompt ever
+appears.</strong> ⛔</li>
+</ul>
+<p>Run with <code>KNOCK_KNOCK_DEBUG=1</code> to log every permission decision
+(<code>[acp] permission: … → allow|ask|deny</code>).</p>
+<hr/>
+<h2 id="local-vs-remote-a-quick-note">Local vs remote (a quick note)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#local-vs-remote-a-quick-note" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>By default the ledger is a <strong>local SQLite</strong> file, and two people’s relays only see
+each other through Discord. Pointing every relay at one <strong>shared Postgres</strong>
+database (recommended for real collaboration) lets ledger state — conflict
+detection, imported session context, knowledge — flow between machines directly.
+Choose it in <code>bun setup.ts → &quot;Choose ledger backend&quot;</code>. Permissions and tokens stay
+<strong>local to each machine</strong> either way; the connection string is stored in
+<code>settings.json</code> (setup-written, never from chat). Full details in
+<strong><a href="./getting-started-agents.html#cross-machine-setup-shared-postgres-ledger" class="internal internal-link alias" data-slug="getting-started-agents">Getting started with agents</a></strong>.</p>
+<hr/>
+<p><strong>See also:</strong> <a href="./getting-started-agents.html" class="internal internal-link alias" data-slug="getting-started-agents">Getting started with agents</a> (per-runtime
+ask-first config, cross-machine setup) · <a href="./reactions-and-versioning.html" class="internal internal-link alias" data-slug="reactions-and-versioning">Reactions, conflict resolution &amp; version
+control</a> · <a href="./knock-knock-ledger-model.html" class="internal internal-link alias" data-slug="knock-knock-ledger-model">the ledger model</a>.</p></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-15" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#permissions--security--what-your-agent-is-allowed-to-do" data-for="permissions--security--what-your-agent-is-allowed-to-do">Permissions &amp; security — what your agent is allowed to do</a></li><li class="depth-1"><a href="#the-one-sentence-mental-model" data-for="the-one-sentence-mental-model">The one-sentence mental model</a></li><li class="depth-1"><a href="#the-easy-way-presets" data-for="the-easy-way-presets">The easy way: presets</a></li><li class="depth-1"><a href="#customizing-the-toolarg-rule-syntax" data-for="customizing-the-toolarg-rule-syntax">Customizing: the Tool(arg) rule syntax</a></li><li class="depth-1"><a href="#different-rules-for-different-people-per-actor-tiers" data-for="different-rules-for-different-people-per-actor-tiers">Different rules for different people: per-actor tiers</a></li><li class="depth-1"><a href="#per-thread-permission-mode-config-mode-" data-for="per-thread-permission-mode-config-mode-">Per-thread permission mode (!config mode …)</a></li><li class="depth-2"><a href="#switching-the-coding-agent-config-agent-" data-for="switching-the-coding-agent-config-agent-">Switching the coding agent (!config agent …)</a></li><li class="depth-1"><a href="#files-the-credential-floor-cant-be-read-or-shared" data-for="files-the-credential-floor-cant-be-read-or-shared">Files: the credential floor (can’t be read or shared)</a></li><li class="depth-1"><a href="#reading-local-sessions-stays-inside-the-workspace" data-for="reading-local-sessions-stays-inside-the-workspace">Reading local sessions stays inside the workspace</a></li><li class="depth-1"><a href="#why-ask-first-matters-the-one-gotcha" data-for="why-ask-first-matters-the-one-gotcha">Why “ask-first” matters (the one gotcha)</a></li><li class="depth-1"><a href="#where-your-settings-live-and-why-theyre-safe" data-for="where-your-settings-live-and-why-theyre-safe">Where your settings live (and why they’re safe)</a></li><li class="depth-1"><a href="#how-it-all-resolves-at-a-glance" data-for="how-it-all-resolves-at-a-glance">How it all resolves, at a glance</a></li><li class="depth-1"><a href="#recommended-setups" data-for="recommended-setups">Recommended setups</a></li><li class="depth-1"><a href="#verify-it-in-30-seconds" data-for="verify-it-in-30-seconds">Verify it in 30 seconds</a></li><li class="depth-1"><a href="#local-vs-remote-a-quick-note" data-for="local-vs-remote-a-quick-note">Local vs remote (a quick note)</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./file-exchange.html" class="internal">file-exchange</a></li><li><a href="./getting-started-agents.html" class="internal">getting-started-agents</a></li><li><a href="./" class="internal">knock-knock documentation</a></li><li><a href="./setup.html" class="internal">setup</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

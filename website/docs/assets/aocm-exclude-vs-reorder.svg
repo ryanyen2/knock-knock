@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 330" font-family="-apple-system, 'Segoe UI', Roboto, system-ui, sans-serif" fill="#1f2430">
+  <style>
+    .h     { font-size: 14px; font-weight: 600; }
+    .sub   { font-size: 12px; fill: #6b7280; }
+    .chip  { font-size: 12.5px; font-family: ui-monospace, monospace; }
+    .box   { font-size: 13px; }
+    .res   { font-size: 13px; font-weight: 600; }
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 Z" fill="#9ca3af"/>
+    </marker>
+  </defs>
+
+  <!-- ═══════ row 1: reorder (wrong) ═══════ -->
+  <text x="20" y="40" class="h" fill="#dc2626">✗  Reorder the CRDT — owner applies “last”</text>
+
+  <!-- input set -->
+  <rect x="34" y="56" width="214" height="56" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+  <rect x="48" y="70" width="88" height="28" rx="14" fill="#e2e8f0" stroke="#94a3b8"/>
+  <text x="92" y="88" text-anchor="middle" class="chip" fill="#475569">agent edit</text>
+  <rect x="146" y="70" width="88" height="28" rx="14" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <text x="190" y="88" text-anchor="middle" class="chip" fill="#4338ca">owner edit</text>
+
+  <line x1="248" y1="84" x2="318" y2="84" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- crdt -->
+  <rect x="324" y="58" width="132" height="52" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="390" y="82" text-anchor="middle" class="box">Yjs fold</text>
+  <text x="390" y="99" text-anchor="middle" class="sub">commutative</text>
+
+  <line x1="456" y1="84" x2="526" y2="84" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- result -->
+  <rect x="520" y="56" width="320" height="56" rx="8" fill="#fef2f2" stroke="#fecaca"/>
+  <text x="680" y="80" text-anchor="middle" class="res" fill="#dc2626">both edits present</text>
+  <text x="680" y="98" text-anchor="middle" class="sub">order changed nothing — owner did not win</text>
+
+  <line x1="20" y1="146" x2="860" y2="146" stroke="#e5e7eb" stroke-width="1"/>
+
+  <!-- ═══════ row 2: exclude (right) ═══════ -->
+  <text x="20" y="190" class="h" fill="#059669">✓  Exclude the dominated edit from the set</text>
+
+  <!-- excluded chip outside the set -->
+  <rect x="34" y="218" width="88" height="28" rx="14" fill="#f3f4f6" stroke="#e5e7eb"/>
+  <text x="78" y="236" text-anchor="middle" class="chip" fill="#9ca3af" text-decoration="line-through">agent edit</text>
+  <text x="78" y="262" text-anchor="middle" class="sub">excluded (dominated)</text>
+
+  <!-- input set with only owner -->
+  <rect x="138" y="206" width="120" height="52" rx="8" fill="#ffffff" stroke="#d1d5db"/>
+  <rect x="152" y="219" width="92" height="28" rx="14" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <text x="198" y="237" text-anchor="middle" class="chip" fill="#4338ca">owner edit</text>
+
+  <line x1="258" y1="232" x2="318" y2="232" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- crdt -->
+  <rect x="324" y="206" width="132" height="52" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="390" y="230" text-anchor="middle" class="box">Yjs fold</text>
+  <text x="390" y="247" text-anchor="middle" class="sub">commutative</text>
+
+  <line x1="456" y1="232" x2="526" y2="232" stroke="#9ca3af" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  <!-- result -->
+  <rect x="520" y="206" width="320" height="52" rx="8" fill="#ecfdf5" stroke="#a7f3d0"/>
+  <text x="680" y="230" text-anchor="middle" class="res" fill="#059669">owner’s text, cleanly</text>
+  <text x="680" y="247" text-anchor="middle" class="sub">authority = membership, not ordering</text>
+</svg>

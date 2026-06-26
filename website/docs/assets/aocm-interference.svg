@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 410" font-family="-apple-system, 'Segoe UI', Roboto, system-ui, sans-serif" fill="#1f2430">
+  <style>
+    .lbl   { font-size: 14px; fill: #1f2430; }
+    .sub   { font-size: 12px; fill: #6b7280; }
+    .tick  { font-size: 11px; fill: #6b7280; font-family: ui-monospace, monospace; }
+    .word  { font-size: 14px; fill: #1f2430; }
+    .note  { font-size: 13px; }
+    .mono  { font-family: ui-monospace, monospace; }
+  </style>
+
+  <!-- ───────── common base ───────── -->
+  <text x="20" y="36" class="sub mono">common base "hello world"</text>
+
+  <!-- word highlight blocks -->
+  <rect x="170" y="48" width="130" height="34" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+  <rect x="326" y="48" width="130" height="34" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
+  <text x="235" y="70" text-anchor="middle" class="word mono">hello</text>
+  <text x="391" y="70" text-anchor="middle" class="word mono">world</text>
+
+  <!-- byte ruler -->
+  <line x1="170" y1="96" x2="456" y2="96" stroke="#9ca3af" stroke-width="1"/>
+  <g stroke="#9ca3af" stroke-width="1">
+    <line x1="170" y1="92" x2="170" y2="100"/>
+    <line x1="300" y1="92" x2="300" y2="100"/>
+    <line x1="326" y1="92" x2="326" y2="100"/>
+    <line x1="456" y1="92" x2="456" y2="100"/>
+  </g>
+  <text x="170" y="114" text-anchor="middle" class="tick">0</text>
+  <text x="300" y="114" text-anchor="middle" class="tick">5</text>
+  <text x="326" y="114" text-anchor="middle" class="tick">6</text>
+  <text x="456" y="114" text-anchor="middle" class="tick">11</text>
+
+  <line x1="20" y1="140" x2="1020" y2="140" stroke="#e5e7eb" stroke-width="1"/>
+
+  <!-- ───────── case 1: disjoint ───────── -->
+  <text x="20" y="174" class="lbl">Case 1 — disjoint</text>
+  <text x="20" y="193" class="sub mono">Edit(hello→…)  ∥  Edit(world→…)</text>
+
+  <rect x="170" y="200" width="130" height="26" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>
+  <rect x="326" y="200" width="130" height="26" rx="5" fill="#e2e8f0" stroke="#94a3b8"/>
+  <text x="235" y="218" text-anchor="middle" class="sub mono">[0,5)</text>
+  <text x="391" y="218" text-anchor="middle" class="sub mono">[6,11)</text>
+
+  <!-- gap marker -->
+  <line x1="300" y1="213" x2="326" y2="213" stroke="#059669" stroke-width="2"/>
+  <circle cx="300" cy="213" r="2.5" fill="#059669"/>
+  <circle cx="326" cy="213" r="2.5" fill="#059669"/>
+
+  <text x="500" y="210" class="note" fill="#059669">✓ regions do not overlap</text>
+  <text x="500" y="229" class="note" fill="#374151">⋈ is false → both edits stay live, merge silently</text>
+
+  <line x1="20" y1="252" x2="1020" y2="252" stroke="#e5e7eb" stroke-width="1"/>
+
+  <!-- ───────── case 2: same region ───────── -->
+  <text x="20" y="286" class="lbl">Case 2 — same region</text>
+  <text x="20" y="305" class="sub mono">Edit(hello→…)  ∥  Edit(hello→…)</text>
+
+  <!-- overlap column behind -->
+  <rect x="170" y="312" width="130" height="58" rx="6" fill="#fef3c7" stroke="#fcd34d"/>
+  <rect x="178" y="318" width="114" height="20" rx="4" fill="#e0e7ff" stroke="#a5b4fc"/>
+  <rect x="178" y="344" width="114" height="20" rx="4" fill="#e2e8f0" stroke="#94a3b8"/>
+  <text x="235" y="332" text-anchor="middle" class="sub mono">A · [0,5)</text>
+  <text x="235" y="358" text-anchor="middle" class="sub mono">B · [0,5)</text>
+
+  <text x="500" y="332" class="note" fill="#d97706">⚠ regions overlap</text>
+  <text x="500" y="351" class="note" fill="#374151">⋈ is true → authority excludes the lower role,</text>
+  <text x="500" y="368" class="note" fill="#374151">or (equal role) a conflict is surfaced</text>
+</svg>
