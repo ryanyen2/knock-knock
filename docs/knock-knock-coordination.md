@@ -1,5 +1,9 @@
 # Coordination — multi-agent turn-taking, awareness, and task allocation
 
+> **New here? Read `how-coordination-works.md` first** — it explains all of this in
+> plain language with a running example, no jargon. This page is the technical
+> design behind it.
+
 A design note for the **coordination layer**: how multiple agents — co-resident on
 one machine or federated cross-machine over a shared Postgres ledger — stop talking
 over each other, share what they're doing, and divide work, **without a server**.

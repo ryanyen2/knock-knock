@@ -140,7 +140,8 @@ holder=relayId, keyed on the platform `ref.id`); `!delegate` seeds a task DAG;
 `task-scheduler` claims/assigns/bids ready tasks and fails a lapsed claim over on a
 half-TTL reconcile tick. All INSERT-derived, so it converges cross-machine on
 Postgres (SQLite is same-machine only). Pure logic in `lib.ts`, tested in
-`tests/lib.test.ts` + `tests/ledger/coordination*.test.ts`. Full design:
+`tests/lib.test.ts` + `tests/ledger/coordination*.test.ts`. Plain-language intro:
+**`docs/how-coordination-works.md`**; full technical design:
 **`docs/knock-knock-coordination.md`**.
 
 ### The AgentAdapter seam (`agent-adapter.ts`)
