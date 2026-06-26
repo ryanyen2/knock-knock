@@ -764,8 +764,8 @@ async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
   const fields = orCancel(await p.multiselect<Field>({
     message: `Edit ${color.cyan(key)} — pick fields to change (space to toggle; none = cancel)`,
     options: [
-      { value: 'runtime', label: 'Runtime', hint: bot.runtime },
-      { value: 'blurb', label: 'Blurb', hint: bot.blurb ?? '(none)' },
+      { value: 'runtime', label: 'Coding agent runtime', hint: bot.runtime },
+      { value: 'blurb', label: 'Blurb description', hint: bot.blurb ?? '(none)' },
       { value: 'sandbox', label: 'Sandbox', hint: bot.sandbox ? `fs:${bot.sandbox.fs} · net:${bot.sandbox.network}` : 'off' },
     ],
     required: false,
@@ -1040,7 +1040,7 @@ async function manageBot(a: AuthoringAccess): Promise<void> {
         { value: 'token', label: 'Save / update token' },
         { value: 'owner', label: 'Edit owner id', hint: 'your user id on this platform' },
         { value: 'rename', label: 'Rename bot key' },
-        { value: 'defaults', label: 'Coding-agent defaults', hint: 'default agent / sandbox / blurb' },
+        { value: 'defaults', label: 'Coding-agent defaults', hint: 'coding agent runtime / blurb description / sandbox' },
         { value: 'remove', label: color.red('Remove this bot') },
         { value: 'done', label: color.dim('← back') },
       ],
