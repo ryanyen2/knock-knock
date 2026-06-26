@@ -21,6 +21,8 @@ import {
   readyTasks,
   resolveAllocationPolicy,
   claimantFor,
+  winningBid,
+  scoreBid,
   taskClaimKey,
   taskDriveKey,
   type ChannelConfig,
@@ -72,6 +74,10 @@ export async function scheduleScope(deps: {
   admit: Admit
   opts: TaskSchedulerOpts
   scope: ChannelId
+  /** bid policy only: false (event pass) ⇒ submit bids, don't claim yet; true
+   *  (reconcile pass, after the bid window) ⇒ the winner claims, else fall back to
+   *  pull when no bids arrived. Ignored by pull/push. */
+  allowBidClaim?: boolean
 }): Promise<void> {
   const sched = deps.opts.resolveSchedule(deps.scope)
   if (!sched) return // no local agent serves this scope
@@ -94,7 +100,34 @@ export async function scheduleScope(deps: {
   const candidates = [...readyTasks(board), ...[...board.values()].filter(t => t.status === 'claimed')]
 
   for (const task of candidates) {
-    if (!claimantFor(policy, task, sched.agentKey, bids.get(task.id))) continue
+    const taskBids = bids.get(task.id) ?? []
+
+    if (policy === 'bid') {
+      // Submit my bid on first sight of a ready task; defer claiming to the
+      // reconcile pass so peers' bids have time to land (the bid window).
+      const alreadyBid = taskBids.some(b => b.bidder === sched.agentKey)
+      if (task.status === 'open' && !alreadyBid) {
+        await deps.admit({
+          actor: sched.agentKey,
+          role: 'agent' as Role,
+          channel: deps.scope,
+          target: { artifactId: art, anchor: { kind: 'none' } },
+          verb: 'task.bid',
+          patch: {
+            kind: 'task',
+            data: { id: task.id, bidder: sched.agentKey, utility: scoreBid(task.id, sched.agentKey) },
+          },
+          effect: 'pure',
+          caused_by: [],
+        })
+        continue
+      }
+      if (!deps.allowBidClaim) continue // bid window still open — don't claim yet
+      // Window closed: the winner claims; with no bids at all, fall back to pull.
+      if (taskBids.length > 0 && winningBid(taskBids) !== sched.agentKey) continue
+    } else if (!claimantFor(policy, task, sched.agentKey, taskBids)) {
+      continue
+    }
 
     const mineAlready = task.status === 'claimed' && task.owner === sched.agentKey
     // Renewal-progress gate: don't renew my own claim if my turn is no longer live

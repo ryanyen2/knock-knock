@@ -488,9 +488,14 @@ const reconcileTasks = async () => {
   }
   for (const artifactId of state.keys()) {
     const scope = artifactId.slice(taskArtifact('').length)
-    await scheduleScope({ store, engine, admit: p => admit(store, p), opts: schedulerOpts, scope }).catch(err =>
-      process.stderr.write(`task reconcile ${scope}: ${err}\n`),
-    )
+    await scheduleScope({
+      store,
+      engine,
+      admit: p => admit(store, p),
+      opts: schedulerOpts,
+      scope,
+      allowBidClaim: true, // reconcile = the bid window has settled; the winner may claim
+    }).catch(err => process.stderr.write(`task reconcile ${scope}: ${err}\n`))
   }
 }
 const taskReconcileTimer = setInterval(() => void reconcileTasks(), TASK_RECONCILE_MS)

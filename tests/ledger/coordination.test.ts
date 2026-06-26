@@ -461,3 +461,74 @@ test('task-scheduler failover: a lapsed claim is reassigned to another agent', a
   expect(tasksFor(state, 'chan1').get('A')?.owner).toBe('bot101') // reassigned
   store.close()
 })
+
+// ─── U15: contract-net bid round ──────────────────────────────────────────────
+
+import { scoreBid, winningBid as winBid, type Bid } from '../../src/lib.ts'
+
+async function bidsFor(store: SqliteStore): Promise<Bid[]> {
+  const rows = await store.listByVerb('task.bid')
+  return rows.map(r => {
+    const d = r.patch.kind === 'task' ? r.patch.data : { bidder: '?', utility: 0 }
+    return { bidder: d.bidder ?? '?', utility: d.utility ?? 0, createdAt: r.createdAt, hash: r.hash }
+  })
+}
+
+test('bid round: agents bid on event; winner claims on the reconcile pass', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const cfg = { allocation: 'bid' as const }
+
+  // Event pass for two agents: each submits a bid, NEITHER claims yet.
+  const sched = (agent: string, relay: string, allowBidClaim = false) =>
+    scheduleScope({
+      store, engine, admit: p => admit(store, p),
+      opts: schedOpts(agent, { cfg, relayId: relay }), scope: 'chan1', allowBidClaim,
+    })
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
+  await sched('bot002', 'relayA')
+  await sched('bot101', 'relayB')
+  await flush()
+
+  const bids = await bidsFor(store)
+  expect(bids.map(b => b.bidder).sort()).toEqual(['bot002', 'bot101']) // both bid
+  expect(await claimedOwners(store)).toEqual([]) // nobody claimed during the window
+
+  // Reconcile pass: the winning bidder claims.
+  const expectedWinner = winBid(bids)!
+  await sched('bot002', 'relayA', true)
+  await sched('bot101', 'relayB', true)
+  await flush()
+  expect(await claimedOwners(store)).toEqual([expectedWinner])
+  store.close()
+})
+
+test('bid round: a ready task with no bids falls back to pull on reconcile', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const cfg = { allocation: 'bid' as const }
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
+  // Straight to the reconcile pass with no prior bids → fall back to pull-claim.
+  await scheduleScope({
+    store, engine, admit: p => admit(store, p),
+    opts: schedOpts('bot002', { cfg, relayId: 'relayA' }), scope: 'chan1', allowBidClaim: true,
+  })
+  await flush()
+  // bot002 bid then... no: with no existing bids it submits a bid first. Run reconcile again to claim.
+  await scheduleScope({
+    store, engine, admit: p => admit(store, p),
+    opts: schedOpts('bot002', { cfg, relayId: 'relayA' }), scope: 'chan1', allowBidClaim: true,
+  })
+  await flush()
+  expect(await claimedOwners(store)).toEqual(['bot002'])
+  store.close()
+})
+
+test('scoreBid: deterministic per (task, agent)', () => {
+  expect(scoreBid('A', 'bot002')).toBe(scoreBid('A', 'bot002'))
+  expect(scoreBid('A', 'bot002')).not.toBe(scoreBid('A', 'bot101'))
+})

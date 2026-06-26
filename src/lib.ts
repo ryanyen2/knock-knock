@@ -1583,6 +1583,20 @@ export function winningBid(bids: ReadonlyArray<Bid>): string | undefined {
   return best?.bidder
 }
 
+/** A self-rated utility for bidding on a task (contract-net). v1 is deterministic
+ *  pseudo-utility derived from (agent, task) — enough for a stable winner without a
+ *  capability model; learned/cost-based scoring is the deferred follow-up. Pure,
+ *  in [0,1). */
+export function scoreBid(taskId: string, selfAgentKey: string): number {
+  let h = 2166136261
+  const s = `${selfAgentKey}:${taskId}`
+  for (let k = 0; k < s.length; k++) {
+    h ^= s.charCodeAt(k)
+    h = Math.imul(h, 16777619)
+  }
+  return ((h >>> 0) % 100000) / 100000
+}
+
 /** Resolve the effective allocation policy from merged config, defaulting to
  *  `pull-claim` so an unconfigured room behaves as decentralized self-service. */
 export function resolveAllocationPolicy(cfg: ChannelConfig): AllocationPolicy {
