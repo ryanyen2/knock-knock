@@ -60,6 +60,16 @@ import {
   resolveResponderPolicy,
   preferredResponderDelayMs,
   RESPONDER_FALLBACK_MS,
+  electOrder,
+  electWinner,
+  electScribe,
+  responderElection,
+  MESH_PREFIX,
+  MESH_VERB_ALLOWLIST,
+  isMeshLine,
+  encodeMeshEvent,
+  decodeMeshEvent,
+  meshProvenanceOk,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -68,6 +78,8 @@ import {
   type ResponderSelf,
   type ChannelConfig,
 } from '../src/lib.ts'
+import { hashInteraction } from '../src/ledger/canonical.ts'
+import type { Interaction, ProposedInteraction } from '../src/ledger/interaction.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
 
@@ -1425,4 +1437,159 @@ test('responder/allocation selections land in the projected config (round-trip)'
   const cfg = projectChannelConfig(recs)
   expect(cfg.responder).toBe('designated')
   expect(cfg.allocation).toBe('bid')
+})
+
+// ─── Deterministic election (no-Postgres turn-taking foundation) ──────────────
+
+test('electWinner: every peer computes the same winner from the same input', () => {
+  const bots = ['cc', 'd-bot', 'alice']
+  expect(electWinner(bots, 'msg-123')).toBe(electWinner([...bots].reverse(), 'msg-123'))
+})
+
+test('electOrder: deduped, total order, order-independent input', () => {
+  const order = electOrder(['b', 'a', 'b', 'c'], 'k')
+  expect(order.length).toBe(3)
+  expect(electOrder(['a', 'b', 'c'], 'k')).toEqual(order)
+})
+
+test('electOrder: load spreads across messages (not always one bot wins)', () => {
+  const bots = ['cc', 'd-bot', 'alice']
+  const winners = new Set(Array.from({ length: 20 }, (_, i) => electWinner(bots, `msg-${i}`)))
+  expect(winners.size).toBeGreaterThan(1)
+})
+
+test('electScribe: deterministic + present-set dependent', () => {
+  expect(electScribe(['a', 'b', 'c'])).toBe(electScribe(['c', 'b', 'a']))
+})
+
+test('electWinner: empty set → undefined', () => {
+  expect(electWinner([], 'k')).toBeUndefined()
+})
+
+// ─── responderElection (uses the shared directory) ────────────────────────────
+
+const DIR: AgentIdentity[] = [
+  { agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: ['room1'] },
+  { agentKey: 'd-bot', platform: 'discord', userId: 'U_db', rooms: ['room1'] },
+  { agentKey: 'alice', platform: 'discord', userId: 'U_al', rooms: ['room2'] },
+  { agentKey: 'slacker', platform: 'slack', userId: 'U_sl', rooms: ['room1'] },
+]
+
+test('responderElection: only directory bots in this room+platform contend (broadcast)', () => {
+  const order = responderElection(DIR, 'room1', 'discord', 'hello team', 'm1')
+  expect(order.sort()).toEqual(['cc', 'd-bot']) // alice=room2, slacker=slack excluded
+})
+
+test('responderElection: an explicit @mention narrows the eligible set to the addressed bots', () => {
+  const order = responderElection(DIR, 'room1', 'discord', 'hey <@U_db> take this', 'm1')
+  expect(order).toEqual(['d-bot'])
+})
+
+test('responderElection: every machine elects the same winner from the same message', () => {
+  const a = responderElection(DIR, 'room1', 'discord', 'work together', 'm-42')
+  const b = responderElection([...DIR].reverse(), 'room1', 'discord', 'work together', 'm-42')
+  expect(a[0]).toBe(b[0])
+})
+
+// ─── Mesh transport codec (the NOTIFY substitute + the trust boundary) ────────
+
+// A valid, locally-built coordination interaction (presence note), hashed properly.
+function meshNote(actor: string): Interaction {
+  const proposed: ProposedInteraction = {
+    actor,
+    role: 'agent',
+    channel: 'room1',
+    target: { artifactId: `coord:channel/room1`, anchor: { kind: 'none' } },
+    verb: 'coord.note',
+    patch: { kind: 'coord', note: { type: 'presence', agentKey: actor, status: 'working' } },
+    effect: 'pure',
+    caused_by: [],
+  }
+  return { ...proposed, hash: hashInteraction(proposed), lifecycle: 'applied', createdAt: '2026-06-26T10:00:00.000Z' }
+}
+
+const CODEC_DIR: AgentIdentity[] = [{ agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: ['room1'] }]
+
+test('encode/decode round-trips a coordination event with createdAt preserved', () => {
+  const i = meshNote('cc')
+  const line = encodeMeshEvent(i)
+  expect(isMeshLine(line)).toBe(true)
+  const back = decodeMeshEvent(line, 'U_cc', CODEC_DIR)
+  expect(back).not.toBeNull()
+  expect(back!.hash).toBe(i.hash)
+  expect(back!.createdAt).toBe(i.createdAt) // must survive — folds order by it
+  expect(back!.verb).toBe('coord.note')
+})
+
+test('decode rejects a non-mesh line', () => {
+  expect(decodeMeshEvent('just a chat message', 'U_cc', CODEC_DIR)).toBeNull()
+})
+
+test('decode rejects a verb outside the allowlist (e.g. channel.message)', () => {
+  const i = meshNote('cc')
+  const line = encodeMeshEvent({ ...i, verb: 'channel.message' as typeof i.verb })
+  expect(decodeMeshEvent(line, 'U_cc', CODEC_DIR)).toBeNull()
+})
+
+test('decode rejects role > agent (no privilege can cross the mesh)', () => {
+  const i = meshNote('cc')
+  // Forge an owner-role wire line directly (encode preserves whatever role is set).
+  const line = encodeMeshEvent({ ...i, role: 'owner' })
+  expect(decodeMeshEvent(line, 'U_cc', CODEC_DIR)).toBeNull()
+})
+
+test('decode rejects a non-pure effect', () => {
+  const i = meshNote('cc')
+  const line = encodeMeshEvent({ ...i, effect: 'workspace' })
+  expect(decodeMeshEvent(line, 'U_cc', CODEC_DIR)).toBeNull()
+})
+
+test('decode rejects a tampered payload (hash mismatch)', () => {
+  const i = meshNote('cc')
+  const line = encodeMeshEvent(i)
+  const raw = JSON.parse(Buffer.from(line.slice(MESH_PREFIX.length), 'base64').toString('utf8'))
+  raw.c = 'room-EVIL' // tamper the channel but keep the original hash
+  const tampered = MESH_PREFIX + Buffer.from(JSON.stringify(raw)).toString('base64')
+  expect(decodeMeshEvent(tampered, 'U_cc', CODEC_DIR)).toBeNull()
+})
+
+test('decode rejects impersonation: the posting account does not own the actor', () => {
+  const i = meshNote('cc')
+  const line = encodeMeshEvent(i)
+  expect(decodeMeshEvent(line, 'U_someone_else', CODEC_DIR)).toBeNull() // U_cc owns cc, not this sender
+})
+
+test('decode accepts a self-describing agent.identity even before the directory knows it (bootstrap)', () => {
+  const data: AgentIdentity = { agentKey: 'newbot', platform: 'discord', userId: 'U_new', rooms: ['room1'] }
+  const proposed: ProposedInteraction = {
+    actor: 'newbot',
+    role: 'agent',
+    channel: 'agent-directory',
+    target: { artifactId: 'dir:agent/newbot', anchor: { kind: 'none' } },
+    verb: 'agent.identity',
+    patch: { kind: 'identity', data },
+    effect: 'pure',
+    caused_by: [],
+  }
+  const i: Interaction = { ...proposed, hash: hashInteraction(proposed), lifecycle: 'applied', createdAt: '2026-06-26T10:00:00.000Z' }
+  const line = encodeMeshEvent(i)
+  expect(decodeMeshEvent(line, 'U_new', [])).not.toBeNull() // empty directory, but self-describing
+  expect(decodeMeshEvent(line, 'U_imposter', [])).toBeNull() // sender doesn't match the claimed userId
+})
+
+test('meshProvenanceOk: a known identity authorizes its own actor only', () => {
+  const note: ProposedInteraction = {
+    actor: 'cc', role: 'agent', channel: 'room1',
+    target: { artifactId: 'coord:channel/room1', anchor: { kind: 'none' } },
+    verb: 'coord.note', patch: { kind: 'coord', note: { type: 'presence', agentKey: 'cc' } },
+    effect: 'pure', caused_by: [],
+  }
+  expect(meshProvenanceOk('coord.note', note, 'U_cc', CODEC_DIR)).toBe(true)
+  expect(meshProvenanceOk('coord.note', note, 'U_db', CODEC_DIR)).toBe(false)
+})
+
+test('MESH_VERB_ALLOWLIST excludes anything touching permissions or native chat', () => {
+  expect(MESH_VERB_ALLOWLIST).not.toContain('config.set')
+  expect(MESH_VERB_ALLOWLIST).not.toContain('channel.message')
+  expect(MESH_VERB_ALLOWLIST).not.toContain('workspace.edit')
 })

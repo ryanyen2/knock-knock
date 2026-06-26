@@ -55,15 +55,40 @@ export type ReplyClaimOpts = {
    *  bias). Default `setTimeout` (unref'd); tests inject a synchronous runner. */
   defer?: (fn: () => void, ms: number) => void
   claimTtlMs?: number
+  /** Mesh mode (no shared Postgres): deterministic election over the shared directory.
+   *  When provided, the rank-based delay + designation stand-down replace the atomic
+   *  reply claim cross-machine (the local claim is kept as a co-resident backstop). */
+  election?: MeshElection
 }
 
-function messageArgs(i: Interaction): { messageId?: string; targetAgent?: string } {
-  if (i.patch.kind !== 'external') return {}
-  const a = i.patch.intent.args as { messageId?: unknown; targetAgent?: unknown } | undefined
+function messageArgs(i: Interaction): { messageId?: string; targetAgent?: string; text: string } {
+  if (i.patch.kind !== 'external') return { text: '' }
+  const a = i.patch.intent.args as { messageId?: unknown; targetAgent?: unknown; text?: unknown } | undefined
   return {
     messageId: typeof a?.messageId === 'string' ? a.messageId : undefined,
     targetAgent: typeof a?.targetAgent === 'string' ? a.targetAgent : undefined,
+    text: typeof a?.text === 'string' ? a.text : '',
   }
+}
+
+/** Per-rank failover step for deterministic mesh election (ms). Must comfortably
+ *  exceed the mesh publish→ingest latency so a loser sees the winner's designation
+ *  (its stand-down signal) before its own timer fires. */
+export const MESH_FAILOVER_STEP_MS = 2500
+
+/** Cross-machine, no-Postgres turn-taking: a deterministic election over the shared
+ *  agent-directory replaces the same-machine-only `acquireClaim` reply election. Every
+ *  relay computes the SAME rank order, so rank 0 answers at once and lower ranks step
+ *  in only if the winner never posts its designation (failover). Provided by the relay
+ *  only when mesh is enabled; absent ⇒ the original atomic-claim path is unchanged. */
+export type MeshElection = {
+  /** This agent's failover rank for the message (0 = elected winner), or undefined if
+   *  it is not eligible to answer at all (so it stands down immediately). */
+  rankFor: (channel: ChannelId, messageId: string, text: string, selfAgentKey: string) => number | undefined
+  /** Has ANY other agent already taken this message (a designation on the board)? The
+   *  cross-machine stand-down signal — a loser yields the moment it ingests the winner's note. */
+  alreadyDesignated: (channel: ChannelId, messageId: string, selfAgentKey: string) => boolean
+  stepMs?: number
 }
 
 export function replyClaim(opts: ReplyClaimOpts): Synchronization {
@@ -82,7 +107,7 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
       i.verb === 'channel.message' &&
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
     fire: async (i, ctx) => {
-      const { messageId, targetAgent } = messageArgs(i)
+      const { messageId, targetAgent, text } = messageArgs(i)
       if (!messageId) return // can't key a per-message claim without the platform id
 
       const coord = opts.resolveCoord(i.channel, targetAgent)
@@ -95,9 +120,21 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
 
       const policy = resolveResponderPolicy(coord.cfg)
       const self: ResponderSelf = { agentKey: coord.agentKey, isOwnerBot: coord.isOwnerBot }
-      const deferMs = preferredResponderDelayMs(policy, self, coord.cfg)
+      let deferMs = preferredResponderDelayMs(policy, self, coord.cfg)
+
+      // Mesh mode: deterministic election decides WHO answers cross-machine (no atomic
+      // lock). The rank sets the failover delay; an ineligible agent stands down.
+      if (opts.election) {
+        const rank = opts.election.rankFor(i.channel, messageId, text, coord.agentKey)
+        if (rank === undefined) return // not eligible to answer this message
+        deferMs = rank * (opts.election.stepMs ?? MESH_FAILOVER_STEP_MS)
+      }
 
       const attempt = async () => {
+        // Mesh stand-down: a peer already took this message (its designation reached us
+        // over the mesh) → yield. This is the cross-machine exactly-one guarantee; the
+        // rank delay ensures the winner posts its designation before a loser's timer fires.
+        if (opts.election?.alreadyDesignated(i.channel, messageId, coord.agentKey)) return
         // 1) Reply election — which AGENT answers (holder = agentKey).
         const reply = await ctx.store.acquireClaim(
           replyClaimKey(i.channel, messageId),

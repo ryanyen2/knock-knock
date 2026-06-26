@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
-import { resolveLedgerConfig } from './lib.ts'
+import { resolveLedgerConfig, responderElection } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import type { RelayUI } from './console-ui.ts'
@@ -43,8 +43,8 @@ import { applySupersession } from './ledger/synchronizations/apply-supersession.
 import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
-import { coordBoardFold } from './ledger/concepts/coordination-board.ts'
-import { agentDirectoryFold } from './ledger/concepts/agent-directory.ts'
+import { coordBoardFold, boardFor, COORD_BOARD_FOLD, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
+import { agentDirectoryFold, directoryFor, AGENT_DIRECTORY_FOLD, type AgentDirectoryFoldState } from './ledger/concepts/agent-directory.ts'
 import { taskDagFold, TASK_DAG_FOLD, taskArtifact, type TaskDagFoldState } from './ledger/concepts/task-dag.ts'
 import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from './ledger/synchronizations/task-scheduler.ts'
 import { completeTaskOnTurn } from './ledger/synchronizations/complete-task-on-turn.ts'
@@ -175,6 +175,17 @@ const bootResult = await bootstrap(store)
 if (bootResult.hasExistingData) {
   process.stderr.write(`relay: replaying ${bootResult.scanned} interactions from existing ledger\n`)
 }
+
+// No-Postgres cross-machine coordination: when the backend is local SQLite and mesh is
+// explicitly enabled, bots coordinate over the shared messaging channel via deterministic
+// election (no atomic lock, no NOTIFY). Never on Postgres — its atomic claim + NOTIFY are
+// strictly better. See docs/how-coordination-works.md.
+const meshEnabled = ledgerConfig.backend === 'sqlite' && process.env.KNOCK_KNOCK_MESH === '1'
+if (meshEnabled) {
+  process.stderr.write(
+    'relay: mesh = ON (no-Postgres cross-machine coordination over the messaging channel)\n',
+  )
+}
 const ledger = new Ledger(store)
 const engine = new FoldEngine(store)
 
@@ -234,6 +245,7 @@ for (const [key, agent] of bootSource) {
   }
 
   const host = new AgentHost(key, agent, readAccessFile, ui, ledger, store, engine)
+  if (meshEnabled) host.enableMesh()
   // Idle iff daemon mode AND not in the picked/active set.
   if (wantDaemon && !activeKeys.has(key)) host.setIdle()
   host.onWake = onWake
@@ -376,6 +388,30 @@ synchronizer.register(
       const isOwnerBot = !!access.agents[info.agentKey]?.ownerUserId
       return { agentKey: info.agentKey, loopGuardOpts: info.loopGuardOpts, isOwnerBot, cfg, relayId }
     },
+    // Mesh mode only: deterministic election over the shared directory replaces the
+    // same-machine-only atomic reply claim, so two laptops take turns without Postgres.
+    ...(meshEnabled
+      ? {
+          election: {
+            // This agent's failover rank (0 = elected winner) for the message, computed
+            // identically on every machine from the mesh-synced directory + message text.
+            rankFor: (channel, messageId, text, selfAgentKey) => {
+              const host = hosts.find(h => h.botKey === selfAgentKey)
+              const roomId = host?.roomForScope(channel)
+              if (!host || !roomId) return undefined
+              const directory = directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+              const order = responderElection(directory, roomId, host.platform, text, messageId)
+              const rank = order.indexOf(selfAgentKey)
+              return rank < 0 ? undefined : rank
+            },
+            // A peer's designation (mesh-synced onto the board) for this message → stand down.
+            alreadyDesignated: (channel, messageId, selfAgentKey) =>
+              boardFor(engine.get<CoordBoardFoldState>(COORD_BOARD_FOLD), channel).responders.some(
+                r => r.ref === messageId && r.agentKey !== selfAgentKey,
+              ),
+          },
+        }
+      : {}),
   }),
 )
 // Presence capture: turn.prompted/turn.replied → coordination-board notes.

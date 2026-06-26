@@ -51,6 +51,7 @@ import {
   wrapThreadRecap,
   peerDirectoryParticipants,
   isDirectoryBot,
+  isMeshLine,
   extractKeywords,
   type RetrievalCandidate,
   type RecapSource,
@@ -102,6 +103,7 @@ import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
+import { MeshSync } from './host/mesh-sync.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
@@ -205,6 +207,10 @@ export class AgentHost {
   /** Pinned per-thread config/setup card. */
   private readonly configCard: ConfigCard
   private storeUnsub?: () => void
+  /** No-Postgres cross-machine transport (publish/ingest coordination over the
+   *  messaging channel). Constructed on connect only when mesh is enabled. */
+  private mesh?: MeshSync
+  private meshEnabled = false
 
   constructor(
     private readonly key: string,
@@ -343,7 +349,29 @@ export class AgentHost {
     })
     await this.messaging.connect(token, secrets)
     this.ui.connected(this.key, this.messaging.botLabel ?? this.messaging.botUserId ?? this.key)
+    // Start the mesh transport BEFORE publishing identity, so this bot's own
+    // `agent.identity` admit is broadcast over the mesh and peers' directories converge.
+    if (this.meshEnabled && !this.mesh) {
+      this.mesh = new MeshSync({
+        store: this.store,
+        ownKey: this.key,
+        directory: () => this.directoryIdentities(),
+        resolveRoom: scope => this.roomForScope(scope),
+        allRooms: () => Object.keys((this.getAccess().agents[this.key] ?? this.agent).rooms),
+        send: (scope, text) => this.messaging.send(scope, text),
+        noteBotMsg: id => this.noteBotMsg(id),
+        log: msg => this.ui.note(this.key, msg),
+      })
+      this.mesh.start()
+    }
     await this.publishIdentity().catch(err => this.ui.error(this.key, `publish identity: ${err}`))
+  }
+
+  /** Enable the no-Postgres cross-machine mesh transport for this host. Set by the
+   *  relay when the backend is SQLite and mesh is explicitly turned on; takes effect
+   *  at connect. No-op on Postgres (the relay never calls it there). */
+  enableMesh(): void {
+    this.meshEnabled = true
   }
 
   /** Publish this bot's platform identity to the shared agent directory so peers — co-resident
@@ -413,6 +441,7 @@ export class AgentHost {
 
   async stop(): Promise<void> {
     this.storeUnsub?.()
+    this.mesh?.stop()
     this.workbench.stop()
     this.configCard.stop()
     await this.messaging.disconnect()
@@ -916,6 +945,15 @@ export class AgentHost {
     if (!room) return
 
     if (m.authorId === botId) return
+
+    // Coordination line from a peer (the no-Postgres mesh transport): decode + append
+    // to the local ledger so folds/synchronizations light up as a NOTIFY would have.
+    // Never a chat turn — return before any engagement gating. The decoder authenticates
+    // the peer (provenance) and rejects anything outside the coordination allowlist.
+    if (this.mesh && isMeshLine(m.text)) {
+      await this.mesh.ingest(m.text, m.authorId)
+      return
+    }
 
     // Dedup net: drop a duplicate DELIVERY of the same message (Slack's double
     // event, poll/webhook retries, offset overlap) before it can spawn a 2nd turn.

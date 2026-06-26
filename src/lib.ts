@@ -4,7 +4,15 @@
  */
 
 import type { PermissionProfile } from './agent-adapter.ts'
-import type { CoordNote, TaskPatchData, AgentIdentity } from './ledger/interaction.ts'
+import type {
+  CoordNote,
+  TaskPatchData,
+  AgentIdentity,
+  Interaction,
+  ProposedInteraction,
+  Verb,
+} from './ledger/interaction.ts'
+import { hashInteraction } from './ledger/canonical.ts'
 export type { AgentIdentity } from './ledger/interaction.ts'
 
 /** A peer agent registered in a room. */
@@ -1488,6 +1496,193 @@ export function isEligibleToReply(
   mentionPatterns?: string[],
 ): boolean {
   return isAddressed(sig, mentionPatterns) || !requireMention
+}
+
+// ─── Deterministic election (the no-Postgres replacement for the atomic claim) ────
+// Given the SAME eligible set + key, every relay computes the SAME ranking — so the
+// rank-0 agent answers immediately and lower ranks only step in on a failover timeout,
+// with no atomic lock and no claim round-trip. Salted by the key (the message id) so
+// load spreads across messages instead of one bot always winning. Pure + order-
+// independent (FNV-1a, no clock/random) so two machines never disagree.
+
+/** FNV-1a over a string → unsigned 32-bit, from an optional seed. Stable across machines. */
+function meshFnv1a(s: string, seed = 0x811c9dc5): number {
+  let h = seed >>> 0
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+/** Per-(actor,key) score: seed with the KEY, then fold the actor in, so a different
+ *  message re-orders the actors (a shared key suffix would otherwise leave a fixed
+ *  bot-name-prefix ordering). */
+function meshRankScore(actor: string, key: string): number {
+  return meshFnv1a(actor, meshFnv1a(key))
+}
+
+/** Rank eligible actors for `key` deterministically: position 0 acts immediately, the
+ *  rest act only if 0 stays silent past a failover timeout (the caller's concern).
+ *  Deduped, order-independent in the input. Pure. */
+export function electOrder(eligible: ReadonlyArray<string>, key: string): string[] {
+  return [...new Set(eligible)].sort(
+    (a, b) => meshRankScore(a, key) - meshRankScore(b, key) || (a < b ? -1 : a > b ? 1 : 0),
+  )
+}
+
+/** The single actor that should act on `key` right now (rank 0), or undefined if none. */
+export function electWinner(eligible: ReadonlyArray<string>, key: string): string | undefined {
+  return electOrder(eligible, key)[0]
+}
+
+/** The scribe (who keeps the shared billboard compacted) — stable while the present
+ *  set is, independent of any single message via a fixed salt. */
+export function electScribe(present: ReadonlyArray<string>): string | undefined {
+  return electWinner(present, 'scribe')
+}
+
+// ─── Mesh responder election (uses the shared directory — a GLOBAL set, unlike the
+//     self-relative helpers above, which only knew a relay's own bots) ──────────────
+// With the agent-directory mesh-synced, every relay can compute the SAME eligible
+// responder set for a message and elect one winner with no lock. This is what makes
+// cross-machine turn-taking work without Postgres.
+
+/** Does `text` address the bot with this platform user id? Platform-neutral: matches
+ *  Discord `<@id>` / `<@!id>` markup and falls back to the bare id. */
+function textMentionsUser(text: string, userId: string): boolean {
+  return text.includes(`<@${userId}>`) || text.includes(`<@!${userId}>`) || text.includes(userId)
+}
+
+/** Rank-ordered agentKeys eligible to answer `messageId` in `roomId`, computed purely
+ *  from the shared directory + the message text. If the message @mentions known bots,
+ *  only those contend; otherwise every directory bot in the room does (broadcast).
+ *  rank 0 = the elected winner; index = failover rank. Identical on every machine. */
+export function responderElection(
+  identities: ReadonlyArray<AgentIdentity>,
+  roomId: string,
+  platform: string,
+  text: string,
+  messageId: string,
+): string[] {
+  const inRoom = identities.filter(
+    id => id.platform === platform && id.rooms.includes(roomId) && id.userId,
+  )
+  const mentioned = inRoom.filter(id => textMentionsUser(text, id.userId))
+  const universe = (mentioned.length ? mentioned : inRoom).map(id => id.agentKey)
+  return electOrder(universe, messageId)
+}
+
+// ─── Mesh transport codec (the no-Postgres NOTIFY substitute) ─────────────────────
+// Cross-machine, each relay keeps its own local ledger; the messaging channel everyone
+// already shares is the bus. A relay encodes each locally-authored COORDINATION
+// interaction to a compact line, posts it, and peers decode + `store.append` it
+// verbatim (idempotent — content-addressed). `decodeMeshEvent` is the trust boundary:
+// only pure, agent-role, allowlisted coordination verbs cross, and the posting identity
+// must own the `actor` — so an ingested event can never touch permissions or impersonate.
+
+/** Sentinel prefix marking a coordination line (so the host routes it to ingest, not chat). */
+export const MESH_PREFIX = '⟦kk-mesh⟧'
+
+/** The ONLY verbs that may cross the mesh. Explicitly excludes channel.message / tool.* /
+ *  turn bodies (already native chat) and config.set / anything touching permissions. */
+export const MESH_VERB_ALLOWLIST: readonly Verb[] = [
+  'agent.identity',
+  'coord.note',
+  'task.created',
+  'task.bid',
+  'task.claimed',
+  'task.completed',
+]
+
+/** Is this inbound text a coordination line (vs a human/agent chat message)? */
+export function isMeshLine(text: string): boolean {
+  return text.startsWith(MESH_PREFIX)
+}
+
+/** Encode a coordination interaction for the wire — the hashed fields PLUS createdAt
+ *  (NOT in the content hash, but every fold orders by it, so it must travel) and the
+ *  lifecycle. */
+export function encodeMeshEvent(i: Interaction): string {
+  const wire = {
+    a: i.actor,
+    r: i.role,
+    c: i.channel,
+    t: i.target,
+    v: i.verb,
+    p: i.patch,
+    e: i.effect,
+    cb: i.caused_by,
+    ts: i.createdAt,
+    lc: i.lifecycle,
+    h: i.hash,
+  }
+  return MESH_PREFIX + Buffer.from(JSON.stringify(wire)).toString('base64')
+}
+
+/** Provenance: may `senderUserId` (the platform account that posted the line) speak as
+ *  `actor`? An agent.identity is self-describing (bootstrap), so it verifies against its
+ *  own payload; every other verb must match an identity already in the directory. Pure. */
+export function meshProvenanceOk(
+  verb: Verb,
+  proposed: ProposedInteraction,
+  senderUserId: string,
+  identities: ReadonlyArray<AgentIdentity>,
+): boolean {
+  if (verb === 'agent.identity' && proposed.patch.kind === 'identity') {
+    const d = proposed.patch.data
+    return d.agentKey === proposed.actor && d.userId === senderUserId
+  }
+  return identities.some(id => id.agentKey === proposed.actor && id.userId === senderUserId)
+}
+
+/** Decode + fully validate a wire line into an Interaction ready for `store.append`,
+ *  or null if anything fails. The hard security filter (any failure ⇒ drop):
+ *   - verb ∈ MESH_VERB_ALLOWLIST
+ *   - role === 'agent'   (never ingest an owner/human-role op → no privilege)
+ *   - effect === 'pure'  (coordination has no workspace/external effect)
+ *   - lifecycle ∈ {applied, admitted}
+ *   - recomputed content hash matches the claimed hash (integrity)
+ *   - provenance holds (the poster owns `actor`). */
+export function decodeMeshEvent(
+  line: string,
+  senderUserId: string,
+  identities: ReadonlyArray<AgentIdentity>,
+): Interaction | null {
+  if (!line.startsWith(MESH_PREFIX)) return null
+  let wire: Record<string, unknown>
+  try {
+    wire = JSON.parse(Buffer.from(line.slice(MESH_PREFIX.length), 'base64').toString('utf8'))
+  } catch {
+    return null
+  }
+  if (!wire || typeof wire !== 'object') return null
+  const verb = wire.v as Verb
+  if (!MESH_VERB_ALLOWLIST.includes(verb)) return null
+  if (wire.r !== 'agent') return null
+  if (wire.e !== 'pure') return null
+  if (wire.lc !== 'applied' && wire.lc !== 'admitted') return null
+  if (typeof wire.ts !== 'string' || !wire.ts) return null
+  const proposed: ProposedInteraction = {
+    actor: String(wire.a),
+    role: 'agent',
+    channel: String(wire.c),
+    target: wire.t as ProposedInteraction['target'],
+    verb,
+    patch: wire.p as ProposedInteraction['patch'],
+    effect: 'pure',
+    caused_by: Array.isArray(wire.cb) ? (wire.cb as string[]) : [],
+  }
+  if (!proposed.target || typeof proposed.target !== 'object' || !proposed.patch) return null
+  let recomputed: string
+  try {
+    recomputed = hashInteraction(proposed)
+  } catch {
+    return null
+  }
+  if (recomputed !== wire.h) return null
+  if (!meshProvenanceOk(verb, proposed, senderUserId, identities)) return null
+  return { ...proposed, hash: recomputed, lifecycle: wire.lc, createdAt: wire.ts }
 }
 
 // ─── Coordination board (Problem B: shared awareness) ────────────────────────
