@@ -442,19 +442,19 @@ test('task-scheduler failover: a lapsed claim is reassigned to another agent', a
   await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
   await scheduleScope({
     store, engine, admit: p => admit(store, p),
-    opts: schedOpts('bot002', { relayId: 'relayA', isTurnLive: () => liveA.v, claimTtlMs: 25 }),
+    opts: schedOpts('bot002', { relayId: 'relayA', isTurnLive: () => liveA.v, claimTtlMs: 20 }),
     scope: 'chan1',
   })
   expect(await claimedOwners(store)).toEqual(['bot002'])
 
   // A's turn ends and its claim TTL lapses.
   liveA.v = false
-  await new Promise(r => setTimeout(r, 40))
+  await new Promise(r => setTimeout(r, 80))
 
   // Reconcile for agent B → re-acquires the lapsed claim (failover).
   await scheduleScope({
     store, engine, admit: p => admit(store, p),
-    opts: schedOpts('bot101', { relayId: 'relayB', claimTtlMs: 25 }),
+    opts: schedOpts('bot101', { relayId: 'relayB', claimTtlMs: 20 }),
     scope: 'chan1',
   })
   const state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
