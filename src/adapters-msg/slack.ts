@@ -35,6 +35,7 @@ import type {
   Glyph,
 } from '../messaging-adapter.ts'
 import { mapGlyphToReaction, normalizeUnicodeReaction } from '../messaging-fallback.ts'
+import { toSlackMrkdwn } from './slack-format.ts'
 
 /** Slack's soft message cap is 4000 chars; we design for a 3800 floor with headroom. */
 const MAX_LEN = 3800
@@ -95,6 +96,11 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   private onMessageHandler?: (m: IncomingMessage) => void
   private onActionHandler?: (a: IncomingAction) => void
   private onReactionHandler?: (r: IncomingReaction) => void
+
+  // Slack delivers BOTH a `message` and an `app_mention` event for the same
+  // @mention, so a single prompt would otherwise fire two turns. Dedup by the
+  // message ts (unique per message; the two events share it). Bounded FIFO.
+  private readonly seenMessageTs = new Set<string>()
 
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
@@ -209,6 +215,18 @@ export class SlackMessagingAdapter implements MessagingAdapter {
 
     const channel: string = event.channel
     const ts: string = event.ts
+
+    // Drop the duplicate: the `message` + `app_mention` pair carry the same ts.
+    // Whichever arrives first wins; mention detection below is text-based, so the
+    // surviving event still resolves the mention regardless of which one it was.
+    const dedupeKey = `${channel}:${ts}`
+    if (this.seenMessageTs.has(dedupeKey)) return
+    this.seenMessageTs.add(dedupeKey)
+    if (this.seenMessageTs.size > 1000) {
+      const first = this.seenMessageTs.values().next().value
+      if (first) this.seenMessageTs.delete(first)
+    }
+
     const threadTs: string | undefined = event.thread_ts
     // A thread reply lives in (channel, thread_ts); the room is the bare channel.
     const isThread = Boolean(threadTs) && threadTs !== ts
@@ -477,7 +495,10 @@ export class SlackMessagingAdapter implements MessagingAdapter {
     opts?: SendOpts,
   ): { text: string; blocks?: unknown[] } {
     const mention = opts?.mentionUser ? `<@${opts.mentionUser}> ` : ''
-    const full = mention + text
+    // Translate the Discord-flavored render dialect into Slack mrkdwn so **bold**,
+    // -# subtext, headings, links, and bare user ids render natively (the mention
+    // prefix is already valid Slack and passes through untouched).
+    const full = mention + toSlackMrkdwn(text)
     const trimmed = full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
     const payload: { text: string; blocks?: unknown[] } = { text: trimmed }
     if (opts?.choices && opts.choices.length > 0) {

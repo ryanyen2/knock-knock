@@ -287,3 +287,43 @@ test('capture-presence: two agents working in one scope without collision', asyn
   expect(board.presence.map(p => p.agentKey).sort()).toEqual(['bot002', 'bot101'])
   store.close()
 })
+
+// ─── U7: task-DAG fold ────────────────────────────────────────────────────────
+
+import { taskDagFold, tasksFor, taskArtifact } from '../../src/ledger/concepts/task-dag.ts'
+import { readyTasks } from '../../src/lib.ts'
+import type { TaskPatchData } from '../../src/ledger/interaction.ts'
+
+function taskOp(scope: ChannelId, verb: 'task.created' | 'task.claimed' | 'task.completed', data: TaskPatchData, actor = 'owner1') {
+  return {
+    actor,
+    role: 'owner' as Role,
+    channel: scope,
+    target: { artifactId: taskArtifact(scope), anchor: { kind: 'none' as const } },
+    verb,
+    patch: { kind: 'task' as const, data },
+    effect: 'pure' as const,
+    caused_by: [] as string[],
+  }
+}
+
+test('taskDagFold: folds created/claimed/completed into the live board', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', label: 'build' }))
+  await admit(store, taskOp('chan1', 'task.created', { id: 'B', dependsOn: ['A'] }))
+  await flush()
+  let state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(readyTasks(tasksFor(state, 'chan1')).map(t => t.id)).toEqual(['A'])
+
+  await admit(store, taskOp('chan1', 'task.claimed', { id: 'A', owner: 'bot002' }))
+  await admit(store, taskOp('chan1', 'task.completed', { id: 'A' }))
+  await flush()
+  state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  const board = tasksFor(state, 'chan1')
+  expect(board.get('A')?.status).toBe('done')
+  expect(readyTasks(board).map(t => t.id)).toEqual(['B']) // unlocked
+  store.close()
+})

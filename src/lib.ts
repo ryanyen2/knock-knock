@@ -4,7 +4,7 @@
  */
 
 import type { PermissionProfile } from './agent-adapter.ts'
-import type { CoordNote } from './ledger/interaction.ts'
+import type { CoordNote, TaskPatchData } from './ledger/interaction.ts'
 
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
@@ -1466,6 +1466,78 @@ export function pickFreshCoordination(
   if (!body) return {}
   if (delivered.has(body)) return {}
   return { block: wrapCoordination(body), key: body }
+}
+
+// ─── Decentralized task allocation (Problem C) ───────────────────────────────
+
+export type TaskVerb = 'task.created' | 'task.bid' | 'task.claimed' | 'task.completed'
+export type TaskStatus = 'open' | 'claimed' | 'done'
+
+export type Task = {
+  id: string
+  label?: string
+  dependsOn: string[]
+  /** push-target (orchestrator-worker); absent ⇒ open for pull/bid. */
+  assignee?: string
+  status: TaskStatus
+  /** the agent that claimed it (latest task.claimed). */
+  owner?: string
+}
+
+/** One task op tagged with immutable provenance for deterministic ordering. */
+export type TaskRecord = { verb: TaskVerb; data: TaskPatchData; createdAt: string; hash: string }
+export type TaskBoard = ReadonlyMap<string, Task>
+
+function orderByTime<T extends { createdAt: string; hash: string }>(records: ReadonlyArray<T>): T[] {
+  return [...records].sort((a, b) =>
+    a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0,
+  )
+}
+
+/** Pure projection of the task-op set into the current task map. Deterministic:
+ *  ops applied in (createdAt, hash) order, so every replica derives the identical
+ *  board. Op-derived status ONLY (open/claimed/done) — claim *liveness* (a lapsed
+ *  external_claim) is the reconcile's concern, never folded in here. */
+export function projectTaskDag(records: ReadonlyArray<TaskRecord>): TaskBoard {
+  const tasks = new Map<string, Task>()
+  for (const r of orderByTime(records)) {
+    const d = r.data
+    if (r.verb === 'task.created') {
+      if (!tasks.has(d.id)) {
+        tasks.set(d.id, {
+          id: d.id,
+          label: d.label,
+          dependsOn: d.dependsOn ?? [],
+          assignee: d.assignee,
+          status: 'open',
+        })
+      }
+    } else if (r.verb === 'task.claimed') {
+      const t = tasks.get(d.id)
+      if (t && t.status !== 'done') tasks.set(d.id, { ...t, status: 'claimed', owner: d.owner })
+    } else if (r.verb === 'task.completed') {
+      const t = tasks.get(d.id)
+      if (t) tasks.set(d.id, { ...t, status: 'done' })
+    }
+    // task.bid does not mutate the task map (bids are tallied by winningBid, U15).
+  }
+  return tasks
+}
+
+/** The frontier: open tasks whose dependencies are all done — "who's next",
+ *  derived with no scheduler so every replica agrees. Sorted by id for stability. */
+export function readyTasks(board: TaskBoard): Task[] {
+  const out: Task[] = []
+  for (const t of board.values()) {
+    if (t.status !== 'open') continue
+    if (t.dependsOn.every(d => board.get(d)?.status === 'done')) out.push(t)
+  }
+  return out.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+}
+
+/** The agent that has claimed a task, if any. */
+export function ownerOf(board: TaskBoard, id: string): string | undefined {
+  return board.get(id)?.owner
 }
 
 /** How long a non-preferred eligible agent waits before attempting the reply

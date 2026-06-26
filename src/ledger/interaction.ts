@@ -50,6 +50,11 @@ export type Verb =
   | 'config.set'
   // Multi-agent coordination board: presence + responder designation (anchor `none`)
   | 'coord.note'
+  // Decentralized task allocation (DAG): create / bid / claim / complete (anchor `none`)
+  | 'task.created'
+  | 'task.bid'
+  | 'task.claimed'
+  | 'task.completed'
   // Frontier control surfaced as reactions
   | 'frontier.rewind'
   | 'turn.retry'
@@ -74,6 +79,23 @@ export type CoordNote = {
   label?: string
   /** correlation id — the platform message id (designation) or a turn ref (presence). */
   ref?: string
+}
+
+/** Payload for the task.* verbs (decentralized allocation DAG). The verb is the
+ *  discriminator; each verb reads the fields it needs. */
+export type TaskPatchData = {
+  id: string
+  /** created: human-readable label. */
+  label?: string
+  /** created: ids this task waits on (the DAG edges). */
+  dependsOn?: string[]
+  /** created: push-target agent (orchestrator-worker); absent ⇒ open for pull/bid. */
+  assignee?: string
+  /** claimed: the agent that took the task. */
+  owner?: string
+  /** bid: the bidding agent + its self-rated utility. */
+  bidder?: string
+  utility?: number
 }
 
 /** Normalized, path-free edit intent on a versionable patch, read by AOCM's
@@ -105,6 +127,8 @@ export type Patch =
     }
   /** Coordination board note (presence / responder designation). */
   | { kind: 'coord'; note: CoordNote }
+  /** Task-DAG op (create / bid / claim / complete); the verb is the discriminator. */
+  | { kind: 'task'; data: TaskPatchData }
   /** Pure marker (a causal pin like `turn.prompted` with no state change). */
   | { kind: 'none' }
 

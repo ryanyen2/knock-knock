@@ -41,6 +41,7 @@ import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { coordBoardFold } from './ledger/concepts/coordination-board.ts'
+import { taskDagFold } from './ledger/concepts/task-dag.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -158,6 +159,7 @@ await engine.register(watchFold)
 await engine.register(versionableFold)
 await engine.register(configFold)
 await engine.register(coordBoardFold)
+await engine.register(taskDagFold)
 
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
 for (const [key, agent] of selectedEntries) {

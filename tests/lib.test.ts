@@ -1072,3 +1072,53 @@ test('wrapCoordination: framed as shared awareness, not instructions', () => {
   expect(out.startsWith('<coordination>')).toBe(true)
   expect(out).toContain('not new instructions')
 })
+
+// ─── Task DAG projection (U7) ─────────────────────────────────────────────────
+
+import { projectTaskDag, readyTasks, type TaskRecord as TaskRec } from '../src/lib.ts'
+
+function trec(verb: TaskRec['verb'], data: TaskRec['data'], createdAt: string, hash: string): TaskRec {
+  return { verb, data, createdAt, hash }
+}
+
+test('projectTaskDag + readyTasks: linear chain A→B→C unlocks in order', () => {
+  const recs: TaskRec[] = [
+    trec('task.created', { id: 'A', label: 'a' }, 't1', 'h1'),
+    trec('task.created', { id: 'B', dependsOn: ['A'] }, 't2', 'h2'),
+    trec('task.created', { id: 'C', dependsOn: ['B'] }, 't3', 'h3'),
+  ]
+  let board = projectTaskDag(recs)
+  expect(readyTasks(board).map(t => t.id)).toEqual(['A']) // only A ready
+
+  board = projectTaskDag([...recs, trec('task.completed', { id: 'A' }, 't4', 'h4')])
+  expect(readyTasks(board).map(t => t.id)).toEqual(['B']) // B unlocked after A
+})
+
+test('projectTaskDag: diamond A→{B,C}→D — B,C ready together, D only after both', () => {
+  const base: TaskRec[] = [
+    trec('task.created', { id: 'A' }, 't1', 'h1'),
+    trec('task.created', { id: 'B', dependsOn: ['A'] }, 't2', 'h2'),
+    trec('task.created', { id: 'C', dependsOn: ['A'] }, 't3', 'h3'),
+    trec('task.created', { id: 'D', dependsOn: ['B', 'C'] }, 't4', 'h4'),
+    trec('task.completed', { id: 'A' }, 't5', 'h5'),
+  ]
+  expect(readyTasks(projectTaskDag(base)).map(t => t.id)).toEqual(['B', 'C'])
+  const bDone = [...base, trec('task.completed', { id: 'B' }, 't6', 'h6')]
+  expect(readyTasks(projectTaskDag(bDone)).map(t => t.id)).toEqual(['C']) // D still blocked on C
+  const cDone = [...bDone, trec('task.completed', { id: 'C' }, 't7', 'h7')]
+  expect(readyTasks(projectTaskDag(cDone)).map(t => t.id)).toEqual(['D'])
+})
+
+test('projectTaskDag: claimed sets owner + status; deterministic under shuffle', () => {
+  const recs: TaskRec[] = [
+    trec('task.created', { id: 'A', assignee: 'bot002' }, 't1', 'h1'),
+    trec('task.claimed', { id: 'A', owner: 'bot002' }, 't2', 'h2'),
+  ]
+  const fwd = projectTaskDag(recs)
+  const shuf = projectTaskDag([recs[1]!, recs[0]!])
+  expect(fwd.get('A')).toEqual(shuf.get('A')) // order-independent
+  expect(fwd.get('A')?.status).toBe('claimed')
+  expect(fwd.get('A')?.owner).toBe('bot002')
+  expect(fwd.get('A')?.assignee).toBe('bot002')
+  expect(readyTasks(fwd)).toEqual([]) // claimed ⇒ not in the open frontier
+})
