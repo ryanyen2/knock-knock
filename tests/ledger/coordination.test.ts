@@ -212,3 +212,23 @@ test('coordBoardFold: empty scope projects an empty board (no throw)', async () 
   expect(boardFor(state, 'nope')).toEqual({ presence: [], responders: [] })
   store.close()
 })
+
+// ─── U3: responder designation lands on the board ─────────────────────────────
+
+test('reply-claim → board shows the winning agent as the designated responder (U3)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  await engine.register(coordBoardFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(replyClaim({ resolveCoord: coordResolver({ bot002: {} }) }))
+  sync.start()
+
+  await admit(store, channelMessage('chan1', 'human', 'human1', 'msgM', 'bot002'))
+  await flush()
+
+  const state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  const board = boardFor(state, 'chan1')
+  expect(board.responders).toEqual([{ agentKey: 'bot002', ref: 'msgM' }])
+  store.close()
+})

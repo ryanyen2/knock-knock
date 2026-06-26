@@ -21,6 +21,7 @@ import {
   decideLoopGuard,
   type LoopGuardFoldState,
 } from '../concepts/loop-guard.ts'
+import { coordArtifact } from '../concepts/coordination-board.ts'
 import {
   replyClaimKey,
   driveClaimKey,
@@ -119,6 +120,19 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
           target: { artifactId: i.target.artifactId, anchor: { kind: 'none' } },
           verb: 'turn.prompted',
           patch: { kind: 'none' },
+          effect: 'pure',
+          caused_by: [i.hash],
+        })
+
+        // U3: record the designation on the board so peers see this agent has the
+        // message and don't re-knock — the structural backstop for "others, stay quiet".
+        await ctx.admit({
+          actor: coord.agentKey,
+          role: 'agent' as Role,
+          channel: i.channel,
+          target: { artifactId: coordArtifact(i.channel), anchor: { kind: 'none' } },
+          verb: 'coord.note',
+          patch: { kind: 'coord', note: { type: 'designation', agentKey: coord.agentKey, ref: messageId } },
           effect: 'pure',
           caused_by: [i.hash],
         })
