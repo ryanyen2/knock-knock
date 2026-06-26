@@ -37,6 +37,7 @@ import {
   matchesMentionPattern,
   wrapChannelRole,
   wrapChannelGoal,
+  pickFreshCoordination,
   formatAttachedFilesBlock,
   parseShareCommand,
   classifyTool,
@@ -86,6 +87,7 @@ import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
+import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -147,6 +149,9 @@ export class AgentHost {
   /** Inbound message id → the task scope it spawned, so a 🛑/🔁 on the original
    *  message resolves to its thread. FIFO-bounded, lost on restart (fine — no turn in flight). */
   private readonly taskScopeByMessage = new Map<string, ChannelId>()
+  /** Per-scope set of coordination-board digests already injected, so a static
+   *  board isn't re-delivered every turn (same lifetime as the turn loop). */
+  private readonly coordDelivered = new Map<ChannelId, Set<string>>()
   /** DM-courier handles awaiting their turn's activeTurn. onTurnPrompted and
    *  runTurnForChannel race on the same turn.prompted; whichever runs second reconciles here. */
   private readonly pendingDmByPrompt = new Map<Hash, DmTurnHandle>()
@@ -1009,6 +1014,21 @@ export class AgentHost {
     return this.channelConfigFor(scopeId).approvalTimeoutMs
   }
 
+  /** A `<coordination>` block telling THIS agent what other agents in the scope are
+   *  doing (Problem B). Once-only per distinct board content; confirmed after the
+   *  turn succeeds. Returns the block + the dedupe key to confirm. */
+  private coordinationPrefixFor(scopeId: ChannelId): { prefix?: string; key?: string } {
+    let board
+    try {
+      board = boardFor(this.engine.get<CoordBoardFoldState>(COORD_BOARD_FOLD), scopeId)
+    } catch {
+      return {} // coordination-board fold not registered
+    }
+    const delivered = this.coordDelivered.get(scopeId) ?? new Set<string>()
+    const { block, key } = pickFreshCoordination(board, delivered, this.key)
+    return { prefix: block, key }
+  }
+
   private async runTurnForChannel(
     channelId: ChannelId,
     opts: {
@@ -1075,8 +1095,11 @@ export class AgentHost {
     // Ingested files: an <attached-files> untrusted block; dropped only after success.
     const ingested = this.peekPendingIngested(channelId)
     const attachedFilesPrefix = ingested.files.length ? formatAttachedFilesBlock(ingested.files) : undefined
+    // Coordination board: what peers are doing, injected once per distinct board.
+    const coordCtx = this.coordinationPrefixFor(channelId)
     const contextPrefix =
-      [personaPrefix, attachedFilesPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') || undefined
+      [personaPrefix, coordCtx.prefix, attachedFilesPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') ||
+      undefined
 
     // Per-turn runtime knobs (model/thinking/effort): claude-sdk honors them, ACP ignores them.
     const turnCfg = this.channelConfigFor(channelId)
@@ -1121,6 +1144,11 @@ export class AgentHost {
     if (outcome === 'done') {
       this.sessionSharing.confirmDelivered(channelId, pendingCtx.freshHashes)
       this.confirmIngestedDelivered(channelId, ingested.freshHashes)
+      if (coordCtx.key) {
+        const set = this.coordDelivered.get(channelId) ?? new Set<string>()
+        set.add(coordCtx.key)
+        this.coordDelivered.set(channelId, set)
+      }
     }
 
     return { chunks, error: turnError }

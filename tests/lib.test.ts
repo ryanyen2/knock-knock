@@ -1032,3 +1032,43 @@ test('preferredResponderDelayMs: role-priority → owner-bot at 0, peer bots wai
   expect(preferredResponderDelayMs('role-priority', { agentKey: 'mine', isOwnerBot: true }, {})).toBe(0)
   expect(preferredResponderDelayMs('role-priority', { agentKey: 'peer', isOwnerBot: false }, {})).toBe(RESPONDER_FALLBACK_MS)
 })
+
+// ─── Coordination: board delivery into turns (U6) ─────────────────────────────
+
+import { renderCoordBoard, wrapCoordination, pickFreshCoordination } from '../src/lib.ts'
+import type { CoordBoard } from '../src/lib.ts'
+
+test('renderCoordBoard: excludes self; lists peer presence + designations', () => {
+  const board: CoordBoard = {
+    presence: [
+      { agentKey: 'me', status: 'working', label: 'x' },
+      { agentKey: 'bot101', status: 'working', label: 'task Y' },
+    ],
+    responders: [{ agentKey: 'bot101', ref: 'msgM' }],
+  }
+  const out = renderCoordBoard(board, 'me')
+  expect(out).not.toContain('me:')
+  expect(out).toContain('bot101: working (task Y)')
+  expect(out).toContain('bot101 is responding to msgM')
+})
+
+test('renderCoordBoard: nothing about others → empty string', () => {
+  const board: CoordBoard = { presence: [{ agentKey: 'me', status: 'working' }], responders: [] }
+  expect(renderCoordBoard(board, 'me')).toBe('')
+})
+
+test('pickFreshCoordination: delivers once, skips identical board next turn', () => {
+  const board: CoordBoard = { presence: [{ agentKey: 'bot101', status: 'working' }], responders: [] }
+  const first = pickFreshCoordination(board, new Set(), 'me')
+  expect(first.block).toContain('<coordination>')
+  expect(first.key).toBeDefined()
+  // Same board content already delivered → nothing re-injected.
+  const second = pickFreshCoordination(board, new Set([first.key!]), 'me')
+  expect(second.block).toBeUndefined()
+})
+
+test('wrapCoordination: framed as shared awareness, not instructions', () => {
+  const out = wrapCoordination('- bot101: working')
+  expect(out.startsWith('<coordination>')).toBe(true)
+  expect(out).toContain('not new instructions')
+})
