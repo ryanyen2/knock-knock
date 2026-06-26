@@ -331,7 +331,7 @@ export class AgentHost {
     return parent
   }
 
-  /** prompt-on-message: "who responds on this scope?" — yes iff this host serves
+  /** reply-claim: "who responds on this scope?" — yes iff this host serves
    *  the room, plus the room's resolved loop-guard opts. */
   getAgentForChannel(scopeId: ChannelId): { agentKey: string; loopGuardOpts: LoopGuardOpts } | undefined {
     const roomId = this.roomForScope(scopeId)
@@ -765,7 +765,15 @@ export class AgentHost {
     // require-mention: overlay > RoomConfig > default-on. UX only — guildSenderAllowed gates who.
     const requireMention = cfg.requireMention ?? room.requireMention ?? true
     const mentionPatterns = [...(access.mentionPatterns ?? []), ...(cfg.mentionPatterns ?? [])]
-    const mentioned = await this.isMentioned(m, mentionPatterns)
+    let mentioned = await this.isMentioned(m, mentionPatterns)
+    // Thread follow-up (Discord parity): a message in a thread the bot is already
+    // engaged in is a follow-up to that task, so it triggers without a fresh
+    // @mention. Platforms like Slack have no per-message reply pointer in a thread,
+    // so engagement (a live session, or prior admitted history in the scope) is the
+    // signal. Plain-channel scopes still require a mention.
+    if (!mentioned && m.isThread && (await this.isEngagedThread(m.scope))) {
+      mentioned = true
+    }
     if (requireMention && !mentioned) return
 
     this.messaging.typing(m.scope)
@@ -1216,6 +1224,20 @@ export class AgentHost {
   /** Mention policy: directed at us if the platform addressed us, a mention pattern
    *  matches, or it replies to one of THIS host's recent messages (recentBotMsgIds
    *  cache first, then the adapter's authoredByBot fallback). */
+  /** Is the bot already engaged in this (thread) scope? A live in-process session
+   *  is the fast path; otherwise any prior admitted interaction in the scope means
+   *  the bot was triggered here before (admission only happens past the mention
+   *  gate), so the scope survives a restart. Used to let thread follow-ups run
+   *  without a fresh @mention. */
+  private async isEngagedThread(scope: ChannelId): Promise<boolean> {
+    if (this.sessions.has(scope)) return true
+    try {
+      return Boolean(await this.store.latestInChannel(scope))
+    } catch {
+      return false
+    }
+  }
+
   private async isMentioned(m: IncomingMessage, mentionPatterns?: string[]): Promise<boolean> {
     if (m.mentionsBot) return true
 

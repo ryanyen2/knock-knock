@@ -24,7 +24,7 @@ import { turnFold, TURN_FOLD, findTurnForInteraction, type TurnFoldState } from 
 import { approvalFold } from './ledger/concepts/approval.ts'
 import { knowledgeFold } from './ledger/artifacts/knowledge.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
-import { promptOnMessage } from './ledger/synchronizations/prompt-on-message.ts'
+import { replyClaim } from './ledger/synchronizations/reply-claim.ts'
 import { driveTurn } from './ledger/synchronizations/drive-turn.ts'
 import { postOnReply } from './ledger/synchronizations/post-on-reply.ts'
 import { dmOnSupersede } from './ledger/synchronizations/dm-on-supersede.ts'
@@ -38,7 +38,7 @@ import { writeBackVersionable } from './ledger/synchronizations/write-back-versi
 import { applySupersession } from './ledger/synchronizations/apply-supersession.ts'
 import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
-import { configFold } from './ledger/concepts/config.ts'
+import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -238,7 +238,7 @@ synchronizer.register(
     },
   }),
 )
-// Registered BEFORE prompt-on-message ON PURPOSE: subs fire sequentially and are
+// Registered BEFORE reply-claim ON PURPOSE: subs fire sequentially and are
 // awaited, so attachments are recorded as file.received before the turn is
 // prompted — the same turn the file rode in on can see it.
 synchronizer.register(
@@ -282,18 +282,39 @@ synchronizer.register(
     },
   }),
 )
+// Unique id for THIS relay process — a claim holder so cross-relay side effects
+// (reply drive-election, conflict-card posts) are performed by exactly one relay.
+const relayId = `relay-${process.pid}-${Date.now()}`
 synchronizer.register(
-  promptOnMessage({
-    getAgentForChannel: (channelId, preferAgentKey) => {
-      // Route to the addressed bot when it serves this channel; else first serving host.
-      let fallback: ReturnType<AgentHost['getAgentForChannel']>
+  replyClaim({
+    // Resolve the local agent + policy context for a channel.message. Prefer the
+    // addressed bot; fall back to the first serving host. Undefined ⇒ the message
+    // is for an agent that runs on another relay (we stand down).
+    resolveCoord: (channelId, targetAgent) => {
+      let host: AgentHost | undefined
+      let info: ReturnType<AgentHost['getAgentForChannel']>
       for (const h of hosts) {
         const r = h.getAgentForChannel(channelId)
         if (!r) continue
-        if (preferAgentKey && r.agentKey === preferAgentKey) return r
-        fallback ??= r
+        if (targetAgent && r.agentKey === targetAgent) {
+          host = h
+          info = r
+          break
+        }
+        if (!host) {
+          host = h
+          info = r
+        }
       }
-      return fallback
+      if (!host || !info) return undefined
+      const roomId = host.roomForScope(channelId)
+      if (!roomId) return undefined
+      const cfgState = engine.get<ConfigFoldState>(CONFIG_FOLD)
+      const cfg = resolveConfigFor(cfgState, roomId, channelId)
+      // Locally-run agents are the owner's own bots (peer agents fire reply-claim
+      // on their own owners' relays); role-priority bites across relays.
+      const isOwnerBot = !!access.agents[info.agentKey]?.ownerUserId
+      return { agentKey: info.agentKey, loopGuardOpts: info.loopGuardOpts, isOwnerBot, cfg, relayId }
     },
   }),
 )
@@ -335,9 +356,6 @@ synchronizer.register(
     },
   }),
 )
-// Unique id for THIS relay process — a claim holder so cross-relay side effects
-// (conflict-card posts) are performed by exactly one relay.
-const relayId = `relay-${process.pid}-${Date.now()}`
 synchronizer.register(
   conflictCard({
     relayId,
