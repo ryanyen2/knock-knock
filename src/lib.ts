@@ -1484,6 +1484,18 @@ export function pickFreshCoordination(
 export type TaskVerb = 'task.created' | 'task.bid' | 'task.claimed' | 'task.completed'
 export type TaskStatus = 'open' | 'claimed' | 'done'
 
+/** Claim electing WHICH AGENT owns a task (holder = agentKey; distinct agents
+ *  contend). Identical on every relay (built from scope + task id). */
+export function taskClaimKey(scope: string, taskId: string): string {
+  return `coord:task/${scope}/${taskId}`
+}
+
+/** Claim electing WHICH RELAY drives a task's owning agent (holder = relayId), so
+ *  the same agent on multiple relays wakes exactly once per claim. */
+export function taskDriveKey(scope: string, taskId: string, agentKey: string): string {
+  return `coord:taskdrive/${scope}/${taskId}/${agentKey}`
+}
+
 export type Task = {
   id: string
   label?: string

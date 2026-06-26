@@ -327,3 +327,137 @@ test('taskDagFold: folds created/claimed/completed into the live board', async (
   expect(readyTasks(board).map(t => t.id)).toEqual(['B']) // unlocked
   store.close()
 })
+
+// ─── U9: task scheduler (claim / assign / wake / failover) ────────────────────
+
+import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from '../../src/ledger/synchronizations/task-scheduler.ts'
+
+function schedOpts(
+  agentKey: string,
+  o: { cfg?: ChannelConfig; relayId?: string; isTurnLive?: () => boolean; claimTtlMs?: number } = {},
+): TaskSchedulerOpts {
+  return {
+    resolveSchedule: () => ({
+      agentKey,
+      cfg: o.cfg ?? {},
+      relayId: o.relayId ?? 'relayA',
+      isTurnLive: o.isTurnLive ?? (() => true),
+    }),
+    claimTtlMs: o.claimTtlMs,
+  }
+}
+
+async function claimedOwners(store: SqliteStore): Promise<string[]> {
+  const rows = await store.listByVerb('task.claimed')
+  return rows.map(r => (r.patch.kind === 'task' ? r.patch.data.owner ?? '?' : '?'))
+}
+
+test('task-scheduler pull: a ready task is claimed by the agent and wakes it', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(taskScheduler(schedOpts('bot002')))
+  sync.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', label: 'build' }))
+  await flush()
+
+  expect(await claimedOwners(store)).toEqual(['bot002'])
+  expect((await promptedActors(store))).toContain('bot002') // woken to work it
+  store.close()
+})
+
+test('task-scheduler ordering: B is not claimed until A completes', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(taskScheduler(schedOpts('bot002')))
+  sync.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
+  await admit(store, taskOp('chan1', 'task.created', { id: 'B', dependsOn: ['A'] }))
+  await flush()
+  // Only A claimed so far (B blocked on A).
+  const state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(state, 'chan1').get('B')?.status).toBe('open')
+
+  await admit(store, taskOp('chan1', 'task.completed', { id: 'A' }))
+  await flush()
+  const state2 = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(state2, 'chan1').get('B')?.status).toBe('claimed') // unlocked + claimed
+  store.close()
+})
+
+test('task-scheduler push-assign: only the assignee claims', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const cfg: ChannelConfig = { allocation: 'push-assign' }
+  // bot101 runs the scheduler but the task is assigned to bot002 → bot101 must NOT claim.
+  const sync = new Synchronizer(store, engine)
+  sync.register(taskScheduler(schedOpts('bot101', { cfg })))
+  sync.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', assignee: 'bot002' }))
+  await flush()
+  expect(await claimedOwners(store)).toEqual([]) // bot101 is not the assignee
+
+  // bot002's scheduler claims it.
+  const sync2 = new Synchronizer(store, engine)
+  sync2.register(taskScheduler(schedOpts('bot002', { cfg, relayId: 'relayB' })))
+  sync2.start()
+  await admit(store, taskOp('chan1', 'task.created', { id: 'B', assignee: 'bot002' }))
+  await flush()
+  expect((await claimedOwners(store)).every(o => o === 'bot002')).toBe(true)
+  store.close()
+})
+
+test('task-scheduler concurrency: two agents race one pull task → exactly one owner', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const syncA = new Synchronizer(store, engine)
+  const syncB = new Synchronizer(store, engine)
+  syncA.register(taskScheduler(schedOpts('bot002', { relayId: 'relayA' })))
+  syncB.register(taskScheduler(schedOpts('bot101', { relayId: 'relayB' })))
+  syncA.start()
+  syncB.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
+  await flush()
+  const owners = await claimedOwners(store)
+  expect(owners.length).toBe(1) // exactly one agent owns it
+  store.close()
+})
+
+test('task-scheduler failover: a lapsed claim is reassigned to another agent', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+
+  // Agent A claims with a short TTL and a turn that goes "not live".
+  const liveA = { v: true }
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A' }))
+  await scheduleScope({
+    store, engine, admit: p => admit(store, p),
+    opts: schedOpts('bot002', { relayId: 'relayA', isTurnLive: () => liveA.v, claimTtlMs: 25 }),
+    scope: 'chan1',
+  })
+  expect(await claimedOwners(store)).toEqual(['bot002'])
+
+  // A's turn ends and its claim TTL lapses.
+  liveA.v = false
+  await new Promise(r => setTimeout(r, 40))
+
+  // Reconcile for agent B → re-acquires the lapsed claim (failover).
+  await scheduleScope({
+    store, engine, admit: p => admit(store, p),
+    opts: schedOpts('bot101', { relayId: 'relayB', claimTtlMs: 25 }),
+    scope: 'chan1',
+  })
+  const state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(state, 'chan1').get('A')?.owner).toBe('bot101') // reassigned
+  store.close()
+})

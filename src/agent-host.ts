@@ -1060,6 +1060,15 @@ export class AgentHost {
     await this.discordSend(scope, `📋 delegated ${parsed.tasks.length} task(s): ${shape}`)
   }
 
+  /** Is this agent's turn on `scopeId` live? Used by the task scheduler to gate
+   *  claim renewal: when a turn ends (completion) or the relay dies (crash), there
+   *  is no active turn, so the task claim lapses and another claimant fails it over.
+   *  (Conservative v1: active-turn presence; finer progress-heartbeat stall
+   *  detection for legitimately-long turns is a deferred refinement.) */
+  isTurnLive(scopeId: ChannelId): boolean {
+    return !!this.sessions.get(scopeId)?.activeTurn
+  }
+
   /** A `<coordination>` block telling THIS agent what other agents in the scope are
    *  doing (Problem B). Once-only per distinct board content; confirmed after the
    *  turn succeeds. Returns the block + the dedupe key to confirm. */

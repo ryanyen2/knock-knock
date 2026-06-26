@@ -41,7 +41,9 @@ import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { coordBoardFold } from './ledger/concepts/coordination-board.ts'
-import { taskDagFold } from './ledger/concepts/task-dag.ts'
+import { taskDagFold, TASK_DAG_FOLD, taskArtifact, type TaskDagFoldState } from './ledger/concepts/task-dag.ts'
+import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from './ledger/synchronizations/task-scheduler.ts'
+import { admit } from './ledger/admit.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
@@ -325,6 +327,18 @@ synchronizer.register(
 )
 // Presence capture: turn.prompted/turn.replied → coordination-board notes.
 synchronizer.register(capturePresence())
+// Task scheduler: claim/assign ready tasks (pull/push/bid), wake the owner, fail over.
+const schedulerOpts: TaskSchedulerOpts = {
+  resolveSchedule: scope => {
+    const host = hosts.find(h => h.getAgentForChannel(scope))
+    const info = host?.getAgentForChannel(scope)
+    const roomId = host?.roomForScope(scope)
+    if (!host || !info || !roomId) return undefined
+    const cfg = resolveConfigFor(engine.get<ConfigFoldState>(CONFIG_FOLD), roomId, scope)
+    return { agentKey: info.agentKey, cfg, relayId, isTurnLive: () => host.isTurnLive(scope) }
+  },
+}
+synchronizer.register(taskScheduler(schedulerOpts))
 synchronizer.register(
   driveTurn({
     getDriveHandle: channelId => {
@@ -461,6 +475,27 @@ synchronizer.register(
 )
 synchronizer.start()
 
+// Task reconcile tick — re-runs the scheduler for every scope with tasks so a
+// lapsed claim (crashed/stalled owner) is re-taken even when no new event arrives
+// (the watches §7 lesson: failover can't rely on an event). A no-op when idle.
+const TASK_RECONCILE_MS = 15_000
+const reconcileTasks = async () => {
+  let state: TaskDagFoldState
+  try {
+    state = engine.get<TaskDagFoldState>(TASK_DAG_FOLD)
+  } catch {
+    return
+  }
+  for (const artifactId of state.keys()) {
+    const scope = artifactId.slice(taskArtifact('').length)
+    await scheduleScope({ store, engine, admit: p => admit(store, p), opts: schedulerOpts, scope }).catch(err =>
+      process.stderr.write(`task reconcile ${scope}: ${err}\n`),
+    )
+  }
+}
+const taskReconcileTimer = setInterval(() => void reconcileTasks(), TASK_RECONCILE_MS)
+;(taskReconcileTimer as unknown as { unref?: () => void }).unref?.()
+
 // WatchSupervisor — owns the OS processes behind armed watches and admits a
 // watch.fired when an output gate matches. Reconciles against the watch fold,
 // so watches armed before this boot are re-armed on subscribe.
@@ -529,6 +564,7 @@ process.on('uncaughtException', err => {
 async function shutdown(): Promise<void> {
   process.stderr.write('relay: shutting down\n')
   await Promise.all(hosts.map(h => h.stop()))
+  clearInterval(taskReconcileTimer)
   synchronizer.stop()
   engine.close()
   store.close()
