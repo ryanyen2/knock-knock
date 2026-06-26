@@ -91,6 +91,10 @@ export async function scheduleScope(deps: {
   const records = taskRecordsFor(state, deps.scope)
   const board = projectTaskDag(records)
   const bids = bidsByTask(records)
+  // task.created hash per id — the drivable parent the wake turn.prompted points at
+  // (drive-turn synthesizes the prompt from the task op).
+  const createdHash = new Map<string, string>()
+  for (const r of records) if (r.verb === 'task.created' && !createdHash.has(r.data.id)) createdHash.set(r.data.id, r.hash)
   const policy = resolveAllocationPolicy(sched.cfg)
   const ttl = deps.opts.claimTtlMs ?? TASK_CLAIM_TTL_MS
   const art = taskArtifact(deps.scope)
@@ -163,7 +167,9 @@ export async function scheduleScope(deps: {
       verb: 'turn.prompted',
       patch: { kind: 'none' },
       effect: 'pure',
-      caused_by: [],
+      // Point at the task.created op so drive-turn can synthesize the prompt and
+      // actually run the owner's turn (not a dangling wake).
+      caused_by: createdHash.get(task.id) ? [createdHash.get(task.id)!] : [],
     })
   }
 }

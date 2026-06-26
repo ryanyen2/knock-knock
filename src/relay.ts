@@ -43,6 +43,7 @@ import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from 
 import { coordBoardFold } from './ledger/concepts/coordination-board.ts'
 import { taskDagFold, TASK_DAG_FOLD, taskArtifact, type TaskDagFoldState } from './ledger/concepts/task-dag.ts'
 import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from './ledger/synchronizations/task-scheduler.ts'
+import { completeTaskOnTurn } from './ledger/synchronizations/complete-task-on-turn.ts'
 import { admit } from './ledger/admit.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
 
@@ -308,11 +309,15 @@ synchronizer.register(
           info = r
           break
         }
-        if (!host) {
+        if (!targetAgent && !host) {
           host = h
           info = r
         }
       }
+      // A message addressed to a SPECIFIC agent this relay does not run → stand
+      // down; never let a different local bot answer in its place (the addressed
+      // bot replies on its own relay). Only the no-target broadcast case falls
+      // back to a local serving host.
       if (!host || !info) return undefined
       const roomId = host.roomForScope(channelId)
       if (!roomId) return undefined
@@ -339,6 +344,9 @@ const schedulerOpts: TaskSchedulerOpts = {
   },
 }
 synchronizer.register(taskScheduler(schedulerOpts))
+// Close the loop: a scheduler-driven turn replying marks its task done (unlocks
+// dependents, stops reconcile re-waking it). Crashed turns never reply → failover.
+synchronizer.register(completeTaskOnTurn())
 synchronizer.register(
   driveTurn({
     getDriveHandle: channelId => {

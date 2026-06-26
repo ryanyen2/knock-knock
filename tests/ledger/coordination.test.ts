@@ -532,3 +532,69 @@ test('scoreBid: deterministic per (task, agent)', () => {
   expect(scoreBid('A', 'bot002')).toBe(scoreBid('A', 'bot002'))
   expect(scoreBid('A', 'bot002')).not.toBe(scoreBid('A', 'bot101'))
 })
+
+// ─── FIX: scheduler wake actually drives a turn, and completion unblocks deps ──
+
+import { driveTurn } from '../../src/ledger/synchronizations/drive-turn.ts'
+import { completeTaskOnTurn } from '../../src/ledger/synchronizations/complete-task-on-turn.ts'
+
+test('scheduler wake → drive-turn runs the owner with a synthesized task prompt', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const runs: Array<{ promptText: string; inboundHash: string }> = []
+  const sync = new Synchronizer(store, engine)
+  sync.register(taskScheduler(schedOpts('bot002')))
+  sync.register(
+    driveTurn({
+      getDriveHandle: () => ({ run: async (o: { promptText: string; inboundHash: string }) => void runs.push(o) }) as never,
+      getByHash: h => store.getByHash(h),
+    }),
+  )
+  sync.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', label: 'write the parser' }))
+  await flush()
+
+  expect(runs.length).toBe(1) // the wake actually drove a turn (was the HIGH bug: 0)
+  expect(runs[0]!.promptText).toContain('write the parser') // prompt synthesized from the task
+  store.close()
+})
+
+test('completion loop: a task-driven turn replying marks it done and unblocks dependents (no thrash)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(taskScheduler(schedOpts('bot002')))
+  sync.register(completeTaskOnTurn())
+  // Auto-reply: when a task turn is driven, emit turn.replied (what runTurnForChannel does on success).
+  sync.register(
+    driveTurn({
+      getDriveHandle: () => ({
+        run: async (o: { promptHash: string; inboundHash: string }) => {
+          await admit(store, {
+            actor: 'bot002', role: 'agent' as Role, channel: 'chan1',
+            target: { artifactId: discordArtifact('chan1'), anchor: { kind: 'none' as const } },
+            verb: 'turn.replied' as const, patch: { kind: 'none' as const }, effect: 'pure' as const,
+            caused_by: [o.promptHash],
+          })
+        },
+      }) as never,
+      getByHash: h => store.getByHash(h),
+    }),
+  )
+  sync.start()
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', label: 'do A' }))
+  await admit(store, taskOp('chan1', 'task.created', { id: 'B', label: 'do B', dependsOn: ['A'] }))
+  await flush()
+  await flush()
+
+  const board = tasksFor(engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name), 'chan1')
+  // A completes on its turn reply (not stuck claimed → no thrash), unblocking B;
+  // B is then claimed, driven, and completes too — the pipeline drains in order.
+  expect(board.get('A')?.status).toBe('done')
+  expect(board.get('B')?.status).toBe('done')
+  store.close()
+})

@@ -1105,6 +1105,15 @@ export class AgentHost {
     return { prefix: block, key: block }
   }
 
+  /** Mark a once-only delivery digest as delivered, bounding both the per-scope set
+   *  (insertion-ordered trim) and the scope keyspace, so neither leaks over uptime. */
+  private rememberDelivered(map: Map<ChannelId, Set<string>>, scope: ChannelId, key: string): void {
+    const set = map.get(scope) ?? new Set<string>()
+    set.add(key)
+    if (set.size > 64) for (const k of [...set].slice(0, set.size - 64)) set.delete(k)
+    boundedMapSet(map, scope, set, 500)
+  }
+
   /** Is this agent's turn on `scopeId` live? Used by the task scheduler to gate
    *  claim renewal: when a turn ends (completion) or the relay dies (crash), there
    *  is no active turn, so the task claim lapses and another claimant fails it over.
@@ -1247,16 +1256,8 @@ export class AgentHost {
     if (outcome === 'done') {
       this.sessionSharing.confirmDelivered(channelId, pendingCtx.freshHashes)
       this.confirmIngestedDelivered(channelId, ingested.freshHashes)
-      if (coordCtx.key) {
-        const set = this.coordDelivered.get(channelId) ?? new Set<string>()
-        set.add(coordCtx.key)
-        this.coordDelivered.set(channelId, set)
-      }
-      if (relatedCtx.key) {
-        const set = this.relatedDelivered.get(channelId) ?? new Set<string>()
-        set.add(relatedCtx.key)
-        this.relatedDelivered.set(channelId, set)
-      }
+      if (coordCtx.key) this.rememberDelivered(this.coordDelivered, channelId, coordCtx.key)
+      if (relatedCtx.key) this.rememberDelivered(this.relatedDelivered, channelId, relatedCtx.key)
     }
 
     return { chunks, error: turnError }

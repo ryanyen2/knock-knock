@@ -35,13 +35,26 @@ export function driveTurn(opts: DriveTurnOpts): Synchronization {
       if (!handle) return // no live agent — nothing to drive
 
       const inboundHash = prompted.caused_by[0]
-      if (!inboundHash) return // ill-formed prompt (no parent message) — skip
+      if (!inboundHash) return // ill-formed prompt (no parent) — skip
       const inbound = await opts.getByHash(inboundHash)
-      if (!inbound || inbound.patch.kind !== 'external') return
+      if (!inbound) return
 
-      const args = inbound.patch.intent.args as { text?: string; messageId?: string } | undefined
-      const promptText = args?.text ?? ''
-      const messageId = args?.messageId ?? inboundHash.slice(0, 10)
+      let promptText: string
+      let messageId: string
+      if (inbound.patch.kind === 'external') {
+        // Normal inbound (channel.message) or a watch.fired wake.
+        const args = inbound.patch.intent.args as { text?: string; messageId?: string } | undefined
+        promptText = args?.text ?? ''
+        messageId = args?.messageId ?? inboundHash.slice(0, 10)
+      } else if (inbound.patch.kind === 'task') {
+        // Scheduler wake (Problem C): the parent is the task.created op — synthesize a
+        // prompt from the task so the owner knows what to work on.
+        const d = inbound.patch.data
+        promptText = `You have been allocated task "${d.id}"${d.label ? `: ${d.label}` : ''}. Work on it now; coordinate with peers via the shared board.`
+        messageId = inboundHash.slice(0, 10)
+      } else {
+        return // unsupported parent — skip
+      }
 
       const kind: 'owner' | 'human' | 'agent' =
         inbound.role === 'owner' || inbound.role === 'human' || inbound.role === 'agent'
