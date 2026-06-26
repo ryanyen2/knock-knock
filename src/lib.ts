@@ -728,6 +728,8 @@ export type ChannelConfig = {
   responder?: ResponderPolicy
   /** For responder=designated: the agentKey/botId of the front-door agent. */
   responderAgent?: string
+  /** Collaboration allocation policy: how a ready task is taken. */
+  allocation?: AllocationPolicy
 }
 
 export type WorkbenchVerbosity = 'quiet' | 'normal' | 'verbose'
@@ -737,6 +739,13 @@ export type WorkbenchVerbosity = 'quiet' | 'normal' | 'verbose'
  *  agent answers (orchestrator-worker). `role-priority`: the owner's own bot
  *  precedes peer bots. Selected per-room/thread via `!config responder`. */
 export type ResponderPolicy = 'race' | 'designated' | 'role-priority'
+
+/** Allocation policy — how a ready task is taken (Problem C / Problem D).
+ *  `pull-claim`: any ready agent self-claims (peer/work-stealing default).
+ *  `push-assign`: only the task's assignee claims (orchestrator-worker).
+ *  `bid`: agents bid a utility and the best bid claims (contract-net). Selected
+ *  per-room/thread via `!config allocation`. */
+export type AllocationPolicy = 'pull-claim' | 'push-assign' | 'bid'
 
 /** Extended-thinking modes; mapped to the SDK's ThinkingConfig by `toThinkingConfig`. */
 export type ThinkingMode = 'off' | 'auto' | 'high'
@@ -804,6 +813,8 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     help: '`!config responder <race|designated|role-priority>` — who answers when multiple agents are eligible' },
   { chatKey: 'responder-agent', field: 'responderAgent', kind: 'token', maxLen: 64,
     help: '`!config responder-agent <botId>` — the front-door agent for `responder=designated`' },
+  { chatKey: 'allocation', field: 'allocation', kind: 'enum', values: ['pull-claim', 'push-assign', 'bid'],
+    help: '`!config allocation <pull-claim|push-assign|bid>` — how ready tasks are taken' },
   { chatKey: 'workbench', field: 'workbenchVerbosity', kind: 'enum', values: ['quiet', 'normal', 'verbose'],
     help: '`!config workbench <quiet|normal|verbose>` — how much the pinned Workbench shows' },
 ]
@@ -1538,6 +1549,56 @@ export function readyTasks(board: TaskBoard): Task[] {
 /** The agent that has claimed a task, if any. */
 export function ownerOf(board: TaskBoard, id: string): string | undefined {
   return board.get(id)?.owner
+}
+
+/** A bid tagged with provenance for deterministic tie-breaking. */
+export type Bid = { bidder: string; utility: number; createdAt: string; hash: string }
+
+/** The winning bidder: highest utility, ties broken deterministically by lower
+ *  (createdAt, hash) so every replica agrees with no round-trip. Pure. */
+export function winningBid(bids: ReadonlyArray<Bid>): string | undefined {
+  let best: Bid | undefined
+  for (const b of bids) {
+    if (
+      !best ||
+      b.utility > best.utility ||
+      (b.utility === best.utility &&
+        (b.createdAt < best.createdAt || (b.createdAt === best.createdAt && b.hash < best.hash)))
+    ) {
+      best = b
+    }
+  }
+  return best?.bidder
+}
+
+/** Resolve the effective allocation policy from merged config, defaulting to
+ *  `pull-claim` so an unconfigured room behaves as decentralized self-service. */
+export function resolveAllocationPolicy(cfg: ChannelConfig): AllocationPolicy {
+  return cfg.allocation ?? 'pull-claim'
+}
+
+/** Self-relative, pure: may THIS agent attempt to claim `task` under `policy`?
+ *  - `pull-claim`: any agent may.
+ *  - `push-assign`: only the task's assignee (no assignee ⇒ open, so it is never
+ *    stranded — falls back to pull).
+ *  - `bid`: only the winning bidder (no bids yet ⇒ nobody, until the scheduler's
+ *    bid window closes and falls back to pull). The claim still guarantees one
+ *    owner; this only decides who is eligible to try. */
+export function claimantFor(
+  policy: AllocationPolicy,
+  task: Task,
+  selfAgentKey: string,
+  bids?: ReadonlyArray<Bid>,
+): boolean {
+  switch (policy) {
+    case 'push-assign':
+      return task.assignee ? task.assignee === selfAgentKey : true
+    case 'bid':
+      return winningBid(bids ?? []) === selfAgentKey
+    case 'pull-claim':
+    default:
+      return true
+  }
 }
 
 export type DelegateTask = { id: string; label: string; dependsOn: string[]; assignee?: string }

@@ -1160,3 +1160,42 @@ test('hasDependencyCycle: detects cycles, passes DAGs', () => {
   expect(hasDependencyCycle([{ id: 'A', dependsOn: ['B'] }, { id: 'B', dependsOn: ['A'] }])).toBe(true)
   expect(hasDependencyCycle([{ id: 'A', dependsOn: [] }, { id: 'B', dependsOn: ['A'] }])).toBe(false)
 })
+
+// ─── AllocationPolicy seam (U14) ──────────────────────────────────────────────
+
+import { resolveAllocationPolicy, claimantFor, winningBid, type Bid, type Task as TaskT } from '../src/lib.ts'
+
+const mkTask = (over: Partial<TaskT> = {}): TaskT => ({ id: 'A', dependsOn: [], status: 'open', ...over })
+
+test('resolveAllocationPolicy: defaults to pull-claim', () => {
+  expect(resolveAllocationPolicy({})).toBe('pull-claim')
+  expect(resolveAllocationPolicy({ allocation: 'bid' })).toBe('bid')
+})
+
+test('claimantFor pull-claim: any agent may attempt', () => {
+  expect(claimantFor('pull-claim', mkTask(), 'anyone')).toBe(true)
+})
+
+test('claimantFor push-assign: only the assignee; no assignee → open (no stranding)', () => {
+  expect(claimantFor('push-assign', mkTask({ assignee: 'bot002' }), 'bot002')).toBe(true)
+  expect(claimantFor('push-assign', mkTask({ assignee: 'bot002' }), 'bot101')).toBe(false)
+  expect(claimantFor('push-assign', mkTask({ assignee: undefined }), 'bot101')).toBe(true)
+})
+
+test('claimantFor bid: only the winning bidder may claim', () => {
+  const bids: Bid[] = [
+    { bidder: 'bot002', utility: 5, createdAt: 't1', hash: 'h1' },
+    { bidder: 'bot101', utility: 9, createdAt: 't2', hash: 'h2' },
+  ]
+  expect(claimantFor('bid', mkTask(), 'bot101', bids)).toBe(true)
+  expect(claimantFor('bid', mkTask(), 'bot002', bids)).toBe(false)
+  expect(claimantFor('bid', mkTask(), 'bot002', [])).toBe(false) // no bids → nobody yet
+})
+
+test('winningBid: highest utility wins; ties broken deterministically by (createdAt,hash)', () => {
+  expect(winningBid([
+    { bidder: 'x', utility: 3, createdAt: 't2', hash: 'h9' },
+    { bidder: 'y', utility: 3, createdAt: 't1', hash: 'h1' },
+  ])).toBe('y') // equal utility → earlier createdAt wins
+  expect(winningBid([])).toBeUndefined()
+})
