@@ -4,6 +4,7 @@
  */
 
 import type { PermissionProfile } from './agent-adapter.ts'
+import type { CoordNote } from './ledger/interaction.ts'
 
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
@@ -1392,6 +1393,37 @@ export function isEligibleToReply(
   mentionPatterns?: string[],
 ): boolean {
   return isAddressed(sig, mentionPatterns) || !requireMention
+}
+
+// ─── Coordination board (Problem B: shared awareness) ────────────────────────
+
+/** One coord note tagged with immutable provenance for deterministic ordering. */
+export type CoordRecord = { note: CoordNote; createdAt: string; hash: string }
+
+/** The projected board for a scope: latest activity per agent + active responder
+ *  designations (who has taken which message). */
+export type CoordBoard = {
+  presence: { agentKey: string; status?: string; label?: string }[]
+  responders: { agentKey: string; ref?: string }[]
+}
+
+/** Pure projection of the coord-note set for a scope. Deterministic: notes are
+ *  ordered by (createdAt, hash) so every replica derives the identical board, then
+ *  presence keeps the latest per agent and designations the latest per message. */
+export function projectCoordinationBoard(records: ReadonlyArray<CoordRecord>): CoordBoard {
+  const ordered = [...records].sort((a, b) =>
+    a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0,
+  )
+  const presence = new Map<string, { agentKey: string; status?: string; label?: string }>()
+  const responders = new Map<string, { agentKey: string; ref?: string }>()
+  for (const { note } of ordered) {
+    if (note.type === 'presence') {
+      presence.set(note.agentKey, { agentKey: note.agentKey, status: note.status, label: note.label })
+    } else {
+      responders.set(note.ref ?? note.agentKey, { agentKey: note.agentKey, ref: note.ref })
+    }
+  }
+  return { presence: [...presence.values()], responders: [...responders.values()] }
 }
 
 /** How long a non-preferred eligible agent waits before attempting the reply

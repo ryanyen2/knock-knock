@@ -48,6 +48,8 @@ export type Verb =
   | 'policy.classified'
   // Per-channel config overlay (owner edit; anchor `none` so the merge gate is a no-op)
   | 'config.set'
+  // Multi-agent coordination board: presence + responder designation (anchor `none`)
+  | 'coord.note'
   // Frontier control surfaced as reactions
   | 'frontier.rewind'
   | 'turn.retry'
@@ -60,6 +62,19 @@ export type Verb =
   | 'watch.disarmed'
 
 export type KnowledgeNote = { id: string; body: string; tags?: string[] }
+
+/** A coordination-board note (Problem B). `presence` records what an agent is
+ *  doing right now; `designation` records that an agent has taken a message. */
+export type CoordNote = {
+  type: 'presence' | 'designation'
+  agentKey: string
+  /** presence: the agent's current activity state. */
+  status?: 'working' | 'done' | 'failed' | 'stopped'
+  /** short human-readable label (task/turn summary, or the message being answered). */
+  label?: string
+  /** correlation id — the platform message id (designation) or a turn ref (presence). */
+  ref?: string
+}
 
 /** Normalized, path-free edit intent on a versionable patch, read by AOCM's
  *  interference test. `edit` replaces the first `oldString`; `write` the whole file. */
@@ -88,6 +103,8 @@ export type Patch =
       result?: { ok: true; ref: string } | { ok: false; error: string }
       compensates?: Hash
     }
+  /** Coordination board note (presence / responder designation). */
+  | { kind: 'coord'; note: CoordNote }
   /** Pure marker (a causal pin like `turn.prompted` with no state change). */
   | { kind: 'none' }
 

@@ -144,3 +144,71 @@ test('reply-claim: same agent on two relays is driven exactly once (drive electi
   expect(await promptedActors(store)).toEqual(['bot002'])
   store.close()
 })
+
+// ─── U4: coordination-board fold + projection ─────────────────────────────────
+
+import { coordBoardFold, boardFor, coordArtifact } from '../../src/ledger/concepts/coordination-board.ts'
+import { projectCoordinationBoard, type CoordRecord } from '../../src/lib.ts'
+import type { CoordNote } from '../../src/ledger/interaction.ts'
+
+function coordNote(scope: ChannelId, note: CoordNote, actor = note.agentKey) {
+  return {
+    actor,
+    role: 'agent' as Role,
+    channel: scope,
+    target: { artifactId: coordArtifact(scope), anchor: { kind: 'none' as const } },
+    verb: 'coord.note' as const,
+    patch: { kind: 'coord' as const, note },
+    effect: 'pure' as const,
+    caused_by: [] as string[],
+  }
+}
+
+test('projectCoordinationBoard: latest presence per agent, deterministic under shuffle', () => {
+  const recs: CoordRecord[] = [
+    { note: { type: 'presence', agentKey: 'bot002', status: 'working', label: 'A' }, createdAt: '2026-06-26T00:00:01Z', hash: 'h1' },
+    { note: { type: 'presence', agentKey: 'bot101', status: 'working', label: 'B' }, createdAt: '2026-06-26T00:00:02Z', hash: 'h2' },
+    { note: { type: 'presence', agentKey: 'bot002', status: 'done', label: 'A' }, createdAt: '2026-06-26T00:00:03Z', hash: 'h3' },
+  ]
+  const forward = projectCoordinationBoard(recs)
+  const shuffled = projectCoordinationBoard([recs[2]!, recs[0]!, recs[1]!])
+  expect(forward).toEqual(shuffled) // order-independent
+  const bot002 = forward.presence.find(p => p.agentKey === 'bot002')
+  expect(bot002?.status).toBe('done') // latest wins
+  expect(forward.presence.length).toBe(2)
+})
+
+test('projectCoordinationBoard: designations dedupe by message ref', () => {
+  const recs: CoordRecord[] = [
+    { note: { type: 'designation', agentKey: 'bot002', ref: 'msgM' }, createdAt: '2026-06-26T00:00:01Z', hash: 'h1' },
+    { note: { type: 'designation', agentKey: 'bot002', ref: 'msgN' }, createdAt: '2026-06-26T00:00:02Z', hash: 'h2' },
+  ]
+  const board = projectCoordinationBoard(recs)
+  expect(board.responders.length).toBe(2)
+  expect(board.responders.map(r => r.ref).sort()).toEqual(['msgM', 'msgN'])
+})
+
+test('coordBoardFold: appends notes and projects the live board', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(coordBoardFold)
+
+  await admit(store, coordNote('chan1', { type: 'presence', agentKey: 'bot002', status: 'working', label: 'task X' }))
+  await admit(store, coordNote('chan1', { type: 'designation', agentKey: 'bot002', ref: 'msgM' }))
+  await flush()
+
+  const state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  const board = boardFor(state, 'chan1')
+  expect(board.presence).toEqual([{ agentKey: 'bot002', status: 'working', label: 'task X' }])
+  expect(board.responders).toEqual([{ agentKey: 'bot002', ref: 'msgM' }])
+  store.close()
+})
+
+test('coordBoardFold: empty scope projects an empty board (no throw)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(coordBoardFold)
+  const state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  expect(boardFor(state, 'nope')).toEqual({ presence: [], responders: [] })
+  store.close()
+})
