@@ -25,7 +25,7 @@ The relay is **agent-agnostic** and **multi-bot**: one process can host several 
 - **[Watches](docs/knock-knock-watches.md)** ⏳ — let a turn *defer* and be resumed by the world: a file changing, a job finishing, a deadline passing. The relay owns the wait and re-prompts the agent when reality changes.
 - **[Reactions, conflict resolution & version control](docs/reactions-and-versioning.md)** — the Discord reaction vocabulary, equal-role conflict cards, and how the append-only ledger versions every action (nothing deleted, only superseded; rewind/checkpoint the frontier).
 
-**Locking down what an agent may touch** — presets, per-peer permission tiers, the hard deny floor, and OS-level sandboxing are all in **[Permissions & security](docs/security-and-permissions.md)** (start here for the friendly walkthrough).
+**Locking down what an agent may touch** — presets, per-peer permission tiers, and the hard deny floor are all in **[Permissions & security](docs/security-and-permissions.md)** (start here for the friendly walkthrough).
 
 > **Billing note:** Agent SDK usage draws from a separate monthly credit pool starting 2026-06-15. Check your Anthropic console for metering.
 
@@ -81,7 +81,9 @@ knock-knock setup             # interactive: bot → channel (workspace + preset
 knock-knock relay             # start the relay (prints who's listening where)
 ```
 
-`knock-knock setup` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run (bot → channel → token → ledger), then a status dashboard + action menu once a bot exists. Re-run it any time to add a bot, add/edit a channel, add a person or peer to the roster, or save a token. (From a source checkout, `bun setup.ts` is equivalent.)
+`knock-knock setup` walks you through everything with arrow-key menus and inline validation: a guided wizard on first run (bot → channel → token → ledger), then a status dashboard + action menu once a bot exists. Re-run it any time — the main action is **"Manage a bot"**, which bundles one bot's identity, token, channels, and default coding agent in one place; you can also add/edit a channel, manage the roster, or pick the ledger backend. (From a source checkout, `bun setup.ts` is equivalent.)
+
+`knock-knock relay` takes optional flags: `--pick` (choose which bots to start), `--config` (quick per-bot agent/model/effort/session setup at launch), `--tui` (one pane per bot), and `--daemon` (connect every bot but keep the unpicked ones idle until a message wakes them — see [docs/idle-wake.md](docs/idle-wake.md)).
 
 > **Want a guided, top-to-bottom walkthrough?** The **[Setup guide](docs/setup.md)** takes you from zero to a running group chat step by step — platform setup, picking a runtime, choosing a permission preset, verifying it works, and adding a teammate's bot — linking into the deep docs as it goes. Start there if this is your first time.
 
@@ -125,15 +127,14 @@ The wizard asks for:
 
 - **Bot key** — a short local nickname (e.g. `reviewer`). The bot's display name is fetched from Discord on connect, never typed.
 - **Platform & runtime** — Discord (the production path), then the coding agent: arrow-key pick (`claude-sdk`, `claude-acp`, `opencode`, `codex`, `gemini`, or `acp`)
-- **Sandbox** — optionally confine the bot's writes to its workspace / block network at the OS level (ACP runtimes; see [Permissions & security](docs/security-and-permissions.md))
 - **Your Discord user ID** — the owner; approval prompts ping this ID. Asked **once per platform** (`me.discord`), then reused for every bot.
 - **Channel ID** — the `#project-x` channel ID. A channel is the project = the permission boundary.
 - **Members** — which of your bots work in this channel. For each, its **workspace** (the absolute path it works in *for this channel*) and a **permission preset** (strict / ask-per-edit / auto / bypass), expanded inline into the membership's `allow` / `ask` / `deny`.
 - **Collaborators** — people and peer bots in this channel, picked from your **roster** (or "+ add new", which registers them once for reuse)
 - **Bot token** — masked input; stored in `.env` under the bot's `tokenEnv`
-- **Ledger backend** — local SQLite, or remote Postgres for cross-machine collaboration (recommended)
+- **Ledger backend** — local SQLite, or a shared Postgres for cross-machine collaboration
 
-After the first run, re-run `knock-knock setup` to open the status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, or save/update a token.
+After the first run, re-run `knock-knock setup` to open the status dashboard + action menu: **manage a bot** (its identity, token, channels, and default coding agent in one place), add/edit a channel, manage the roster, or choose the ledger backend.
 
 > **No bot name is asked for.** The bot's name is its live Discord username. To rename it, rename the bot in the Discord Developer Portal.
 
@@ -251,11 +252,11 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline in Discord | Token wrong or not loaded. Re-run `knock-knock setup`, choose "Save / update a bot token", and check `~/.knock-knock/.env`. |
+| Bot shows offline in Discord | Token wrong or not loaded. Re-run `knock-knock setup` → "Manage a bot" → "Save / update token", and check `~/.knock-knock/.env`. |
 | Bot never sees channel messages | (a) MESSAGE CONTENT INTENT not enabled; (b) `requireMention` is on and the message didn't `@mention` the bot; (c) the bot isn't a **member** of that channel. |
 | No approval prompt appears | The owner id (`me.discord`) isn't set, or the channel's `approvalActorId` override is wrong — re-run `knock-knock setup`. |
 | ✅ reaction does nothing | Only the bot **owner's** reaction counts (verified by user ID). |
-| Bot missing from the startup "who's listening where" table | Its `tokenEnv` isn't set in `.env` (run `knock-knock setup` → "Save / update a bot token") or it isn't a member of any channel (run `knock-knock setup` → "Add / edit a channel"). |
+| Bot missing from the startup "who's listening where" table | Its `tokenEnv` isn't set in `.env` (run `knock-knock setup` → "Manage a bot" → "Save / update token") or it isn't a member of any channel (run `knock-knock setup` → "Manage a bot" → "Add to a channel"). |
 | Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter after 4 consecutive turns *within a task thread*. An owner/human message resets it. |
 | Agent keeps context between messages | Expected — the relay maintains a session per task thread and resumes it on each turn. |
 | Bot replies in the channel instead of a thread | It lacks **Create Public Threads** / **Send Messages in Threads** permission (re-invite with those, step 2), or the message was a reply inside an existing thread. |
@@ -269,7 +270,7 @@ These cues, the full reaction/glyph vocabulary, conflict resolution, and how the
 | Flow | Purpose |
 |------|---------|
 | First run | Guided wizard: create a bot, add a channel (workspace + preset + collaborators), save a token, choose ledger |
-| Later runs | Status dashboard + action menu: add a bot, add/edit a channel, add a person or peer to the roster, save a token, choose ledger backend, remove |
+| Later runs | Status dashboard + action menu: **Manage a bot** (rename · owner id · token · add/remove channels · default agent/blurb · remove), add/edit a channel, manage the roster, save a coding-agent API key, choose ledger backend |
 
 ### `access.json`
 
@@ -284,8 +285,7 @@ State at `~/.knock-knock/access.json` — normalized into `me`, `bots`, `channel
       "platform": "discord",
       "tokenEnv": "DISCORD_BOT_TOKEN",          // NAME of the .env var holding this bot's token
       "runtime": "claude-sdk",                  // claude-sdk | claude-acp | opencode | codex | gemini | acp
-      "blurb": "read-only research agent",      // optional; peers see this
-      "sandbox": { "fs": "workspace", "network": "deny" }  // optional, ACP runtimes only
+      "blurb": "read-only research agent"       // optional; peers see this
       // displayName is cached from the platform on connect — never typed
     }
   },
@@ -347,9 +347,9 @@ bun run build         # cross-compile the release binaries into dist/
 
 ## Security notes
 
-- **Presets, tiers & sandbox.** Pick a permission preset (strict / ask-per-edit / auto / bypass) per **membership** (a bot in a channel), narrow what peers may do with per-actor tiers, and optionally confine an ACP agent at the OS level (workspace-only writes, network off). Full friendly guide: **[Permissions & security](docs/security-and-permissions.md)**.
+- **Presets & tiers.** Pick a permission preset (strict / ask-per-edit / auto / bypass) per **membership** (a bot in a channel) and narrow what peers may do with per-actor tiers. Full friendly guide: **[Permissions & security](docs/security-and-permissions.md)**.
 - **Owner-only approval.** Button clicks and ✅ reactions are verified against the channel's `approvalActorId` (defaults to the owner, `me[platform]`); anyone else's click is rejected. Each bot's prompts route to *that bot's* owner.
-- **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode), or be **OS-sandboxed**. Every preset keeps the floor — even `bypass`. See [the deny-floor caveat](docs/getting-started-agents.md).
+- **The deny floor.** For the Claude SDK runtime, `deny` rules reach `disallowedTools` and block the tool before execution. For ACP agents, `classifyTool` matches the same rules on every permission request — so the agent must run **ask-first** (never yolo/bypass mode). Every preset keeps the floor — even `bypass`. See [the deny-floor caveat](docs/getting-started-agents.md).
 - **Prompt-injection protection.** `access.json` (including the inline membership profiles) and `settings.json` are written only from your terminal (the setup CLI) and are never mutated from channel messages — all access, permission, and backend changes are out of reach of untrusted input.
 - **Agent↔agent loop guard.** A local per-scope heuristic caps consecutive agent-to-agent turns (default 4) within a task thread; an owner/human message resets it.
 - **Rate cap.** Max 10 inbound messages per sender per 60 s (loop/spam guard).

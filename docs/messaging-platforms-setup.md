@@ -760,4 +760,4 @@ are covered there and in
 | Async PR review / agent-to-agent-over-issues | **GitHub** |
 | Team that already lives in Telegram | **Telegram** |
 | Conversation genuinely happening on a Notion page | **Notion** (with expectations set) |
-| Need OS sandbox + untrusted work | Any platform + `claude-acp` runtime + `sandbox` config |
+| Untrusted work with strict guardrails | Any platform + a `strict` preset (ask-first + deny floor) |

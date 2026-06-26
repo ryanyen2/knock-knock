@@ -154,7 +154,7 @@ below is the other), and it is contained:
 
 > **Residual risk (accepted).** The owner — and only the owner — can set `bypass`
 > per-thread. Enforcement is correct (the per-turn adapter profile), and the floor
-> + room deny always hold; for hands-off work, pair it with the OS sandbox below.
+> + room deny always hold.
 
 The thread's current mode (and the rest of its setup) is shown on the **pinned
 config card** at the top of the thread, and every `!config mode` change is an
@@ -176,41 +176,6 @@ fences as `mode`:
   dropped (a foreign runtime can't resume) — so context does not leak across a switch.
 - The resolved agent is shown on the pinned config card; reversible with
   `!config reset agent`.
-
----
-
-## The strongest fence: OS-level sandboxing
-
-Permissions above work *if the agent asks before acting* (see the next section).
-For a harder guarantee — containment the agent can't talk its way around — turn on
-the **OS sandbox**. It confines the agent's process at the operating-system level:
-
-- **File writes** are limited to the agent's **workspace** (plus temp).
-- **Network** can be **blocked** entirely.
-
-Enable it per agent in setup:
-
-```bash
-bun setup.ts → "Add another agent" (or re-add)
-# "Sandbox this agent?" → yes
-# "Allow network access inside the sandbox?" → no  (to block network)
-```
-
-| Platform | How it's enforced |
-|----------|-------------------|
-| macOS | `sandbox-exec` (Seatbelt) profile |
-| Linux | `bwrap` (bubblewrap) namespaces |
-| other | **not sandboxed** — the relay warns loudly rather than pretend |
-
-> **Important limit:** only **out-of-process (ACP) runtimes** can be OS-sandboxed
-> — `claude-acp`, `opencode`, `codex`, `gemini`, or a custom `acp` command. The
-> **in-process** `claude-sdk` runtime runs *inside* the relay and can't be jailed
-> without jailing the relay itself. If you need a hard sandbox for Claude Code,
-> use **`claude-acp`** instead of `claude-sdk`. The relay tells you this if you
-> try to sandbox an in-process agent — it won't silently pretend you're confined.
-
-The sandbox is a *second* fence behind the permission floor, not a replacement —
-keep both on for untrusted work.
 
 ---
 
@@ -268,9 +233,9 @@ runs in its normal **ask-first** mode — **never** a "yolo" / auto-approve / by
 mode, which skips permission requests entirely and slips the floor.
 
 Each runtime's exact config (e.g. OpenCode's `"permission": { "bash": "ask" }`) is
-in **[Getting started with agents](getting-started-agents.md)**. If you can't
-guarantee ask-first for a runtime, **turn on the OS sandbox** — it doesn't depend
-on the agent cooperating.
+in **[Getting started with agents](getting-started-agents.md)**. The deny floor
+only holds if the agent asks before acting, so a runtime you can't keep in
+ask-first mode can't be trusted with the floor — don't run it in yolo/bypass mode.
 
 ---
 
@@ -278,9 +243,9 @@ on the agent cooperating.
 
 | File | What |
 |------|------|
-| `~/.knock-knock/access.json` | agents, owners, rooms, peers, sandbox flags |
+| `~/.knock-knock/access.json` | agents, owners, rooms, peers |
 | `~/.knock-knock/rooms/<agent>/<channel>.settings.json` | a room's allow/ask/deny (+ tiers) |
-| `~/.knock-knock/settings.json` | ledger backend (local/remote) |
+| `~/.knock-knock/settings.json` | ledger backend (SQLite or shared Postgres) |
 | `~/.knock-knock/.env` | bot tokens (chmod 600) |
 
 **Prompt-injection protection:** every one of these is written **only from your
@@ -310,7 +275,6 @@ a message arrives → which room? (a thread resolves to its parent channel)
            deny  → auto-rejected (you never see it)
            ask   → Allow/Deny prompt pings you in Discord
            allow → runs
-  → (if sandboxed) the OS also confines writes to the workspace / blocks network
 ```
 
 A threaded task is always governed by its **parent room's** floor — it can never
@@ -322,11 +286,11 @@ degrade to an empty profile or escape the deny floor.
 
 | You're… | Suggested config |
 |---------|------------------|
-| **Solo, trusted work** | preset `auto`; sandbox optional |
-| **Solo, hands-off / unattended** | preset `bypass` **+ OS sandbox (network off)** so the floor + the OS both hold |
+| **Solo, trusted work** | preset `auto` |
+| **Solo, hands-off / unattended** | preset `bypass` (the deny floor still holds); review the work after |
 | **Collaborating with a trusted peer** | your room preset `auto`/`ask-per-edit`; peer tier `ask-per-edit` |
-| **Letting an untrusted peer's agent reach yours** | room preset `strict` or `ask-per-edit`; peer tier `strict` (read-only) **+ sandbox** |
-| **Running an ACP agent you can't force ask-first** | **OS sandbox on** (don't rely on the deny floor alone) — and prefer `claude-acp` over `claude-sdk` if you need Claude Code sandboxed |
+| **Letting an untrusted peer's agent reach yours** | room preset `strict` or `ask-per-edit`; peer tier `strict` (read-only) |
+| **Running an ACP agent you can't force ask-first** | don't — the deny floor only holds if the agent asks, so keep it in ask-first mode (never yolo/bypass) |
 
 ---
 

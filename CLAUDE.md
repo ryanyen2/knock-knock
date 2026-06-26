@@ -169,11 +169,9 @@ means writing a new adapter, nothing else. Implementations in `adapters/`:
   ACP-speaking agent and drives it over JSON-RPC on stdio. One file drives
   Claude Code, OpenCode, Codex, Gemini, Cursor.
 
-`adapters/index.ts` is the factory: `makeAdapter(runtime, {workspace, watchTools,
-sandbox})` selects the runtime from the agent's `runtime` field. `AgentHost`
-calls it per session. When `sandbox` is set on an agent, the factory wraps an
-**ACP** launch via `buildSandboxLaunch` (`sandbox.ts`, pure: macOS `sandbox-exec`,
-Linux `bwrap`); the in-process `claude-sdk` can't be OS-jailed (it warns).
+`adapters/index.ts` is the factory: `makeAdapter(runtime, {workspace,
+watchTools})` selects the runtime from the agent's `runtime` field. `AgentHost`
+calls it per session.
 
 ### Messaging platforms (`messaging-adapter.ts` + `adapters-msg/`)
 
@@ -274,11 +272,6 @@ wide-open *except* the floor. A `_mode` hint is written but ignored by `parsePro
 wins for allow/ask; **deny is always the UNION** (a tier only tightens); an absent
 tier falls back to the base, never empty. The audit `classify-on-tool-request`
 stays on the base profile — safe because tier deny ⊇ base deny.
-
-**OS sandbox (`sandbox.ts`).** `AgentConfig.sandbox = { fs: 'workspace', network }`
-confines an **ACP** runtime at the OS level (writes → workspace, optional network
-deny). Pure `buildSandboxLaunch` wraps the spawn in `adapters/index.ts`. Honest
-limit: in-process `claude-sdk` can't be jailed — use `claude-acp` for confinement.
 See **`docs/security-and-permissions.md`** for the user-facing guide.
 
 ### File-edit sync (`workspace.edit` → versionable; AOCM)
@@ -479,7 +472,7 @@ prior plan, decisions, and pitfalls instead of cold. See
 All persistent config lives in `~/.knock-knock/` (overridable via `KNOCK_KNOCK_STATE_DIR`):
 - `access.json` — written in the **channel-centric authoring shape** (`AuthoringAccess`, `lib.ts`): `{ me?, bots, channels, roster, mentionPatterns?, ackReaction? }`.
   - `me` — `Partial<Record<Platform, userId>>`: the owner's id per platform, entered **once** and reused (no per-bot owner re-entry).
-  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, runtime, sandbox?, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
+  - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, runtime, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
   - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace`, inline `profile`, `preset`, and an optional per-channel `runtime` override — the same bot can drive `claude-sdk` in one channel and `codex` in another) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`. The effective runtime per channel is `cfg.runtime (!config agent) ?? Membership.runtime ?? Bot.runtime`, resolved in `getOrCreateSession`. The terminal sets the default/per-channel runtime; the owner can switch it live in chat via `!config agent <runtime>` (owner-gated like every `!config` set — it selects which local binary runs with workspace access, so it stays owner-only and rebuilds the session on change).
   - `roster` — `{people: Record<id, Person>, peers: Record<id, Peer>}`: known humans + peer bots, entered once and referenced by id from a channel's `collaborators`.
   - **Read via `readAccessFile()`**, which projects this to the agent-keyed runtime `Access` (`{agents: Record<botId, AgentConfig>}`) via the pure `projectToRuntime` — so the relay/hosts/folds are unchanged. `readAuthoringAccess`/`saveAuthoringAccess` operate on the authoring shape (setup only). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
@@ -497,7 +490,7 @@ all pure decision logic and has no I/O; the ledger owns its own storage.
 
 `bun setup.ts` is the standalone, agent-agnostic, **channel-centric** setup CLI,
 built on `@clack/prompts` (+ `picocolors`). With no args it runs an interactive
-flow: a guided wizard on first run (bot → sandbox → channel [members + per-channel
+flow: a guided wizard on first run (bot → channel [members + per-channel
 workspace + preset + collaborators] → token → ledger), then a status dashboard +
 action menu once bots exist (add bot, add/edit channel, add person/peer to the
 **roster**, save tokens, choose ledger backend, remove). Key UX: the owner id is

@@ -26,13 +26,6 @@ export type RoomConfig = {
   runtime?: string
 }
 
-/** OS-level sandbox for an agent's runtime: confines writes to the workspace, optionally
- *  blocks network. ACP runtimes only — the in-process SDK cannot be jailed. */
-export type SandboxConfig = {
-  fs: 'workspace'
-  network: 'deny' | 'allow'
-}
-
 /** A single coding-agent identity. */
 export type AgentConfig = {
   name?: string // live messaging-platform username; overwritten on connect
@@ -53,7 +46,6 @@ export type AgentConfig = {
    *  (github/notion) honor this; gateway platforms (discord/slack) ignore it. */
   intake?: 'poll' | 'webhook'
   rooms: Record<string, RoomConfig>
-  sandbox?: SandboxConfig // OS-level confinement (ACP runtimes only)
 }
 
 /** The access file: one entry per agent identity. Written only from the terminal,
@@ -85,7 +77,6 @@ export type Bot = {
   tokenEnv: string // NAME of the env var holding this bot's platform token
   secretEnv?: Record<string, string> // logical-name → env-var-NAME for extra secrets (e.g. Slack app token)
   runtime: string
-  sandbox?: SandboxConfig
   /** Inbound intake mode for poll-based platforms (github/notion): 'poll' (default)
    *  or 'webhook' (opt-in; relay opens a local HTTP receiver). See AgentConfig.intake. */
   intake?: 'poll' | 'webhook'
@@ -216,7 +207,6 @@ export function projectToRuntime(a: AuthoringAccess): Access {
       platform: bot.platform,
       ...(bot.intake ? { intake: bot.intake } : {}),
       rooms,
-      ...(bot.sandbox ? { sandbox: bot.sandbox } : {}),
       ...(bot.displayName ? { name: bot.displayName } : {}),
     }
   }
@@ -910,7 +900,7 @@ export const CHAT_SETTABLE_KEYS: readonly string[] = CONFIG_FIELDS.map(f => f.ch
  *  maps to the `runtime` field; only the OWNER can issue any `!config` set.) */
 const TERMINAL_ONLY_KEYS = [
   'humans', 'human', 'participants', 'peer', 'peers', 'token', 'tokenenv',
-  'workspace', 'sandbox', 'owner', 'owneruserid', 'approvalactorid',
+  'workspace', 'owner', 'owneruserid', 'approvalactorid',
   'allow', 'ask', 'deny', 'tiers', 'preset',
 ] as const
 

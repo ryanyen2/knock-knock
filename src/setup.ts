@@ -53,7 +53,7 @@ const RUNTIMES = [
   { value: 'codex', label: 'OpenAI Codex', hint: 'via ACP (npx) · ChatGPT login or OPENAI_API_KEY' },
   { value: 'opencode', label: 'OpenCode', hint: 'via ACP · run opencode → /connect to configure auth' },
   { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · Google account login or GEMINI_API_KEY' },
-  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) · local login or API key · sandboxable' },
+  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) · local login or API key' },
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
@@ -507,21 +507,6 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     placeholder: 'read-only research agent',
   })).trim()
 
-  // OS-level sandbox (ACP runtimes only).
-  let sandbox: Bot['sandbox']
-  const inProcess = runtime === 'claude-sdk'
-  const sandboxOn = orCancel(await p.confirm({
-    message: inProcess
-      ? 'Sandbox this bot? (note: in-process claude-sdk can NOT be OS-sandboxed — pick "Claude Code (ACP)" for confinement)'
-      : 'Sandbox this bot? Confine file writes to its workspace at the OS level.',
-    initialValue: !inProcess,
-  }))
-  if (sandboxOn) {
-    if (inProcess) p.log.warn('Runtime is in-process — the OS sandbox is skipped; only the deny floor applies.')
-    const allowNet = orCancel(await p.confirm({ message: 'Allow network inside the sandbox?', initialValue: true }))
-    sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
-  }
-
   // Intake mode: poll (default, no inbound server) vs webhook (event-driven, lower
   // latency; needs forwarding/tunnel). Only the poll-based platforms offer the choice.
   let intake: 'poll' | 'webhook' = 'poll'
@@ -555,7 +540,6 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     runtime,
     ...(intake === 'webhook' ? { intake } : {}),
     ...(blurb ? { blurb } : {}),
-    ...(sandbox ? { sandbox } : {}),
   }
   saveAuthoringAccess(a)
   const secretNote = applicableSecrets.length ? ` (+${applicableSecrets.length} secret)` : ''
@@ -749,7 +733,7 @@ async function removeChannel(a: AuthoringAccess): Promise<void> {
   p.log.success(`Removed channel ${ck}`)
 }
 
-/** Edit a bot's mutable coding-agent defaults (runtime / blurb / sandbox). Platform +
+/** Edit a bot's mutable coding-agent defaults (runtime / blurb). Platform +
  *  tokenEnv are immutable. `preKey` skips the picker (used by the bot-centric bundle). */
 async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
   const keys = Object.keys(a.bots)
@@ -760,7 +744,7 @@ async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
   })) as string))
   const bot = a.bots[key]!
 
-  type Field = 'runtime' | 'blurb' | 'sandbox'
+  type Field = 'runtime' | 'blurb'
   const fields = orCancel(await p.multiselect<Field>({
     message: `Edit ${color.cyan(key)} — pick fields to change (space to toggle; none = cancel)`,
     options: [
@@ -778,16 +762,6 @@ async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
     const b = orCancel(await p.text({ message: 'One-line description (blank to clear)', initialValue: bot.blurb ?? '' })).trim()
     if (b) bot.blurb = b
     else delete bot.blurb
-  }
-  if (set.has('sandbox')) {
-    const inProcess = bot.runtime === 'claude-sdk'
-    const on = orCancel(await p.confirm({ message: 'Sandbox this bot (confine writes to its workspace)?', initialValue: !!bot.sandbox }))
-    if (!on) delete bot.sandbox
-    else {
-      if (inProcess) p.log.warn('Runtime is in-process (claude-sdk) — the OS sandbox is skipped; only the deny floor applies.')
-      const allowNet = orCancel(await p.confirm({ message: 'Allow network inside the sandbox?', initialValue: bot.sandbox?.network !== 'deny' }))
-      bot.sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
-    }
   }
   saveAuthoringAccess(a)
   p.log.success(`Updated bot ${color.cyan(key)}`)
@@ -832,7 +806,7 @@ function botBundleSummary(a: AuthoringAccess, key: string): string {
   const owner = a.me?.[bot.platform] ?? color.red('(owner id not set)')
   lines.push(`${color.cyan(key)}  ${color.dim(bot.platform)}  ${tok}`)
   lines.push(`  ${color.dim('owner')}    ${owner}`)
-  lines.push(`  ${color.dim('agent')}    ${bot.runtime} ${color.dim('(default · switchable per-channel & in chat)')}${bot.sandbox ? color.dim(` · sandbox fs:${bot.sandbox.fs}/net:${bot.sandbox.network}`) : ''}`)
+  lines.push(`  ${color.dim('agent')}    ${bot.runtime} ${color.dim('(default · switchable per-channel & in chat)')}`)
   if (bot.blurb) lines.push(`  ${color.dim('blurb')}    ${bot.blurb}`)
   const chans = botChannels(a, key)
   lines.push(`  ${color.dim('channels')} ${chans.length === 0 ? color.dim('(none — add one below)') : ''}`)
@@ -1040,7 +1014,7 @@ async function manageBot(a: AuthoringAccess): Promise<void> {
         { value: 'token', label: 'Save / update token' },
         { value: 'owner', label: 'Edit owner id', hint: 'your user id on this platform' },
         { value: 'rename', label: 'Rename bot key' },
-        { value: 'defaults', label: 'Coding-agent defaults', hint: 'coding agent runtime / blurb description / sandbox' },
+        { value: 'defaults', label: 'Coding-agent defaults', hint: 'default agent / blurb' },
         { value: 'remove', label: color.red('Remove this bot') },
         { value: 'done', label: color.dim('← back') },
       ],
@@ -1154,7 +1128,7 @@ function statusReport(a: AuthoringAccess): string {
   for (const [key, bot] of bots) {
     const mark = botFullyTokened(bot) ? color.green('●') : color.red('○')
     const name = bot.displayName ?? color.dim('(name from platform on connect)')
-    lines.push(`  ${mark} ${color.cyan(key)}  ${name}  ${color.dim(bot.platform)}  ${color.dim(bot.runtime)}${bot.sandbox ? color.dim(` · sandbox`) : ''}`)
+    lines.push(`  ${mark} ${color.cyan(key)}  ${name}  ${color.dim(bot.platform)}  ${color.dim(bot.runtime)}`)
   }
   lines.push('')
   lines.push(color.bold('CHANNELS') + color.dim('  (project = permission boundary)'))

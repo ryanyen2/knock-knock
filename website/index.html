@@ -395,7 +395,7 @@
         <span class="cell-ic"><svg class="ic"><use href="#i-shield"/></svg></span>
         <h3>The deny floor is always on</h3>
         <p>Destructive shell (<code>rm -rf</code>, <code>sudo</code>), writes to sensitive paths (<code>~/.ssh</code>), and reading or sharing any credential file (<code>.env</code>, <code>*.key</code>, <code>~/.aws</code>) are blocked under even the most permissive setup. Checked first, against the real command.</p>
-        <p class="cell-fine">One honest caveat: the floor only holds if the agent asks before acting. The default Claude runtime does. For others, keep ask-first mode, or add the OS sandbox.</p>
+        <p class="cell-fine">One honest caveat: the floor only holds if the agent asks before acting. The default Claude runtime does. For others, keep ask-first mode.</p>
       </div>
 
       <!-- Per-actor tiers -->
@@ -403,13 +403,6 @@
         <span class="cell-ic"><svg class="ic"><use href="#i-users"/></svg></span>
         <h3>Different rules for different people</h3>
         <p>Give a peer's agent <em>less</em> than you get, say read-only, while you keep full access. Deny is always the union, so a tier can only tighten.</p>
-      </div>
-
-      <!-- OS sandbox -->
-      <div class="cell reveal">
-        <span class="cell-ic"><svg class="ic"><use href="#i-box"/></svg></span>
-        <h3>An OS-level sandbox</h3>
-        <p>The strongest fence: confine an agent at the operating-system level. Writes limited to its workspace, network optionally off. Containment it can't talk its way around.</p>
       </div>
 
       <!-- Injection-proof config -->
@@ -491,7 +484,7 @@
       <button class="dial-stop is-active" role="tab" aria-selected="true" data-level="strict"><svg class="ic"><use href="#i-lock"/></svg><span>Strict</span><i>read-only</i></button>
       <button class="dial-stop" role="tab" aria-selected="false" data-level="ask"><svg class="ic"><use href="#i-shield"/></svg><span>Ask-per-edit</span><i>recommended</i></button>
       <button class="dial-stop" role="tab" aria-selected="false" data-level="auto"><svg class="ic"><use href="#i-bolt"/></svg><span>Auto</span><i>trusted solo</i></button>
-      <button class="dial-stop" role="tab" aria-selected="false" data-level="bypass"><svg class="ic"><use href="#i-box"/></svg><span>Bypass + sandbox</span><i>hands-off</i></button>
+      <button class="dial-stop" role="tab" aria-selected="false" data-level="bypass"><svg class="ic"><use href="#i-box"/></svg><span>Bypass</span><i>hands-off</i></button>
     </div>
 
     <div class="level-stage">
@@ -539,9 +532,9 @@
 
       <div class="level-card" data-level="bypass" role="tabpanel" hidden>
         <div class="level-info">
-          <h3>Bypass + OS sandbox, fast but fenced</h3>
-          <p>For hands-off runs. No prompts, so pair it with the OS sandbox so the floor and the operating system both hold.</p>
-          <ul class="spec"><li>Reads, edits, shell <b class="ok">allow</b></li><li>OS sandbox <b class="ok">writes → workspace</b></li><li>Network <b class="no">off</b></li></ul>
+          <h3>Bypass, fast but still floored</h3>
+          <p>For hands-off runs. No prompts — only the deny floor holds, so you review the work after.</p>
+          <ul class="spec"><li>Reads, edits, shell <b class="ok">allow</b></li></ul>
           <p class="best">Best for unattended jobs you'll review after.</p>
         </div>
         <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
@@ -610,7 +603,7 @@
         <h4>Runtimes behind the bot</h4>
         <div class="chips">
           <span class="chip">claude-sdk <i>default</i></span>
-          <span class="chip">claude-acp <i>sandboxable</i></span>
+          <span class="chip">claude-acp</span>
           <span class="chip">opencode</span>
           <span class="chip">codex</span>
           <span class="chip">gemini</span>

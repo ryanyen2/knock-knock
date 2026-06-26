@@ -75,7 +75,6 @@ A fast montage rather than a full scenario:
 - Someone asks the bot to rm -rf → hard deny floor, auto-rejected, no prompt ever appears.
 - A peer tries to approve their own request → "Not authorized."
 - Per-actor tiers: owner runs auto, peers forced to strict.
-- ACP OS sandbox: writes confined to workspace, network off.
 - React 🛑 mid-run → turn aborts cleanly.
 
 Why it sells: answers the "isn't letting agents loose terrifying?" objection head-on. End on it.

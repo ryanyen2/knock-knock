@@ -673,7 +673,7 @@ test('parseConfigCommand: reset requires a settable key', () => {
 })
 
 test('parseConfigCommand: a terminal-only key is refused by name (the trust surface)', () => {
-  for (const key of ['humans', 'token', 'sandbox', 'deny', 'preset', 'workspace']) {
+  for (const key of ['humans', 'token', 'deny', 'preset', 'workspace']) {
     const r = parseConfigCommand(`!config ${key} whatever`)
     expect(r?.action).toBe('error')
     if (r?.action === 'error') expect(r.message.toLowerCase()).toContain('terminal')

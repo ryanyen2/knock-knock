@@ -169,9 +169,9 @@ API server if needed).
 **Decision: local-relay polling, not GitHub Actions runners.** sepo-agent
 (reference) runs the agent *inside ephemeral Actions runners*, threading state
 through artifacts + `agent/memory` branches — cloud-native, no laptop, but a
-*parallel runtime* that bypasses our ledger, warm ACP sessions, and OS sandbox.
+*parallel runtime* that bypasses our ledger and warm ACP sessions.
 knock-knock already is the long-running brain; making GitHub a transport reuses
-**everything** (ledger, syncs, `AcpAdapter`, `sandbox.ts`). Notably sepo-agent
+**everything** (ledger, syncs, `AcpAdapter`). Notably sepo-agent
 drives agents over **ACP via `acpx`** — the same protocol our `AcpAdapter` speaks —
 so the agent-driving layer is already aligned; we differ only on *where the loop
 lives*. (A future "dispatch heavy work to an Action via `workflow_dispatch`" mode
@@ -208,7 +208,7 @@ else text), `edit:true` (PATCH comment), `pin:false`, `dm:false` (no DM —
 for live chat; document it.
 
 **The elegant part:** GitHub is *only* the transport. The agent's actual work still
-runs **locally** in the workspace under the existing sandbox, and the result is a
+runs **locally** in the workspace, and the result is a
 PR/commit + a reply comment. Code execution never leaves the laptop.
 
 **Allowlist:** map `guildSenderAllowed` → GitHub's `CommentAuthorAssociation`
@@ -423,19 +423,14 @@ target until this is wired** (#2 next task).
 A knock-knock deployment is **N bots × a runtime each** (`claude-sdk` / `claude-acp` /
 `codex` / `opencode` / `gemini`), and platform is **orthogonal** to runtime — the same
 bot can be `claude-sdk` on Discord and `codex` on a GitHub repo (per-channel
-`Membership.runtime`). The seam separation holds; but three interactions are real:
+`Membership.runtime`). The seam separation holds; but two interactions are real:
 
-1. **Sandbox is runtime-bound, not platform-bound.** OS confinement
-   (`sandbox.ts`) only works with **ACP** runtimes. A GitHub/Notion bot acting on a
-   public surface is exactly where you want confinement — so those bots should run
-   `claude-acp` + `sandbox`, never the un-jailable in-process `claude-sdk`. *Platform
-   risk and runtime choice are coupled through the threat model, not the API.*
-2. **Approval UX degrades uniformly but routes per-runtime.** The buttons-as-text
+1. **Approval UX degrades uniformly but routes per-runtime.** The buttons-as-text
    fallback (§A) must feed **both** approval paths — `claude-sdk`'s `canUseTool` and
    ACP's `classifyTool`-on-`requestPermission`. On GitHub/Notion an approval becomes
    "reply 1 to allow" in a comment; the host's synthesized `IncomingAction` must reach
    whichever path the bot's runtime uses. One fallback, two consumers.
-3. **Cadence compounds with runtime.** GitHub's ~60s poll floor × a slow agent turn
+2. **Cadence compounds with runtime.** GitHub's ~60s poll floor × a slow agent turn
    is fine for async PR work (codex/claude opening PRs) and wrong for live pairing.
    And AOCM file-edit convergence is still **Claude-Code-shaped Edit/Write only**
    (per CLAUDE.md) — so two agents converging on a file over a GitHub transport

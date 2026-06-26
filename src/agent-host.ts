@@ -1525,7 +1525,6 @@ export class AgentHost {
     const adapter = makeAdapter(runtime, {
       workspace,
       watchTools: this.watchControl.toolsFor(channelId),
-      sandbox: liveAgent.sandbox,
       ...(notionToken ? { notion: { token: notionToken, pageId: channelId } } : {}),
     })
     const ctx: PreambleContext = {

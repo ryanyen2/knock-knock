@@ -73,14 +73,10 @@ per-agent sections below say exactly how.
 > even when OpenCode mislabelled the tool kind. `classifyTool` therefore blocks
 > a denied command literal regardless of the reported tool kind.
 
-**Can't guarantee ask-first? Use the OS sandbox.** If you can't be sure a runtime
-asks before acting, turn on the **OS-level sandbox** for that agent in
-`bun setup.ts` ("Sandbox this agent?") — it confines file writes to the workspace
-and can block the network at the operating-system level, so containment doesn't
-depend on the agent cooperating. It applies to **ACP runtimes only** (macOS
-`sandbox-exec`, Linux `bwrap`); the in-process `claude-sdk` can't be jailed, so
-use **`claude-acp`** when you need Claude Code sandboxed. The relay warns rather
-than silently pretend on an unsupported platform or an in-process agent.
+**Can't guarantee ask-first?** The deny floor only holds if the agent asks before
+acting, so a runtime you can't keep in ask-first mode can't be trusted with the
+floor — keep it in its normal ask-first mode (never yolo/bypass), or use a
+runtime you can (e.g. `claude-acp`).
 
 **Picking what an agent may do** is a one-step preset in `bun setup.ts` (strict /
 ask-per-edit / auto / bypass), plus optional per-peer tiers (e.g. peers get
@@ -294,12 +290,12 @@ session brief, cross-machine conflict detection, collaborative file edits,
 knowledge notes) stays on the relay that created it. To share that across
 machines, point **every** relay at one **shared Postgres** database.
 
-**Easiest:** `bun setup.ts → "Choose ledger backend" → Remote (Postgres)` and
-paste the connection string — it's stored (masked) in `settings.json` and the
-relay picks it up. The first-run wizard recommends remote by default. Setting the
-`KNOCK_KNOCK_LEDGER_URL` env var still works and **overrides** the stored choice.
-Either way, if a configured Postgres can't be reached the relay **refuses to
-start** rather than silently splitting history onto a local SQLite ledger.
+**How:** point every relay at the same Postgres by setting the
+`KNOCK_KNOCK_LEDGER_URL` env var (in `~/.knock-knock/.env` or exported before
+launch), or by writing a `ledger` block to `settings.json`. The env var
+**overrides** the stored choice. Either way, if a configured Postgres can't be
+reached the relay **refuses to start** rather than silently splitting history
+onto a local SQLite ledger.
 
 > **What's shared vs. local.** Only the **ledger** (all Interactions, and the
 > folds derived from them) is shared in Postgres. Each machine keeps its own
@@ -309,36 +305,36 @@ start** rather than silently splitting history onto a local SQLite ledger.
 > `share session` (import) to carry *context* across machines. Don't merge
 > `access.json` between machines.
 
-### Setting it up with Neon (tested on Postgres 18)
+### Setting it up (shared Postgres)
 
-1. Create a Neon project on **Postgres 18** and a database (e.g. `neondb`).
-2. Copy the **direct** connection string — the host must **not** contain
-   `-pooler`. Neon's pooled endpoint runs PgBouncer in transaction mode, which
-   **drops `LISTEN`/`NOTIFY`** — cross-machine notifications would then silently
-   never arrive. Direct host looks like `ep-xxxx.REGION.aws.neon.tech`; pooled is
-   `ep-xxxx-pooler.REGION.aws.neon.tech` (do not use the pooled one here).
-3. Prefer `sslmode=verify-full` (Neon presents a valid cert, and it avoids a
-   `pg` deprecation warning that `sslmode=require` now triggers).
-4. Set the **same** URL on **both** machines — in
-   `~/.knock-knock/.env`:
+Any Postgres the machines can both reach works — typically one running on your
+own machine or LAN, or a self-hosted instance.
+
+1. Create a database, e.g. `createdb knockknock`.
+2. Use a **direct** connection, **not** a transaction-mode pooler (e.g.
+   PgBouncer in transaction mode **drops `LISTEN`/`NOTIFY`**, so cross-machine
+   notifications would silently never arrive). A direct session connection is
+   required because the relay holds a live `LISTEN`.
+3. Set the **same** URL on **both** machines — in `~/.knock-knock/.env`:
    ```
-   KNOCK_KNOCK_LEDGER_URL=postgresql://USER:PASSWORD@ep-xxxx.REGION.aws.neon.tech/neondb?sslmode=verify-full
+   KNOCK_KNOCK_LEDGER_URL=postgresql://USER:PASSWORD@HOST:5432/knockknock
    ```
-   (or `export KNOCK_KNOCK_LEDGER_URL=…` before launching).
-5. `bun relay.ts` — you'll see `relay: ledger = postgres (…)` (password masked).
+   (or `export KNOCK_KNOCK_LEDGER_URL=…` before launching). Add `?sslmode=…`
+   if your server requires TLS.
+4. `bun relay.ts` — you'll see `relay: ledger = postgres (…)` (password masked).
    The schema (tables + the `NOTIFY` trigger) is **created automatically** on
    first connect; there's no migration to run, and the second machine's connect
    is a no-op.
 
-### Caveats (Neon free tier)
+### Caveats
 
-- **Direct endpoint only** (no `-pooler`) — `LISTEN`/`NOTIFY` needs a real session.
-- **Autosuspend.** The free plan suspends the compute after ~5 min idle, which
-  severs the listener (its `LISTEN` is session state). The relay now
-  **reconnects and re-`LISTEN`s automatically**, so it recovers — but
-  interactions another host wrote *during* the gap aren't replayed to the live
-  listener. **Restart the relay to fully re-fold**, or disable scale-to-zero
-  (paid) for an always-on listener. Active back-and-forth keeps the compute warm.
+- **Direct session connection only** (no transaction-mode pooler) —
+  `LISTEN`/`NOTIFY` needs a real session.
+- **Listener drops.** If the connection is severed (e.g. the server restarts or
+  idles out), the relay **reconnects and re-`LISTEN`s automatically**, so it
+  recovers — but interactions another host wrote *during* the gap aren't
+  replayed to the live listener. **Restart the relay to fully re-fold**, and
+  keep the server reachable for an always-on listener.
 - **Fresh start.** Switching to Postgres begins from an empty ledger; existing
   local SQLite history isn't migrated.
 

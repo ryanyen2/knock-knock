@@ -31,7 +31,7 @@ plainly.
 
 | Term | What it is |
 |------|------------|
-| **Bot** | One coding-agent identity you run = one Discord app you created, holding a token locally. Its name and avatar live **on the platform** and are fetched on connect — never typed. Has a runtime (Claude Code, OpenCode, …) and an optional OS sandbox. You can run several at once. |
+| **Bot** | One coding-agent identity you run = one Discord app you created, holding a token locally. Its name and avatar live **on the platform** and are fetched on connect — never typed. Has a runtime (Claude Code, OpenCode, …). You can run several at once. |
 | **Channel** | A platform channel = **a project = a permission boundary**. It's the thing a bot is "invited" to. Keyed globally as `${platform}:${channelId}` so two platforms never collide. |
 | **Membership** | One of *your* bots active in one channel. This is the permission boundary itself: it carries that bot's **workspace folder** and its **allow/ask/deny profile** *for that project*. The same bot can have a read-only workspace in one channel and a read-write one in another. |
 | **Roster** | Your local address-book of **people** (human collaborators) and **peers** (other people's bots), each entered **once** and then picked from a list. No re-pasting IDs. |
@@ -87,7 +87,7 @@ env vars when you add a channel or start from a different folder.
 
 It holds two kinds of secret, both managed by `knock-knock setup`:
 
-- **Bot tokens** — one per bot (e.g. `DISCORD_BOT_TOKEN`), via "Save a bot token".
+- **Bot tokens** — one per bot (e.g. `DISCORD_BOT_TOKEN`), via "Manage a bot → Save / update token".
 - **Coding-agent API keys** — e.g. `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, via "Save a
   coding-agent API key". A key is **shared across every bot using that agent**, so you
   enter `ANTHROPIC_API_KEY` once no matter how many Claude bots you run. Agents that use
@@ -123,13 +123,16 @@ answers.
 > knock-knock setup
 > ```
 > On first run it walks you through one bot and a channel for it to work in,
-> with arrow-key menus and masked token input: **bot (platform → runtime →
-> sandbox?) → channel (paste id → pick member bots → set each bot's workspace +
-> permission preset → add collaborators from your roster) → bot token → ledger
-> backend.** Your owner id is asked once per platform; the bot's name is fetched
-> from the platform on connect, never typed. It writes `access.json` and `.env`
-> for you. (You'll need a Discord bot token and a couple of IDs first —
-> [step 4](#4-connect-your-chat-platform) shows exactly how to get them.)
+> with arrow-key menus and masked token input: **bot (platform → optional default
+> coding agent) → channel (paste id → pick member bots → set each
+> bot's workspace + permission preset → add collaborators from your roster) → bot
+> token → ledger backend.** Your owner id is asked once per platform; the bot's
+> name is fetched from the platform on connect, never typed. The coding agent is
+> just a **default** — you can skip it (Claude Code is used), set it per channel,
+> switch it live in chat with `!config agent`, or override it at launch with
+> `--config`. It writes `access.json` and `.env` for you. (You'll need a Discord
+> bot token and a couple of IDs first — [step 4](#4-connect-your-chat-platform)
+> shows exactly how to get them.)
 
 > **Step 3 — Start the relay**
 > ```bash
@@ -140,11 +143,26 @@ answers.
 > your-bot#1234`. (If two of your bots claim the same channel, it flags that at
 > startup rather than picking one silently.) Now `@mention` the bot in your
 > channel and say hello.
+>
+> **Optional launch flags** (combine freely):
+> - `--pick` — choose which configured bots to start (interactive checklist).
+> - `--config` / `-c` — a quick per-bot setup at launch: coding agent, model,
+>   thinking, effort, and which local sessions to share as context. Seeded before
+>   the bots connect, so the first turn already uses them.
+> - `--tui` — a multi-pane view, one pane per active bot, instead of the single
+>   combined log (falls back to the plain log when not a terminal).
+> - `--daemon` / `--wake` — connect **every** configured bot, but keep the ones you
+>   didn't pick **idle** (listening, spun down) until their first message wakes
+>   them. See [idle-wake.md](idle-wake.md).
 
 After the first bot exists, re-running `knock-knock setup` opens a **status
 dashboard + action menu** instead of the wizard — a compact map of your bots,
-channels, and roster, plus actions to add a bot, add/edit a channel, add a
-person or peer to the roster, save a token, or choose the ledger backend.
+channels, and roster. The main action is **"Manage a bot"**: pick a bot and edit
+everything about it in one place — rename its key, set the owner id, save its
+token, add/remove it from channels (with each channel's workspace, preset, and
+collaborators), and set its default coding agent / blurb. The other
+actions add/edit a channel directly, manage the roster, save a coding-agent API
+key, or choose the ledger backend.
 
 If you want to feel the flow before creating a real bot, skip ahead to
 [step 7](#7-say-hello-then-verify) to see what a first conversation looks like.
@@ -208,13 +226,16 @@ its factory — the relay, the ledger, and the permission model never change.
 
 ## 5. Choose the coding agent behind the bot
 
-The bot is just the face. Behind it, the relay can drive any of these coding
-agents — chosen by the bot's **`runtime`** in `knock-knock setup`, no code changes:
+The bot is just the face — the coding agent behind it is **not** part of the bot's
+identity. Set a **default** in `knock-knock setup`, then change it freely without
+touching code: per channel (a membership override), live in chat with the owner
+command `!config agent <runtime>` (rebuilds the session on the next turn), or at
+launch with `knock-knock relay --config`. The relay can drive any of these:
 
 | `runtime` | Agent | Notes |
 |-----------|-------|-------|
 | `claude-sdk` | Claude Code, in-process | **Default.** Nothing to install; enforces the deny floor natively. |
-| `claude-acp` | Claude Code, over ACP | Sandboxable at the OS level. |
+| `claude-acp` | Claude Code, over ACP | Runs out-of-process over ACP. |
 | `opencode` | OpenCode | `brew install sst/tap/opencode`, then set it to ask before tools. |
 | `codex` | OpenAI Codex | Needs `OPENAI_API_KEY`; don't launch it in a bypass mode. |
 | `gemini` | Gemini CLI | `gemini --experimental-acp`. |
@@ -223,11 +244,9 @@ agents — chosen by the bot's **`runtime`** in `knock-knock setup`, no code cha
 > **The one thing that matters: ask-first.** The deny floor only holds if the
 > agent **asks before running a tool.** Claude Code does this by default. For
 > other runtimes, make sure they run in their normal ask-first mode (never a
-> "yolo" / auto-approve mode) — or turn on the **OS sandbox** in setup, which
-> doesn't depend on the agent cooperating.
+> "yolo" / auto-approve mode).
 
-Per-agent install and auth (including the OpenCode `permission` config and the
-sandbox details) are in
+Per-agent install and auth (including the OpenCode `permission` config) are in
 **[getting-started-agents.md](getting-started-agents.md)**.
 
 ---
@@ -245,7 +264,7 @@ be `strict` in one channel and `auto` in another.
 | **strict** | allow | deny | deny | untrusted peers, read-only research |
 | **ask-per-edit** | allow | ask | ask | day-to-day work (recommended start) |
 | **auto** | allow | allow | ask | trusted solo flow |
-| **bypass** + sandbox | allow | allow | allow | unattended runs you review after |
+| **bypass** | allow | allow | allow | unattended runs you review after (deny floor still holds) |
 
 Two things hold no matter which preset you pick:
 
@@ -256,7 +275,7 @@ Two things hold no matter which preset you pick:
   bot run read-only while you keep full access. Deny is always the union, so a
   tier can only tighten.
 
-The friendly, complete walkthrough (presets, tiers, the OS sandbox, and the
+The friendly, complete walkthrough (presets, tiers, and the
 prompt-injection invariant) is in
 **[security-and-permissions.md](security-and-permissions.md)**.
 
@@ -338,12 +357,16 @@ dedicated guide.
   local SQLite ledger, so two relays only see each other through the chat. To
   share ledger state (imported session context, cross-machine conflict
   detection, collaborative file edits), point **every** relay at one shared
-  **Postgres**: `knock-knock setup → "Choose ledger backend" → Remote (Postgres)`.
-  Setup and the Neon walkthrough:
+  **Postgres** via `KNOCK_KNOCK_LEDGER_URL` (or a `ledger` block in
+  `settings.json`). Cross-machine walkthrough:
   [getting-started-agents.md#cross-machine-setup-shared-postgres-ledger](getting-started-agents.md#cross-machine-setup-shared-postgres-ledger).
 - **Per-task tuning (owner, in-thread)** — `!config role <text>`, model, thinking,
-  effort, and permission mode are tunable per thread on top of the channel
-  default. `!config help` lists them.
+  effort, coding agent (`!config agent <runtime>`), and permission mode are tunable
+  per thread on top of the channel default. `!config help` lists them.
+- **Run a subset, wake the rest (daemon)** — `knock-knock relay --pick --daemon`
+  starts only the bots you choose, keeping the others connected-but-idle so they
+  wake on their first message. Add `--tui` for one pane per bot, `--config` to set
+  each bot's agent/model/effort at launch. [idle-wake.md](idle-wake.md).
 - **Session sharing** 📥 — start a teammate's bot from the plan and decisions
   in one of your local coding sessions instead of cold. Run `share session`
   inside the task thread. [session-sharing.md](session-sharing.md).
@@ -359,13 +382,13 @@ dedicated guide.
 
 | Symptom | Fix |
 |---------|-----|
-| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup → "Save / update a bot token"` and check `.env`. |
+| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup → "Manage a bot" → Save / update token` and check `.env`. |
 | Bot is silent | On Discord, MESSAGE CONTENT INTENT is off, the bot isn't in the channel, or the channel requires an `@mention` and you didn't mention it. |
 | Empty message text (Discord) | MESSAGE CONTENT INTENT not enabled. |
 | Bot not in the "who's listening where" table at startup | Its `tokenEnv` isn't set in `.env`, or it isn't a **member** of any channel. Re-run setup, save its token, and add it to a channel. |
 | Two of your bots flagged on the same channel | Legal but ambiguous — an `@mention` routes to the named bot, and a thread continuation stays with the bot that owns it. Give each a distinct role or drop one from the channel. |
 | No approval prompt appears | The owner id (`me`) for that platform isn't set, or the channel's `approvalActorId` override is wrong. Re-run `knock-knock setup`. |
-| `rm -rf` ran anyway (ACP runtime) | The agent isn't asking before tools. Put it in ask-first mode, or turn on the OS sandbox. See [the deny-floor caveat](getting-started-agents.md). |
+| `rm -rf` ran anyway (ACP runtime) | The agent isn't asking before tools. Put it in ask-first mode (never yolo/bypass). See [the deny-floor caveat](getting-started-agents.md). |
 | Cross-machine state not syncing | Both relays must point at the **same** Postgres (direct endpoint, not a pooled one). |
 
 ---
@@ -375,8 +398,9 @@ dedicated guide.
 | Guide | When to read it |
 |-------|-----------------|
 | [Getting started with different agents](getting-started-agents.md) | Per-runtime install/auth, multi-agent collaboration, cross-machine, the deny-floor caveat |
-| [Permissions & security](security-and-permissions.md) | Presets, per-peer tiers, the deny floor, OS sandbox, prompt-injection invariant |
+| [Permissions & security](security-and-permissions.md) | Presets, per-peer tiers, the deny floor, prompt-injection invariant |
 | [Session sharing](session-sharing.md) | Importing or resuming a local coding session into a channel |
+| [Daemon & wake-on-message](idle-wake.md) | Running a subset of bots active and waking idle ones on demand; the `--pick`/`--config`/`--tui`/`--daemon` launch flags |
 | [Watches](knock-knock-watches.md) | Deferring a turn until the world changes |
 | [Reactions, conflicts & versioning](reactions-and-versioning.md) | The reaction vocabulary, conflict cards, ledger versioning |
 | [Ledger model](knock-knock-ledger-model.md) | The architecture: interactions, folds, channel vs scope |

@@ -17,7 +17,7 @@ The current code overloads several words. We fix the nouns first.
 | Term | Definition |
 |---|---|
 | **Owner / me** | The human running this relay locally. Identified by a platform user-id per platform (`me.discord`, `me.slack`). Set **once**, reused as the default owner of every bot. |
-| **Bot** | One coding-agent identity I run = one Discord/Slack *app* I created, holding a token locally. Its **name/avatar/description live on the platform** and are fetched live — never typed. Has a runtime and (optional) OS sandbox. (Was: "agent" / `AgentConfig`.) |
+| **Bot** | One coding-agent identity I run = one Discord/Slack *app* I created, holding a token locally. Its **name/avatar/description live on the platform** and are fetched live — never typed. Has a runtime. (Was: "agent" / `AgentConfig`.) |
 | **Platform** | Discord, Slack, … A bot speaks exactly one platform. |
 | **Channel** | A platform channel/group = **a project = a permission boundary**. The unit a bot is "invited" to. Globally keyed `${platform}:${channelId}` so two platforms never collide (also closes the ledger id-collision gap). (Was: "room".) |
 | **Membership** | One of *my* bots active in one channel. **The permission boundary**: it carries this bot's **workspace folder** and its **allow/ask/deny** *for this project*. (New first-class object; was the implicit `agent.workspace` × `rooms/<key>/<channelId>.settings.json` pair.) |
@@ -71,7 +71,6 @@ export type Bot = {
   tokenEnv: string               // NAME of env var holding the token
   appTokenEnv?: string           // Slack socket-mode app token env name
   runtime: string                // default runtime; a membership may override
-  sandbox?: SandboxConfig
   displayName?: string           // CACHED from platform on connect; cosmetic, non-authoritative
   blurb?: string                 // default capability text; a membership may override
 }
@@ -181,7 +180,7 @@ no `bots`, transform and write back (after backing up to `access.json.v1`):
 
 ```
 for each [key, agent] in old.agents:
-  bots[key] = { platform, tokenEnv, appTokenEnv, runtime, sandbox, displayName: agent.name, blurb: agent.blurb }
+  bots[key] = { platform, tokenEnv, appTokenEnv, runtime, displayName: agent.name, blurb: agent.blurb }
   me[platform] ??= agent.ownerUserId
   for each [channelId, room] in agent.rooms:
     ck = `${platform}:${channelId}`
@@ -208,7 +207,7 @@ Main dashboard — a compact, always-visible map of the world:
  knock-knock                                   2 bots · 3 channels · 4 collaborators
 
  BOTS
-   ● reviewer   discord   @ReviewBot#1234        claude-sdk      [sandbox: fs+net]
+   ● reviewer   discord   @ReviewBot#1234        claude-sdk
    ○ builder    slack     (not connected)        acp · codex
 
  CHANNELS  (project = permission boundary)
@@ -228,7 +227,7 @@ Flows:
 - **Add channel** → pick platform → paste channel id (once) → pick member bots from the
   bot list → set each member's workspace + preset → add collaborators **by picking from
   roster** (or "+ new", which adds to roster). No id ever re-pasted.
-- **Add bot** → pick platform → token env → runtime → sandbox. Name is **fetched on
+- **Add bot** → pick platform → token env → runtime. Name is **fetched on
   first connect**, not asked. Owner defaults to `me[platform]` (prompted once, ever).
 - **Roster** → list/add/edit people & peers; labels fetched live where the platform API
   allows.
@@ -333,8 +332,11 @@ A read-only reviewer simulated the 5 core flows. Resolution:
   cosmetic cache file, not access.json. Deferred. (Not typing the name — the actual UX win —
   is already done.)
 - ~~Roster entry removal~~ — DONE: setup now has "Remove a roster entry" (drops it from
-  channels too) and "Edit a bot" (runtime/blurb/sandbox). Management surface is complete:
-  add/edit/remove for bots, channels, and roster + tokens + ledger.
+  channels too). The bot surface has since been consolidated into a bot-centric
+  **"Manage a bot"** bundle (rename key, owner id, token, add/remove channels with
+  per-channel workspace/preset/collaborators, and coding-agent defaults — runtime/
+  blurb), with bot removal inline. Management surface is complete: add/edit/remove
+  for bots, channels, and roster + tokens + ledger.
 
   - **Remaining (Slice 2b):** mention-aware drive routing. Today `getAgentForChannel`
     picks the array-first serving host; the admitted `channel.message` doesn't carry the
