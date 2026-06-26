@@ -32,6 +32,8 @@ export class ConflictUI {
     if (!ref) return undefined
     this.cards.set(ref.id, { branchHashes: post.branchHashes, channelId: post.channelId })
     this.ctx.noteBotMsg(ref.id)
+    // Allow a text reply ("take a"/"1"/"write") to resolve where buttons are absent.
+    this.ctx.registerChoicePrompt(post.channelId, ref.id, choices)
     return ref.id
   }
 
@@ -51,6 +53,7 @@ export class ConflictUI {
     if (action.actionId === 'cflt:write') {
       // Owner's own concurrent edit dominates both drafts and clears the region.
       this.cards.delete(action.ref.id)
+      this.ctx.clearChoicePrompt(card.channelId, action.ref.id)
       await action.update(`${action.message}\n\n-# ✏️ write your own — reply with your merge; it supersedes both drafts`)
       return
     }
@@ -70,6 +73,7 @@ export class ConflictUI {
       label: `took ${LETTERS[idx]}`,
     })
     this.cards.delete(action.ref.id)
+    this.ctx.clearChoicePrompt(card.channelId, action.ref.id)
     if (!result) {
       // Already resolved (e.g. another relay took a branch; cards aren't shared).
       await action.respond('This conflict was already resolved.', { ephemeral: true })

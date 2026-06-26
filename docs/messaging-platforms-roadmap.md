@@ -73,6 +73,11 @@ These are the only changes that touch shared code. Everything after is additive.
    - `threads:false` → `startThread` returns undefined; host runs at room scope
      (already supported — `roomForScope` collapses).
    Add unit tests in `messaging-fallback.test.ts` for each degradation.
+   **See [`messaging-generalization.md`](./messaging-generalization.md)** for the
+   implemented outcome: the per-platform render-dialect translators
+   (`adapters-msg/dialect.ts`), the text-reply control fallback (`parseChoiceReply`
+   wired into the host + owner `!stop`/`!retry`/… commands), and the inbound dedup
+   net — plus the per-feature × per-platform tradeoff table and its justifications.
 
 4. **setup.ts**: platform picker when adding a bot; collect the platform's secrets
    (masked); per-platform onboarding hints. The authoring shape already carries

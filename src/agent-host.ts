@@ -5,7 +5,7 @@
  */
 
 import { makeMessagingAdapter } from './adapters-msg/index.ts'
-import { outboundFileNotice } from './messaging-fallback.ts'
+import { outboundFileNotice, parseChoiceReply } from './messaging-fallback.ts'
 import type {
   MessagingAdapter,
   MessageRef,
@@ -13,6 +13,7 @@ import type {
   IncomingAttachment,
   IncomingAction,
   IncomingReaction,
+  Choice,
 } from './messaging-adapter.ts'
 import {
   readSessionBinding,
@@ -138,6 +139,12 @@ export class AgentHost {
   private readonly sessions = new Map<ChannelId, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
+  /** Interactive choice prompts awaiting a TEXT reply (buttons/reactions absent). */
+  private readonly pendingChoicePrompts = new PendingChoicePrompts()
+  /** Dedup net for duplicate inbound DELIVERIES (Slack double-event, poll/webhook
+   *  retries) keyed by `${scope} ${messageId}`. Orthogonal to reply-claim
+   *  (which dedups WHICH agent answers, not duplicate deliveries of one message). */
+  private readonly seenInbound = new Set<string>()
   /** Inbound side-table keyed by channel.message hash. Consumed by the turn.prompted
    *  subscriber (DmCourier kickoff) and turn.replied (ack cleanup). */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
@@ -193,6 +200,10 @@ export class AgentHost {
           this.ui.note(this.key, `approval prompt sent to ${info.destination}`)
         }
       },
+      // Register/clear the Allow/Deny prompt so a text reply ("allow"/"1") can
+      // resolve it where buttons/reactions are unavailable (GitHub, Notion).
+      (scope, messageId, choices) => this.pendingChoicePrompts.add(scope, messageId, choices),
+      (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
     )
 
     this.courier = new DmCourier(
@@ -216,6 +227,9 @@ export class AgentHost {
       discordSend: (id, text) => this.discordSend(id, text),
       noteBotMsg: id => this.noteBotMsg(id),
       refreshConfigCard: id => this.configCard.refresh(id),
+      registerChoicePrompt: (scope, messageId, choices) =>
+        this.pendingChoicePrompts.add(scope, messageId, choices),
+      clearChoicePrompt: (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
     }
     this.workbench = new Workbench(ctx)
     this.configCard = new ConfigCard(ctx)
@@ -234,21 +248,7 @@ export class AgentHost {
       )
     })
 
-    this.messaging.onAction(action => {
-      if (action.actionId.startsWith('appr:')) {
-        this.approvals.resolve(action).catch(e =>
-          this.ui.error(this.key, `interaction error: ${e}`),
-        )
-      } else if (this.conflictUI.handles(action)) {
-        this.conflictUI.resolve(action).catch(e =>
-          this.ui.error(this.key, `conflict resolve error: ${e}`),
-        )
-      } else if (this.sessionSharing.handles(action)) {
-        this.sessionSharing.handlePick(action).catch(e =>
-          this.ui.error(this.key, `session pick error: ${e}`),
-        )
-      }
-    })
+    this.messaging.onAction(action => this.dispatchAction(action))
 
     this.messaging.onReaction(reaction => {
       const emoji = reaction.glyph
@@ -617,7 +617,17 @@ export class AgentHost {
     action: RewindAction,
   ): Promise<void> {
     if (!this.recentBotMsgIds.has(messageId)) return // not our message / dedup
-    const channelId = rawChannelId
+    await this.applyRewind(rawChannelId, userId, action)
+  }
+
+  /** The post-guard rewind/retry/checkpoint core, shared by the reaction path
+   *  (`handleRewind`, gated on "our message") and the owner text commands
+   *  (`!retry`/`!rewind`/`!checkpoint`, which carry no specific message). */
+  private async applyRewind(
+    channelId: string,
+    userId: string,
+    action: RewindAction,
+  ): Promise<void> {
     if (!this.getAgentForChannel(channelId)) return
     const ownerId = this.getOwnerForChannel(channelId)
     if (!ownerId || userId !== ownerId) return
@@ -740,6 +750,42 @@ export class AgentHost {
     return mode ? applyModeToProfile(base, mode) : base
   }
 
+  /** Route an interactive action to the right resolver by id prefix. Shared by the
+   *  adapter's button/`onAction` path and the text-reply fallback (`tryResolveTextChoice`). */
+  private dispatchAction(action: IncomingAction): void {
+    if (action.actionId.startsWith('appr:')) {
+      this.approvals.resolve(action).catch(e => this.ui.error(this.key, `interaction error: ${e}`))
+    } else if (this.conflictUI.handles(action)) {
+      this.conflictUI.resolve(action).catch(e => this.ui.error(this.key, `conflict resolve error: ${e}`))
+    } else if (this.sessionSharing.handles(action)) {
+      this.sessionSharing.handlePick(action).catch(e => this.ui.error(this.key, `session pick error: ${e}`))
+    }
+  }
+
+  /** Text-reply fallback for platforms without buttons/usable reactions: if the
+   *  inbound message answers a choice prompt pending in its scope, resolve it
+   *  through the same path a button click would and report handled. Synthesizes an
+   *  `IncomingAction` targeting the PROMPT's message id (resolvers key off it). */
+  private tryResolveTextChoice(m: IncomingMessage): boolean {
+    const hit = this.pendingChoicePrompts.match(m.scope, m.text)
+    if (!hit) return false
+    const action: IncomingAction = {
+      actionId: hit.actionId,
+      userId: m.authorId,
+      ref: { id: hit.messageId, scope: m.scope },
+      scope: m.scope,
+      message: '',
+      respond: async (text) => {
+        await this.messaging.send(m.scope, text).catch(() => undefined)
+      },
+      update: async (text, opts) => {
+        await this.messaging.edit({ id: hit.messageId, scope: m.scope }, text, opts).catch(() => false)
+      },
+    }
+    this.dispatchAction(action)
+    return true
+  }
+
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
   /** Get or create the task thread for a top-level message (race-tolerant). Undefined
@@ -762,6 +808,16 @@ export class AgentHost {
 
     if (m.authorId === botId) return
 
+    // Dedup net: drop a duplicate DELIVERY of the same message (Slack's double
+    // event, poll/webhook retries, offset overlap) before it can spawn a 2nd turn.
+    const inboundKey = `${m.scope} ${m.ref.id}`
+    if (this.seenInbound.has(inboundKey)) return
+    this.seenInbound.add(inboundKey)
+    if (this.seenInbound.size > 2000) {
+      const first = this.seenInbound.values().next().value
+      if (first) this.seenInbound.delete(first)
+    }
+
     const ownerId = liveAgent.ownerUserId
     if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
 
@@ -774,6 +830,13 @@ export class AgentHost {
     const recent = (this.inboundRate.get(m.authorId) ?? []).filter(t => now - t < rateWindowMs)
     if (recent.length >= rateCap) return
     this.inboundRate.set(m.authorId, [...recent, now])
+
+    // Text-reply fallback: if this message answers a choice prompt pending in its
+    // scope (approval / conflict / session), resolve it the same way a button would
+    // and stop — never admit it as a turn prompt. This makes those controls usable
+    // on platforms without buttons/usable reactions (GitHub, Notion), and is gated
+    // to a pending prompt so ordinary "1"/"allow" prose still flows through normally.
+    if (this.tryResolveTextChoice(m)) return
 
     // require-mention: overlay > RoomConfig > default-on. UX only — guildSenderAllowed gates who.
     const requireMention = cfg.requireMention ?? room.requireMention ?? true
@@ -855,6 +918,26 @@ export class AgentHost {
       this.scopeToRoom.set(controlScope, roomId)
       await this.handleDelegateCommand(controlScope, m.text, m.authorId).catch(e =>
         this.ui.error(this.key, `delegate command: ${e}`),
+      )
+      return
+    }
+
+    // Owner turn controls as text — the platform-agnostic equivalent of the 🛑/🔁/⏪/🧷
+    // reactions, so stop/retry/rewind/checkpoint work where reactions are absent or
+    // restricted (GitHub, Notion). Owner-gated + short-circuited before admit, like the
+    // commands above. They act in the scope they're typed in (a thread for a task).
+    const control = m.text.trim()
+    if (kind === 'owner' && control === '!stop') {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.handleStop(controlScope, m.authorId).catch(e => this.ui.error(this.key, `stop command: ${e}`))
+      return
+    }
+    const rewindCmd: RewindAction | undefined =
+      control === '!retry' ? 'retry' : control === '!rewind' ? 'rewind' : control === '!checkpoint' ? 'checkpoint' : undefined
+    if (kind === 'owner' && rewindCmd) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.applyRewind(controlScope, m.authorId, rewindCmd).catch(e =>
+        this.ui.error(this.key, `${rewindCmd} command: ${e}`),
       )
       return
     }
@@ -1390,4 +1473,40 @@ export class AgentHost {
 
 function noopDm(): DmTurnHandle {
   return { finalize: async () => {} }
+}
+
+/** Tracks interactive choice prompts awaiting a text reply, per scope. At most a
+ *  handful are live at once (one card/approval per scope), so plain Maps suffice;
+ *  the per-scope inner map is keyed by the prompt's message id. */
+class PendingChoicePrompts {
+  private readonly byScope = new Map<ChannelId, Map<string, Choice[]>>()
+
+  add(scope: ChannelId, messageId: string, choices: Choice[]): void {
+    let inner = this.byScope.get(scope)
+    if (!inner) {
+      inner = new Map()
+      this.byScope.set(scope, inner)
+    }
+    inner.set(messageId, choices)
+  }
+
+  remove(scope: ChannelId, messageId: string): void {
+    const inner = this.byScope.get(scope)
+    if (!inner) return
+    inner.delete(messageId)
+    if (inner.size === 0) this.byScope.delete(scope)
+  }
+
+  /** First pending prompt in `scope` whose choices `text` unambiguously selects.
+   *  Most-recently-registered wins (insertion order, last first). */
+  match(scope: ChannelId, text: string): { messageId: string; actionId: string } | undefined {
+    const inner = this.byScope.get(scope)
+    if (!inner) return undefined
+    const entries = [...inner.entries()].reverse()
+    for (const [messageId, choices] of entries) {
+      const actionId = parseChoiceReply(text, choices)
+      if (actionId) return { messageId, actionId }
+    }
+    return undefined
+  }
 }

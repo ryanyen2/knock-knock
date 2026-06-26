@@ -97,6 +97,8 @@ export class SessionSharing {
     if (!ref) return undefined
     this.cards.set(ref.id, { sessions: offered, channelId: scopeId, mode })
     this.ctx.noteBotMsg(ref.id)
+    // Allow a text reply ("1"/"cancel") to pick where buttons are absent.
+    this.ctx.registerChoicePrompt(scopeId, ref.id, choices)
     return ref.id
   }
 
@@ -117,6 +119,7 @@ export class SessionSharing {
 
     if (action.actionId === 'sess:cancel') {
       this.cards.delete(action.ref.id)
+      this.ctx.clearChoicePrompt(card.channelId, action.ref.id)
       await action.update(`${action.message}\n\n-# ✖️ cancelled`)
       return
     }
@@ -128,6 +131,7 @@ export class SessionSharing {
 
     if (card.mode === 'resume') {
       this.cards.delete(action.ref.id)
+      this.ctx.clearChoicePrompt(card.channelId, action.ref.id)
       await this.onResume(action, card.channelId, summary)
       return
     }
@@ -165,6 +169,7 @@ export class SessionSharing {
     }
 
     this.cards.delete(action.ref.id)
+    this.ctx.clearChoicePrompt(card.channelId, action.ref.id)
     this.ctx.ui.note(
       this.ctx.key,
       `imported ${summary.runtime} session ${summary.id.slice(0, 8)} into ${card.channelId}`,

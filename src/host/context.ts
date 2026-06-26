@@ -1,6 +1,6 @@
 // HostContext — the narrow slice of AgentHost its UI collaborators depend on.
 
-import type { MessagingAdapter } from '../messaging-adapter.ts'
+import type { MessagingAdapter, Choice } from '../messaging-adapter.ts'
 import type { Access } from '../lib.ts'
 import type { ChannelId } from '../ledger/interaction.ts'
 import type { Store } from '../ledger/store.ts'
@@ -27,4 +27,11 @@ export type HostContext = {
   noteBotMsg(id: string): void
   /** Refresh the pinned per-thread config card for a scope. Best-effort, throttled. */
   refreshConfigCard(scopeId: ChannelId): void
+  /** Register an interactive choice prompt (approval / conflict / session card) so a
+   *  TEXT reply can resolve it on platforms without buttons/usable reactions. The
+   *  host matches an inbound message against these via `parseChoiceReply`. Keyed by
+   *  the scope the prompt was posted to + its message id. */
+  registerChoicePrompt(scope: ChannelId, messageId: string, choices: Choice[]): void
+  /** Clear a registered choice prompt once it resolves (or its menu closes). */
+  clearChoicePrompt(scope: ChannelId, messageId: string): void
 }

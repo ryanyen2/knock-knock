@@ -42,6 +42,7 @@ import type {
   Glyph,
 } from '../messaging-adapter.ts'
 import { choiceMenuText, outboundFileNotice } from '../messaging-fallback.ts'
+import { toNotionRichText } from './dialect.ts'
 
 /** Notion rich_text is capped ~2000 chars per block; we design for that floor. */
 const MAX_LEN = 2000
@@ -213,11 +214,15 @@ export class NotionMessagingAdapter implements MessagingAdapter {
     // silently dropping the share.
     const notice = opts?.files ? outboundFileNotice(opts.files, this.capabilities()) : null
     if (notice) content += `\n${notice}`
-    const trimmed = content.length > MAX_LEN ? content.slice(0, MAX_LEN - 1) + '…' : content
+    // Notion isn't markdown — translate the Discord render dialect into structured
+    // rich_text nodes (bold/italic/code annotations, link nodes) instead of one
+    // plain node that would show raw `**`/`-#`. Each node is ≤2000 chars; cap the
+    // array at Notion's 100-element ceiling (post-on-reply already chunks upstream).
+    const richText = toNotionRichText(content).slice(0, 100)
     try {
       const comment = (await this.notion.comments.create({
         parent: { page_id: scope },
-        rich_text: [{ type: 'text', text: { content: trimmed } }],
+        rich_text: richText,
       })) as { id: string }
       return { id: comment.id, scope }
     } catch {

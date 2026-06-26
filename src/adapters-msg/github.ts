@@ -39,6 +39,7 @@ import type {
   Glyph,
 } from '../messaging-adapter.ts'
 import { choiceMenuText, outboundFileNotice } from '../messaging-fallback.ts'
+import { toGitHubMarkdown } from './dialect.ts'
 
 /** GitHub's fixed reaction enum (the only content values the API accepts). */
 type GitHubReactionContent =
@@ -521,7 +522,10 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
    * notice (`files.outbound: false`). A `mentionUser` is prefixed as `@login`.
    */
   private buildBody(text: string, opts?: SendOpts): string {
-    let body = opts?.mentionUser ? `@${opts.mentionUser} ${text}` : text
+    // GFM renders **bold**/headings/links natively; translate only the genuine
+    // gaps (`-#` subtext, `<@id>` angle mentions). The mention prefix is GitHub's.
+    const rendered = toGitHubMarkdown(text)
+    let body = opts?.mentionUser ? `@${opts.mentionUser} ${rendered}` : rendered
     if (opts?.choices && opts.choices.length > 0) {
       const menu = choiceMenuText(opts.choices)
       if (menu) body = `${body}\n\n${menu}`

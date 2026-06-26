@@ -30,6 +30,7 @@ import {
   mapGlyphToReaction,
   CONTROL_REACTIONS,
 } from '../messaging-fallback.ts'
+import { toTelegramText } from './dialect.ts'
 
 /** Telegram's per-message character cap. */
 const MAX_LEN = 4096
@@ -477,12 +478,13 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     return base
   }
 
-  /** Prepend the @mention (native ping) and clamp to Telegram's length cap. */
+  /** Translate the Discord render dialect to clean plaintext and clamp to the cap. */
   private bodyText(text: string, opts?: SendOpts): string {
     // mentionUser is a numeric Telegram id; a tg://user link pings without a
-    // username. Markdown would need parse_mode, so we keep it plain and rely on
-    // a reply / explicit text — the host's mention policy is platform-agnostic.
-    const full = text
+    // username. We send WITHOUT parse_mode, so `toTelegramText` unwraps every
+    // markdown marker to bare text — otherwise the render layer's `**`/`-#` would
+    // show literally. The host's mention policy stays platform-agnostic.
+    const full = toTelegramText(text)
     return full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
   }
 

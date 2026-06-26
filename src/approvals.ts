@@ -43,6 +43,11 @@ export class Approvals {
     private readonly store: Store,
     /** Operator console hook so the destination of each prompt is visible. */
     private readonly onDelivery?: (info: PromptDelivery) => void,
+    /** Register the posted Allow/Deny prompt so a TEXT reply can resolve it where
+     *  buttons/reactions are unavailable. Keyed by the scope it landed in + msg id. */
+    private readonly onPrompt?: (scope: string, messageId: string, choices: Choice[]) => void,
+    /** Clear a registered prompt once it resolves. */
+    private readonly onPromptDone?: (scope: string, messageId: string) => void,
   ) {}
 
   /** Post a Discord prompt for the given tool.requested. The verdict is awaited elsewhere via the ledger subscription. */
@@ -91,6 +96,8 @@ export class Approvals {
       body,
     }
     this._remember(posted, prefix)
+    // Register for the text-reply fallback under the scope the prompt landed in.
+    this.onPrompt?.(ref.scope, ref.id, choices)
     this.onDelivery?.({ destination, reason })
   }
 
@@ -168,6 +175,7 @@ export class Approvals {
   private _forget(posted: PostedPrompt): void {
     this.byMessageId.delete(posted.discordMessageId)
     this.byHashPrefix.delete(posted.hash.slice(0, HASH_PREFIX_LEN))
+    this.onPromptDone?.(posted.promptChannelId, posted.discordMessageId)
   }
 
   private async _emitVerdict(

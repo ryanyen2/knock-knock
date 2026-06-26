@@ -35,7 +35,7 @@ import type {
   Glyph,
 } from '../messaging-adapter.ts'
 import { mapGlyphToReaction, normalizeUnicodeReaction } from '../messaging-fallback.ts'
-import { toSlackMrkdwn } from './slack-format.ts'
+import { toSlackMrkdwn } from './dialect.ts'
 
 /** Slack's soft message cap is 4000 chars; we design for a 3800 floor with headroom. */
 const MAX_LEN = 3800
