@@ -1,0 +1,1133 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>messaging-platforms-setup</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="messaging-platforms-setup"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="messaging-platforms-setup"/><meta name="twitter:description" content="Messaging platform setup — create the app, get the credentials knock-knock connects a coding agent to a chat surface through one platform-neutral MessagingAdapter seam (adapters-msg/)."/><meta property="og:description" content="Messaging platform setup — create the app, get the credentials knock-knock connects a coding agent to a chat surface through one platform-neutral MessagingAdapter seam (adapters-msg/)."/><meta property="og:image:alt" content="Messaging platform setup — create the app, get the credentials knock-knock connects a coding agent to a chat surface through one platform-neutral MessagingAdapter seam (adapters-msg/)."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/messaging-platforms-setup"/><meta property="twitter:url" content="https://knock-knock.dev/docs/messaging-platforms-setup"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="Messaging platform setup — create the app, get the credentials knock-knock connects a coding agent to a chat surface through one platform-neutral MessagingAdapter seam (adapters-msg/)."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/messaging-platforms-setup-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/messaging-platforms-setup-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/messaging-platforms-setup-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="messaging-platforms-setup" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-12" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-12" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>messaging-platforms-setup</a></div></nav><h1 class="article-title">messaging-platforms-setup</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-26T20:19:41.000Z">Jun 26, 2026</time><span>21 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="messaging-platform-setup--create-the-app-get-the-credentials">Messaging platform setup — create the app, get the credentials<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#messaging-platform-setup--create-the-app-get-the-credentials" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>knock-knock connects a coding agent to a chat surface through one
+platform-neutral <code>MessagingAdapter</code> seam (<code>adapters-msg/</code>). Five platforms are
+supported; each is one adapter file plus capability-driven degradation.</p>
+<p>This page is the <strong>per-platform prerequisite</strong> to <a href="./setup.html" class="internal internal-link alias" data-slug="setup">the setup guide</a>:
+how to create the platform app/bot, which tokens it produces, the exact env-var
+<strong>names</strong> the CLI expects, the scopes/permissions to turn on, and how to find
+the <strong>channel/scope id</strong> and your <strong>owner id</strong>. Once you have those, run:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # add the bot, paste the id, save the token(s)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # connect and go</span></span></code></pre></figure>
+<p>For the architecture and the capabilities rationale see
+<a href="./messaging-platforms-roadmap.html" class="internal internal-link" data-slug="messaging-platforms-roadmap">messaging-platforms-roadmap.md</a>.</p>
+<hr/>
+<h2 id="what-each-platform-supports">What each platform supports<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-each-platform-supports" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The table below shows every capability the <code>MessagingAdapter</code> seam exposes.
+Capability-driven degradation means the host <strong>never branches on platform name</strong>
+— it branches on these flags, so an unsupported feature degrades gracefully
+(buttons → numbered text, reactions → text status, DM → @mention in-scope, etc.).</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Capability</th><th style="text-align:center;">Discord</th><th style="text-align:center;">Slack</th><th style="text-align:center;">Telegram</th><th style="text-align:center;">GitHub</th><th style="text-align:center;">Notion</th></tr></thead><tbody><tr><td><strong>Inbound transport</strong></td><td style="text-align:center;">WebSocket gateway</td><td style="text-align:center;">Socket Mode WS</td><td style="text-align:center;">long-poll</td><td style="text-align:center;">poll ~60 s <em>or webhook</em></td><td style="text-align:center;">poll ~10 s <em>or webhook</em></td></tr><tr><td><strong>Send / post</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅ (comment)</td><td style="text-align:center;">✅ (comment)</td></tr><tr><td><strong>Edit in place</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅ (comment)</td><td style="text-align:center;">✅ (comment, PATCH)</td></tr><tr><td><strong>Reactions</strong></td><td style="text-align:center;">any emoji</td><td style="text-align:center;">any emoji</td><td style="text-align:center;">whitelist (11)</td><td style="text-align:center;">whitelist (8 names)</td><td style="text-align:center;">❌ none</td></tr><tr><td><strong>Approval buttons</strong></td><td style="text-align:center;">✅ native</td><td style="text-align:center;">✅ Block Kit</td><td style="text-align:center;">✅ inline kbd</td><td style="text-align:center;">❌ numbered text</td><td style="text-align:center;">❌ numbered text</td></tr><tr><td><strong>Task threads</strong></td><td style="text-align:center;">✅ Discord thread</td><td style="text-align:center;">✅ thread reply</td><td style="text-align:center;">✅ forum topic</td><td style="text-align:center;">✅ issue / PR</td><td style="text-align:center;">❌ comment-only</td></tr><tr><td><strong>Pin message</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td></tr><tr><td><strong>Direct message owner</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">✅</td><td style="text-align:center;">⚠️ must /start</td><td style="text-align:center;">❌ (→ @mention)</td><td style="text-align:center;">❌</td></tr><tr><td><strong>Typing indicator</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">✅</td><td style="text-align:center;">❌</td><td style="text-align:center;">❌</td></tr><tr><td><strong>Inbound file attachments</strong></td><td style="text-align:center;">✅ (10 MiB)</td><td style="text-align:center;">✅</td><td style="text-align:center;">✅ (20 MiB)</td><td style="text-align:center;">❌ deferred</td><td style="text-align:center;">❌ deferred</td></tr><tr><td><strong>Outbound file share</strong></td><td style="text-align:center;">✅</td><td style="text-align:center;">❌ pending</td><td style="text-align:center;">✅</td><td style="text-align:center;">❌ deferred</td><td style="text-align:center;">❌ deferred</td></tr><tr><td><strong>Max message length</strong></td><td style="text-align:center;">2 000 chars</td><td style="text-align:center;">~3 800 chars</td><td style="text-align:center;">4 096 chars</td><td style="text-align:center;">65 536 chars</td><td style="text-align:center;">~2 000 chars</td></tr><tr><td><strong>Setup tokens</strong></td><td style="text-align:center;">1</td><td style="text-align:center;"><strong>2</strong></td><td style="text-align:center;">1</td><td style="text-align:center;">1</td><td style="text-align:center;">1</td></tr><tr><td><strong>Recommended use</strong></td><td style="text-align:center;">live collab</td><td style="text-align:center;">live collab</td><td style="text-align:center;">live collab</td><td style="text-align:center;">async / PR work</td><td style="text-align:center;">async doc work</td></tr></tbody></table></div>
+<h3 id="terminology-correspondence">Terminology correspondence<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#terminology-correspondence" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Every platform uses its own vocabulary for the same structural concepts.
+knock-knock names are on the left; platform synonyms are on the right.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>knock-knock</th><th>Discord</th><th>Slack</th><th>Telegram</th><th>GitHub</th><th>Notion</th></tr></thead><tbody><tr><td><strong>bot</strong></td><td>bot user</td><td>bot user / app</td><td>bot account</td><td>machine user / GitHub App</td><td>internal integration</td></tr><tr><td><strong>room</strong> (permission boundary)</td><td>text channel</td><td>channel</td><td>group / supergroup</td><td>repository</td><td>database or page</td></tr><tr><td><strong>scope</strong> (one task)</td><td>thread</td><td>thread (<code>thread_ts</code>)</td><td>forum topic</td><td>issue or pull request</td><td>page (comment thread)</td></tr><tr><td><strong>@mention bot</strong></td><td>@BotName</td><td>@appname or <code>&lt;@botId></code></td><td>@botusername</td><td>@machine-user-login</td><td>@integration-name</td></tr><tr><td><strong>approval button</strong></td><td>ActionRow button</td><td>Block Kit button</td><td>inline keyboard</td><td>reply with <code>1</code> / <code>/approve</code></td><td>reply with <code>1</code> / <code>/approve</code></td></tr><tr><td><strong>reaction</strong></td><td>emoji reaction</td><td>emoji reaction (name)</td><td>emoji reaction (whitelist)</td><td>reaction (<code>+1</code>, <code>eyes</code>, …)</td><td>— (not supported)</td></tr><tr><td><strong>DM owner</strong></td><td>Direct Message</td><td>Direct Message</td><td>DM (user must /start first)</td><td>— (falls back to @mention)</td><td>— (not supported)</td></tr><tr><td><strong>pin</strong></td><td>Pinned Message</td><td>Pinned Message</td><td>Pinned Message</td><td>— (not supported)</td><td>— (not supported)</td></tr><tr><td><strong>primary token</strong></td><td>Bot Token</td><td>Bot User OAuth Token (<code>xoxb-…</code>)</td><td>Bot Token</td><td>Personal Access Token</td><td>Integration Secret (<code>ntn_…</code>)</td></tr><tr><td><strong>extra token</strong></td><td>—</td><td>App-Level Token (<code>xapp-…</code>)</td><td>—</td><td>—</td><td>—</td></tr><tr><td><strong>channel/room id</strong></td><td>snowflake (17–20 digits)</td><td><code>C0123ABCD</code></td><td>negative int / <code>-100…</code></td><td><code>owner/repo</code></td><td>32 hex chars from URL</td></tr><tr><td><strong>owner id</strong></td><td>user snowflake</td><td>member id (<code>U0123ABCD</code>)</td><td>numeric user id</td><td>GitHub login (username)</td><td>Notion user id</td></tr></tbody></table></div>
+<blockquote>
+<p><strong>One owner id per platform.</strong> Your owner id (<code>me.&lt;platform></code>) is asked
+<strong>once per platform</strong> in setup and reused as the owner of every bot on it.
+Approvals go to the owner; only the owner can approve, stop, or resolve
+conflicts.</p>
+</blockquote>
+<blockquote>
+<p><strong>Config is never settable from chat.</strong> <code>access.json</code> / <code>settings.json</code> are
+written <strong>only</strong> by <code>knock-knock setup</code>, never from a chat message — so nothing
+said in a channel can change who’s allowed or what they may do. This
+prompt-injection invariant holds on every platform.</p>
+</blockquote>
+<hr/>
+<h2 id="discord">Discord<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#discord" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The live, production-tested surface — full fidelity. <strong>Start here if you are new
+to knock-knock.</strong></p>
+<h3 id="what-you-are-creating">What you are creating<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-you-are-creating" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A Discord <strong>Application</strong> (the container), with a <strong>Bot user</strong> inside it
+(the identity that joins your server), invited to a <strong>server (guild)</strong> you own
+or manage.</p>
+<pre><code>discord.com/developers/applications
+  └── New Application  →  name it
+        └── Bot tab  →  Reset Token  →  copy the token  (keep this secret)
+              └── OAuth2 → URL Generator  →  invite to server
+</code></pre>
+<h3 id="step-by-step">Step-by-step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#step-by-step" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1 — Create the application and bot</strong></p>
+<ol>
+<li>Open <a href="https://discord.com/developers/applications" class="external external-link">discord.com/developers/applications<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>
+and click <strong>New Application</strong>. Give it a name (this becomes the bot’s default
+username; you can change it later under <strong>Bot → Username</strong>).</li>
+<li>In the left sidebar click <strong>Bot</strong>.</li>
+<li>Click <strong>Reset Token</strong> → confirm → <strong>copy the token immediately</strong> — it is shown
+only once. If you lose it, reset it again (invalidates the old one).</li>
+</ol>
+<p><strong>Step 2 — Enable the message-content intent</strong></p>
+<p>Still on the <strong>Bot</strong> tab, scroll down to <strong>Privileged Gateway Intents</strong> and turn
+on <strong>MESSAGE CONTENT INTENT</strong>. Without it the bot connects to the gateway but
+receives empty message text — it will appear deaf.</p>
+<p><strong>Step 3 — Generate an invite URL and add the bot to your server</strong></p>
+<ol>
+<li>In the left sidebar click <strong>OAuth2 → URL Generator</strong>.</li>
+<li>Under <strong>Scopes</strong> check <code>bot</code>.</li>
+<li>Under <strong>Bot Permissions</strong> check:
+<ul>
+<li>View Channels</li>
+<li>Send Messages</li>
+<li>Send Messages in Threads</li>
+<li>Create Public Threads</li>
+<li>Read Message History</li>
+<li>Add Reactions</li>
+<li>Manage Messages <em>(needed to pin the config card and Workbench)</em></li>
+</ul>
+</li>
+<li>Copy the generated URL, paste it in a browser, pick your server, and click
+<strong>Authorize</strong>.</li>
+</ol>
+<p><strong>Step 4 — Enable Developer Mode so you can copy IDs</strong></p>
+<p>On your Discord client: <strong>User Settings → Advanced → Developer Mode</strong> → on.
+Right-clicking any channel, message, or user now shows a <strong>Copy ID</strong> option.</p>
+<p><strong>Step 5 — Collect the three values you need for setup</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>What</th><th>How to get it</th></tr></thead><tbody><tr><td><strong>Bot token</strong></td><td>Developer Portal → your application → <strong>Bot → Reset Token</strong></td></tr><tr><td><strong>Channel ID</strong></td><td>In your server, right-click the project channel → <strong>Copy Channel ID</strong> — a 17–20 digit snowflake like <code>1234567890123456789</code></td></tr><tr><td><strong>Your user ID</strong> (owner)</td><td>Right-click yourself in any server → <strong>Copy User ID</strong> — same snowflake format. Asked once.</td></tr></tbody></table></div>
+<p><strong>Step 6 — Run setup and relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # choose Discord → paste channel id → pick bot → set workspace + preset → save token</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # bot comes online; @mention it</span></span></code></pre></figure>
+<h3 id="tokens--env-vars">Tokens &amp; env vars<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tokens--env-vars" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Env var</th><th>Token type</th><th>Where</th></tr></thead><tbody><tr><td><code>DISCORD_BOT_TOKEN</code></td><td>Bot Token</td><td>Developer Portal → <strong>Bot → Reset Token</strong></td></tr></tbody></table></div>
+<h3 id="gotchas">Gotchas<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#gotchas" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>MESSAGE CONTENT INTENT off</strong> → bot connects but reads empty text; the relay
+logs “empty message” and does nothing.</li>
+<li><strong>Manage Messages not checked</strong> → the bot can’t pin the config card or
+Workbench; pinning silently fails.</li>
+<li><strong>Bot not invited to the server</strong> → bot comes online but the channel ID lookup
+fails on startup.</li>
+<li><strong>Wrong channel ID</strong> (e.g. copied the server ID instead) → relay starts but no
+messages arrive.</li>
+</ul>
+<hr/>
+<h2 id="slack">Slack<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#slack" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Full-fidelity over <strong>Socket Mode</strong> — an outbound WebSocket, so no public server
+is needed. Socket Mode is a Discord-gateway twin and was the platform the seam
+was modeled on.</p>
+<h3 id="what-you-are-creating-1">What you are creating<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-you-are-creating-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A Slack <strong>app</strong> installed to your workspace, running in <strong>Socket Mode</strong>. Slack
+apps need <strong>two</strong> tokens: a <code>xoxb-</code> Bot User OAuth Token for API calls, and a
+<code>xapp-</code> App-Level Token to open the Socket Mode WebSocket.</p>
+<pre><code>api.slack.com/apps
+  └── Create New App → From scratch
+        ├── Socket Mode  (generates xapp-)
+        ├── OAuth &amp; Permissions  (installs app → generates xoxb-)
+        └── Event Subscriptions + Interactivity  (enable)
+</code></pre>
+<h3 id="step-by-step-1">Step-by-step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#step-by-step-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1 — Create the app</strong></p>
+<ol>
+<li>Go to <a href="https://api.slack.com/apps" class="external external-link">api.slack.com/apps<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> and click <strong>Create New
+App → From scratch</strong>.</li>
+<li>Name the app and pick your workspace. Click <strong>Create App</strong>.</li>
+</ol>
+<p><strong>Step 2 — Enable Socket Mode and generate the App-Level Token (<code>xapp-</code>)</strong></p>
+<ol>
+<li>In the left sidebar under <strong>Settings</strong> click <strong>Socket Mode</strong>.</li>
+<li>Toggle <strong>Enable Socket Mode</strong> → on.</li>
+<li>A dialog asks you to create an <strong>App-Level Token</strong>. Name it anything
+(e.g. <code>relay-socket</code>), add the scope <code>connections:write</code>, and click <strong>Generate</strong>.</li>
+<li>Copy the token — it starts with <code>xapp-</code>. This is <code>SLACK_APP_TOKEN</code>.</li>
+</ol>
+<p><strong>Step 3 — Add bot token scopes</strong></p>
+<ol>
+<li>
+<p>In the left sidebar under <strong>Features</strong> click <strong>OAuth &amp; Permissions</strong>.</p>
+</li>
+<li>
+<p>Scroll to <strong>Scopes → Bot Token Scopes</strong> and add:</p>
+<pre><code>app_mentions:read   channels:history   groups:history
+im:history          mpim:history       chat:write
+reactions:read      reactions:write    pins:write
+files:read          files:write
+</code></pre>
+</li>
+</ol>
+<p><strong>Step 4 — Enable Event Subscriptions</strong></p>
+<ol>
+<li>
+<p>In the left sidebar click <strong>Event Subscriptions</strong> → toggle <strong>Enable Events</strong> →
+on. (Socket Mode apps don’t need a Request URL — leave it blank.)</p>
+</li>
+<li>
+<p>Under <strong>Subscribe to bot events</strong> add:</p>
+<pre><code>message.channels   message.groups   message.im
+message.mpim       app_mention      reaction_added
+</code></pre>
+</li>
+<li>
+<p>Click <strong>Save Changes</strong>.</p>
+</li>
+</ol>
+<p><strong>Step 5 — Enable Interactivity (for approval buttons)</strong></p>
+<ol>
+<li>In the left sidebar click <strong>Interactivity &amp; Shortcuts</strong> → toggle on.</li>
+<li>Leave Request URL empty (Socket Mode handles it). Click <strong>Save Changes</strong>.</li>
+</ol>
+<p><strong>Step 6 — Install the app to your workspace and get the Bot Token (<code>xoxb-</code>)</strong></p>
+<ol>
+<li>In the left sidebar click <strong>OAuth &amp; Permissions</strong>.</li>
+<li>Click <strong>Install to Workspace → Allow</strong>.</li>
+<li>Copy the <strong>Bot User OAuth Token</strong> — starts with <code>xoxb-</code>. This is
+<code>SLACK_BOT_TOKEN</code>.</li>
+</ol>
+<blockquote>
+<p><strong>Re-install after adding scopes.</strong> Slack only grants scopes present at
+install time. If you add scopes later, go back to OAuth &amp; Permissions and
+click <strong>Reinstall to Workspace</strong>.</p>
+</blockquote>
+<p><strong>Step 7 — Invite the bot to your channel</strong></p>
+<p>In Slack, open the target channel and type:</p>
+<pre><code>/invite @your-app-name
+</code></pre>
+<p>The bot will not receive messages from channels it hasn’t been invited to.</p>
+<p><strong>Step 8 — Collect the values you need for setup</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>What</th><th>How to get it</th></tr></thead><tbody><tr><td><code>SLACK_BOT_TOKEN</code></td><td>OAuth &amp; Permissions → <strong>Bot User OAuth Token</strong> (<code>xoxb-…</code>)</td></tr><tr><td><code>SLACK_APP_TOKEN</code></td><td>Settings → Basic Information → <strong>App-Level Tokens</strong> → your token (<code>xapp-…</code>)</td></tr><tr><td><strong>Channel ID</strong></td><td>Open the channel in Slack → click the channel name → <strong>About</strong> tab → scroll to the bottom → <strong>Channel ID</strong> (looks like <code>C0123ABCD</code>). Or: right-click the channel in the sidebar → <strong>Copy link</strong> — the ID is the last path segment.</td></tr><tr><td><strong>Your member ID</strong> (owner)</td><td>Click your avatar → <strong>Profile</strong> → <strong>⋯ (More)</strong> → <strong>Copy member ID</strong> (looks like <code>U0123ABCD</code>). Asked once.</td></tr></tbody></table></div>
+<p><strong>Step 9 — Run setup and relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # choose Slack → paste channel id → pick bot → workspace + preset</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                     #   → save SLACK_BOT_TOKEN</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                     #   → save SLACK_APP_TOKEN (prompted as &quot;app-level token&quot;)</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<h3 id="tokens--env-vars-1">Tokens &amp; env vars<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tokens--env-vars-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Env var</th><th>Token type</th><th>Starts with</th><th>Where</th></tr></thead><tbody><tr><td><code>SLACK_BOT_TOKEN</code></td><td>Bot User OAuth Token</td><td><code>xoxb-</code></td><td>OAuth &amp; Permissions → install workspace</td></tr><tr><td><code>SLACK_APP_TOKEN</code></td><td>App-Level Token</td><td><code>xapp-</code></td><td>Basic Information → App-Level Tokens</td></tr></tbody></table></div>
+<p>Both tokens are required. <code>knock-knock setup</code> saves both; <code>connect</code> fails fast
+with a clear error if either is missing.</p>
+<h3 id="gotchas-1">Gotchas<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#gotchas-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>Two tokens, not one</strong> — the most common mistake is saving only <code>xoxb-</code> and
+forgetting the <code>xapp-</code>. The relay will print “missing appToken secret” at
+startup.</li>
+<li><strong>Re-install the app after adding scopes</strong> — see step 6.</li>
+<li><strong>Bot not <code>/invite</code>d to the channel</strong> → no messages arrive; the bot is in the
+workspace but not the channel.</li>
+<li><strong>Outbound file sharing (<code>!share</code>) not yet implemented</strong> — <code>!share &lt;path></code> will
+post a notice instead of sending the file; inbound attachments work fine.</li>
+<li><strong>No typing indicator</strong> — the Slack web API has no equivalent of Discord’s
+typing event (it was RTM-only and is deprecated); the 👀 reaction signals
+“working” instead.</li>
+</ul>
+<hr/>
+<h2 id="telegram">Telegram<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#telegram" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Near-parity over <code>getUpdates</code> long-poll — no public server needed. Reactions use
+a fixed whitelist; <strong>forum topics</strong> are the thread analogue.</p>
+<h3 id="what-you-are-creating-2">What you are creating<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-you-are-creating-2" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A Telegram <strong>bot account</strong>, created through <strong>@BotFather</strong> (Telegram’s own bot
+that manages bot registration). The bot is added to a <strong>group</strong> or <strong>supergroup</strong>
+(the room); if you want per-task threads, you need a <strong>supergroup with Topics
+enabled</strong> (Topics = Telegram’s forum-topic feature).</p>
+<pre><code>Telegram → message @BotFather
+  └── /newbot  →  choose name + username  →  copy token
+        └── /mybots → your bot → Bot Settings → Group Privacy → Turn off
+              └── Add bot to group / supergroup → make it admin (for reactions)
+</code></pre>
+<h3 id="step-by-step-2">Step-by-step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#step-by-step-2" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1 — Create the bot with @BotFather</strong></p>
+<ol>
+<li>Open Telegram and start a conversation with
+<a href="https://t.me/BotFather" class="external external-link">@BotFather<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>.</li>
+<li>Send <code>/newbot</code>. BotFather asks for:
+<ul>
+<li>A <strong>display name</strong> (e.g. “My Coding Bot”) — shown in the chat header.</li>
+<li>A <strong>username</strong> (must end in <code>bot</code>, e.g. <code>my_coding_bot</code>) — used for
+@mentions.</li>
+</ul>
+</li>
+<li>BotFather replies with the <strong>bot token</strong> in the format <code>&lt;id>:&lt;secret></code> (e.g.
+<code>7123456789:AAFxxx…</code>). Copy it. This is <code>TELEGRAM_BOT_TOKEN</code>.</li>
+</ol>
+<p><strong>Step 2 — Disable Group Privacy (critical)</strong></p>
+<p>With Group Privacy <strong>on</strong> (the Telegram default), the bot only sees messages
+that directly @mention it — everything else is invisible to it.</p>
+<ol>
+<li>Message @BotFather → <code>/mybots</code> → pick your bot →
+<strong>Bot Settings → Group Privacy → Turn off</strong>.</li>
+<li>BotFather confirms “Privacy mode is disabled”.</li>
+</ol>
+<blockquote>
+<p>If you skip this step the bot will appear “deaf” to most group messages.</p>
+</blockquote>
+<p><strong>Step 3 — Set up the group (room)</strong></p>
+<p>Two options:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Option</th><th>Threads?</th><th>Setup</th></tr></thead><tbody><tr><td>Plain group / supergroup</td><td>No (all messages at room scope)</td><td>Just create a Telegram group and add the bot</td></tr><tr><td>Supergroup with Topics</td><td>Yes (each topic = one task)</td><td>Create a <strong>supergroup</strong> → <strong>Edit → Topics → enable</strong></td></tr></tbody></table></div>
+<p>For the room ID (needed by setup), the quickest method: after adding the bot,
+DM <a href="https://t.me/userinfobot" class="external external-link">@userinfobot<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> a message forwarded from the group —
+it replies with <code>chat_id</code>. Group IDs are <strong>negative</strong> integers (e.g. <code>-1001234567890</code>).</p>
+<p><strong>Step 4 — Make the bot a group admin (required for reactions)</strong></p>
+<p>In the group → tap the group name → <strong>Administrators → Add Administrator</strong> →
+pick your bot. Reactions (<code>message_reaction</code> updates) are only delivered to
+admins.</p>
+<p><strong>Step 5 — /start the bot yourself (required for DMs)</strong></p>
+<p>In a private chat with your bot, send <code>/start</code>. This opens the DM channel.
+The relay can only send you approval DMs and override notifications if you’ve
+opened this channel. If you don’t, those messages fall back to an @mention in
+the task scope.</p>
+<p><strong>Step 6 — Collect the values you need for setup</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>What</th><th>How to get it</th></tr></thead><tbody><tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>@BotFather → <code>/newbot</code> reply, format <code>&lt;id>:&lt;secret></code></td></tr><tr><td><strong>Chat ID</strong> (room)</td><td>Forward a group message to <a href="https://t.me/userinfobot" class="external external-link">@userinfobot<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>; or call <code>https://api.telegram.org/bot&lt;token>/getUpdates</code> in a browser after posting a message to the group</td></tr><tr><td><strong>Your user ID</strong> (owner)</td><td>DM <a href="https://t.me/userinfobot" class="external external-link">@userinfobot<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> — it replies with your numeric user id (e.g. <code>123456789</code>). Asked once.</td></tr></tbody></table></div>
+<p><strong>Step 7 — Run setup and relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # choose Telegram → paste chat id (often -100…) → bot → workspace + preset → save token</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<h3 id="tokens--env-vars-2">Tokens &amp; env vars<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tokens--env-vars-2" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Env var</th><th>Token type</th><th>Format</th><th>Where</th></tr></thead><tbody><tr><td><code>TELEGRAM_BOT_TOKEN</code></td><td>Bot Token</td><td><code>&lt;numeric_id>:&lt;secret></code></td><td>@BotFather → <code>/newbot</code></td></tr></tbody></table></div>
+<h3 id="reaction-whitelist">Reaction whitelist<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#reaction-whitelist" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Telegram only allows reactions from a fixed set. knock-knock maps its control
+glyphs to the closest permitted emoji:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>knock-knock glyph</th><th>Telegram emoji</th><th>Meaning</th></tr></thead><tbody><tr><td>👀</td><td>👀</td><td>working / saw message</td></tr><tr><td>🏁</td><td>🎉</td><td>done</td></tr><tr><td>⚠️</td><td>😱</td><td>failed</td></tr><tr><td>⏹</td><td>👎</td><td>stopped</td></tr><tr><td>🛑</td><td>👎</td><td>stop signal</td></tr><tr><td>✅</td><td>👍</td><td>approved</td></tr><tr><td>❌</td><td>👎</td><td>denied</td></tr></tbody></table></div>
+<p>Any glyph not in the whitelist (<code>👍 👎 ❤️ 🔥 🎉 🤔 😱 🙏 👏 🤩 👀</code>) is skipped
+and status falls back to a text note.</p>
+<h3 id="gotchas-2">Gotchas<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#gotchas-2" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>Group Privacy on (default)</strong> → bot is “deaf” to most messages. Disable via
+BotFather (step 2).</li>
+<li><strong>Bot not group admin</strong> → reaction events (<code>message_reaction</code>) are not
+delivered; status reactions silently fail.</li>
+<li><strong>Cold DM</strong> → if you never <code>/start</code>ed the bot in a private chat, DMs fail;
+override / approval messages fall back to an in-scope @mention.</li>
+<li><strong>64-byte callback limit on buttons</strong> — Telegram inline keyboard <code>callback_data</code>
+is capped at 64 bytes; the adapter maps long action IDs through an internal
+side table, so this is transparent to you.</li>
+<li><strong>Topics / forum scope</strong> — reaction events on a topic carry no <code>message_thread_id</code>
+in the Telegram API; this means control reactions (✅/❌/🛑) on a task in a forum
+topic are surfaced at room scope, not topic scope. This is a known Telegram API
+limitation.</li>
+</ul>
+<hr/>
+<h2 id="github">GitHub<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#github" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>An <strong>async transport</strong> (~60 s latency) over Notifications-API polling — best for
+PR-cadence coding and the agent-to-agent-over-issues pattern, not live chat.</p>
+<h3 id="what-you-are-creating-3">What you are creating<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-you-are-creating-3" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A <strong>dedicated machine-user GitHub account</strong> (a separate GitHub login that acts
+as the bot identity). You register that account as a <strong>collaborator</strong> on your
+repo, and give it a <strong>Personal Access Token</strong>. The repository is the room; each
+issue or pull request is a task scope.</p>
+<pre><code>github.com → create a second account  (the &quot;machine user&quot;)
+  └── Invite machine user as collaborator on your repo
+        └── Sign in as machine user → Settings → Developer Settings → Tokens
+              └── Create PAT with repo + notifications scopes
+</code></pre>
+<blockquote>
+<p><strong>Why a separate account?</strong> GitHub comments are posted as the token’s owner.
+Using a dedicated account means the bot’s replies are clearly attributed and
+don’t clutter your personal activity feed.</p>
+</blockquote>
+<h3 id="step-by-step-3">Step-by-step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#step-by-step-3" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1 — Create the machine-user account</strong></p>
+<p>Create a second GitHub account at <a href="https://github.com/join" class="external external-link">github.com/join<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>.
+Pick a name that makes it clear it’s a bot (e.g. <code>acme-coding-bot</code>). GitHub
+requires a unique email address — use an alias or a <code>+tag</code> variant.</p>
+<p><strong>Step 2 — Invite the machine user as a collaborator</strong></p>
+<p>In your repository: <strong>Settings → Collaborators and teams → Add people</strong> →
+search for the machine-user login → <strong>Add collaborator</strong>. The machine user
+must accept the invite (sign in as them and accept via the email or the
+<a href="https://github.com/notifications" class="external external-link">github.com/notifications<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> page).</p>
+<p><strong>Step 3 — Create a Personal Access Token for the machine user</strong></p>
+<p>Sign in as the machine user, then:</p>
+<ul>
+<li>
+<p><strong>Classic PAT:</strong>
+<a href="https://github.com/settings/tokens" class="external external-link">github.com/settings/tokens<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> →
+<strong>Generate new token (classic)</strong> → check <code>repo</code> and <code>notifications</code> →
+<strong>Generate token</strong> → copy.</p>
+</li>
+<li>
+<p><strong>Fine-grained PAT (recommended):</strong>
+<a href="https://github.com/settings/tokens" class="external external-link">github.com/settings/tokens<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> →
+<strong>Fine-grained tokens → Generate new token</strong> → scope to the specific
+repository → grant:</p>
+<ul>
+<li>Issues: <strong>Read and write</strong></li>
+<li>Pull requests: <strong>Read and write</strong></li>
+<li>Contents: <strong>Read and write</strong></li>
+<li>Metadata: <strong>Read</strong></li>
+<li>Notifications: <strong>Read</strong></li>
+</ul>
+</li>
+</ul>
+<p>This token is <code>GITHUB_BOT_TOKEN</code>.</p>
+<p><strong>Step 4 — Collect the values you need for setup</strong></p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>What</th><th>How to get it</th></tr></thead><tbody><tr><td><code>GITHUB_BOT_TOKEN</code></td><td>Machine user → Settings → Developer Settings → <strong>Personal access tokens</strong></td></tr><tr><td><strong>Repo ID</strong> (channel)</td><td>Simply <code>owner/repo</code> — e.g. <code>acme/my-project</code>. No numeric ID needed; you type it in setup.</td></tr><tr><td><strong>Your GitHub login</strong> (owner)</td><td>Your personal GitHub username (e.g. <code>octocat</code>). Asked once.</td></tr></tbody></table></div>
+<p><strong>Step 5 — Run setup and relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # choose GitHub → poll or webhook → type owner/repo → pick bot → workspace + preset → save token</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<h3 id="tokens--env-vars-3">Tokens &amp; env vars<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tokens--env-vars-3" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Env var</th><th>Token type</th><th>Starts with</th><th>Where</th></tr></thead><tbody><tr><td><code>GITHUB_BOT_TOKEN</code></td><td>Personal Access Token</td><td><code>ghp_</code> (classic) or <code>github_pat_</code> (fine-grained)</td><td>Machine user → Settings → Developer Settings</td></tr><tr><td><code>GITHUB_WEBHOOK_SECRET</code> <em>(optional)</em></td><td>webhook signing secret</td><td>—</td><td>only for webhook intake with a signed App/repo webhook</td></tr></tbody></table></div>
+<h3 id="intake-mode-poll-default-or-webhook">Intake mode: poll (default) or webhook<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#intake-mode-poll-default-or-webhook" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>GitHub is poll-based by default (~60 s; setup picks this unless you choose webhook). For
+near-instant delivery, choose <strong>webhook</strong> intake in setup and forward events to the relay’s
+local receiver — <strong>no public URL needed</strong>:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">gh</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> extension</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> install</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> cli/gh-webhook</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">        # once</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">gh</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> webhook</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> forward</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value"> --repo</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> &lt;</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">owner/rep</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">o</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">></span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value"> --events</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> issue_comment</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="string"> \</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value">  --url</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> http://localhost:8787/github/</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">&lt;</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">botKe</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">y</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">></span></span></code></pre></figure>
+<p>Keep that running next to <code>knock-knock relay</code>. Set <code>KNOCK_KNOCK_WEBHOOK_PORT</code> if <code>8787</code> is
+taken. Full details, signing, and the GitHub-App/smee.io path:
+<a href="./messaging-event-driven-intake.html" class="internal internal-link" data-slug="messaging-event-driven-intake">messaging-event-driven-intake.md</a>.</p>
+<h3 id="how-scopes-map">How scopes map<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#how-scopes-map" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>GitHub concept</th><th>knock-knock concept</th></tr></thead><tbody><tr><td>repository</td><td><strong>room</strong> (permission boundary; profile per repo)</td></tr><tr><td>issue or pull request</td><td><strong>scope</strong> (one task)</td></tr><tr><td>comment on issue/PR</td><td>message</td></tr><tr><td>bot posting a comment</td><td><code>send</code></td></tr><tr><td>editing a comment</td><td><code>edit</code></td></tr><tr><td><code>@machine-user-login</code></td><td>@mention bot</td></tr><tr><td>issue/PR number suffix</td><td>scope id (<code>owner/repo#123</code>)</td></tr></tbody></table></div>
+<p>The task scope id is derived <strong>automatically</strong> when someone @mentions the bot in
+an issue or PR — you never type issue numbers in setup.</p>
+<h3 id="approval-flow-no-native-buttons">Approval flow (no native buttons)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#approval-flow-no-native-buttons" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>GitHub has no interactive button API in comments. Approvals and session-pick
+choices degrade to a numbered menu:</p>
+<pre><code>The bot wants to run: bash(&quot;npm test&quot;)
+
+  1 — Allow
+  2 — Deny
+
+Reply with the number to choose.
+</code></pre>
+<p>Reply with <code>1</code> or <code>2</code> in the same issue/PR thread. The host detects it and
+routes it as an approval action.</p>
+<h3 id="gotchas-3">Gotchas<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#gotchas-3" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>~60 s latency floor</strong> (<code>X-Poll-Interval</code> from the Notifications API) — right
+for async coding, wrong for live chat.</li>
+<li><strong>Public repos are an open prompt-injection surface</strong> — anyone can @mention the
+bot on a public repo. The relay auto-trusts only comment authors whose
+<code>author_association</code> is <code>OWNER</code>, <code>MEMBER</code>, or <code>COLLABORATOR</code> (plus the configured
+owner + roster); <code>CONTRIBUTOR</code> / <code>FIRST_TIMER</code> / <code>NONE</code> are ignored. So a repo’s real
+collaborators “just work” without being re-listed, while drive-by commenters can’t
+trigger the bot. <strong>Still review who has collaborator access before pointing at a
+public repo.</strong></li>
+<li><strong>REST quota</strong> — each new mention fetches comment history; watch usage with a
+busy public repo. A GitHub App identity (higher rate ceiling) is a deferred
+fast-follow; v1 is a PAT machine-user.</li>
+<li><strong>No DM</strong> — approval DMs fall back to an @mention comment in the issue/PR
+thread.</li>
+<li><strong>No pin, no buttons</strong> — conflict cards and session-pick use numbered text menus.</li>
+</ul>
+<hr/>
+<h2 id="notion">Notion<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#notion" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>A <strong>heavily-degraded async transport</strong> over comment/page polling (~10 s). Honest
+recommendation from the build: <strong>Notion is often better used as an MCP tool than
+a chat transport</strong> — use it as a transport only when the conversation genuinely
+lives in Notion.</p>
+<h3 id="what-you-are-creating-4">What you are creating<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#what-you-are-creating-4" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A Notion <strong>connection</strong> (Notion’s current Developer Portal term for an integration) —
+a credential scoped to your workspace, connected to specific pages or databases. Unlike
+the other platforms there is no “bot account”; the connection itself posts as a named
+entity.</p>
+<p>In the <strong>New connection</strong> dialog (notion.so/profile/integrations → New connection) pick
+the <strong>Authentication method</strong>:</p>
+<ul>
+<li><strong>Access token</strong> (recommended for knock-knock) — a workspace-scoped static token
+(<code>ntn_…</code>). Single workspace, not Marketplace-eligible. This is the simplest path and
+what the relay uses. A user <strong>Personal Access Token (PAT)</strong> works identically — both are
+bearer tokens you save as <code>NOTION_TOKEN</code>.</li>
+<li><strong>OAuth</strong> — user-scoped OAuth 2.0, multi-workspace, Marketplace-eligible. Only needed if
+you’re distributing a public integration; not required for self-hosting the relay.</li>
+</ul>
+<pre><code>notion.so/profile/integrations  →  New connection
+  ├── Name it + choose &quot;Access token&quot; + pick workspace
+  ├── Capabilities: Read/Insert content, Read/Insert comments, Read user info
+  └── Copy the Access token / Internal Integration Secret  (ntn_…)
+        ↓
+  For EACH page or database the bot should watch:
+  Open page → ••• (top-right) → Connections → add your connection
+</code></pre>
+<blockquote>
+<p><strong>The sharing step is mandatory.</strong> A valid token that has not been connected
+to a page sees nothing — no error, just silence. This is the single most
+common failure mode.</p>
+</blockquote>
+<h3 id="step-by-step-4">Step-by-step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#step-by-step-4" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Step 1 — Create the internal integration</strong></p>
+<ol>
+<li>Go to <a href="https://www.notion.so/my-integrations" class="external external-link">notion.so/my-integrations<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a> and
+click <strong>+ New integration</strong>.</li>
+<li>Give it a name (e.g. “knock-knock relay”), pick your workspace, and upload an
+icon if you like.</li>
+<li>Under <strong>Capabilities</strong> enable:
+<ul>
+<li><strong>Read content</strong></li>
+<li><strong>Insert content</strong></li>
+<li><strong>Read comments</strong></li>
+<li><strong>Insert comments</strong></li>
+<li><strong>Read user information</strong></li>
+</ul>
+</li>
+<li>Click <strong>Submit</strong>. On the next page copy the <strong>Internal Integration Secret</strong> —
+it starts with <code>ntn_</code>. This is <code>NOTION_TOKEN</code>.</li>
+</ol>
+<p><strong>Step 2 — Share each page or database with the integration</strong></p>
+<p>For <strong>every</strong> page or database you want the bot to watch:</p>
+<ol>
+<li>Open the page in Notion.</li>
+<li>Click <strong>•••</strong> (the three-dot menu in the top-right corner).</li>
+<li>Click <strong>Connections → Add connections</strong> → search for your integration name →
+select it.</li>
+<li>Confirm that you see the integration name appear under Connections.</li>
+</ol>
+<blockquote>
+<p>Repeat this for each project page or database. The relay only polls pages
+that have been connected.</p>
+</blockquote>
+<p><strong>Step 3 — Find the page or database ID</strong></p>
+<p>The ID is the 32 hex characters at the end of the page URL:</p>
+<pre><code>https://www.notion.so/My-Page-Title-a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4
+                                     ↑─────────── this part ───────────↑
+</code></pre>
+<p>Strip the hyphens — Notion sometimes shows it with hyphens in the URL, but
+<code>knock-knock setup</code> accepts either format.</p>
+<p><strong>Step 4 — Find your Notion user ID</strong></p>
+<p>Call the Notion API with your token to list workspace users:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">curl</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value"> -H</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> &quot;Authorization: Bearer ntn_YOUR_TOKEN&quot;</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="string"> \</span></span>
+<span data-line><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value">     -H</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> &quot;Notion-Version: 2022-06-28&quot;</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="string"> \</span></span>
+<span data-line><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string">     https://api.notion.com/v1/users</span></span></code></pre></figure>
+<p>Find your entry in the JSON and copy the <code>&quot;id&quot;</code> field — a UUID like
+<code>a1b2c3d4-e5f6-7890-abcd-ef1234567890</code>. This is asked once as your owner id.</p>
+<p>Alternatively: in Notion, create a new page, type <code>@</code> and start typing your
+name, hover over your entry in the dropdown — the URL in your browser’s status
+bar shows your user ID.</p>
+<p><strong>Step 5 — Run setup and relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">    # choose Notion → paste page/database id → bot → workspace + preset → save token</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<h3 id="tokens--env-vars-4">Tokens &amp; env vars<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#tokens--env-vars-4" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Env var</th><th>Token type</th><th>Starts with</th><th>Where</th></tr></thead><tbody><tr><td><code>NOTION_TOKEN</code></td><td>Access token / Internal Integration Secret / PAT</td><td><code>ntn_</code></td><td>notion.so/profile/integrations → your connection</td></tr><tr><td><code>NOTION_VERIFICATION_TOKEN</code> <em>(optional)</em></td><td>webhook verification token</td><td>—</td><td>only for webhook intake; auto-captured on the subscription handshake</td></tr></tbody></table></div>
+<h3 id="intake-mode-poll-default-or-webhook-1">Intake mode: poll (default) or webhook<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#intake-mode-poll-default-or-webhook-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Notion polls page comments every ~10 s by default. When the host configures the bot’s
+tracked page/database ids (from your <code>notion:&lt;id></code> channels), the sweep polls <strong>only those
+pages</strong> instead of scanning the whole workspace — faster and a smaller injection surface.</p>
+<p>For near-instant delivery, choose <strong>webhook</strong> intake in setup. Notion webhooks need a
+public HTTPS URL, so front the relay’s receiver with a tunnel and create a subscription:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">cloudflared</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> tunnel</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value"> --url</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> http://localhost:8787</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">      # or: ngrok http 8787</span></span></code></pre></figure>
+<p>Then in your connection → <strong>Webhooks → Create subscription</strong>: paste
+<code>https://&lt;tunnel-host>/notion/&lt;botKey></code>, pick API version <code>2026-03-11</code>, select the
+<strong>Comment</strong> events, and create. Notion sends a one-time verification token that the relay
+captures automatically. Full details:
+<a href="./messaging-event-driven-intake.html" class="internal internal-link" data-slug="messaging-event-driven-intake">messaging-event-driven-intake.md</a>.</p>
+<h3 id="how-scopes-map-1">How scopes map<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#how-scopes-map-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Notion concept</th><th>knock-knock concept</th></tr></thead><tbody><tr><td>database or top-level page</td><td><strong>room</strong> (permission boundary)</td></tr><tr><td>page (or database row as page)</td><td><strong>scope</strong> (one task)</td></tr><tr><td>comment on a page</td><td>message</td></tr><tr><td>integration posting a comment</td><td><code>send</code></td></tr><tr><td>@integration-name in a comment</td><td>@mention bot</td></tr></tbody></table></div>
+<h3 id="approval-flow-no-native-buttons-1">Approval flow (no native buttons)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#approval-flow-no-native-buttons-1" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Same as GitHub — no interactive button API. Approvals degrade to a numbered
+text menu in a comment; reply with the number in the same page thread.</p>
+<h3 id="gotchas-4">Gotchas<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#gotchas-4" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li><strong>Sharing is mandatory</strong> — if the page isn’t connected to the integration (step
+2), the relay polls nothing and no messages are received. No error is shown.</li>
+<li><strong>Cold start ignores existing comments</strong> — on first connect the relay records
+all current comments as “seen” and only responds to new ones. Pre-existing
+discussion is not replayed.</li>
+<li><strong>~10 s polling latency</strong> (Notion’s comment API is rate-limited to ~3 req/s;
+the adapter spaces requests to stay under the ceiling). Webhook intake removes the
+poll delay — see Intake mode above.</li>
+<li><strong>No reactions, no buttons, no DM</strong> — status is conveyed in text appended to
+comments; approvals are numbered text menus (reply with the number).</li>
+<li><strong>Comments ARE edited in place</strong> — the adapter uses <code>PATCH /v1/comments</code>
+(<code>comments.update</code>), so status/Workbench updates rewrite a comment instead of posting
+a new one each time.</li>
+<li><strong>Writing INTO the page (not just comments)</strong> — a Notion bot on the <code>claude-sdk</code>
+runtime gets page-scoped tools (<code>read_page</code>, <code>append_to_page</code>) locked to the page the
+conversation is on. So “add a paragraph describing X to the page” appends to the page
+<em>body</em>; the agent’s chat reply still posts as a <em>comment</em>. The agent is told (via its
+preamble) to use these tools rather than editing local files for page changes. (ACP
+runtimes don’t expose these yet.)</li>
+<li><strong>File exchange deferred</strong> — Notion’s file upload API is multi-step; inbound
+and outbound file handling is not yet wired.</li>
+<li><strong>Workers bridge (future)</strong> — a Notion Worker + External Agents API
+integration that lets Notion summon the relay bidirectionally requires a
+Business/Enterprise workspace and a publicly reachable relay endpoint; it is a
+planned fast-follow, not v1.</li>
+</ul>
+<hr/>
+<h2 id="after-the-credentials">After the credentials<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#after-the-credentials" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>With the app created and the id + token(s) in hand, follow
+<a href="./setup.html" class="internal internal-link alias" data-slug="setup">the setup guide</a>: <code>knock-knock setup</code> registers the bot and channel,
+masks and saves the token(s) into <code>~/.knock-knock/.env</code>, and <code>knock-knock relay</code>
+connects. Choosing the coding agent behind the bot, presets, and the deny floor
+are covered there and in
+<a href="./getting-started-agents.html" class="internal internal-link" data-slug="getting-started-agents">getting-started-agents.md</a>.</p>
+<h3 id="quick-reference-which-platform-to-use">Quick reference: which platform to use?<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#quick-reference-which-platform-to-use" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Goal</th><th>Best platform</th></tr></thead><tbody><tr><td>Live, interactive collaboration with full approval UX</td><td><strong>Discord</strong> or <strong>Slack</strong></td></tr><tr><td>Async PR review / agent-to-agent-over-issues</td><td><strong>GitHub</strong></td></tr><tr><td>Team that already lives in Telegram</td><td><strong>Telegram</strong></td></tr><tr><td>Conversation genuinely happening on a Notion page</td><td><strong>Notion</strong> (with expectations set)</td></tr><tr><td>Untrusted work with strict guardrails</td><td>Any platform + a <code>strict</code> preset (ask-first + deny floor)</td></tr></tbody></table></div></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-12" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#messaging-platform-setup--create-the-app-get-the-credentials" data-for="messaging-platform-setup--create-the-app-get-the-credentials">Messaging platform setup — create the app, get the credentials</a></li><li class="depth-1"><a href="#what-each-platform-supports" data-for="what-each-platform-supports">What each platform supports</a></li><li class="depth-2"><a href="#terminology-correspondence" data-for="terminology-correspondence">Terminology correspondence</a></li><li class="depth-1"><a href="#discord" data-for="discord">Discord</a></li><li class="depth-2"><a href="#what-you-are-creating" data-for="what-you-are-creating">What you are creating</a></li><li class="depth-2"><a href="#step-by-step" data-for="step-by-step">Step-by-step</a></li><li class="depth-2"><a href="#tokens--env-vars" data-for="tokens--env-vars">Tokens &amp; env vars</a></li><li class="depth-2"><a href="#gotchas" data-for="gotchas">Gotchas</a></li><li class="depth-1"><a href="#slack" data-for="slack">Slack</a></li><li class="depth-2"><a href="#what-you-are-creating-1" data-for="what-you-are-creating-1">What you are creating</a></li><li class="depth-2"><a href="#step-by-step-1" data-for="step-by-step-1">Step-by-step</a></li><li class="depth-2"><a href="#tokens--env-vars-1" data-for="tokens--env-vars-1">Tokens &amp; env vars</a></li><li class="depth-2"><a href="#gotchas-1" data-for="gotchas-1">Gotchas</a></li><li class="depth-1"><a href="#telegram" data-for="telegram">Telegram</a></li><li class="depth-2"><a href="#what-you-are-creating-2" data-for="what-you-are-creating-2">What you are creating</a></li><li class="depth-2"><a href="#step-by-step-2" data-for="step-by-step-2">Step-by-step</a></li><li class="depth-2"><a href="#tokens--env-vars-2" data-for="tokens--env-vars-2">Tokens &amp; env vars</a></li><li class="depth-2"><a href="#reaction-whitelist" data-for="reaction-whitelist">Reaction whitelist</a></li><li class="depth-2"><a href="#gotchas-2" data-for="gotchas-2">Gotchas</a></li><li class="depth-1"><a href="#github" data-for="github">GitHub</a></li><li class="depth-2"><a href="#what-you-are-creating-3" data-for="what-you-are-creating-3">What you are creating</a></li><li class="depth-2"><a href="#step-by-step-3" data-for="step-by-step-3">Step-by-step</a></li><li class="depth-2"><a href="#tokens--env-vars-3" data-for="tokens--env-vars-3">Tokens &amp; env vars</a></li><li class="depth-2"><a href="#intake-mode-poll-default-or-webhook" data-for="intake-mode-poll-default-or-webhook">Intake mode: poll (default) or webhook</a></li><li class="depth-2"><a href="#how-scopes-map" data-for="how-scopes-map">How scopes map</a></li><li class="depth-2"><a href="#approval-flow-no-native-buttons" data-for="approval-flow-no-native-buttons">Approval flow (no native buttons)</a></li><li class="depth-2"><a href="#gotchas-3" data-for="gotchas-3">Gotchas</a></li><li class="depth-1"><a href="#notion" data-for="notion">Notion</a></li><li class="depth-2"><a href="#what-you-are-creating-4" data-for="what-you-are-creating-4">What you are creating</a></li><li class="depth-2"><a href="#step-by-step-4" data-for="step-by-step-4">Step-by-step</a></li><li class="depth-2"><a href="#tokens--env-vars-4" data-for="tokens--env-vars-4">Tokens &amp; env vars</a></li><li class="depth-2"><a href="#intake-mode-poll-default-or-webhook-1" data-for="intake-mode-poll-default-or-webhook-1">Intake mode: poll (default) or webhook</a></li><li class="depth-2"><a href="#how-scopes-map-1" data-for="how-scopes-map-1">How scopes map</a></li><li class="depth-2"><a href="#approval-flow-no-native-buttons-1" data-for="approval-flow-no-native-buttons-1">Approval flow (no native buttons)</a></li><li class="depth-2"><a href="#gotchas-4" data-for="gotchas-4">Gotchas</a></li><li class="depth-1"><a href="#after-the-credentials" data-for="after-the-credentials">After the credentials</a></li><li class="depth-2"><a href="#quick-reference-which-platform-to-use" data-for="quick-reference-which-platform-to-use">Quick reference: which platform to use?</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./" class="internal">knock-knock documentation</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

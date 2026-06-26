@@ -111,7 +111,7 @@
   <!-- 04 PLATFORM -->
   <section class="gsec reveal" id="platform">
     <h2>Supported platforms</h2>
-    <p class="gsec-lede">knock-knock connects through one platform-neutral adapter seam. Five platforms are supported today, in descending fidelity: <b>Discord</b> and <b>Slack</b> are full-fidelity and live; <b>Telegram</b> is near-parity; <b>GitHub</b> and <b>Notion</b> are async and degraded. Create the app, grab the token(s) and id, then run setup. Full reference: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/messaging-platforms-setup.md">messaging-platforms-setup.md</a>.</p>
+    <p class="gsec-lede">knock-knock connects through one platform-neutral adapter seam. Five platforms are supported today, in descending fidelity: <b>Discord</b> and <b>Slack</b> are full-fidelity and live; <b>Telegram</b> is near-parity; <b>GitHub</b> and <b>Notion</b> are async and degraded. Create the app, grab the token(s) and id, then run setup. Full reference: <a href="docs/messaging-platforms-setup.html">messaging-platforms-setup.md</a>.</p>
 
     <!-- DISCORD -->
     <div class="ppanel" data-panel="discord">
@@ -191,7 +191,7 @@
         <tr><td>acp</td><td>any ACP agent</td><td>You set the spawn command.</td></tr>
       </tbody>
     </table>
-    <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div><strong>The one thing that matters: ask-first.</strong> The deny floor only holds if the agent asks before running a tool. Claude Code does by default. For other runtimes, keep them in ask-first mode (never a yolo / auto-approve mode). Per-runtime install and auth: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/getting-started-agents.md">getting-started-agents.md</a>.</div></div>
+    <div class="callout warn"><svg class="ic"><use href="#i-alert"/></svg><div><strong>The one thing that matters: ask-first.</strong> The deny floor only holds if the agent asks before running a tool. Claude Code does by default. For other runtimes, keep them in ask-first mode (never a yolo / auto-approve mode). Per-runtime install and auth: <a href="docs/getting-started-agents.html">getting-started-agents.md</a>.</div></div>
   </section>
 
   <!-- 06 PERMISSIONS -->
@@ -207,8 +207,8 @@
         <tr><td>bypass</td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td><span class="k-ok">allow</span></td><td>unattended runs you review after</td></tr>
       </tbody>
     </table>
-    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>), writes to sensitive paths, and reading or sharing any credential file (<code>.env</code>, <code>*.key</code>, <code>~/.aws</code>) are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's bot runs read-only while you keep full access. Full guide: <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Permissions &amp; security</a>.</p>
-    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div><strong>Files move through the same gate.</strong> Attach a file and the relay saves it into the bot's workspace for the agent to read; share one back with the owner command <code>!share &lt;path&gt;</code>. Both are typed as a <code>FileShare</code> permission, and the secret floor refuses reading or sharing a credential no matter the preset. See <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md">File exchange</a>.</div></div>
+    <p class="body">Two things hold no matter the preset. <b>The deny floor is always on:</b> destructive shell (<code>rm -rf</code>, <code>sudo</code>), writes to sensitive paths, and reading or sharing any credential file (<code>.env</code>, <code>*.key</code>, <code>~/.aws</code>) are blocked even under <code>bypass</code>, checked against the real command. And <b>you can give peers less than yourself</b> with per-actor tiers, e.g. a peer's bot runs read-only while you keep full access. Full guide: <a href="docs/security-and-permissions.html">Permissions &amp; security</a>.</p>
+    <div class="callout"><svg class="ic"><use href="#i-info"/></svg><div><strong>Files move through the same gate.</strong> Attach a file and the relay saves it into the bot's workspace for the agent to read; share one back with the owner command <code>!share &lt;path&gt;</code>. Both are typed as a <code>FileShare</code> permission, and the secret floor refuses reading or sharing a credential no matter the preset. See <a href="docs/file-exchange.html">File exchange</a>.</div></div>
   </section>
 
   <!-- 07 VERIFY -->
@@ -241,13 +241,13 @@
     <h2>Go deeper</h2>
     <p class="gsec-lede">Once the basics work, these are the features worth knowing about. Each has a dedicated guide.</p>
     <div class="dlinks">
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/messaging-platforms-setup.md"><b><svg class="ic"><use href="#i-book"/></svg> Messaging platform setup</b><span>Create the app and get the token(s) for Discord, Slack, Telegram, GitHub, or Notion — the per-platform prerequisite to setup.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/getting-started-agents.md"><b><svg class="ic"><use href="#i-book"/></svg> Different agents &amp; cross-machine</b><span>Per-runtime install/auth, multi-agent collaboration, and a shared Postgres ledger for working across machines.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md"><b><svg class="ic"><use href="#i-shield"/></svg> Permissions &amp; security</b><span>Presets, per-peer tiers, the deny floor, and the prompt-injection invariant.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/session-sharing.md"><b><svg class="ic"><use href="#i-book"/></svg> Session sharing</b><span>Start a teammate's agent from the plan and decisions in one of your local coding sessions.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md"><b><svg class="ic"><use href="#i-book"/></svg> File exchange</b><span>Attach a file for the agent to read, or <code>!share</code> one back — gated by the same permission floor.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/knock-knock-watches.md"><b><svg class="ic"><use href="#i-book"/></svg> Watches</b><span>Let a turn defer and be resumed by the world: a file changing, a job finishing, a deadline passing.</span></a>
-      <a class="dlink" href="https://github.com/ryanyen2/knock-knock/blob/main/docs/reactions-and-versioning.md"><b><svg class="ic"><use href="#i-book"/></svg> Reactions &amp; versioning</b><span>The reaction vocabulary, equal-role conflict cards, and how the ledger versions every action.</span></a>
+      <a class="dlink" href="docs/messaging-platforms-setup.html"><b><svg class="ic"><use href="#i-book"/></svg> Messaging platform setup</b><span>Create the app and get the token(s) for Discord, Slack, Telegram, GitHub, or Notion — the per-platform prerequisite to setup.</span></a>
+      <a class="dlink" href="docs/getting-started-agents.html"><b><svg class="ic"><use href="#i-book"/></svg> Different agents &amp; cross-machine</b><span>Per-runtime install/auth, multi-agent collaboration, and a shared Postgres ledger for working across machines.</span></a>
+      <a class="dlink" href="docs/security-and-permissions.html"><b><svg class="ic"><use href="#i-shield"/></svg> Permissions &amp; security</b><span>Presets, per-peer tiers, the deny floor, and the prompt-injection invariant.</span></a>
+      <a class="dlink" href="docs/session-sharing.html"><b><svg class="ic"><use href="#i-book"/></svg> Session sharing</b><span>Start a teammate's agent from the plan and decisions in one of your local coding sessions.</span></a>
+      <a class="dlink" href="docs/file-exchange.html"><b><svg class="ic"><use href="#i-book"/></svg> File exchange</b><span>Attach a file for the agent to read, or <code>!share</code> one back — gated by the same permission floor.</span></a>
+      <a class="dlink" href="docs/knock-knock-watches.html"><b><svg class="ic"><use href="#i-book"/></svg> Watches</b><span>Let a turn defer and be resumed by the world: a file changing, a job finishing, a deadline passing.</span></a>
+      <a class="dlink" href="docs/reactions-and-versioning.html"><b><svg class="ic"><use href="#i-book"/></svg> Reactions &amp; versioning</b><span>The reaction vocabulary, equal-role conflict cards, and how the ledger versions every action.</span></a>
     </div>
     <div class="guide-cta">
       <a href="#quickstart" class="btn btn-primary btn-lg">Back to quickstart</a>
@@ -267,9 +267,9 @@
     </a>
     <nav class="footer-links">
       <a href="index.html">Overview</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/setup.md">Setup (markdown)</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Security</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/session-sharing.md">Session sharing</a>
+      <a href="docs/setup.html">Setup (markdown)</a>
+      <a href="docs/security-and-permissions.html">Security</a>
+      <a href="docs/session-sharing.html">Session sharing</a>
     </nav>
     <span class="footer-note">The channel is the door. You hold the key.</span>
   </div>

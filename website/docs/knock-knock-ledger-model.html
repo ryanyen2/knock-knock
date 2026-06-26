@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>knock-knock-ledger-model</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="knock-knock-ledger-model"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="knock-knock-ledger-model"/><meta name="twitter:description" content="The knock-knock ledger — a field guide A user-facing tour of how knock-knock remembers things, shows you what’s happening, and lets you take back control when an agent goes the wrong way."/><meta property="og:description" content="The knock-knock ledger — a field guide A user-facing tour of how knock-knock remembers things, shows you what’s happening, and lets you take back control when an agent goes the wrong way."/><meta property="og:image:alt" content="The knock-knock ledger — a field guide A user-facing tour of how knock-knock remembers things, shows you what’s happening, and lets you take back control when an agent goes the wrong way."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/knock-knock-ledger-model"/><meta property="twitter:url" content="https://knock-knock.dev/docs/knock-knock-ledger-model"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="The knock-knock ledger — a field guide A user-facing tour of how knock-knock remembers things, shows you what’s happening, and lets you take back control when an agent goes the wrong way."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/knock-knock-ledger-model-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/knock-knock-ledger-model-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/knock-knock-ledger-model-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="knock-knock-ledger-model" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-7" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-7" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>knock-knock-ledger-model</a></div></nav><h1 class="article-title">knock-knock-ledger-model</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-24T14:05:53.000Z">Jun 24, 2026</time><span>19 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="the-knock-knock-ledger--a-field-guide">The knock-knock ledger — a field guide<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-knock-knock-ledger--a-field-guide" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>A user-facing tour of how knock-knock remembers things, shows you what’s
+happening, and lets you take back control when an agent goes the wrong way.
+Most of this document is about what you <em>see</em> in Discord — the icons, the
+edited messages, the approval prompts. The deep architecture is a one-page
+appendix at the bottom for the curious; if you only ever need to read one
+section, read <strong>§2 Who goes first</strong> and <strong>§3 What you see today</strong>.</p>
+<blockquote>
+<p>Anything labelled <strong>Shipping today</strong> is in <code>main</code> and you can use it now.
+Anything labelled <strong>Designed, not yet shipped</strong> describes a further pass over
+what the ledger already captures. (The whole §4 Discord surface — the
+Workbench, conflict cards, attribution, override DMs, rewind reactions, the
+stale-note flag — has since shipped; see
+<a href="./reactions-and-versioning.html" class="internal internal-link" data-slug="reactions-and-versioning"><code>reactions-and-versioning.md</code></a>.)</p>
+</blockquote>
+<blockquote>
+<p><strong>Room vs scope.</strong> A task runs in its own Discord <strong>thread</strong>, opened from a
+top-level <code>@mention</code>. An interaction’s <code>channel</code> field is that task <strong>scope</strong>
+(the thread, or a plain channel when there’s no thread); everything task-bound
+keys on it — turn lineage, approvals, watches, the knowledge fold, the
+Workbench, the agent’s session. The <strong>room</strong> is the parent channel, and it owns
+what is <em>not</em> per-task: the permission profile, the roster, the allowlist, and
+routing. <code>roomForScope</code> resolves a scope to its room, and permission
+classification always does so — a threaded task is governed by the same deny
+floor as a top-level one, never an empty profile.</p>
+</blockquote>
+<hr/>
+<h2 id="1-what-this-gets-you">1. What this gets you<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#1-what-this-gets-you" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Three things you didn’t have before:</p>
+<ol>
+<li><strong>Nothing is lost.</strong> Every message, every tool the agent ran, every
+approval you clicked, every note an agent wrote — it’s all kept, in order,
+with the cause of each step linked to the one before it. If you restart
+the relay mid-conversation, it picks up where it left off. If your
+collaborator joins from another machine, they see the whole history.</li>
+<li><strong>You can ask “why did that happen?”</strong> and get an honest answer. Not
+“the agent decided to do X” — but the actual chain: <em>Alice asked at
+14:03; bot-A read three files; bot-A ran <code>npm test</code>; Alice approved;
+the test failed; bot-A reported the failure.</em></li>
+<li><strong>You stay in charge.</strong> If two agents try to change the same thing at
+once, you (the owner) win. The agent’s draft isn’t deleted — it’s
+marked superseded and the agent is told. If you want to roll back to a
+point earlier in the conversation, you can.</li>
+</ol>
+<hr/>
+<h2 id="2-who-goes-first">2. Who goes first<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#2-who-goes-first" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>knock-knock has three roles. They’re <strong>per-channel</strong> — the same person can
+be the owner in one room and just a human peer in another.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Role</th><th>Who</th><th>What they can do</th></tr></thead><tbody><tr><td><strong>owner</strong></td><td>The person who runs the bot</td><td>Always wins a tie. Approves tool runs. Can override anything.</td></tr><tr><td><strong>human</strong></td><td>Other registered humans in the room</td><td>Can talk to the bot, reset loops, but can’t approve tool runs.</td></tr><tr><td><strong>agent</strong></td><td>Bots — yours and registered peers’</td><td>Can talk, propose work, request tool permissions.</td></tr></tbody></table></div>
+<p>The rule is plain: <strong>owner beats human beats agent</strong>. If owner Alice and
+agent bot-B are about to write the same paragraph of <code>report.md</code> at the same
+moment, Alice’s edit wins automatically. Bot-B’s draft isn’t thrown
+away — it stays in the history, marked <em>superseded by Alice</em>, and bot-B is
+told. Bot-B can pick it up on the next turn (“I see my draft was
+overridden; the new text is X — should I rewrite based on that?”).</p>
+<p>When two agents tie (no owner around), they’re flagged as a conflict and
+shown to the owner for resolution. <strong>§5 When two agents disagree</strong> walks
+through what that looks like.</p>
+<hr/>
+<h2 id="3-what-you-see-today">3. What you see today<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#3-what-you-see-today" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>These are the visual cues already in the relay. They form a small,
+deliberate vocabulary — once you learn the four glyphs and the two
+locations (channel vs DM), you can read what’s happening at a glance.</p>
+<h3 id="31-in-the-channel--quiet-status-cues">3.1 In the channel — quiet status cues<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#31-in-the-channel--quiet-status-cues" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>When you <code>@mention</code> a bot, you’ll see one of these reactions appear on
+<em>your</em> message:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Glyph</th><th>Meaning</th></tr></thead><tbody><tr><td>👀</td><td>The bot is working on it. Stays until the reply is posted.</td></tr><tr><td>(cleared)</td><td>The bot has finished and posted its reply below your message.</td></tr></tbody></table></div>
+<p>When the bot needs your permission to run a tool, a fresh message appears
+in the channel (or your DM, depending on whether the bot can reach you
+directly):</p>
+<pre><code>ALICE-BOT  Today at 14:03
+@alice  Permission request: Bash
+        ```
+        npm test
+        ```
+        [ Allow ✅ ]   [ Deny ❌ ]
+</code></pre>
+<p>Click <strong>Allow</strong> or <strong>Deny</strong>, or react ✅ / ❌. Only the owner’s click counts;
+anyone else who clicks gets a quiet “Not authorized” reply they can see.</p>
+<p>After you decide, the message updates in place:</p>
+<pre><code>ALICE-BOT  Today at 14:03  (edited)
+@alice  Permission request: Bash
+        ```
+        npm test
+        ```
+        ✅ Allowed
+</code></pre>
+<h3 id="32-in-your-dm--the-live-transcript">3.2 In your DM — the live transcript<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#32-in-your-dm--the-live-transcript" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>While the bot is working, it edits a single message in your Discord DM in
+real time. This is your private “control room” — a complete moment-to-
+moment view that nobody else in the channel sees.</p>
+<pre><code>ALICE-BOT
+─────────
+▸ alice in #project-x
+> can you check why the parser test is failing?
+
+• Read `src/parser.ts`
+• Grep `parseExpression`
+• Read `tests/parser.test.ts`
+• Bash `npm test`
+  ↳ … pending
+</code></pre>
+<p>Then, after you approve:</p>
+<pre><code>ALICE-BOT (edited)
+─────────
+▸ alice in #project-x
+> can you check why the parser test is failing?
+
+• Read `src/parser.ts`
+• Grep `parseExpression`
+• Read `tests/parser.test.ts`
+• Bash `npm test`
+
+───
+The test fails because `parseExpression` returns `null` on empty input
+instead of throwing. I can fix it by adding an early throw, or update
+the test to expect `null` — which do you want?
+</code></pre>
+<p>The message is edited (not re-posted), so it never spams your DM. If you
+scroll back through your DM history, every past turn is preserved as a
+final-state record. <strong>This is the closest thing to a personal flight
+recorder for your agent.</strong></p>
+<p>If you’ve closed DMs to the bot, the live transcript disables itself
+silently and you’ll see a one-line note in the terminal where the relay
+runs. The bot still works; you just don’t get the live view.</p>
+<h3 id="33-in-the-terminal--operator-notes">3.3 In the terminal — operator notes<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#33-in-the-terminal--operator-notes" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>The relay prints one short line per noteworthy event to its terminal,
+colour-coded per agent. Useful when you have several bots running.</p>
+<pre><code>alice-bot  ▸ alice in #project-x: &quot;check why the parser test is failing&quot;
+alice-bot  → Read src/parser.ts
+alice-bot  → Grep parseExpression
+alice-bot  ✋ asks: Bash(npm test)  → prompt sent to dm
+alice-bot  → Bash npm test
+alice-bot  ◆ The test fails because parseExpression returns null…
+alice-bot  ── turn done · 4 tools · 2.3s
+</code></pre>
+<p>If DMs are unreachable, the line reads <code>→ prompt sent to channel — DM unavailable: ...</code> so you know why the prompt landed publicly.</p>
+<hr/>
+<h2 id="4-the-discord-surface-shipping-today">4. The Discord surface (shipping today)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#4-the-discord-surface-shipping-today" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>These visual cues surface ledger state that was always captured but used to have
+no UI — <strong>they have all shipped.</strong> Each is paired with the exact ledger fact it
+draws from. The operator-facing reference is
+<a href="./reactions-and-versioning.html" class="internal internal-link" data-slug="reactions-and-versioning"><code>reactions-and-versioning.md</code></a>; the design rationale
+below explains <em>why each cue draws from the fact it does</em>. (One thing changed
+since this was written: each task now runs in its own <strong>thread</strong>, so “per
+channel” below means <strong>per task scope</strong> — the thread.)</p>
+<h3 id="41-the-now-working-pill-in-channel">4.1 The “now working” pill (in-channel)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#41-the-now-working-pill-in-channel" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> When two bots are active at once in the same channel, it’s
+hard to tell who’s doing what.</p>
+<p><strong>Shipped:</strong> A single short pinned message per channel that each bot
+edits as it works. Each line shows <em>who</em> and <em>what stage</em>:</p>
+<pre><code>WORKBENCH  pinned
+──────────
+• alice-bot  → tracing parser bug · 3 files read · waiting on Bash(npm test)
+• bob-bot    → idle · last seen at 13:42
+</code></pre>
+<p>It’s edited in place (not reposted) the same way the DM transcript is. A
+bot only updates its own line. When a bot finishes, its line becomes
+<code>idle · last seen at …</code>. The pin keeps it scrollable-back-to from any
+position in the channel.</p>
+<p><em>Draws from:</em> the Turn fold and the LoopGuard fold (both shipping today).
+<em>Surfacing:</em> a new <code>external</code> message per bot per channel, edited from the
+synchronization that already runs on <code>turn.prompted</code> / <code>turn.replied</code>.</p>
+<h3 id="42-the-conflict-card-in-channel">4.2 The conflict card (in-channel)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#42-the-conflict-card-in-channel" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> When two agents both edit the same paragraph or note at the
+same moment, today the ledger records a conflict but nobody is told.</p>
+<p><strong>Shipped:</strong> When the merge step detects a same-anchor tie between two
+agents, the relay posts a single channel message:</p>
+<pre><code>ALICE-BOT  Today at 14:17
+🔀  Two drafts of `report.md` §X arrived together
+    @alice — pick one or write the merge.
+
+    A  @bob-bot wrote:
+       > The parser supports nested expressions up to 8 levels deep.
+
+    B  @charlie-bot wrote:
+       > Nesting limit is 8 levels; deeper input raises a SyntaxError.
+
+    [ Take A 🅰 ]   [ Take B 🅱 ]   [ Write my own ✏️ ]
+</code></pre>
+<p>Clicking <strong>🅰</strong> or <strong>🅱</strong> admits an owner-role write that supersedes both
+drafts. Clicking <strong>✏️</strong> opens a thread reply prompt — the owner writes
+their merge in the thread, and the relay turns the reply into a
+<code>workspace.edit</code> keyed to the same anchor. Both losing drafts stay in the
+ledger, marked superseded, and each agent gets the note in its inbox
+(see §4.4).</p>
+<p><em>Draws from:</em> <code>mergeProposal</code> returns a <code>conflict</code> outcome with both
+branches’ hashes. The synchronization for “render a conflict card” is the
+one new piece.</p>
+<h3 id="43-attribution-line-under-every-reply">4.3 Attribution line (under every reply)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#43-attribution-line-under-every-reply" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> Long sessions become hard to trace. “Wait, why did the bot
+take <em>this</em> path?”</p>
+<p><strong>Shipped:</strong> A small italic line under each agent reply, naming the
+upstream cause and the tools involved:</p>
+<pre><code>ALICE-BOT  Today at 14:08
+The test fails because `parseExpression` returns `null` on empty
+input instead of throwing. I can fix it by adding an early throw, or
+update the test to expect `null` — which do you want?
+
+— traced from @alice's message at 14:03 · 4 tools · approved by @alice
+</code></pre>
+<p>It’s the same <code>caused_by</code> chain the userflow test asserts is readable.
+Click the timestamp link to jump back to the original message that
+started this turn.</p>
+<p><em>Draws from:</em> <code>turn.replied.caused_by</code> already contains the prompt hash
+and every executed tool hash. Rendering is one line.</p>
+<h3 id="44-the-your-draft-was-overridden-inbox-note-in-dm">4.4 The “your draft was overridden” inbox note (in DM)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#44-the-your-draft-was-overridden-inbox-note-in-dm" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> If the owner overrides an agent’s work, the agent’s owner
+isn’t told what changed.</p>
+<p><strong>Shipped:</strong> When a <code>workspace.edit</code> or <code>knowledge.append</code> from agent
+bot-B is superseded by a higher-role write, bot-B’s owner gets a short
+DM:</p>
+<pre><code>ALICE-BOT
+─────────
+🔁 Your draft was overridden in #project-x.
+
+You wrote:
+> The parser supports nested expressions up to 8 levels deep.
+
+@alice wrote (and won):
+> Nesting limit is 8 levels; deeper input raises a SyntaxError.
+
+The original is preserved in the ledger. The agent has been told and
+will pick up the new text on its next turn.
+</code></pre>
+<p><em>Draws from:</em> the merge gate already writes a knowledge note to
+<code>know:actor/&lt;agentKey>/inbox</code> on every supersession. The DM is one
+synchronization that subscribes to that artifact.</p>
+<h3 id="45-rewind-reactions-in-channel">4.5 Rewind reactions (in-channel)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#45-rewind-reactions-in-channel" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> Sometimes you realise <em>after</em> approving that you wanted to
+ask the bot something different first.</p>
+<p><strong>Shipped:</strong> A reaction vocabulary on any of the bot’s messages:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>React with</th><th>Effect</th></tr></thead><tbody><tr><td>⏪</td><td>“Rewind to before this message” — the next prompt is processed as if this and everything after never happened. The ledger keeps the rewound interactions; they just stop being part of the active frontier.</td></tr><tr><td>🔁</td><td>“Try this turn again, with the same prompt.” Useful when a non-deterministic tool failed.</td></tr><tr><td>🧷</td><td>“Pin this as a checkpoint” — gives this point in the conversation a name you can come back to.</td></tr></tbody></table></div>
+<p>A reaction on a message is just another interaction in the ledger, so this
+is purely a new synchronization and a small frontier-management routine.</p>
+<h3 id="46-stale-note-flag-in-the-bots-replies">4.6 Stale-note flag (in the bot’s replies)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#46-stale-note-flag-in-the-bots-replies" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Problem:</strong> When an owner invalidates an earlier fact (“actually, that
+source was made up”), everything downstream that used it is silently
+stale until the bot stumbles into it.</p>
+<p><strong>Shipped:</strong> The bot’s next reply that touches stale knowledge carries
+a visible flag:</p>
+<pre><code>ALICE-BOT  Today at 15:21
+The §X section currently reads: &quot;nesting limit is 8 levels…&quot;
+
+⚠️ Note: this section rests on `evidence:source-3`, which @alice
+   invalidated at 14:55. The section is still in the file; the
+   underlying source is marked stale. Should I re-derive from
+   fresh sources?
+</code></pre>
+<p><em>Draws from:</em> <code>annotateWithStaleness</code> on the Knowledge fold (shipping
+today). The bot’s prompt is fed the annotated knowledge view, so it’s
+already aware; the channel render just makes that visible to humans too.</p>
+<hr/>
+<h2 id="5-when-two-agents-disagree">5. When two agents disagree<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#5-when-two-agents-disagree" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The single most-asked question: <em>what actually happens when two bots edit
+the same thing at the same time?</em></p>
+<p><strong>Today (the ledger handles it; the UX hint is missing):</strong></p>
+<ol>
+<li>Both agents propose their edit. Both are stored with the same anchor.</li>
+<li>The merge gate notices they’re concurrent (neither caused the other)
+and at the same anchor.</li>
+<li>Roles are compared. <em>Owner beats human beats agent.</em> The higher-role
+write becomes the live state; the lower-role write is marked
+superseded.</li>
+<li>If the two writes have the <strong>same</strong> role (both agents), they go into
+a <code>conflict</code> state, awaiting an owner write that covers the same
+anchor.</li>
+<li>The owner’s later write at the same anchor resolves the conflict
+automatically — it’s no longer concurrent (it’s after them), and it
+outranks both.</li>
+</ol>
+<p><strong>What the owner sees today:</strong> a conflict held in the ledger, no visible
+hint in Discord. <em>(This is the gap §4.2 fills.)</em></p>
+<p><strong>Symmetry by design:</strong> Two collaborators on different machines see the
+exact same outcome. The role-ordered merge is deterministic — given the
+same set of interactions, every machine independently arrives at the same
+winners and losers, with no extra coordination. (When two same-role writes
+tie, the lower-hash winner is chosen as a stable tie-break.)</p>
+<hr/>
+<h2 id="6-the-ledger-in-plain-words">6. The ledger, in plain words<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#6-the-ledger-in-plain-words" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>You don’t need to know any of this to <em>use</em> knock-knock. It’s here so you
+can reason about edge cases (“if I restart the relay, what happens?”,
+“what does the bot actually remember between turns?”).</p>
+<p><strong>One thing is stored: a list of events, in order, each one linked to the
+events that caused it.</strong> Examples of events:</p>
+<ul>
+<li>“Alice sent a message in <a href="./tags/project-x" class="tag-link internal internal-link alias" data-slug="tags/project-x">project-x</a> at 14:03”</li>
+<li>“bot-A decided to start a turn because of Alice’s message”</li>
+<li>“bot-A asked permission to run <code>Bash(npm test)</code>”</li>
+<li>“Alice approved (causing the request above)”</li>
+<li>“bot-A ran <code>Bash(npm test)</code>, exit 1”</li>
+<li>“bot-A replied with text X (caused by the prompt + the test run)”</li>
+</ul>
+<p>Every event has a unique fingerprint computed from its contents. Identical
+events get the same fingerprint, so duplicates are silently merged — if the
+same approval gets clicked twice, the second one is a no-op.</p>
+<p><strong>Everything else you see is computed from this list.</strong> The DM transcript,
+the channel pinned status, the “what does the bot know” memory, who has
+approval power right now — none of these are stored separately. They’re
+<em>projections</em> — like SQL views — that are recomputed by reading the event
+list.</p>
+<p>This is why <strong>restart works seamlessly</strong>: the relay just re-reads the
+event list and rebuilds every view. It’s also why <strong>two machines can
+collaborate</strong>: they share the same event list (Postgres), and each one
+independently rebuilds the same views from it.</p>
+<hr/>
+<h2 id="7-the-four-things-you-can-ask-the-ledger">7. The four things you can ask the ledger<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#7-the-four-things-you-can-ask-the-ledger" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Each of these is a fold — a function that reads events and returns a view.
+They’re available as APIs today; surfacing them as user-facing commands is
+a small follow-up.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>What you want to know</th><th>Fold</th><th>Status</th></tr></thead><tbody><tr><td>”What was said in this channel, by whom, when?”</td><td><code>channel:transcript</code></td><td>Shipping; powers DM render</td></tr><tr><td>”What did the agent do in turn X — every tool, every result?”</td><td><code>turn:lifecycle</code></td><td>Shipping; powers DM render</td></tr><tr><td>”Is there a pending approval right now?”</td><td><code>approval</code></td><td>Shipping; powers buttons</td></tr><tr><td>”What does the agent currently know? Which of those notes are stale?”</td><td><code>knowledge</code> + <code>annotateWithStaleness</code></td><td>Shipping; not yet exposed in UI</td></tr></tbody></table></div>
+<p>A planned <code>/timeline</code> slash command would let you ask any of these from
+Discord without leaving the chat.</p>
+<hr/>
+<h2 id="8-cross-machine--when-your-collaborator-joins">8. Cross-machine — when your collaborator joins<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#8-cross-machine--when-your-collaborator-joins" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>You don’t need to do anything. If both machines point their relay at the
+same Postgres URL (via <code>KNOCK_KNOCK_LEDGER_URL</code>), the second one catches
+up automatically — within an event-loop tick of the first write, the
+second machine’s views reflect it.</p>
+<p>What you’ll see:</p>
+<ul>
+<li>Your collaborator’s bot replies appear in the channel as normal, with
+their bot’s identity.</li>
+<li>The DM transcripts are private — you only see <em>your</em> agents’ DMs, your
+collaborator only sees theirs.</li>
+<li>If your owner override beats your collaborator’s agent’s draft, their
+agent gets the inbox note (§4.4); their owner gets the DM.</li>
+</ul>
+<p>The merge is <strong>deterministic across machines</strong> — both machines independently
+arrive at identical winners and losers without any back-and-forth chatter.
+If a tie is genuinely unbreakable (same role, same anchor, same moment),
+both machines pick the lower-hash interaction as the winner, so they still
+agree.</p>
+<hr/>
+<h2 id="9-glyph-reference">9. Glyph reference<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#9-glyph-reference" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>A cheat sheet for the visual vocabulary. Most of these are shipping today
+(channel-side); the conflict and rewind set are part of §4.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Glyph</th><th>Where</th><th>Meaning</th></tr></thead><tbody><tr><td>👀</td><td>Channel reaction on your message</td><td>Bot is working on this.</td></tr><tr><td>✅</td><td>Button / reaction</td><td>Approve a tool request. Owner only.</td></tr><tr><td>❌</td><td>Button / reaction</td><td>Deny a tool request. Owner only.</td></tr><tr><td>▸</td><td>DM message header</td><td>Header of a live turn transcript.</td></tr><tr><td>•</td><td>DM message body</td><td>One step the agent took (read, grep, bash, etc.).</td></tr><tr><td>⚠️</td><td>DM / channel</td><td>Something failed or is stale.</td></tr><tr><td>🔐</td><td>Channel approval prompt</td><td>”Permission request — I need your okay to run this.”</td></tr><tr><td>🔀</td><td>Channel conflict card <em>(§4.2)</em></td><td>Two same-role writes touched the same place. Owner picks.</td></tr><tr><td>🔁</td><td>DM inbox note <em>(§4.4)</em></td><td>“Your work was overridden — here’s what won.”</td></tr><tr><td>⏪</td><td>Reaction <em>(§4.5)</em></td><td>Rewind the conversation to before this point.</td></tr><tr><td>🧷</td><td>Reaction <em>(§4.5)</em></td><td>Pin this point as a checkpoint.</td></tr></tbody></table></div>
+<hr/>
+<h2 id="10-frequently-asked-questions">10. Frequently-asked questions<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#10-frequently-asked-questions" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p><strong>Q. If the relay crashes mid-turn, do I lose the conversation?</strong>
+No. The ledger is on disk (or in Postgres). When the relay restarts, it
+reads the event list and rebuilds every view. Any approval prompts you
+already clicked are still resolved; any pending approval still shows the
+buttons (clicking a pre-restart button does the right thing).</p>
+<p><strong>Q. Can I see the full event list for a channel?</strong>
+Today, by reading the SQLite file at
+<code>~/.knock-knock/ledger.sqlite</code> (or the Postgres table) and
+running the listed queries. A <code>/timeline</code> slash command that prints a
+human story is on the roadmap.</p>
+<p><strong>Q. What happens if I delete a message in Discord?</strong>
+The Discord message goes away; the corresponding ledger event stays.
+The ledger is intentionally append-only — it’s an audit trail, not a draft
+folder. If you want to take an action <em>back</em>, use rewind (§4.5) rather
+than deletion. A rewound action is still in the ledger but no longer
+contributes to the live view.</p>
+<p><strong>Q. Can two of my own bots collaborate in one channel?</strong>
+Yes. The relay hosts as many bot identities as you configure; they treat
+each other as peers (role: agent) with the loop guard preventing
+runaway back-and-forth (default cap: 4 consecutive agent turns; an owner
+or human message resets it).</p>
+<p><strong>Q. Does the agent remember things between turns?</strong>
+Yes — by re-reading the ledger projections. The agent’s context window
+on turn N+1 is computed from the same channel transcript and knowledge
+folds that you see in the DM. The agent doesn’t have a separate hidden
+memory; what it knows is exactly the projection of the events in the
+channel up to that point.</p>
+<p><strong>Q. If my agent makes a mistake, who’s accountable?</strong>
+You. The role-ordered merge specifically encodes that <strong>your machine
+runs your agent’s writes under your name, with your approval gate</strong>. A
+collaborator’s agent never gets to run a tool on your machine. The
+deny list is a hard floor: tools matching <code>deny</code> patterns never run
+regardless of approval.</p>
+<hr/>
+<h2 id="appendix--under-the-hood">Appendix — under the hood<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#appendix--under-the-hood" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>For implementers and the very curious. <code>CLAUDE.md</code> at the repo root is the
+working architecture map; this is the short version.</p>
+<p><strong>The unit.</strong> Each event is an <em>Interaction</em>: a record with <code>actor</code>,
+<code>role</code>, <code>channel</code>, <code>target</code> (artifact + anchor), <code>verb</code>, <code>patch</code>,
+<code>effect</code>, and <code>caused_by</code> (a list of parent interaction hashes). <code>channel</code>
+is the task <strong>scope</strong> (a thread, or a plain channel); the parent <strong>room</strong> that
+owns permissions is resolved from it at the host boundary (<code>roomForScope</code>), not
+stored on the record. The hash is computed from the content — identical events
+have identical hashes, which gives deduplication for free.</p>
+<p><strong>Three kinds of artifact.</strong> What you can patch:</p>
+<ul>
+<li><strong>Versionable</strong> — files, structured documents. Patches are CRDT
+updates (Yjs). Concurrent edits at <em>non-overlapping</em> anchors both
+apply automatically.</li>
+<li><strong>Knowledge</strong> — append-only notes. New observations always commute;
+invalidation cascades staleness down the causal chain.</li>
+<li><strong>External-proxy</strong> — Discord messages, shell side effects, anything the
+ledger only models. A short-lived <code>Claim</code> serializes concurrent
+external writes.</li>
+</ul>
+<p><strong>The merge.</strong> When two writes hit the same anchor concurrently:</p>
+<ul>
+<li>External effect on either side → no merge; the claim serialized them.</li>
+<li>Different roles → higher role wins; lower role marked <code>superseded</code>.</li>
+<li>Same role → <code>conflict</code>; held until a higher-role write covers the same
+anchor.</li>
+</ul>
+<p><strong>Concept folds (shipping today).</strong> Channel transcript, turn lifecycle,
+approval state, loop guard, knowledge with staleness annotation, and the watch
+set (the deferred-continuation primitive).</p>
+<p><strong>Synchronizations (shipping today).</strong> Pure functions wired between the ledger
+and Discord, one file each: <code>prompt-on-message</code>, <code>classify-on-tool-request</code>,
+<code>drive-turn</code>, <code>post-on-reply</code>, <code>dm-on-supersede</code>, <code>conflict-card</code>,
+<code>retry-on-reaction</code>, <code>resume-on-watch</code>, <code>apply-supersession</code>. Adding a new behaviour (critique, verify,
+summarise) is one new file in <code>ledger/synchronizations/</code> and zero edits to
+existing concepts.</p>
+<p><strong>Storage.</strong> <code>SqliteStore</code> (default, on disk) and <code>PgStore</code> (set
+<code>KNOCK_KNOCK_LEDGER_URL</code>) implement the same interface. Postgres uses
+<code>LISTEN/NOTIFY</code> to deliver new events to other machines within an event-
+loop tick.</p>
+<p><code>NOTIFY</code> fires on <strong>INSERT</strong>, not UPDATE — so a <em>new</em> event crosses, but a
+local lifecycle UPDATE (the merge gate marking a loser <code>superseded</code>) does
+not. Cross-machine supersession therefore does <strong>not</strong> ride that UPDATE.
+The winning interaction already carries <code>supersedes: [loserHash, …]</code> in its
+row, and <em>that INSERT does cross</em>; the <code>apply-supersession</code> synchronization
+re-derives the lifecycle change on each peer from that immutable field. This
+is the same “converge from immutable INSERTs” pattern AOCM uses for file
+edits, generalized to turn/approval/knowledge supersession — no hosted-DB
+feature (no NOTIFY-on-UPDATE, no logical replication) is required. The local
+UPDATE stays for fast local reads; convergence no longer depends on it. The
+one residual limit is shared by <em>all</em> synced state: a <code>NOTIFY</code> missed while a
+peer’s listener is disconnected is healed by that peer’s next restart-replay,
+not in the moment — a transport property, not a merge one.</p>
+<p><strong>The promise it keeps.</strong> Every projection in the relay is reconstructible
+from the ledger alone. A test (<code>userflow.test.ts</code> #9) asserts this end-to-
+end: take a populated session, throw away every in-memory cache, build
+fresh fold engines, and the result is byte-for-byte identical. If
+anything ever drifts, that test fails first.</p></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-7" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#the-knock-knock-ledger--a-field-guide" data-for="the-knock-knock-ledger--a-field-guide">The knock-knock ledger — a field guide</a></li><li class="depth-1"><a href="#1-what-this-gets-you" data-for="1-what-this-gets-you">1. What this gets you</a></li><li class="depth-1"><a href="#2-who-goes-first" data-for="2-who-goes-first">2. Who goes first</a></li><li class="depth-1"><a href="#3-what-you-see-today" data-for="3-what-you-see-today">3. What you see today</a></li><li class="depth-2"><a href="#31-in-the-channel--quiet-status-cues" data-for="31-in-the-channel--quiet-status-cues">3.1 In the channel — quiet status cues</a></li><li class="depth-2"><a href="#32-in-your-dm--the-live-transcript" data-for="32-in-your-dm--the-live-transcript">3.2 In your DM — the live transcript</a></li><li class="depth-2"><a href="#33-in-the-terminal--operator-notes" data-for="33-in-the-terminal--operator-notes">3.3 In the terminal — operator notes</a></li><li class="depth-1"><a href="#4-the-discord-surface-shipping-today" data-for="4-the-discord-surface-shipping-today">4. The Discord surface (shipping today)</a></li><li class="depth-2"><a href="#41-the-now-working-pill-in-channel" data-for="41-the-now-working-pill-in-channel">4.1 The “now working” pill (in-channel)</a></li><li class="depth-2"><a href="#42-the-conflict-card-in-channel" data-for="42-the-conflict-card-in-channel">4.2 The conflict card (in-channel)</a></li><li class="depth-2"><a href="#43-attribution-line-under-every-reply" data-for="43-attribution-line-under-every-reply">4.3 Attribution line (under every reply)</a></li><li class="depth-2"><a href="#44-the-your-draft-was-overridden-inbox-note-in-dm" data-for="44-the-your-draft-was-overridden-inbox-note-in-dm">4.4 The “your draft was overridden” inbox note (in DM)</a></li><li class="depth-2"><a href="#45-rewind-reactions-in-channel" data-for="45-rewind-reactions-in-channel">4.5 Rewind reactions (in-channel)</a></li><li class="depth-2"><a href="#46-stale-note-flag-in-the-bots-replies" data-for="46-stale-note-flag-in-the-bots-replies">4.6 Stale-note flag (in the bot’s replies)</a></li><li class="depth-1"><a href="#5-when-two-agents-disagree" data-for="5-when-two-agents-disagree">5. When two agents disagree</a></li><li class="depth-1"><a href="#6-the-ledger-in-plain-words" data-for="6-the-ledger-in-plain-words">6. The ledger, in plain words</a></li><li class="depth-1"><a href="#7-the-four-things-you-can-ask-the-ledger" data-for="7-the-four-things-you-can-ask-the-ledger">7. The four things you can ask the ledger</a></li><li class="depth-1"><a href="#8-cross-machine--when-your-collaborator-joins" data-for="8-cross-machine--when-your-collaborator-joins">8. Cross-machine — when your collaborator joins</a></li><li class="depth-1"><a href="#9-glyph-reference" data-for="9-glyph-reference">9. Glyph reference</a></li><li class="depth-1"><a href="#10-frequently-asked-questions" data-for="10-frequently-asked-questions">10. Frequently-asked questions</a></li><li class="depth-1"><a href="#appendix--under-the-hood" data-for="appendix--under-the-hood">Appendix — under the hood</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./" class="internal">knock-knock documentation</a></li><li><a href="./reactions-and-versioning.html" class="internal">reactions-and-versioning</a></li><li><a href="./security-and-permissions.html" class="internal">security-and-permissions</a></li><li><a href="./setup.html" class="internal">setup</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

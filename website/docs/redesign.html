@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>redesign</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="redesign"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="redesign"/><meta name="twitter:description" content="knock-knock — identity / setup / relay redesign Status: proposal (planner round 1). Scope is the config / identity / setup / relay-UX layer."/><meta property="og:description" content="knock-knock — identity / setup / relay redesign Status: proposal (planner round 1). Scope is the config / identity / setup / relay-UX layer."/><meta property="og:image:alt" content="knock-knock — identity / setup / relay redesign Status: proposal (planner round 1). Scope is the config / identity / setup / relay-UX layer."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/redesign"/><meta property="twitter:url" content="https://knock-knock.dev/docs/redesign"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="knock-knock — identity / setup / relay redesign Status: proposal (planner round 1). Scope is the config / identity / setup / relay-UX layer."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/redesign-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/redesign-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/redesign-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="redesign" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-14" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-14" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>redesign</a></div></nav><h1 class="article-title">redesign</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-26T20:19:41.000Z">Jun 26, 2026</time><span>14 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="knock-knock--identity--setup--relay-redesign">knock-knock — identity / setup / relay redesign<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#knock-knock--identity--setup--relay-redesign" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>Status: <strong>proposal</strong> (planner round 1). Scope is the <strong>config / identity / setup /
+relay-UX layer</strong>. The ledger core — Interaction DAG, folds, synchronizations, AOCM
+merge, and the permission <em>classification</em> algebra in <code>lib.ts</code> (<code>classifyTool</code>,
+<code>resolveProfileForActor</code>, <code>expandPreset</code>, <code>DENY_FLOOR</code>, the config-fold projection)
+— is <strong>preserved unchanged</strong>. This is about how a human declares <em>who their bots
+are, which projects they work in, and what they may do there</em> — and how the relay
+makes that legible.</p>
+<hr/>
+<h2 id="1-vocabulary-locked">1. Vocabulary (locked)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#1-vocabulary-locked" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The current code overloads several words. We fix the nouns first.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Term</th><th>Definition</th></tr></thead><tbody><tr><td><strong>Owner / me</strong></td><td>The human running this relay locally. Identified by a platform user-id per platform (<code>me.discord</code>, <code>me.slack</code>). Set <strong>once</strong>, reused as the default owner of every bot.</td></tr><tr><td><strong>Bot</strong></td><td>One coding-agent identity I run = one Discord/Slack <em>app</em> I created, holding a token locally. Its <strong>name/avatar/description live on the platform</strong> and are fetched live — never typed. Has a runtime. (Was: “agent” / <code>AgentConfig</code>.)</td></tr><tr><td><strong>Platform</strong></td><td>Discord, Slack, … A bot speaks exactly one platform.</td></tr><tr><td><strong>Channel</strong></td><td>A platform channel/group = <strong>a project = a permission boundary</strong>. The unit a bot is “invited” to. Globally keyed <code>${platform}:${channelId}</code> so two platforms never collide (also closes the ledger id-collision gap). (Was: “room”.)</td></tr><tr><td><strong>Membership</strong></td><td>One of <em>my</em> bots active in one channel. <strong>The permission boundary</strong>: it carries this bot’s <strong>workspace folder</strong> and its <strong>allow/ask/deny</strong> <em>for this project</em>. (New first-class object; was the implicit <code>agent.workspace</code> × <code>rooms/&lt;key>/&lt;channelId>.settings.json</code> pair.)</td></tr><tr><td><strong>Thread / Scope</strong></td><td>A task inside a channel; per-thread <code>!config</code> overlay (context/model/params). The channel is the inherited default. (Unchanged behavior; “scope” = thread-or-channel as today.)</td></tr><tr><td><strong>Roster</strong></td><td>Local address-book of known <strong>people</strong> (human collaborators) and <strong>peers</strong> (other people’s bots), each entered <strong>once</strong> and referenced by id from channels. (New — eliminates re-pasting IDs.)</td></tr><tr><td><strong>Collaborator</strong></td><td>A roster reference attached to a channel: a human allowed to drive, or a peer bot present for discovery.</td></tr></tbody></table></div>
+<p><strong>Room vs scope</strong> — the split is real (a thread inherits its parent channel’s
+permission floor) but the word “room” is the confusing part. We rename <strong>room →
+channel</strong> everywhere user-facing and keep <strong>scope</strong> as the internal thread-or-channel
+id. <code>resolveRoomForScope</code> becomes <code>resolveChannelForScope</code>; the algebra is untouched.</p>
+<hr/>
+<h2 id="2-target-conceptual-model">2. Target conceptual model<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#2-target-conceptual-model" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<pre><code>me (owner): { discord: &lt;my id>, slack: &lt;my id> }
+
+bots/ (apps I run, token-bearing)        roster/ (entered once, referenced by id)
+  reviewer  ─ discord ─ token ─ runtime    people:  alice@discord, bob@slack
+  builder   ─ slack   ─ token ─ runtime    peers:   carol-bot@discord &quot;docs writer&quot;
+        │
+        │ membership = (bot × channel): workspace + profile  ◄── permission boundary
+        ▼
+channels/ (projects)
+  discord:#infra   ─ members[ reviewer→/repos/infra(strict), builder→/repos/infra(ask) ]
+                     collaborators[ alice(human), carol-bot(peer) ]  requireMention
+  discord:#web     ─ members[ reviewer→/repos/web(ask-per-edit) ]    collaborators[ alice ]
+  slack:proj-z     ─ members[ builder→/repos/z(auto) ]               collaborators[ bob ]
+        │
+        ▼ thread (task) ── !config overlay: role / end-goal / model / thinking / effort / mode
+</code></pre>
+<p>The top-level object is <strong>normalized</strong>: bots, channels, and roster are sibling
+tables; a channel references bots and roster entries by id. This is the key shift
+away from <code>agents[key].rooms[channelId]</code> (where a shared channel is duplicated
+across bots and there is nowhere to hang a roster).</p>
+<h3 id="proposed-types-libts">Proposed types (<code>lib.ts</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#proposed-types-libts" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="ts" data-theme="github-light github-dark"><code data-language="ts" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Platform</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'discord'</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> |</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'slack'</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> |</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'telegram'</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> |</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'whatsapp'</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> |</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'imessage'</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> BotId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">      // stable local slug; NOT the platform display name</span></span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> RosterId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">   // stable local slug for a person/peer</span></span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> ChannelKey</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment"> // `${platform}:${channelId}`</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Bot</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> {</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  platform</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Platform</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  tokenEnv</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">               // NAME of env var holding the token</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  appTokenEnv</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">           // Slack socket-mode app token env name</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  runtime</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                // default runtime; a membership may override</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  displayName</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">           // CACHED from platform on connect; cosmetic, non-authoritative</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  blurb</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                 // default capability text; a membership may override</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">}</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Person</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> { </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">platform</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Platform</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">userId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">label</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> }</span></span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Peer</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">    =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> { </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">platform</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Platform</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">userId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">blurb</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">label</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> }</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Collaborator</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span></span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">  |</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> { </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">kind</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'human'</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">id</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> RosterId</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> }   </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">// a person allowed to drive in this channel</span></span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">  |</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> { </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">kind</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> 'peer'</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">;  </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">id</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> RosterId</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> }   </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">// a peer bot present for discovery</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Membership</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> {</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  bot</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> BotId</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  workspace</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">              // folder THIS bot works in for THIS channel  ◄── per-(bot,channel)</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  profile</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> RoomProfile</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">           // allow/ask/deny (+ tiers) for this bot here</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  runtime</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">               // optional per-channel override of Bot.runtime</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  blurb</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                 // optional per-channel override of Bot.blurb</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">}</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Channel</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> {</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  platform</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Platform</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  channelId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  label</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                 // friendly project name for the TUI (cosmetic)</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  project</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">               // optional cross-platform grouping label (cosmetic)</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  members</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Membership</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">[]          </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">// my bots active here</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  collaborators</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Collaborator</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">[]  </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">// humans + peer bots, by roster id</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  requireMention</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> boolean</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  approvalActorId</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">       // override; defaults to the bot's owner (me)</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">}</span></span>
+<span data-line> </span>
+<span data-line><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword">export</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="keyword"> type</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Access</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> =</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> {</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  me</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Partial</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Record</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Platform</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property">string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">>>   </span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">// my user id per platform — set once</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  bots</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Record</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">BotId</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Bot</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">></span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  channels</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Record</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">ChannelKey</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Channel</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">></span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  roster</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation"> { </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">people</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Record</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">RosterId</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Person</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">>; </span><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">peers</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">:</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property"> Record</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">&lt;</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">RosterId</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">, </span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="property">Peer</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">> }</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  mentionPatterns</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;">[]</span></span>
+<span data-line><span style="--shiki-light:#E36209;--shiki-dark:#FFAB70;" data-token-type="normal">  ackReaction</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator">?:</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="property"> string</span></span>
+<span data-line><span style="--shiki-light:#24292E;--shiki-dark:#E1E4E8;" data-token-type="punctuation">}</span></span></code></pre></figure>
+<p><strong>Why membership owns workspace + profile.</strong> The user’s own framing is “a channel is
+the permission boundary — which folder a bot may work in.” That boundary is <em>per bot
+per project</em>: <code>reviewer</code> may have read-only <code>/repos/infra</code> in <a href="./tags/infra" class="tag-link internal internal-link alias" data-slug="tags/infra">infra</a> and read-write
+<code>/repos/web</code> in <a href="./tags/web" class="tag-link internal internal-link alias" data-slug="tags/web">web</a>. Per-bot-global workspace cannot express this; per-membership
+can, and it collapses two artifacts (<code>agent.workspace</code> + the profile file) into one
+object. The profile keeps the exact <code>RoomProfile</code> shape, so <code>classifyTool</code> /
+<code>resolveProfileForActor</code> / <code>DENY_FLOOR</code> are untouched.</p>
+<hr/>
+<h2 id="3-answers-to-the-open-questions">3. Answers to the open questions<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#3-answers-to-the-open-questions" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p><strong>(a) No server / local config.</strong> There is no escaping that each operator declares
+their own bots and tokens locally — tokens are secrets that must live on the machine
+that runs the bot, and the platform has no channel to push them through. What we <em>can</em>
+remove is the <strong>repeated</strong> local entry: the <strong>roster</strong> means a collaborator’s id is
+typed once and picked from a list thereafter; <strong><code>me</code></strong> means the owner id is typed
+once; <strong>live name-fetch</strong> means bot names are never typed. So “each collaborator still
+configures locally” stays true, but a second project with the same people is ~3
+keystrokes (pick from roster), not a re-paste.</p>
+<p><strong>(b) “Which bot is listening.”</strong> Today: all selected bots boot in one process and a
+channel is claimed by whichever host sorts first — silently. New contract:</p>
+<ul>
+<li>One relay process, N bots (keep it — shares one ledger/fold engine; per-process-per-bot
+would fragment the ledger for no gain). <code>bun relay.ts [botId…]</code> / <code>--pick</code> still select.</li>
+<li>A bot listens in exactly the channels where it is a <strong>member</strong>. This is now
+enumerable, so the relay prints a <strong>startup table</strong> (see §6) and refuses to start
+silently mis-configured.</li>
+<li>A channel with <strong>multiple of my bots</strong> is legal (different roles). An @mention routes
+to the mentioned bot; see open decision #2 for the no-mention case.</li>
+</ul>
+<p><strong>(c) Cross-platform channels.</strong> A Discord human and a Slack bot cannot share one
+channel — channel ids are platform-scoped and there is no bridge without a server. We
+make this <strong>honest</strong>: a <code>project</code> label may group channels across platforms <em>for
+organization/visualization only</em>; messages do not bridge. Bridging is explicitly out
+of scope (would require the server we deliberately don’t have).</p>
+<p><strong>(d) Workspace granularity.</strong> Recommend <strong>per-membership</strong> (see §2). Tradeoff: one more
+field per channel a bot joins, vs. the ability to scope folders per project and a single
+permission-boundary object. (Open decision #1.)</p>
+<hr/>
+<h2 id="4-what-survives--changes--is-removed">4. What survives / changes / is removed<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#4-what-survives--changes--is-removed" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Current</th><th>Fate</th><th>Note</th></tr></thead><tbody><tr><td>Ledger: Interaction DAG, <code>capture</code>/<code>admit</code>/<code>merge</code>/<code>fold</code>/<code>sync</code></td><td><strong>keep</strong></td><td>untouched</td></tr><tr><td>AOCM file-edit convergence</td><td><strong>keep</strong></td><td>untouched</td></tr><tr><td><code>classifyTool</code>, <code>DENY_FLOOR</code>, <code>PRESET_MODES</code>, <code>expandPreset</code>, <code>resolveProfileForActor</code></td><td><strong>keep</strong></td><td>operate on <code>RoomProfile</code>; profile now lives in a membership</td></tr><tr><td>config fold + <code>projectChannelConfig</code> / <code>resolveTwoLayerConfig</code> / <code>resolveConfigFor</code></td><td><strong>keep</strong></td><td>keyed by channelKey/scope; logic same</td></tr><tr><td><code>resolveRoomForScope</code></td><td><strong>rename</strong> → <code>resolveChannelForScope</code></td><td>same algorithm</td></tr><tr><td><code>AgentConfig</code> (nested <code>rooms</code>)</td><td><strong>restructure</strong> → <code>Bot</code> + <code>Channel</code> + <code>Membership</code></td><td>the core change</td></tr><tr><td><code>agent.workspace</code> (per-bot)</td><td><strong>move</strong> → <code>Membership.workspace</code></td><td>per-(bot,channel)</td></tr><tr><td><code>rooms/&lt;key>/&lt;channelId>.settings.json</code></td><td><strong>fold in</strong> → <code>Membership.profile</code></td><td>one file (access.json); both are terminal-only-written + read-live, so no invariant lost (later slice)</td></tr><tr><td>peer/human re-entry per room</td><td><strong>remove</strong> → roster + pick-lists</td><td></td></tr><tr><td>user-typed <code>agent.name</code>, <code>ownerUserId</code> per bot</td><td><strong>remove</strong> → live-fetch name; <code>me</code> once</td><td></td></tr><tr><td><code>getAgentForChannel</code> first-match-wins</td><td><strong>replace</strong> → membership lookup + mention-aware routing</td><td></td></tr><tr><td>setup.ts agent-first wizard</td><td><strong>rewrite</strong> → channel-centric TUI (§6)</td><td></td></tr></tbody></table></div>
+<hr/>
+<h2 id="5-migration-migrateaccess-pure--tested">5. Migration (<code>migrateAccess</code>, pure + tested)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#5-migration-migrateaccess-pure--tested" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>A one-time, lossless reader. On load, if <code>access.json</code> has top-level <code>agents</code> (old) and
+no <code>bots</code>, transform and write back (after backing up to <code>access.json.v1</code>):</p>
+<pre><code>for each [key, agent] in old.agents:
+  bots[key] = { platform, tokenEnv, appTokenEnv, runtime, displayName: agent.name, blurb: agent.blurb }
+  me[platform] ??= agent.ownerUserId
+  for each [channelId, room] in agent.rooms:
+    ck = `${platform}:${channelId}`
+    channels[ck] ??= { platform, channelId, members: [], collaborators: [], requireMention: room.requireMention, approvalActorId: room.approvalActorId }
+    channels[ck].members.push({ bot: key, workspace: agent.workspace, profile: readRoomSettings(key, channelId) })
+    for each [peerId, info] in room.participants:
+      rid = slug(info.name ?? peerId); roster.peers[rid] ??= { platform, userId: peerId, blurb: info.blurb, label: info.name }
+      channels[ck].collaborators.push({ kind:'peer', id: rid })
+    for each humanId in room.humans:
+      rid = slug(humanId); roster.people[rid] ??= { platform, userId: humanId }
+      channels[ck].collaborators.push({ kind:'human', id: rid })
+</code></pre>
+<p>Old per-channel profile files can be left in place until the inline-profile slice; until
+then <code>Membership.profile</code> is populated by reading them during migration.</p>
+<hr/>
+<h2 id="6-setup-tui-channel-centric">6. Setup TUI (channel-centric)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#6-setup-tui-channel-centric" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Main dashboard — a compact, always-visible map of the world:</p>
+<pre><code> knock-knock                                   2 bots · 3 channels · 4 collaborators
+
+ BOTS
+   ● reviewer   discord   @ReviewBot#1234        claude-sdk
+   ○ builder    slack     (not connected)        acp · codex
+
+ CHANNELS  (project = permission boundary)
+   #infra-prod  discord   reviewer ·strict· /repos/infra    + builder ·ask· /repos/infra
+                          collab: alice(human) carol-bot(peer)     @mention required
+   #web         discord   reviewer ·ask-per-edit· /repos/web       collab: alice
+   proj-z       slack     builder ·auto· /repos/z                  collab: bob
+
+ ROSTER
+   people  alice @discord   bob @slack
+   peers   carol-bot @discord  &quot;docs writer&quot;
+
+ ›  [b]ot   [c]hannel   [r]oster   [p]ermissions   [t]okens   [l]edger   [q]uit
+</code></pre>
+<p>Flows:</p>
+<ul>
+<li><strong>Add channel</strong> → pick platform → paste channel id (once) → pick member bots from the
+bot list → set each member’s workspace + preset → add collaborators <strong>by picking from
+roster</strong> (or ”+ new”, which adds to roster). No id ever re-pasted.</li>
+<li><strong>Add bot</strong> → pick platform → token env → runtime. Name is <strong>fetched on
+first connect</strong>, not asked. Owner defaults to <code>me[platform]</code> (prompted once, ever).</li>
+<li><strong>Roster</strong> → list/add/edit people &amp; peers; labels fetched live where the platform API
+allows.</li>
+<li>Status dots: ● connected (name known), ○ token present but not yet connected, ⨯ token
+missing.</li>
+</ul>
+<hr/>
+<h2 id="7-decisions-locked-by-owner-2026-06-24">7. Decisions (LOCKED by owner, 2026-06-24)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#7-decisions-locked-by-owner-2026-06-24" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ol>
+<li><strong>Workspace</strong> → <strong>per-membership</strong> (a bot scopes folder + profile per channel).</li>
+<li><strong>Multi-bot routing</strong> → <strong>@mention routes to that bot; a bot also continues
+responding in threads/replies it owns.</strong> A channel with a single member handles all
+its inbound (subject to <code>requireMention</code>). With >1 member: explicit @mention selects
+the bot; a reply/in-thread continuation routes to the bot that owns that thread; an
+un-mentioned brand-new top-level message is not auto-answered by everyone (no
+talking-over). Replaces first-match-wins.</li>
+<li><strong>Migration</strong> → <strong>clean break, no migrator.</strong> No existing users to preserve. The new
+normalized shape is the <strong>only</strong> format; <strong>profiles are inlined</strong> into
+<code>Membership.profile</code>; no dual-format readers; old <code>agents[]</code>/<code>rooms/</code> layout is
+removed. (Supersedes the migrator in §5 and folds in decisions <a href="./tags/3/4" class="tag-link internal internal-link alias" data-slug="tags/3/4">4</a> below.)</li>
+</ol>
+<h3 id="original-open-decisions-for-the-record">Original open decisions (for the record)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#original-open-decisions-for-the-record" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ol>
+<li><strong>Workspace granularity</strong> — per-membership <em>(recommended: a bot can scope folders per
+project; one clean permission object)</em> vs. keep per-bot-global <em>(simpler types, but
+can’t vary folder per project)</em>.</li>
+<li><strong>Multiple of my bots in one channel, no @mention</strong> — options: (a) only @mentioned bot
+responds; non-mention → nobody auto-responds <em>(recommended, least noise)</em>; (b) a
+designated “default” member responds; (c) all members respond <em>(loud)</em>.</li>
+<li><strong>Breaking change vs. back-compat</strong> — ship <code>migrateAccess</code> and adopt the new shape as
+the only format <em>(recommended; one migrator, clean code)</em> vs. keep dual-format readers
+indefinitely <em>(more code, slower cleanup)</em>.</li>
+<li><strong>Profile storage</strong> — fold profiles into <code>access.json</code> as <code>Membership.profile</code> <em>(one
+file, simplest mental model; recommended as an end-state slice)</em> vs. keep separate
+<code>rooms/&lt;bot>/&lt;channel>.settings.json</code> files <em>(smaller diffs, status quo)</em>.</li>
+<li><strong>Cross-platform <code>project</code> grouping</strong> — cosmetic label only <em>(recommended; honest
+about no bridging)</em> vs. drop the concept entirely for now.</li>
+</ol>
+<hr/>
+<h2 id="follow-ups-post-review-owner-requested">Follow-ups (post-review, owner-requested)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#follow-ups-post-review-owner-requested" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><strong>Storage moved to <code>~/.knock-knock/</code></strong> (was <code>~/.claude/channels/knock-knock</code>). knock-knock
+is agent-agnostic, so nesting state under <em>Claude’s</em> dir was misleading and collided with
+the Claude Code harness’s own <code>.claude/</code>. One shared store (not per-bot), keyed by bot.
+<code>KNOCK_KNOCK_STATE_DIR</code> still overrides. All docs/HTML updated.</li>
+<li><strong>Bot is a PORTAL, not tied to one coding agent.</strong> <code>Bot.runtime</code> is the default;
+<code>Membership.runtime</code> overrides it <strong>per channel</strong> (same bot → <code>claude-sdk</code> here, <code>codex</code>
+there). Effective runtime = <code>Membership.runtime ?? Bot.runtime</code>, resolved in
+<code>getOrCreateSession</code> (also used for resume-compat + watch capability). Setup asks the coding
+agent per member; relay table + dashboard show overrides. <strong>Terminal-written, not
+chat-settable</strong> — runtime picks which local binary runs with workspace access.</li>
+<li><strong>Env lives in ONE place: <code>~/.knock-knock/.env</code></strong> — global, not per-cwd/per-channel. Set
+once, reused from any folder. (See the env-health additions in setup.)</li>
+</ul>
+<h2 id="status-engineering-log">Status (engineering log)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#status-engineering-log" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><strong>Slice 1 — DONE.</strong> <code>AuthoringAccess</code> + <code>Bot</code>/<code>Channel</code>/<code>Membership</code>/<code>Person</code>/<code>Peer</code>/
+<code>Collaborator</code> types and pure <code>projectToRuntime</code> added to <code>lib.ts</code>; <code>RoomConfig</code> gained
+optional <code>workspace</code>/<code>profile</code>. <code>state.ts</code> reads both shapes (<code>readAccessFile</code> projects
+the new shape; legacy honored as-is) and writes the new shape (<code>readAuthoringAccess</code> /
+<code>saveAuthoringAccess</code> / <code>parseAuthoringAccess</code>). 6 projection unit tests. typecheck + 183
+tests green.</li>
+<li><strong>Slice 2 — mostly DONE.</strong> <code>getOrCreateSession</code> now uses the <strong>membership workspace</strong>
+(<code>room.workspace ?? agent.workspace</code>) and prefers the <strong>inline profile</strong>
+(<code>room.profile ?? readRoomSettings</code>); the audit path (<code>auditProfileForScope</code>) matches.
+<code>relay.ts</code> prints a <strong>“who’s listening where”</strong> map and flags multi-bot channels. Green.</li>
+<li><strong>Slice 3 — DONE.</strong> <code>setup.ts</code> rewritten channel-centric on <code>AuthoringAccess</code>: status
+dashboard, first-run wizard (bot → channel[members+workspace+preset+collaborators] →
+token → ledger), menu (add bot / add-edit channel / roster person+peer / token / ledger /
+remove). Owner id asked <strong>once per platform</strong> (<code>me</code>); bot names <strong>not typed</strong>;
+collaborators <strong>picked from the roster</strong>. Bundles clean; typecheck + 183 tests green.</li>
+<li><strong>Slice 4 — IN PROGRESS.</strong> <code>CLAUDE.md</code> State-layout + Setup sections rewritten to the new
+shape/vocabulary. <code>docs/setup.md</code> + <code>README.md</code> + website delegated to a doc pass.</li>
+<li><strong>Review fixes (Slice 5):</strong> (a) a legacy agent-keyed <code>access.json</code> is now backed up to
+<code>access.json.legacy</code> on first read before setup overwrites it (no silent data loss);
+(b) <code>pickCollaborators</code> persists real selections before looping through ”+ add new”.</li>
+</ul>
+<h3 id="independent-ux-review-slice-5--outcome">Independent UX review (Slice 5) — outcome<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#independent-ux-review-slice-5--outcome" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>A read-only reviewer simulated the 5 core flows. Resolution:</p>
+<ul>
+<li><strong>“Mention routing incomplete” (claimed blocker)</strong> — FALSE ALARM. <code>isMentioned</code> keys off
+<code>m.mentionsBot</code> = <code>msg.mentions.has(this._botUserId)</code> (<code>adapters-msg/discord.ts:310</code>), which
+is per-bot (each host owns its own client/token). A real @mention only passes the addressed
+bot’s inbound gate, so only it admits (stamped <code>targetAgent</code>), and <code>prompt-on-message</code> routes
+to it. Routing IS complete for @mentions. (Generic <code>mentionPatterns</code> are not per-bot — a
+shared generic pattern can wake both bots; that’s the documented “no require-mention →
+all respond” case, surfaced by the startup ⚠.)</li>
+<li><strong>Bot in no channel → vague skip</strong> — FIXED. <code>relay.ts</code> now skips with “isn’t a member of any
+channel” instead of “workspace not set”.</li>
+<li><strong>Channel re-edit workspace default asymmetry</strong> — FIXED. The prompt now marks <code>(saved)</code> vs
+<code>(new member — defaulting to cwd)</code>.</li>
+<li>Reviewer confirmed: projection handles no-member channels, channel-less bots, empty roster,
+and cross-platform collaborators safely; setup write-only / relay read-only isolation intact;
+roster reused across channels with no re-pasting.</li>
+</ul>
+<h3 id="known-remaining-gaps-tracked">Known remaining gaps (tracked)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#known-remaining-gaps-tracked" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<ul>
+<li>
+<p><strong>Slice 2b</strong> — mention-aware routing (below).</p>
+</li>
+<li>
+<p><strong>Live bot-name display</strong> — <code>Bot.displayName</code> is defined + shown but nothing writes it yet.
+Wiring it means caching the platform username on connect; doing so from the relay would
+bend the “only setup writes access.json” invariant, so it should land in a <em>separate</em>
+cosmetic cache file, not access.json. Deferred. (Not typing the name — the actual UX win —
+is already done.)</p>
+</li>
+<li>
+<p><del>Roster entry removal</del> — DONE: setup now has “Remove a roster entry” (drops it from
+channels too). The bot surface has since been consolidated into a bot-centric
+<strong>“Manage a bot”</strong> bundle (rename key, owner id, token, add/remove channels with
+per-channel workspace/preset/collaborators, and coding-agent defaults — runtime/
+blurb), with bot removal inline. Management surface is complete: add/edit/remove
+for bots, channels, and roster + tokens + ledger.</p>
+<ul>
+<li><strong>Remaining (Slice 2b):</strong> mention-aware drive routing. Today <code>getAgentForChannel</code>
+picks the array-first serving host; the admitted <code>channel.message</code> doesn’t carry the
+target bot. Fix: stamp the intended <code>agentKey</code> on the admission (the bot whose inbound
+mention-gate passed) and have <code>prompt-on-message</code> route to it instead of array-first.
+Single-bot channels are already correct; multi-bot is surfaced (startup ⚠) not silent.</li>
+</ul>
+</li>
+</ul>
+<h2 id="8-implementation-slices-each-independently-green-bun-test--bun-run-typecheck">8. Implementation slices (each independently green: <code>bun test</code> + <code>bun run typecheck</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#8-implementation-slices-each-independently-green-bun-test--bun-run-typecheck" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><strong>Slice 0 — types + migrator (no behavior change).</strong> Add the new types in <code>lib.ts</code>
+beside the old; write pure <code>migrateAccess(old): Access</code> + unit tests (round-trip an old
+fixture). Nothing reads the new shape yet. <em>Lowest risk.</em></li>
+<li><strong>Slice 1 — state.ts adopts new shape.</strong> <code>readAccessFile</code> detects old shape, runs
+<code>migrateAccess</code>, backs up <code>access.json.v1</code>, writes new. Add resolvers
+<code>membershipFor(access, platform, channelId, botId)</code> and <code>botsListeningIn(access, channelId)</code>. Profiles still read from the per-channel files (populated at migration).</li>
+<li><strong>Slice 2 — relay + host adopt membership.</strong> <code>relay.ts</code> iterates <code>bots</code>; each
+<code>AgentHost</code> resolves its channels/workspace/profile via membership; <code>resolveRoomForScope</code>
+→ <code>resolveChannelForScope</code>; print the startup “who’s listening where” table; replace
+<code>getAgentForChannel</code> first-match with membership + mention-aware routing (per decision #2).</li>
+<li><strong>Slice 3 — setup TUI rewrite.</strong> Channel-centric dashboard + roster pick-lists + live
+name-fetch (per §6). Old menu actions re-expressed against the new shape.</li>
+<li><strong>Slice 4 — docs + website.</strong> Rewrite <code>CLAUDE.md</code>, <code>docs/*</code>, and the website to the
+locked vocabulary (channel/membership/roster).</li>
+<li><strong>Slice 5 — inline profiles (per decision #4) + delete dead code.</strong> Fold profile files
+into <code>Membership.profile</code>; remove <code>roomSettingsPath</code> once migrated.</li>
+</ul>
+<pre><code></code></pre></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-14" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#knock-knock--identity--setup--relay-redesign" data-for="knock-knock--identity--setup--relay-redesign">knock-knock — identity / setup / relay redesign</a></li><li class="depth-1"><a href="#1-vocabulary-locked" data-for="1-vocabulary-locked">1. Vocabulary (locked)</a></li><li class="depth-1"><a href="#2-target-conceptual-model" data-for="2-target-conceptual-model">2. Target conceptual model</a></li><li class="depth-2"><a href="#proposed-types-libts" data-for="proposed-types-libts">Proposed types (lib.ts)</a></li><li class="depth-1"><a href="#3-answers-to-the-open-questions" data-for="3-answers-to-the-open-questions">3. Answers to the open questions</a></li><li class="depth-1"><a href="#4-what-survives--changes--is-removed" data-for="4-what-survives--changes--is-removed">4. What survives / changes / is removed</a></li><li class="depth-1"><a href="#5-migration-migrateaccess-pure--tested" data-for="5-migration-migrateaccess-pure--tested">5. Migration (migrateAccess, pure + tested)</a></li><li class="depth-1"><a href="#6-setup-tui-channel-centric" data-for="6-setup-tui-channel-centric">6. Setup TUI (channel-centric)</a></li><li class="depth-1"><a href="#7-decisions-locked-by-owner-2026-06-24" data-for="7-decisions-locked-by-owner-2026-06-24">7. Decisions (LOCKED by owner, 2026-06-24)</a></li><li class="depth-2"><a href="#original-open-decisions-for-the-record" data-for="original-open-decisions-for-the-record">Original open decisions (for the record)</a></li><li class="depth-1"><a href="#follow-ups-post-review-owner-requested" data-for="follow-ups-post-review-owner-requested">Follow-ups (post-review, owner-requested)</a></li><li class="depth-1"><a href="#status-engineering-log" data-for="status-engineering-log">Status (engineering log)</a></li><li class="depth-2"><a href="#independent-ux-review-slice-5--outcome" data-for="independent-ux-review-slice-5--outcome">Independent UX review (Slice 5) — outcome</a></li><li class="depth-2"><a href="#known-remaining-gaps-tracked" data-for="known-remaining-gaps-tracked">Known remaining gaps (tracked)</a></li><li class="depth-1"><a href="#8-implementation-slices-each-independently-green-bun-test--bun-run-typecheck" data-for="8-implementation-slices-each-independently-green-bun-test--bun-run-typecheck">8. Implementation slices (each independently green: bun test + bun run typecheck)</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./" class="internal">knock-knock documentation</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

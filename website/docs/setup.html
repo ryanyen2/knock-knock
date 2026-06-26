@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>setup</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="setup"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="setup"/><meta name="twitter:description" content="Set up knock-knock, step by step This is the front door."/><meta property="og:description" content="Set up knock-knock, step by step This is the front door."/><meta property="og:image:alt" content="Set up knock-knock, step by step This is the front door."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/setup"/><meta property="twitter:url" content="https://knock-knock.dev/docs/setup"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="Set up knock-knock, step by step This is the front door."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/setup-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/setup-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/setup-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="setup" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-17" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-17" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>setup</a></div></nav><h1 class="article-title">setup</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-26T20:19:41.000Z">Jun 26, 2026</time><span>16 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="set-up-knock-knock-step-by-step">Set up knock-knock, step by step<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#set-up-knock-knock-step-by-step" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>This is the front door. It takes you from nothing to a working setup — your
+coding agent answering in a chat channel — and then to the thing knock-knock is
+actually for: <strong>your bot and a teammate’s bot collaborating in one group chat,
+while every action on each machine stays under its owner’s control.</strong></p>
+<p>It’s written to be followed top to bottom the first time, then skimmed later.
+Each step links to a deeper reference when you want the full detail.</p>
+<p><strong>This guide covers:</strong></p>
+<ol>
+<li><a href="#1-the-model-in-five-words" class="internal internal-link alias">The model in five words</a> — bot, channel, membership, roster, owner</li>
+<li><a href="#2-prerequisites" class="internal internal-link alias">Prerequisites</a></li>
+<li><a href="#3-quickstart-from-zero-to-a-reply" class="internal internal-link alias">Quickstart: from zero to a reply</a> — the three-command path</li>
+<li><a href="#4-connect-your-chat-platform" class="internal internal-link alias">Connect your chat platform</a> — Discord, the live surface</li>
+<li><a href="#5-choose-the-coding-agent-behind-the-bot" class="internal internal-link alias">Choose the coding agent behind the bot</a> — the runtime</li>
+<li><a href="#6-decide-what-the-bot-may-do" class="internal internal-link alias">Decide what the bot may do</a> — presets and the deny floor</li>
+<li><a href="#7-say-hello-then-verify" class="internal internal-link alias">Say hello, then verify</a> — the T1 / T2 / T3 check</li>
+<li><a href="#8-add-a-teammates-bot" class="internal internal-link alias">Add a teammate’s bot</a> — the group-chat payoff</li>
+<li><a href="#9-going-further" class="internal internal-link alias">Going further</a> — cross-machine, session sharing, watches</li>
+<li><a href="#10-troubleshooting" class="internal internal-link alias">Troubleshooting</a></li>
+<li><a href="#11-where-to-go-deeper" class="internal internal-link alias">Where to go deeper</a></li>
+</ol>
+<hr/>
+<h2 id="1-the-model-in-five-words">1. The model in five words<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#1-the-model-in-five-words" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Five terms carry the whole system. Learn these and the rest of the setup reads
+plainly.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Term</th><th>What it is</th></tr></thead><tbody><tr><td><strong>Bot</strong></td><td>One coding-agent identity you run = one Discord app you created, holding a token locally. Its name and avatar live <strong>on the platform</strong> and are fetched on connect — never typed. Has a runtime (Claude Code, OpenCode, …). You can run several at once.</td></tr><tr><td><strong>Channel</strong></td><td>A platform channel = <strong>a project = a permission boundary</strong>. It’s the thing a bot is “invited” to. Keyed globally as <code>${platform}:${channelId}</code> so two platforms never collide.</td></tr><tr><td><strong>Membership</strong></td><td>One of <em>your</em> bots active in one channel. This is the permission boundary itself: it carries that bot’s <strong>workspace folder</strong> and its <strong>allow/ask/deny profile</strong> <em>for that project</em>. The same bot can have a read-only workspace in one channel and a read-write one in another.</td></tr><tr><td><strong>Roster</strong></td><td>Your local address-book of <strong>people</strong> (human collaborators) and <strong>peers</strong> (other people’s bots), each entered <strong>once</strong> and then picked from a list. No re-pasting IDs.</td></tr><tr><td><strong>Owner / me</strong></td><td>You, the human running this relay. Identified by one user id per platform (<code>me.discord</code>), entered <strong>once</strong> and reused as the owner of every bot. Approvals go to the owner, and only the owner can approve, stop, or resolve conflicts.</td></tr></tbody></table></div>
+<p>One more distinction worth internalizing now: a <strong>channel</strong> is the project (and
+the permission boundary); a <strong>thread</strong> is a single <strong>task</strong> inside it. A
+top-level <code>@mention</code> opens a task thread so each task stays tidy, but the
+workspace and permission profile always come from the <strong>membership</strong> on the
+parent channel. A threaded task is governed by exactly the same rules as a
+top-level one. (Full rationale:
+<a href="./knock-knock-ledger-model.html" class="internal internal-link" data-slug="knock-knock-ledger-model">knock-knock-ledger-model.md</a>.)</p>
+<p>Everything you configure below — tokens, ids, permissions — hangs off these
+nouns. The config is <strong>normalized</strong>: bots, channels, and the roster are sibling
+tables, and a channel references bots and roster entries by id.</p>
+<hr/>
+<h2 id="2-prerequisites">2. Prerequisites<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#2-prerequisites" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><strong>macOS or Linux.</strong> The prebuilt <code>knock-knock</code> CLI (installed in
+<a href="#3-quickstart-from-zero-to-a-reply" class="internal internal-link alias">step 1</a>) embeds the Bun runtime, so there
+is nothing else to install. <strong><a href="https://bun.sh" class="external external-link">Bun<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a></strong> (<code>curl -fsSL https://bun.sh/install | bash</code>) is needed <em>only</em> if you install via npm or run
+from a source checkout.</li>
+<li><strong>A Discord account and a server you can add a bot to.</strong> Discord is the live
+messaging platform this guide uses throughout.</li>
+<li><strong>A coding-agent runtime.</strong> The default (<code>claude-sdk</code>) needs only an
+<code>ANTHROPIC_API_KEY</code> or an existing <code>claude</code> login — nothing to install. Other
+runtimes are covered in <a href="#5-choose-the-coding-agent-behind-the-bot" class="internal internal-link alias">step 5</a>.</li>
+</ul>
+<p>knock-knock has <strong>no <code>config.json</code> you hand-edit.</strong> Everything lives under
+<code>~/.knock-knock/</code> and is written for you by the setup CLI:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>File</th><th>Holds</th><th>Written by</th></tr></thead><tbody><tr><td><code>access.json</code></td><td><code>me</code> (owner per platform), <code>bots</code>, <code>channels</code> (with each member’s workspace + permission profile), <code>roster</code> (people + peers)</td><td><code>knock-knock setup</code> only</td></tr><tr><td><code>.env</code></td><td>bot tokens and secrets</td><td><code>knock-knock setup</code> (or you)</td></tr><tr><td><code>settings.json</code></td><td>ledger backend, presets</td><td><code>knock-knock setup</code></td></tr><tr><td><code>ledger.sqlite</code></td><td>the interaction log</td><td>the relay</td></tr></tbody></table></div>
+<p><code>access.json</code> (including the inline permission profiles) is written <strong>only</strong> from
+your terminal, never from a chat message — so nothing anyone says in the channel
+can change who’s allowed or what they may do.</p>
+<h3 id="where-does-the-env-go-set-it-once">Where does the <code>.env</code> go? (set it once)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#where-does-the-env-go-set-it-once" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>One global file: <code>~/.knock-knock/.env</code></strong> — <em>not</em> per-project and <em>not</em> tied to the
+folder you run from. You set it up <strong>once</strong>; every bot, every channel, and every
+<code>knock-knock relay</code> (launched from any directory) reads the same file. You never re-enter
+env vars when you add a channel or start from a different folder.</p>
+<p>It holds two kinds of secret, both managed by <code>knock-knock setup</code>:</p>
+<ul>
+<li><strong>Bot tokens</strong> — one per bot (e.g. <code>DISCORD_BOT_TOKEN</code>), via “Manage a bot → Save / update token”.</li>
+<li><strong>Coding-agent API keys</strong> — e.g. <code>ANTHROPIC_API_KEY</code>, <code>OPENAI_API_KEY</code>, via “Save a
+coding-agent API key”. A key is <strong>shared across every bot using that agent</strong>, so you
+enter <code>ANTHROPIC_API_KEY</code> once no matter how many Claude bots you run. Agents that use
+their own login (<code>gemini</code>, <code>opencode</code>) need no key here at all.</li>
+</ul>
+<p>The setup dashboard shows a <strong>CODING-AGENT AUTH</strong> panel with a ✓/✗ per key so you can
+see at a glance what’s set. The bot’s <strong>workspace</strong> (the project folder it edits) is a
+<em>separate</em> per-channel path you choose in setup — it has nothing to do with where the
+<code>.env</code> lives. Relocate the whole state dir with <code>KNOCK_KNOCK_STATE_DIR</code> if you must.</p>
+<hr/>
+<h2 id="3-quickstart-from-zero-to-a-reply">3. Quickstart: from zero to a reply<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#3-quickstart-from-zero-to-a-reply" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The fastest path to seeing it work, solo, on Discord. Three commands and a few
+answers.</p>
+<blockquote>
+<p><strong>Step 1 — Install knock-knock</strong>
+One CLI with the Bun runtime embedded — nothing else to install:</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">brew</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> install</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> ryanyen2/tap/knock-knock</span></span></code></pre></figure>
+<p>No Homebrew? The install script (macOS &amp; Linux, verifies the checksum):</p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">curl</span><span style="--shiki-light:#005CC5;--shiki-dark:#79B8FF;" data-token-type="value"> -fsSL</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> https://raw.githubusercontent.com/ryanyen2/knock-knock/main/packaging/install.sh</span><span style="--shiki-light:#D73A49;--shiki-dark:#F97583;" data-token-type="operator"> |</span><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function"> bash</span></span></code></pre></figure>
+<p>Also available: a <code>.deb</code> on the <a href="https://github.com/ryanyen2/knock-knock/releases" class="external external-link">Releases<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>
+page, <code>npm install -g knock-knock</code> (needs Bun), or from source
+(<code>git clone https://github.com/ryanyen2/knock-knock &amp;&amp; cd knock-knock &amp;&amp; bun install</code>).</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 2 — Run the setup wizard</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span></span></code></pre></figure>
+<p>On first run it walks you through one bot and a channel for it to work in,
+with arrow-key menus and masked token input: <strong>bot (platform → optional default
+coding agent) → channel (paste id → pick member bots → set each
+bot’s workspace + permission preset → add collaborators from your roster) → bot
+token → ledger backend.</strong> Your owner id is asked once per platform; the bot’s
+name is fetched from the platform on connect, never typed. The coding agent is
+just a <strong>default</strong> — you can skip it (Claude Code is used), set it per channel,
+switch it live in chat with <code>!config agent</code>, or override it at launch with
+<code>--config</code>. It writes <code>access.json</code> and <code>.env</code> for you. (You’ll need a Discord
+bot token and a couple of IDs first — <a href="#4-connect-your-chat-platform" class="internal internal-link alias">step 4</a>
+shows exactly how to get them.)</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 3 — Start the relay</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<p>The relay prints a <strong>“who’s listening where”</strong> table — each bot, the channels
+it’s a member of, and the workspace it uses there — then <code>connected as your-bot#1234</code>. (If two of your bots claim the same channel, it flags that at
+startup rather than picking one silently.) Now <code>@mention</code> the bot in your
+channel and say hello.</p>
+<p><strong>Optional launch flags</strong> (combine freely):</p>
+<ul>
+<li><code>--pick</code> — choose which configured bots to start (interactive checklist).</li>
+<li><code>--config</code> / <code>-c</code> — a quick per-bot setup at launch: coding agent, model,
+thinking, effort, and which local sessions to share as context. Seeded before
+the bots connect, so the first turn already uses them.</li>
+<li><code>--tui</code> — a multi-pane view, one pane per active bot, instead of the single
+combined log (falls back to the plain log when not a terminal).</li>
+<li><code>--daemon</code> / <code>--wake</code> — connect <strong>every</strong> configured bot, but keep the ones you
+didn’t pick <strong>idle</strong> (listening, spun down) until their first message wakes
+them. See <a href="./idle-wake.html" class="internal internal-link" data-slug="idle-wake">idle-wake.md</a>.</li>
+</ul>
+</blockquote>
+<p>After the first bot exists, re-running <code>knock-knock setup</code> opens a <strong>status
+dashboard + action menu</strong> instead of the wizard — a compact map of your bots,
+channels, and roster. The main action is <strong>“Manage a bot”</strong>: pick a bot and edit
+everything about it in one place — rename its key, set the owner id, save its
+token, add/remove it from channels (with each channel’s workspace, preset, and
+collaborators), and set its default coding agent / blurb. The other
+actions add/edit a channel directly, manage the roster, save a coding-agent API
+key, or choose the ledger backend.</p>
+<p>If you want to feel the flow before creating a real bot, skip ahead to
+<a href="#7-say-hello-then-verify" class="internal internal-link alias">step 7</a> to see what a first conversation looks like.</p>
+<hr/>
+<h2 id="4-connect-your-chat-platform">4. Connect your chat platform<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#4-connect-your-chat-platform" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Discord is the live messaging surface, and it’s fully walked through below. The
+chat layer sits behind one platform-neutral <code>MessagingAdapter</code> seam
+(<code>adapters-msg/</code>), so another platform is one new adapter file away — but there
+is no live adapter for one today.</p>
+<h3 id="discord-the-default-path">Discord (the default path)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#discord-the-default-path" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p><strong>Prerequisites:</strong> a Discord server you can manage, and <strong>Developer Mode</strong> on
+(<strong>Settings → Advanced → Developer Mode</strong>) so you can copy IDs.</p>
+<blockquote>
+<p><strong>Step 1 — Create the application and bot</strong>
+Go to <a href="https://discord.com/developers/applications" class="external external-link">discord.com/developers/applications<svg aria-hidden="true" class="external-icon" style="max-width:0.8em;max-height:0.8em;" viewBox="0 0 512 512"><path d="M320 0H288V64h32 82.7L201.4 265.4 178.7 288 224 333.3l22.6-22.6L448 109.3V192v32h64V192 32 0H480 320zM32 32H0V64 480v32H32 456h32V480 352 320H424v32 96H64V96h96 32V32H160 32z"></path></svg></a>
+→ <strong>New Application</strong> → name it. Open the <strong>Bot</strong> tab → <strong>Reset Token</strong> → copy
+it. It’s shown only once. This is your bot token.</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 2 — Enable the message-content intent</strong>
+<strong>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</strong> It’s the
+only privileged toggle you need. Without it the bot connects but reads empty
+message text.</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 3 — Invite the bot to your server</strong>
+<strong>OAuth2 → URL Generator</strong> → scope <strong><code>bot</code></strong> → enable these bot permissions:
+View Channels · Send Messages · Send Messages in Threads · Create Public
+Threads · Read Message History · Add Reactions · Manage Messages.
+Open the generated URL and add the bot to your server.
+(Threads and Manage Messages matter: each task runs in its own thread, and the
+config card / Workbench are pinned messages.)</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 4 — Collect three values for setup</strong></p>
+<ul>
+<li><strong>Your Discord user ID</strong> (you’re the owner): right-click yourself → Copy User ID. Asked once.</li>
+<li><strong>The channel ID</strong> of the project channel: right-click the channel → Copy Channel ID.</li>
+<li><strong>The bot token</strong> from step 1.</li>
+</ul>
+</blockquote>
+<blockquote>
+<p><strong>Step 5 — Configure and run</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">        # bot → channel (paste id, pick this bot as a member, set its workspace + preset) → token</span></span>
+<span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+</blockquote>
+<p><strong>How it behaves:</strong> a top-level <code>@mention</code> spawns a task thread; replies in that
+thread continue the task. Status shows as quiet emoji reactions (👀 working → 🏁
+done / ⚠️ failed). Approvals and conflict choices are buttons. The owner gets a
+DM when a draft is overridden.</p>
+<h3 id="another-platform">Another platform?<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#another-platform" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h3>
+<p>Discord is the only live messaging platform. The chat layer is isolated behind a
+platform-neutral <code>MessagingAdapter</code> interface (<code>adapters-msg/</code>), so adding
+another platform means writing one new adapter against that seam and a branch in
+its factory — the relay, the ledger, and the permission model never change.</p>
+<hr/>
+<h2 id="5-choose-the-coding-agent-behind-the-bot">5. Choose the coding agent behind the bot<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#5-choose-the-coding-agent-behind-the-bot" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The bot is just the face — the coding agent behind it is <strong>not</strong> part of the bot’s
+identity. Set a <strong>default</strong> in <code>knock-knock setup</code>, then change it freely without
+touching code: per channel (a membership override), live in chat with the owner
+command <code>!config agent &lt;runtime></code> (rebuilds the session on the next turn), or at
+launch with <code>knock-knock relay --config</code>. The relay can drive any of these:</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th><code>runtime</code></th><th>Agent</th><th>Notes</th></tr></thead><tbody><tr><td><code>claude-sdk</code></td><td>Claude Code, in-process</td><td><strong>Default.</strong> Nothing to install; enforces the deny floor natively.</td></tr><tr><td><code>claude-acp</code></td><td>Claude Code, over ACP</td><td>Runs out-of-process over ACP.</td></tr><tr><td><code>opencode</code></td><td>OpenCode</td><td><code>brew install sst/tap/opencode</code>, then set it to ask before tools.</td></tr><tr><td><code>codex</code></td><td>OpenAI Codex</td><td>Needs <code>OPENAI_API_KEY</code>; don’t launch it in a bypass mode.</td></tr><tr><td><code>gemini</code></td><td>Gemini CLI</td><td><code>gemini --experimental-acp</code>.</td></tr><tr><td><code>acp</code></td><td>any ACP agent</td><td>You set the spawn command (<code>KNOCK_KNOCK_ACP_COMMAND</code>).</td></tr></tbody></table></div>
+<blockquote>
+<p><strong>The one thing that matters: ask-first.</strong> The deny floor only holds if the
+agent <strong>asks before running a tool.</strong> Claude Code does this by default. For
+other runtimes, make sure they run in their normal ask-first mode (never a
+“yolo” / auto-approve mode).</p>
+</blockquote>
+<p>Per-agent install and auth (including the OpenCode <code>permission</code> config) are in
+<strong><a href="./getting-started-agents.html" class="internal internal-link" data-slug="getting-started-agents">getting-started-agents.md</a></strong>.</p>
+<hr/>
+<h2 id="6-decide-what-the-bot-may-do">6. Decide what the bot may do<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#6-decide-what-the-bot-may-do" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>In <code>knock-knock setup</code>, each <strong>membership</strong> (a bot in a channel) gets a <strong>preset</strong> — a
+named permission profile, expanded inline into that membership’s allow/ask/deny.
+Every tool the bot reaches for is checked against it, with one rule: <strong>deny beats
+ask beats allow.</strong> Because the profile lives on the membership, the same bot can
+be <code>strict</code> in one channel and <code>auto</code> in another.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Preset</th><th>Reads</th><th>Edits &amp; writes</th><th>Shell</th><th>Good for</th></tr></thead><tbody><tr><td><strong>strict</strong></td><td>allow</td><td>deny</td><td>deny</td><td>untrusted peers, read-only research</td></tr><tr><td><strong>ask-per-edit</strong></td><td>allow</td><td>ask</td><td>ask</td><td>day-to-day work (recommended start)</td></tr><tr><td><strong>auto</strong></td><td>allow</td><td>allow</td><td>ask</td><td>trusted solo flow</td></tr><tr><td><strong>bypass</strong></td><td>allow</td><td>allow</td><td>allow</td><td>unattended runs you review after (deny floor still holds)</td></tr></tbody></table></div>
+<p>Two things hold no matter which preset you pick:</p>
+<ul>
+<li><strong>The deny floor is always on.</strong> Destructive shell (<code>rm -rf</code>, <code>sudo</code>) and
+writes to sensitive paths (<code>~/.ssh</code>) are blocked even under <code>bypass</code>, checked
+against the real command so they can’t be smuggled past in a chain.</li>
+<li><strong>You can give peers less than yourself.</strong> Per-actor <strong>tiers</strong> let a peer’s
+bot run read-only while you keep full access. Deny is always the union, so a
+tier can only tighten.</li>
+</ul>
+<p>The friendly, complete walkthrough (presets, tiers, and the
+prompt-injection invariant) is in
+<strong><a href="./security-and-permissions.html" class="internal internal-link" data-slug="security-and-permissions">security-and-permissions.md</a></strong>.</p>
+<hr/>
+<h2 id="7-say-hello-then-verify">7. Say hello, then verify<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#7-say-hello-then-verify" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>With the relay running and your bot a member of a channel on <strong>ask-per-edit</strong>,
+<code>@mention</code> it. Then run this three-line acceptance test to confirm each tier
+works:</p>
+<ul>
+<li><strong>T1 — Auto:</strong> “what files are in the working directory?” → answered
+immediately, <strong>no</strong> prompt. <em>(Read is allowed.)</em></li>
+<li><strong>T2 — Gated:</strong> “run <code>echo hello</code>” → an <strong>Allow / Deny</strong> prompt appears
+mentioning you, the owner; a non-owner tapping Allow is rejected. <em>(Gated.)</em></li>
+<li><strong>T3 — Hard deny:</strong> “delete everything with <code>rm -rf</code>” → <strong>blocked, no prompt
+ever appears</strong>; the command never runs. <em>(The floor.)</em></li>
+</ul>
+<p>Run the relay with <code>KNOCK_KNOCK_DEBUG=1</code> to log every permission decision
+(<code>[acp] permission: … → allow|ask|deny</code>) if you want to watch the floor work.</p>
+<hr/>
+<h2 id="8-add-a-teammates-bot">8. Add a teammate’s bot<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#8-add-a-teammates-bot" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>This is the point of knock-knock: two people, two machines, two bots, one
+channel. Each person does steps 4–6 on their <strong>own</strong> machine (own bot token, own
+membership: own workspace + permission preset), joins the <strong>same</strong> channel, and
+adds the other to their roster as a peer.</p>
+<blockquote>
+<p><strong>Step 1 — Both join one channel</strong>
+Invite both bots to the same shared server and channel. That channel is the
+<strong>project</strong> both bots are members of.</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 2 — Exchange bot user IDs</strong>
+Each person copies their bot’s user ID and sends it to the other (right-click
+the bot → Copy User ID on Discord).</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 3 — Add each other as peers, then as channel collaborators</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> setup</span><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">        # &quot;Add a peer bot to the roster&quot; → paste the other bot's id + a short blurb</span></span>
+<span data-line><span style="--shiki-light:#6A737D;--shiki-dark:#6A737D;" data-token-type="comment">                    # then &quot;Add / edit a channel&quot; → add that peer as a collaborator (picked from the roster)</span></span></code></pre></figure>
+<p>The blurb (e.g. “hosts the vLLM box”) is what your bot sees in the roster, so
+it knows who to <code>@mention</code> for what. Entered once; pick from the list for any
+future channel.</p>
+</blockquote>
+<blockquote>
+<p><strong>Step 4 — Both launch</strong></p>
+<figure data-rehype-pretty-code-figure><pre tabindex="0" data-language="bash" data-theme="github-light github-dark"><code data-language="bash" data-theme="github-light github-dark" style="display:grid;"><span data-line><span style="--shiki-light:#6F42C1;--shiki-dark:#B392F0;" data-token-type="function">knock-knock</span><span style="--shiki-light:#032F62;--shiki-dark:#9ECBFF;" data-token-type="string"> relay</span></span></code></pre></figure>
+<p>Now in the channel, one bot can <code>@mention</code> the other with a request. A task
+thread opens, the other bot works in <strong>its</strong> membership’s workspace under
+<strong>its</strong> owner’s rules, and anything that changes that machine waits for
+<strong>that</strong> owner’s Allow.</p>
+</blockquote>
+<p>What you get for free once two bots share a channel: each bot knows the roster
+and addresses peers by name; tasks run in isolated threads with a live Workbench;
+approvals go to the right owner; and a <strong>loop guard</strong> stops two bots from
+ping-ponging forever (after 4 bot-to-bot turns it pauses until a human speaks).
+The full list is in
+<a href="./getting-started-agents.html#multi-agent-collaboration" class="internal internal-link" data-slug="getting-started-agents">getting-started-agents.md#multi-agent-collaboration</a>.</p>
+<blockquote>
+<p><strong>Same machine, two bots?</strong> You don’t need two computers to try this. One
+relay can host several bots at once — re-run <code>knock-knock setup</code>, add a second bot
+with its own token, make both members of the channel (each with its own
+workspace + preset), and a single <code>knock-knock relay</code> connects both. With more than
+one of your bots in a channel, an <code>@mention</code> routes to the named bot; an
+un-mentioned top-level message isn’t auto-answered by everyone.</p>
+</blockquote>
+<hr/>
+<h2 id="9-going-further">9. Going further<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#9-going-further" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Once the basics work, these are the features worth knowing about. Each has a
+dedicated guide.</p>
+<ul>
+<li><strong>Work across two machines (shared ledger).</strong> By default each relay keeps a
+local SQLite ledger, so two relays only see each other through the chat. To
+share ledger state (imported session context, cross-machine conflict
+detection, collaborative file edits), point <strong>every</strong> relay at one shared
+<strong>Postgres</strong> via <code>KNOCK_KNOCK_LEDGER_URL</code> (or a <code>ledger</code> block in
+<code>settings.json</code>). Cross-machine walkthrough:
+<a href="./getting-started-agents.html#cross-machine-setup-shared-postgres-ledger" class="internal internal-link" data-slug="getting-started-agents">getting-started-agents.md#cross-machine-setup-shared-postgres-ledger</a>.</li>
+<li><strong>Per-task tuning (owner, in-thread)</strong> — <code>!config role &lt;text></code>, model, thinking,
+effort, coding agent (<code>!config agent &lt;runtime></code>), and permission mode are tunable
+per thread on top of the channel default. <code>!config help</code> lists them.</li>
+<li><strong>Run a subset, wake the rest (daemon)</strong> — <code>knock-knock relay --pick --daemon</code>
+starts only the bots you choose, keeping the others connected-but-idle so they
+wake on their first message. Add <code>--tui</code> for one pane per bot, <code>--config</code> to set
+each bot’s agent/model/effort at launch. <a href="./idle-wake.html" class="internal internal-link" data-slug="idle-wake">idle-wake.md</a>.</li>
+<li><strong>Session sharing</strong> 📥 — start a teammate’s bot from the plan and decisions
+in one of your local coding sessions instead of cold. Run <code>share session</code>
+inside the task thread. <a href="./session-sharing.html" class="internal internal-link" data-slug="session-sharing">session-sharing.md</a>.</li>
+<li><strong>Watches</strong> ⏳ — let a turn defer and be resumed by the world: a file changing,
+a job finishing, a deadline passing. <a href="./knock-knock-watches.html" class="internal internal-link" data-slug="knock-knock-watches">knock-knock-watches.md</a>.</li>
+<li><strong>Reactions, conflicts &amp; versioning</strong> — the reaction vocabulary, equal-role
+conflict cards, and how the append-only ledger versions every action.
+<a href="./reactions-and-versioning.html" class="internal internal-link" data-slug="reactions-and-versioning">reactions-and-versioning.md</a>.</li>
+</ul>
+<hr/>
+<h2 id="10-troubleshooting">10. Troubleshooting<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#10-troubleshooting" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Symptom</th><th>Fix</th></tr></thead><tbody><tr><td>Bot shows offline</td><td>Token wrong or not loaded. Re-run <code>knock-knock setup → &quot;Manage a bot&quot; → Save / update token</code> and check <code>.env</code>.</td></tr><tr><td>Bot is silent</td><td>On Discord, MESSAGE CONTENT INTENT is off, the bot isn’t in the channel, or the channel requires an <code>@mention</code> and you didn’t mention it.</td></tr><tr><td>Empty message text (Discord)</td><td>MESSAGE CONTENT INTENT not enabled.</td></tr><tr><td>Bot not in the “who’s listening where” table at startup</td><td>Its <code>tokenEnv</code> isn’t set in <code>.env</code>, or it isn’t a <strong>member</strong> of any channel. Re-run setup, save its token, and add it to a channel.</td></tr><tr><td>Two of your bots flagged on the same channel</td><td>Legal but ambiguous — an <code>@mention</code> routes to the named bot, and a thread continuation stays with the bot that owns it. Give each a distinct role or drop one from the channel.</td></tr><tr><td>No approval prompt appears</td><td>The owner id (<code>me</code>) for that platform isn’t set, or the channel’s <code>approvalActorId</code> override is wrong. Re-run <code>knock-knock setup</code>.</td></tr><tr><td><code>rm -rf</code> ran anyway (ACP runtime)</td><td>The agent isn’t asking before tools. Put it in ask-first mode (never yolo/bypass). See <a href="./getting-started-agents.html" class="internal internal-link alias" data-slug="getting-started-agents">the deny-floor caveat</a>.</td></tr><tr><td>Cross-machine state not syncing</td><td>Both relays must point at the <strong>same</strong> Postgres (direct endpoint, not a pooled one).</td></tr></tbody></table></div>
+<hr/>
+<h2 id="11-where-to-go-deeper">11. Where to go deeper<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#11-where-to-go-deeper" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Guide</th><th>When to read it</th></tr></thead><tbody><tr><td><a href="./getting-started-agents.html" class="internal internal-link alias" data-slug="getting-started-agents">Getting started with different agents</a></td><td>Per-runtime install/auth, multi-agent collaboration, cross-machine, the deny-floor caveat</td></tr><tr><td><a href="./security-and-permissions.html" class="internal internal-link alias" data-slug="security-and-permissions">Permissions &amp; security</a></td><td>Presets, per-peer tiers, the deny floor, prompt-injection invariant</td></tr><tr><td><a href="./session-sharing.html" class="internal internal-link alias" data-slug="session-sharing">Session sharing</a></td><td>Importing or resuming a local coding session into a channel</td></tr><tr><td><a href="./idle-wake.html" class="internal internal-link alias" data-slug="idle-wake">Daemon &amp; wake-on-message</a></td><td>Running a subset of bots active and waking idle ones on demand; the <code>--pick</code>/<code>--config</code>/<code>--tui</code>/<code>--daemon</code> launch flags</td></tr><tr><td><a href="./knock-knock-watches.html" class="internal internal-link alias" data-slug="knock-knock-watches">Watches</a></td><td>Deferring a turn until the world changes</td></tr><tr><td><a href="./reactions-and-versioning.html" class="internal internal-link alias" data-slug="reactions-and-versioning">Reactions, conflicts &amp; versioning</a></td><td>The reaction vocabulary, conflict cards, ledger versioning</td></tr><tr><td><a href="./knock-knock-ledger-model.html" class="internal internal-link alias" data-slug="knock-knock-ledger-model">Ledger model</a></td><td>The architecture: interactions, folds, channel vs scope</td></tr></tbody></table></div></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-17" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#set-up-knock-knock-step-by-step" data-for="set-up-knock-knock-step-by-step">Set up knock-knock, step by step</a></li><li class="depth-1"><a href="#1-the-model-in-five-words" data-for="1-the-model-in-five-words">1. The model in five words</a></li><li class="depth-1"><a href="#2-prerequisites" data-for="2-prerequisites">2. Prerequisites</a></li><li class="depth-2"><a href="#where-does-the-env-go-set-it-once" data-for="where-does-the-env-go-set-it-once">Where does the .env go? (set it once)</a></li><li class="depth-1"><a href="#3-quickstart-from-zero-to-a-reply" data-for="3-quickstart-from-zero-to-a-reply">3. Quickstart: from zero to a reply</a></li><li class="depth-1"><a href="#4-connect-your-chat-platform" data-for="4-connect-your-chat-platform">4. Connect your chat platform</a></li><li class="depth-2"><a href="#discord-the-default-path" data-for="discord-the-default-path">Discord (the default path)</a></li><li class="depth-2"><a href="#another-platform" data-for="another-platform">Another platform?</a></li><li class="depth-1"><a href="#5-choose-the-coding-agent-behind-the-bot" data-for="5-choose-the-coding-agent-behind-the-bot">5. Choose the coding agent behind the bot</a></li><li class="depth-1"><a href="#6-decide-what-the-bot-may-do" data-for="6-decide-what-the-bot-may-do">6. Decide what the bot may do</a></li><li class="depth-1"><a href="#7-say-hello-then-verify" data-for="7-say-hello-then-verify">7. Say hello, then verify</a></li><li class="depth-1"><a href="#8-add-a-teammates-bot" data-for="8-add-a-teammates-bot">8. Add a teammate’s bot</a></li><li class="depth-1"><a href="#9-going-further" data-for="9-going-further">9. Going further</a></li><li class="depth-1"><a href="#10-troubleshooting" data-for="10-troubleshooting">10. Troubleshooting</a></li><li class="depth-1"><a href="#11-where-to-go-deeper" data-for="11-where-to-go-deeper">11. Where to go deeper</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./getting-started-agents.html" class="internal">getting-started-agents</a></li><li><a href="./" class="internal">knock-knock documentation</a></li><li><a href="./messaging-platforms-setup.html" class="internal">messaging-platforms-setup</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

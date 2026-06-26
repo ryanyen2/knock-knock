@@ -14,3 +14,7 @@ coverage/
 *.bak
 *.swp
 *.swo
+
+# Quartz docs builder (cloned on demand by scripts/build-docs.sh).
+# The generated output under website/docs/ IS committed; the builder is not.
+.docs-build/

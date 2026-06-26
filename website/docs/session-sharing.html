@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr"><head><title>session-sharing</title><meta charset="utf-8"/><link rel="preload" href="./index-4a8cf130.css" as="style"/><link rel="preload" href="./prescript-2bfc6315.js" as="script"/><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted Grotesk:wght@400;700&amp;family=Source Sans Pro:ital,wght@0,400;0,600;1,400;1,600&amp;family=IBM Plex Mono:wght@400;600&amp;display=swap"/><link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin="anonymous"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="og:site_name" content="knock-knock docs"/><meta property="og:title" content="session-sharing"/><meta property="og:type" content="website"/><meta name="twitter:card" content="summary_large_image"/><meta name="twitter:title" content="session-sharing"/><meta name="twitter:description" content="Session sharing Reuse the context hidden in a local coding-agent session for collaboration."/><meta property="og:description" content="Session sharing Reuse the context hidden in a local coding-agent session for collaboration."/><meta property="og:image:alt" content="Session sharing Reuse the context hidden in a local coding-agent session for collaboration."/><meta property="twitter:domain" content="knock-knock.dev/docs"/><meta property="og:url" content="https://knock-knock.dev/docs/session-sharing"/><meta property="twitter:url" content="https://knock-knock.dev/docs/session-sharing"/><link rel="icon" href="./static/icon.png"/><meta name="description" content="Session sharing Reuse the context hidden in a local coding-agent session for collaboration."/><meta name="generator" content="Quartz"/><link href="./index-4a8cf130.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-735924e0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-589c1cea.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-bbc3f7c0.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-2911f5d1.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-e427079e.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-53b25b2b.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-c93c6a44.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-8a06014f.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-77d6a441.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-6ee21cee.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-1ea6ad18.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-34bdfded.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-788c9ca3.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-642859cd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-4abc06bd.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-274a3dfe.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-94cb6c84.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-58d5ff56.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./component-7262b5a7.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-a5c806d2.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-6bd36952.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-9857b007.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="./static/resource-style-d3a1a224.css" rel="stylesheet" type="text/css" data-persist="true"/><link href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" rel="stylesheet" type="text/css" data-persist="true"/><script src="./prescript-2bfc6315.js" type="application/javascript" data-persist="true"></script><script type="application/javascript" data-persist="true">const fetchData = fetch("./static/contentIndex.json").then(data => data.json())</script><link rel="preconnect" href="https://fonts.googleapis.com"/><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous"/><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted%20Grotesk%3Awght%40400%3B700&amp;family=Source%20Sans%20Pro%3Aital%2Cwght%400%2C400%3B0%2C600%3B1%2C400%3B1%2C600&amp;family=IBM%20Plex%20Mono%3Awght%40400%3B600&amp;display=swap"/><meta property="og:image:width" content="1200"/><meta property="og:image:height" content="630"/><meta property="og:image" content="https://knock-knock.dev/docs/session-sharing-og-image.webp"/><meta property="og:image:url" content="https://knock-knock.dev/docs/session-sharing-og-image.webp"/><meta name="twitter:image" content="https://knock-knock.dev/docs/session-sharing-og-image.webp"/><meta property="og:image:type" content="image/webp"/></head><body data-slug="session-sharing" data-basepath="/docs"><div id="quartz-root" class="page" data-frame="default"><div id="quartz-body"><div class="left sidebar"><h2 class="page-title"><a href=".">knock-knock docs</a></h2><div class="mobile-only"><div class="spacer"></div></div><div class="flex-component" style="flex-direction: row; flex-wrap: nowrap; gap: 0.5rem;"><div style="flex-grow: 1; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><div class="search"><button class="search-button" aria-label="Search" aria-expanded="false"><svg role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 19.9 19.7"><title>Search</title><g class="search-path" fill="none"><path stroke-linecap="square" d="M18.5 18.3l-5.4-5.4"></path><circle cx="8" cy="8" r="7"></circle></g></svg><p>Search</p></button><div class="search-container"><div class="search-space"><input autocomplete="off" class="search-bar" name="search" type="text" aria-label="Search for something..." placeholder="Search for something..."/><div class="search-layout" data-preview="true" data-field-priority="[&quot;title&quot;,&quot;content&quot;,&quot;tags&quot;]"></div></div></div></div></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="darkmode" aria-label="Dark mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="dayIcon" x="0px" y="0px" viewBox="0 0 35 35" style="enable-background:new 0 0 35 35" xml:space="preserve" aria-label="Dark mode"><title>Dark mode</title><path d="M6,17.5C6,16.672,5.328,16,4.5,16h-3C0.672,16,0,16.672,0,17.5    S0.672,19,1.5,19h3C5.328,19,6,18.328,6,17.5z M7.5,26c-0.414,0-0.789,0.168-1.061,0.439l-2,2C4.168,28.711,4,29.086,4,29.5    C4,30.328,4.671,31,5.5,31c0.414,0,0.789-0.168,1.06-0.44l2-2C8.832,28.289,9,27.914,9,27.5C9,26.672,8.329,26,7.5,26z M17.5,6    C18.329,6,19,5.328,19,4.5v-3C19,0.672,18.329,0,17.5,0S16,0.672,16,1.5v3C16,5.328,16.671,6,17.5,6z M27.5,9    c0.414,0,0.789-0.168,1.06-0.439l2-2C30.832,6.289,31,5.914,31,5.5C31,4.672,30.329,4,29.5,4c-0.414,0-0.789,0.168-1.061,0.44    l-2,2C26.168,6.711,26,7.086,26,7.5C26,8.328,26.671,9,27.5,9z M6.439,8.561C6.711,8.832,7.086,9,7.5,9C8.328,9,9,8.328,9,7.5    c0-0.414-0.168-0.789-0.439-1.061l-2-2C6.289,4.168,5.914,4,5.5,4C4.672,4,4,4.672,4,5.5c0,0.414,0.168,0.789,0.439,1.06    L6.439,8.561z M33.5,16h-3c-0.828,0-1.5,0.672-1.5,1.5s0.672,1.5,1.5,1.5h3c0.828,0,1.5-0.672,1.5-1.5S34.328,16,33.5,16z     M28.561,26.439C28.289,26.168,27.914,26,27.5,26c-0.828,0-1.5,0.672-1.5,1.5c0,0.414,0.168,0.789,0.439,1.06l2,2    C28.711,30.832,29.086,31,29.5,31c0.828,0,1.5-0.672,1.5-1.5c0-0.414-0.168-0.789-0.439-1.061L28.561,26.439z M17.5,29    c-0.829,0-1.5,0.672-1.5,1.5v3c0,0.828,0.671,1.5,1.5,1.5s1.5-0.672,1.5-1.5v-3C19,29.672,18.329,29,17.5,29z M17.5,7    C11.71,7,7,11.71,7,17.5S11.71,28,17.5,28S28,23.29,28,17.5S23.29,7,17.5,7z M17.5,25c-4.136,0-7.5-3.364-7.5-7.5    c0-4.136,3.364-7.5,7.5-7.5c4.136,0,7.5,3.364,7.5,7.5C25,21.636,21.636,25,17.5,25z"></path></svg><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="nightIcon" x="0px" y="0px" viewBox="0 0 100 100" style="enable-background:new 0 0 100 100" xml:space="preserve" aria-label="Light mode"><title>Light mode</title><path d="M96.76,66.458c-0.853-0.852-2.15-1.064-3.23-0.534c-6.063,2.991-12.858,4.571-19.655,4.571  C62.022,70.495,50.88,65.88,42.5,57.5C29.043,44.043,25.658,23.536,34.076,6.47c0.532-1.08,0.318-2.379-0.534-3.23  c-0.851-0.852-2.15-1.064-3.23-0.534c-4.918,2.427-9.375,5.619-13.246,9.491c-9.447,9.447-14.65,22.008-14.65,35.369  c0,13.36,5.203,25.921,14.65,35.368s22.008,14.65,35.368,14.65c13.361,0,25.921-5.203,35.369-14.65  c3.872-3.871,7.064-8.328,9.491-13.246C97.826,68.608,97.611,67.309,96.76,66.458z"></path></svg></button></div><div style="flex-grow: 0; flex-shrink: 1; flex-basis: auto; order: 0; align-self: center; justify-self: center;"><button class="readermode" aria-label="Reader mode"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" class="readerIcon" fill="currentColor" stroke="currentColor" stroke-width="0.2" stroke-linecap="round" stroke-linejoin="round" width="64px" height="64px" viewBox="0 0 24 24" aria-label="Reader mode"><title>Reader mode</title><g transform="translate(-1.8, -1.8) scale(1.15, 1.2)"><path d="M8.9891247,2.5 C10.1384702,2.5 11.2209868,2.96705384 12.0049645,3.76669482 C12.7883914,2.96705384 13.8709081,2.5 15.0202536,2.5 L18.7549359,2.5 C19.1691495,2.5 19.5049359,2.83578644 19.5049359,3.25 L19.5046891,4.004 L21.2546891,4.00457396 C21.6343849,4.00457396 21.9481801,4.28672784 21.9978425,4.6528034 L22.0046891,4.75457396 L22.0046891,20.25 C22.0046891,20.6296958 21.7225353,20.943491 21.3564597,20.9931534 L21.2546891,21 L2.75468914,21 C2.37499337,21 2.06119817,20.7178461 2.01153575,20.3517706 L2.00468914,20.25 L2.00468914,4.75457396 C2.00468914,4.37487819 2.28684302,4.061083 2.65291858,4.01142057 L2.75468914,4.00457396 L4.50368914,4.004 L4.50444233,3.25 C4.50444233,2.87030423 4.78659621,2.55650904 5.15267177,2.50684662 L5.25444233,2.5 L8.9891247,2.5 Z M4.50368914,5.504 L3.50468914,5.504 L3.50468914,19.5 L10.9478955,19.4998273 C10.4513189,18.9207296 9.73864328,18.5588115 8.96709342,18.5065584 L8.77307039,18.5 L5.25444233,18.5 C4.87474657,18.5 4.56095137,18.2178461 4.51128895,17.8517706 L4.50444233,17.75 L4.50368914,5.504 Z M19.5049359,17.75 C19.5049359,18.1642136 19.1691495,18.5 18.7549359,18.5 L15.2363079,18.5 C14.3910149,18.5 13.5994408,18.8724714 13.0614828,19.4998273 L20.5046891,19.5 L20.5046891,5.504 L19.5046891,5.504 L19.5049359,17.75 Z M18.0059359,3.999 L15.0202536,4 L14.8259077,4.00692283 C13.9889509,4.06666544 13.2254227,4.50975805 12.7549359,5.212 L12.7549359,17.777 L12.7782651,17.7601316 C13.4923805,17.2719483 14.3447024,17 15.2363079,17 L18.0059359,16.999 L18.0056891,4.798 L18.0033792,4.75457396 L18.0056891,4.71 L18.0059359,3.999 Z M8.9891247,4 L6.00368914,3.999 L6.00599909,4.75457396 L6.00599909,4.75457396 L6.00368914,4.783 L6.00368914,16.999 L8.77307039,17 C9.57551536,17 10.3461406,17.2202781 11.0128313,17.6202194 L11.2536891,17.776 L11.2536891,5.211 C10.8200889,4.56369974 10.1361548,4.13636104 9.37521067,4.02745763 L9.18347055,4.00692283 L8.9891247,4 Z"></path></g></svg></button></div></div><div class="explorer nav-files-container" data-behavior="link" data-collapsed="collapsed" data-savestate="true" data-data-fns="{&quot;order&quot;:[&quot;filter&quot;,&quot;map&quot;,&quot;sort&quot;],&quot;sortFn&quot;:&quot;(a2, b2) => {\n    if (!a2.isFolder &amp;&amp; !b2.isFolder || a2.isFolder &amp;&amp; b2.isFolder) {\n      return (a2.displayName || \&quot;\&quot;).localeCompare(b2.displayName || \&quot;\&quot;, void 0, {\n        numeric: true,\n        sensitivity: \&quot;base\&quot;\n      });\n    }\n    if (!a2.isFolder &amp;&amp; b2.isFolder) {\n      return 1;\n    }\n    return -1;\n  }&quot;,&quot;filterFn&quot;:&quot;(node) => node.slugSegment !== \&quot;tags\&quot;&quot;,&quot;mapFn&quot;:&quot;(node) => {\n    return node;\n  }&quot;}"><button type="button" class="explorer-toggle mobile-explorer hide-until-loaded" data-mobile="true" aria-controls="explorer-16" aria-label="Explorer"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide-menu"><line x1="4" x2="20" y1="12" y2="12"></line><line x1="4" x2="20" y1="6" y2="6"></line><line x1="4" x2="20" y1="18" y2="18"></line></svg></button><button type="button" class="title-button explorer-toggle desktop-explorer" data-mobile="false" aria-expanded="true"><h2>Explorer</h2><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><div id="explorer-16" class="explorer-content" aria-expanded="false" role="group"><ul class="explorer-ul overflow" id="list-0"><li class="overflow-end"></li></ul></div><template id="template-file"><li><a href="#" class="nav-file-title tree-item-self"></a></li></template><template id="template-folder"><li><div class="folder-container nav-folder-title tree-item-self"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="5 8 14 8" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="folder-icon nav-folder-collapse-indicator collapse-icon"><polyline points="6 9 12 15 18 9"></polyline></svg><div><button class="folder-button"><span class="folder-title"></span></button></div></div><div class="folder-outer"><ul class="content tree-item-children"></ul></div></li></template></div></div><div class="center"><div class="page-header"><div class="popover-hint"><nav class="breadcrumb-container" aria-label="breadcrumbs"><div class="breadcrumb-element"><a href="./">Home</a><p> ❯ </p></div><div class="breadcrumb-element"><a href>session-sharing</a></div></nav><h1 class="article-title">session-sharing</h1><p show-comma="true" class="content-meta"><time datetime="2026-06-26T19:31:17.000Z">Jun 26, 2026</time><span>8 min read</span></p></div></div><article class="popover-hint"><div class="markdown-preview-view markdown-rendered"><h1 id="session-sharing">Session sharing<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#session-sharing" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h1>
+<p>Reuse the context hidden in a <em>local</em> coding-agent session for collaboration.</p>
+<h2 id="the-problem">The problem<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-problem" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>The relay spins up a <strong>fresh</strong> session for every request, with no memory of work
+already done. But the valuable context — the plan that was agreed, the decisions
+made, the dead-ends already hit — usually lives in a developer’s <strong>local,
+unpushed</strong> session (Claude Code, Codex, OpenCode, or Gemini). A teammate’s agent
+that starts cold repeats the same pitfalls and ignores decisions already made.</p>
+<p>Session sharing lets an owner import the distilled context of one of their local
+sessions into a <strong>task scope</strong>, so the next agent turn there — on this machine
+<em>or</em> a teammate’s — starts from that context.</p>
+<p>State is <strong>per-task</strong>: run the command <em>inside the task’s thread</em> and that
+thread’s next turn picks the context up. (Run it at the top level, with no
+thread, and it lands at the channel scope instead.) The control command itself
+never opens a thread — it acts in the scope it was typed in.</p>
+<blockquote>
+<p><strong>Importing at relay launch.</strong> <code>knock-knock relay --config</code> (or <code>--pick</code>) can also
+import a session as part of per-bot quick setup. Because no task thread exists yet at
+launch, a startup import lands on the <strong>room/channel scope</strong> — top-level turns in that
+channel see it, but the per-task threads spawned later (each its own scope) do not.
+For thread-scoped context, use the in-chat <code>share session</code> inside that thread instead.
+Startup import is best-effort (<code>applyQuickConfig</code> in <code>src/relay-startup.ts</code>).</p>
+</blockquote>
+<p>Two modes:</p>
+<ul>
+<li><strong>import</strong> (<code>share session</code> / <code>import session</code>) — distill a one-shot context
+brief and inject it. Cross-runtime, cross-machine, low-risk.</li>
+<li><strong>resume</strong> (<code>resume session</code> / <code>continue session</code>) — continue the live session
+with full history. Same-runtime, same-machine. See “Resuming a live session”.</li>
+</ul>
+<h2 id="how-it-works">How it works<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#how-it-works" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Lives in <code>host/session-sharing.ts</code> (<code>SessionSharing</code>); <code>AgentHost</code> delegates to it.</p>
+<pre><code>owner: &quot;@bot share my session&quot;   in a task thread   (owner-only; never a peer)
+  → handleInbound detects isShareSessionCommand, short-circuits BEFORE any admit
+    (using the scope it was typed in; no new thread is opened for a control cmd)
+  → SessionSharing.offer → listAllSessions(workspace) across all four runtimes
+  → 📥 selection card (one numbered button per recent session + Cancel)
+owner clicks a session
+  → SessionStore.read(id)  → distill() → a context brief
+  → admit owner-role knowledge.append → know:channel/&lt;scopeId>/shared-context
+       (anchor:none → merge gate is a no-op, no conflict card)
+next turn in that scope
+  → SessionSharing.pendingContext(scopeId) reads the knowledge fold,
+    pickFreshContext selects not-yet-delivered notes, Driver.buildPrompt prepends
+    each &lt;shared-context> block once, ahead of the &lt;channel> envelope
+</code></pre>
+<p>Because the import is a normal ledger interaction, on the <strong>Postgres backend</strong>
+(<code>KNOCK_KNOCK_LEDGER_URL</code>) the note syncs to every machine, and each relay
+injects it into its own agent’s next turn in that scope. That is how a teammate
+on another machine receives context from a session they can’t see on disk.</p>
+<p><strong>Without a shared ledger (separate relays on SQLite),</strong> the knowledge note never
+reaches the other relay — so the import <em>also posts the distilled brief into the
+scope</em> (<code>renderSharedContextPost</code>), @mentioning the room’s peer agents (the
+roster is resolved scope→room). A peer on a separate relay ingests it through the
+normal Discord feed (the message is its next turn’s prompt), no Postgres
+required. Same-relay peers still get it silently via the fold; the post is the
+cross-relay bridge.</p>
+<p>This Discord post is gated to the <strong>SQLite backend</strong> (<code>store.kind === 'sqlite'</code>):
+on Postgres the note already syncs through the ledger, so posting it would
+double-deliver — the bridge is skipped there. The read-distill-admit core is the
+runtime-agnostic <code>importSession</code> (<code>sessions/import.ts</code>); the <code>sess:pick</code> button
+handler is a thin adapter over it (owner gate = identity boundary), so the same
+import can be driven headlessly later.</p>
+<h2 id="the-read-seam-sessions">The read seam (<code>sessions/</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-read-seam-sessions" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Mirrors <code>adapters/</code>: one <code>SessionStore</code> per runtime, each knowing only its own
+on-disk layout. Every reader is <strong>best-effort</strong> — a missing directory, an
+unreadable file, or an unrecognized line degrades to fewer results, never throws.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div class="table-container"><table><thead><tr><th>Runtime</th><th>Where sessions live</th><th>Base-dir override</th></tr></thead><tbody><tr><td>Claude Code</td><td><code>&lt;config>/projects/&lt;encoded-cwd>/&lt;id>.jsonl</code></td><td><code>CLAUDE_CONFIG_DIR</code></td></tr><tr><td>Codex</td><td><code>&lt;home>/sessions/YYYY/MM/DD/*.jsonl</code> (rollout)</td><td><code>CODEX_HOME</code></td></tr><tr><td>OpenCode</td><td><code>&lt;data>/storage/{session,message,part}/…</code></td><td><code>OPENCODE_DATA_DIR</code></td></tr><tr><td>Gemini</td><td><code>&lt;base>/tmp/&lt;sha256(cwd)>/chats/*.json</code></td><td><code>GEMINI_DIR</code></td></tr></tbody></table></div>
+<p><code>makeSessionStore(runtime)</code> resolves one store (it accepts the relay runtime keys
+too — <code>claude-sdk</code>/<code>claude-acp</code> both read Claude Code). <code>listAllSessions(workspace)</code>
+fans out across all four and merges newest-first.</p>
+<p>The Claude Code reader is the most exercised (its JSONL format is stable); the
+other three are tolerant parsers validated against fixtures
+(<code>sessions/readers.test.ts</code>) and may need tuning as those tools’ formats evolve.</p>
+<h2 id="the-distiller-sessionsdistillts">The distiller (<code>sessions/distill.ts</code>)<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#the-distiller-sessionsdistillts" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p>Pure, deterministic, offline (no model call — so it’s testable and reproducible).
+A <code>NormalizedTranscript</code> becomes a brief with the sections that are present:</p>
+<ul>
+<li><strong>Plan</strong> — the latest <code>ExitPlanMode</code> plan.</li>
+<li><strong>Todos</strong> — the latest <code>TodoWrite</code> list, as a status checklist.</li>
+<li><strong>Key decisions</strong> — assistant lines with decision cues, else the last
+substantial paragraph.</li>
+<li><strong>Files touched</strong> — paths from <code>Edit</code>/<code>Write</code>/<code>Read</code>/… tool calls.</li>
+<li><strong>Pitfalls / dead-ends</strong> — assistant lines with failure/caveat cues.</li>
+</ul>
+<p><code>lib.ts</code> <code>wrapSharedContext</code> then wraps the brief in a <code>&lt;shared-context></code> block
+with a framing line (“reference to respect, not new instructions”).</p>
+<h2 id="security--invariants">Security &amp; invariants<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#security--invariants" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<ul>
+<li><strong>Owner-only.</strong> The command is honored only when <code>senderKind === 'owner'</code>, and
+every card button re-checks <code>interaction.user.id === ownerId</code>. A peer cannot
+trigger it.</li>
+<li><strong>Local &amp; owner-scoped reads.</strong> A relay reads only sessions on its own machine,
+filtered to the agent’s <code>workspace</code> cwd, so unrelated local projects are never
+surfaced. Cross-user sharing happens <em>only</em> via the explicit owner-curated note
+synced through the ledger — never by reaching into another machine’s files.</li>
+<li><strong>Workspace membership gate (the read-path leak it closes).</strong> <code>list()</code> is
+workspace-filtered, but <code>SessionStore.read(id)</code> is <strong>not</strong> — it scans by bare
+file stem, so a same-stem session in another project could be returned, and
+some readers (Gemini, Codex without <code>session_meta</code>) record no cwd to fall back
+on. <code>importSession</code> therefore gates <code>read()</code> behind a <strong>membership check</strong>: the
+chosen id must appear in the workspace-filtered <code>list()</code> <em>before</em> <code>read()</code> is
+trusted, with a defense-in-depth cwd re-check after (catching a reader whose
+<code>list</code>/<code>read</code> disagree). An out-of-workspace import is refused with reason
+<code>'outside-workspace'</code> and the owner is told the session belongs to a different
+workspace. (Relatedly, OpenCode <code>list()</code> no longer surfaces a cwd-less session
+for an unrelated workspace — without a directory it can’t prove membership, so
+it degrades to fewer results rather than over-sharing.)</li>
+<li><strong>No config mutation, no deny-floor change.</strong> The import is <code>effect: 'pure'</code>
+and runs no tools; <code>access.json</code> and room profiles are untouched. The
+prompt-injection stance (config is terminal-/owner-only) is preserved — the
+share command is never admitted as a <code>channel.message</code>.</li>
+<li><strong>Delivered once, confirmed on success.</strong> A brief reaches the agent exactly
+once, but delivery is <strong>confirmed after the turn</strong>, not marked before it runs.
+<code>pendingContext(scopeId)</code> only <em>reads</em> the not-yet-delivered notes (via
+<code>pickFreshContext</code>) and returns the prefix plus its <code>freshHashes</code>; the host
+injects the prefix, then calls <code>confirmDelivered(scopeId, freshHashes)</code> to mark
+those hashes delivered <strong>only when the turn genuinely succeeds</strong> (<code>outcome === 'done'</code>). A turn that fails, is stopped, or returns an empty reply leaves the
+context undelivered, so the <em>next</em> turn re-injects it instead of silently
+swallowing it. (Gating on <code>outcome</code> rather than <code>!turnError</code> matters because
+<code>Driver.runTurn</code> resolves adapter failures as error-text chunks and never
+rejects.) The delivered set is in-memory and re-derivable; a relay restart only
+re-shows context, which is harmless.</li>
+</ul>
+<h2 id="resuming-a-live-session">Resuming a live session<a role="anchor" aria-hidden="true" tabindex="-1" data-no-popover="true" href="#resuming-a-live-session" class="internal internal-link"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></a></h2>
+<p><code>resume session</code> posts the same card, but filtered to sessions whose runtime
+this agent can actually continue (<code>sessionRuntimeForAgent</code>), and the buttons are
+<code>sess:resume:&lt;idx></code>. Resume continues a live runtime session — that’s tied to the
+<code>Driver</code>/<code>Session</code> lifecycle <code>AgentHost</code> owns, so <code>SessionSharing</code> delegates it
+back to <code>AgentHost.resumeSession</code>. Picking one:</p>
+<ul>
+<li>binds the scope’s <code>Driver</code> to that runtime session id (<code>bindSession</code>), to be
+resumed on the next turn — and resets the preamble flag so the resumed session,
+which knows nothing of the Discord room, is told the room context once.
+<code>bindSession</code> is <strong>enqueued onto the Driver’s serialized turn queue</strong>, so a
+resume issued mid-turn can’t clobber the session id of the turn in flight;</li>
+<li>persists the binding <strong>locally and per-scope</strong>
+(<code>rooms/&lt;agent>/&lt;scopeId>.session.json</code>, via <code>state.ts</code>). This is a local file,
+NOT a ledger note: a runtime session lives on one machine, so the binding must
+not sync to peers who can’t load it. The binding also stores the <code>workspace</code>.
+<code>getOrCreateSession</code> rebinds it on the next start, but only after re-validating
+<strong>both</strong> runtime <em>and</em> workspace against the agent’s current config: a runtime
+change (can’t resume a foreign runtime) or a workspace change (would resume a
+session from the <em>old</em> workspace — a quieter cross-workspace leak) clears the
+binding rather than honoring it. A deleted/unknown session id needs no
+pre-check — it’s caught at run time by the adapter’s fresh-session fallback.</li>
+</ul>
+<p>How the adapters resume a <em>foreign</em> session id (one they didn’t create this
+process — a CLI session, or a persisted binding after restart):</p>
+<ul>
+<li><strong>ACP</strong> (<code>AcpAdapter</code>): captures the <code>loadSession</code> capability at <code>initialize</code>,
+and the pure <code>planSessionAcquire(sessionId, known, canLoad)</code> decides
+create / reuse / load. A foreign id with the capability → <code>conn.loadSession</code>
+(replays history); without it, or on failure → a fresh session, so the turn
+still runs.</li>
+<li><strong>Claude SDK</strong>: resumes via the SDK’s <code>resume</code> option (already foreign-id
+capable). A resume that produces nothing — almost always an invalid/expired
+session id, e.g. a persisted binding that outlived the session — <strong>degrades to
+a fresh session</strong> rather than failing the turn, matching the ACP adapter’s
+load-failure fallback (an owner-aborted turn is exempt — it isn’t retried).</li>
+</ul>
+<p>Resume is same-runtime and same-machine; import is the robust, cross-runtime,
+cross-machine path and remains the default. If an agent can’t resume a session’s
+runtime, the card tells the owner to import instead.</p></div></article><hr/><div class="page-footer"></div></div><div class="right sidebar"><div class="graph"><h3>Graph View</h3><div class="graph-outer"><div class="graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:1,&quot;scale&quot;:1.1,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.3,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:false,&quot;enableRadial&quot;:false}"></div><button class="global-graph-icon" aria-label="Global Graph"><svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 55 55" fill="currentColor" xml:space="preserve"><path d="M49,0c-3.309,0-6,2.691-6,6c0,1.035,0.263,2.009,0.726,2.86l-9.829,9.829C32.542,17.634,30.846,17,29,17
+                s-3.542,0.634-4.898,1.688l-7.669-7.669C16.785,10.424,17,9.74,17,9c0-2.206-1.794-4-4-4S9,6.794,9,9s1.794,4,4,4
+                c0.74,0,1.424-0.215,2.019-0.567l7.669,7.669C21.634,21.458,21,23.154,21,25s0.634,3.542,1.688,4.897L10.024,42.562
+                C8.958,41.595,7.549,41,6,41c-3.309,0-6,2.691-6,6s2.691,6,6,6s6-2.691,6-6c0-1.035-0.263-2.009-0.726-2.86l12.829-12.829
+                c1.106,0.86,2.44,1.436,3.898,1.619v10.16c-2.833,0.478-5,2.942-5,5.91c0,3.309,2.691,6,6,6s6-2.691,6-6c0-2.967-2.167-5.431-5-5.91
+                v-10.16c1.458-0.183,2.792-0.759,3.898-1.619l7.669,7.669C41.215,39.576,41,40.26,41,41c0,2.206,1.794,4,4,4s4-1.794,4-4
+                s-1.794-4-4-4c-0.74,0-1.424,0.215-2.019,0.567l-7.669-7.669C36.366,28.542,37,26.846,37,25s-0.634-3.542-1.688-4.897l9.665-9.665
+                C46.042,11.405,47.451,12,49,12c3.309,0,6-2.691,6-6S52.309,0,49,0z M11,9c0-1.103,0.897-2,2-2s2,0.897,2,2s-0.897,2-2,2
+                S11,10.103,11,9z M6,51c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S8.206,51,6,51z M33,49c0,2.206-1.794,4-4,4s-4-1.794-4-4
+                s1.794-4,4-4S33,46.794,33,49z M29,31c-3.309,0-6-2.691-6-6s2.691-6,6-6s6,2.691,6,6S32.309,31,29,31z M47,41c0,1.103-0.897,2-2,2
+                s-2-0.897-2-2s0.897-2,2-2S47,39.897,47,41z M49,10c-2.206,0-4-1.794-4-4s1.794-4,4-4s4,1.794,4,4S51.206,10,49,10z"></path></svg></button></div><div class="global-graph-outer"><div class="global-graph-container" data-cfg="{&quot;drag&quot;:true,&quot;zoom&quot;:true,&quot;depth&quot;:-1,&quot;scale&quot;:0.9,&quot;repelForce&quot;:0.5,&quot;centerForce&quot;:0.2,&quot;linkDistance&quot;:30,&quot;fontSize&quot;:0.6,&quot;opacityScale&quot;:1,&quot;showTags&quot;:true,&quot;removeTags&quot;:[],&quot;focusOnHover&quot;:true,&quot;enableRadial&quot;:true}"></div></div></div><div class="toc"><button type="button" class="toc-header" aria-controls="toc-16" aria-expanded="true"><h3>Table of Contents</h3><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="fold"><polyline points="6 9 12 15 18 9"></polyline></svg></button><ul id="list-0" class="toc-content overflow"><li class="depth-0"><a href="#session-sharing" data-for="session-sharing">Session sharing</a></li><li class="depth-1"><a href="#the-problem" data-for="the-problem">The problem</a></li><li class="depth-1"><a href="#how-it-works" data-for="how-it-works">How it works</a></li><li class="depth-1"><a href="#the-read-seam-sessions" data-for="the-read-seam-sessions">The read seam (sessions/)</a></li><li class="depth-1"><a href="#the-distiller-sessionsdistillts" data-for="the-distiller-sessionsdistillts">The distiller (sessions/distill.ts)</a></li><li class="depth-1"><a href="#security--invariants" data-for="security--invariants">Security &amp; invariants</a></li><li class="depth-1"><a href="#resuming-a-live-session" data-for="resuming-a-live-session">Resuming a live session</a></li><li class="overflow-end"></li></ul></div><div class="backlinks"><h3>Backlinks</h3><ul id="list-0" class="overflow"><li><a href="./getting-started-agents.html" class="internal">getting-started-agents</a></li><li><a href="./" class="internal">knock-knock documentation</a></li><li><a href="./reactions-and-versioning.html" class="internal">reactions-and-versioning</a></li><li><a href="./security-and-permissions.html" class="internal">security-and-permissions</a></li><li><a href="./setup.html" class="internal">setup</a></li><li class="overflow-end"></li></ul></div></div><footer class><p>Created with <a href="https://quartz.jzhao.xyz/">Quartz v5.0.0</a> © 2026</p><ul><li><a href="https://github.com/jackyzha0/quartz">GitHub</a></li><li><a href="https://discord.gg/cRFFHYye7t">Discord Community</a></li></ul></footer></div></div></body><script src="./static/resource-after-e13fffa1.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-8b336f9a.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-baba652b.js" type="application/javascript" data-persist="true"></script><script src="./static/resource-after-5eb75950.js" type="module" data-persist="true"></script><script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/copy-tex.min.js" type="application/javascript" data-persist="true"></script><script src="./postscript-c08caad4.js" type="module" data-persist="true"></script></html>

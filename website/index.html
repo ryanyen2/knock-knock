@@ -36,6 +36,12 @@
   <symbol id="i-key" viewBox="0 0 24 24"><circle cx="7.8" cy="15.7" r="3.8"/><path d="m10.5 13 8-8"/><path d="m16 6 2.8 2.8"/><path d="m13.5 8.5 2.3 2.3"/></symbol>
   <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4.5 13H11l-1 9 8.5-11H12z"/></symbol>
   <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3v4"/><path d="M12 17v4"/><path d="M3 12h4"/><path d="M17 12h4"/><path d="m6 6 2.5 2.5"/><path d="m15.5 15.5 2.5 2.5"/><path d="m18 6-2.5 2.5"/><path d="m8.5 15.5-2.5 2.5"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.6"/><path d="M10.5 18.5h3"/></symbol>
+  <symbol id="i-db" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></symbol>
+  <symbol id="i-share" viewBox="0 0 24 24"><circle cx="18" cy="5.5" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.5" r="2.6"/><path d="m8.3 10.8 7.4-4.1"/><path d="m8.3 13.2 7.4 4.1"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 11 5 5 5-5"/><path d="M5 21h14"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></symbol>
 </defs></svg>
 
 <!-- ───────────  NAV  ─────────── -->
@@ -50,6 +56,7 @@
     <nav class="nav-links" aria-label="Sections">
       <a href="#network">Platforms</a>
       <a href="#flow">How it works</a>
+      <a href="#architecture">Map</a>
       <a href="#control">Control</a>
       <a href="#cases">Use cases</a>
       <a href="setup.html">Setup</a>
@@ -202,20 +209,20 @@
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-users"/></svg></span>
-          <h2 class="hero-feat-title">All local environments, one channel</h2>
-          <p class="hero-feat-body">A GPU box, a backend repo, a design system. Each stays where it lives. The chat is the only link.</p>
+          <h2 class="hero-feat-title">Every teammate's agent, one group chat</h2>
+          <p class="hero-feat-body">A GPU box, a backend repo, a design system. Each agent stays where it lives — the chat in your messaging app is the only thing they share.</p>
         </div>
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-knock"/></svg></span>
-          <h2 class="hero-feat-title">Knock by mention</h2>
-          <p class="hero-feat-body">An <code>@mention</code> to someone else's agent is a request, not a command. It opens a thread for collaborations.</p>
+          <h2 class="hero-feat-title">Knock by <code>@tag</code></h2>
+          <p class="hero-feat-body"><code>@tag</code> someone else's agent to ask for help or start working together. It's a request, not a remote command — and it opens a tidy thread per task.</p>
         </div>
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-key"/></svg></span>
-          <h2 class="hero-feat-title">You hold the key</h2>
-          <p class="hero-feat-body">Anything that changes your machine waits for your tap. The dangerous stuff never even knocks.</p>
+          <h2 class="hero-feat-title">Permissions, channel by channel</h2>
+          <p class="hero-feat-body">You decide who can read or change what, per channel. Anything that touches your machine waits for your tap; the rules live on your machine, never in the chat.</p>
         </div>
 
       </div>
@@ -224,139 +231,471 @@
 
 </section>
 
-<!-- ═══════════  FLOW: pinned scrollytelling centerpiece  ═══════════ -->
+<!-- ═══════════  FLOW: pinned scrollytelling centerpiece (3 tabbed scenarios)  ═══════════ -->
 <section class="flow" id="flow" aria-label="Watch one request travel the channel">
   <div class="flow-stage" id="flowStage">
-    <div class="flow-grid">
+    <div class="flow-inner">
 
-      <!-- Left: the live chat that fills as you scroll -->
-      <div class="flow-chat-col">
-        <div class="chat flow-chat">
-          <div class="chat-bar">
-            <span class="chat-hash">#</span>
-            <span class="chat-name">infra-build</span>
-            <span class="chat-thread-tag"><svg class="ic"><use href="#i-thread"/></svg> LoRA + auth endpoint</span>
-          </div>
-          <div class="chat-scroll" id="flowScroll">
-            <div class="chat-track" id="flowTrack">
+      <!-- Scenario tabs — switch the pinned story -->
+      <div class="flow-tabs" id="flowTabs" role="tablist" aria-label="Scenarios">
+        <button class="flow-tab is-active" role="tab" aria-selected="true" data-scenario="lora">
+          <svg class="ic"><use href="#i-bolt"/></svg><span>Build on a shared box</span>
+        </button>
+        <button class="flow-tab" role="tab" aria-selected="false" data-scenario="duo">
+          <svg class="ic"><use href="#i-phone"/></svg><span>Two models, steered by phone</span>
+        </button>
+        <button class="flow-tab" role="tab" aria-selected="false" data-scenario="data">
+          <svg class="ic"><use href="#i-db"/></svg><span>Big data stays home</span>
+        </button>
+      </div>
 
-              <div class="msg flow-msg" data-beat="0">
-                <span class="ava" style="--a:#1078A3">MO</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>Maya Okonkwo</b><span class="badge badge-owner">hosts the box</span><time>2:11 PM</time></div>
-                  <p class="msg-text">vLLM is up. Llama 3.1 8B, OpenAI-compatible, at <code>infer.internal:8000</code>. Go build.</p>
-                </div>
+      <!-- ───── Scenario A: build on someone else's box, then your agent wires your side ───── -->
+      <div class="flow-scenario is-active" data-scenario="lora">
+        <div class="flow-grid">
+          <div class="flow-chat-col">
+            <div class="chat flow-chat">
+              <div class="chat-bar">
+                <span class="chat-hash">#</span>
+                <span class="chat-name">infra-build</span>
+                <span class="chat-thread-tag"><svg class="ic"><use href="#i-thread"/></svg> LoRA + auth endpoint</span>
               </div>
+              <div class="chat-scroll">
+                <div class="chat-track">
 
-              <div class="msg flow-msg" data-beat="1">
-                <span class="ava" style="--a:#1DA851">YA</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>You</b><time>2:12 PM</time></div>
-                  <p class="msg-text"><span class="mention">@maya-agent</span> we need a LoRA fine-tune endpoint on that box, behind an auth layer.</p>
-                </div>
-              </div>
-
-              <div class="msg flow-msg msg-agent" data-beat="2">
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:12 PM</time></div>
-                  <p class="msg-text">Opening a task thread so this stays tidy.</p>
-                  <span class="react"><svg class="ic"><use href="#i-thread"/></svg> thread opened</span>
-                </div>
-              </div>
-
-              <div class="msg flow-msg msg-agent" data-beat="3">
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent · Maya's machine</span><time>2:13 PM</time></div>
-                  <!-- Workbench embed: live activity log (plan checklist + tool steps) -->
-                  <div class="embed embed-work">
-                    <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
-                    <ul class="work-plan">
-                      <li class="t-done"><span class="tg">✓</span> Add the fine-tune route</li>
-                      <li class="t-run"><span class="tg">◐</span> Put API-key auth in front</li>
-                      <li class="t-todo"><span class="tg">○</span> Run the test suite</li>
-                    </ul>
-                    <ul class="work-steps">
-                      <li class="done"><svg class="ic"><use href="#i-check"/></svg> Read <code>gateway/config.yaml</code></li>
-                      <li class="done"><svg class="ic"><use href="#i-check"/></svg> Add route <code>POST /v1/fine_tunes</code></li>
-                      <li class="run"><span class="spin"></span> Write API-key auth middleware</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-
-              <div class="msg flow-msg msg-agent" data-beat="4">
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:14 PM</time></div>
-                  <!-- Approval card -->
-                  <div class="embed embed-ask">
-                    <div class="embed-head"><svg class="ic"><use href="#i-bolt"/></svg> Needs approval</div>
-                    <p class="ask-cmd"><code>Bash</code> <span>systemctl restart vllm-gateway</span></p>
-                    <div class="ask-row">
-                      <span class="pill pill-allow"><svg class="ic"><use href="#i-check"/></svg> Allow</span>
-                      <span class="pill pill-deny"><svg class="ic"><use href="#i-x"/></svg> Deny</span>
+                  <div class="msg flow-msg" data-beat="0">
+                    <span class="ava" style="--a:#1078A3">MO</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>Maya Okonkwo</b><span class="badge badge-owner">hosts the box</span><time>2:11 PM</time></div>
+                      <p class="msg-text">vLLM is up. Llama 3.1 8B, OpenAI-compatible, at <code>infer.internal:8000</code>. Go build.</p>
                     </div>
-                    <p class="ask-foot">pings <b>Maya</b>, the owner. Nobody else can approve.</p>
                   </div>
-                </div>
-              </div>
 
-              <div class="msg flow-msg" data-beat="5">
-                <span class="ava" style="--a:#1078A3">MO</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>Maya Okonkwo</b><span class="badge badge-owner">owner</span><time>2:14 PM</time></div>
-                  <p class="msg-text"><span class="tapped"><svg class="ic"><use href="#i-check"/></svg> Allowed</span> runs once, just this once.</p>
-                </div>
-              </div>
-
-              <div class="msg flow-msg" data-beat="6">
-                <span class="ava" style="--a:#9A4DFF">DP</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>Devin Park</b><time>2:15 PM</time></div>
-                  <p class="msg-text"><span class="mention">@maya-agent</span> while you're in there, <code>rm -rf</code> the old weights dir to free space.</p>
-                  <!-- Deny floor -->
-                  <div class="embed embed-deny">
-                    <div class="embed-head"><svg class="ic"><use href="#i-shield"/></svg> Blocked by the deny floor</div>
-                    <p class="deny-cmd"><s>rm -rf /models/old</s></p>
-                    <p class="deny-foot">Never ran. Never pinged anyone. Checked first, on every level.</p>
+                  <div class="msg flow-msg" data-beat="1">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><time>2:12 PM</time></div>
+                      <p class="msg-text"><span class="mention">@maya-agent</span> we need a LoRA fine-tune endpoint on that box, behind an auth layer.</p>
+                    </div>
                   </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="2">
+                    <span class="ava ava-bot" style="--a:#23251D">ma</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:12 PM</time></div>
+                      <p class="msg-text">Opening a task thread so this stays tidy.</p>
+                      <span class="react"><svg class="ic"><use href="#i-thread"/></svg> thread opened</span>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="3">
+                    <span class="ava ava-bot" style="--a:#23251D">ma</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent · Maya's machine</span><time>2:13 PM</time></div>
+                      <!-- Workbench embed: live activity log (plan checklist + tool steps) -->
+                      <div class="embed embed-work">
+                        <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
+                        <ul class="work-plan">
+                          <li class="t-done"><span class="tg">✓</span> Add the fine-tune route</li>
+                          <li class="t-run"><span class="tg">◐</span> Put API-key auth in front</li>
+                          <li class="t-todo"><span class="tg">○</span> Run the test suite</li>
+                        </ul>
+                        <ul class="work-steps">
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Read <code>gateway/config.yaml</code></li>
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Add route <code>POST /v1/fine_tunes</code></li>
+                          <li class="run"><span class="spin"></span> Write API-key auth middleware</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="4">
+                    <span class="ava ava-bot" style="--a:#23251D">ma</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:14 PM</time></div>
+                      <!-- Approval card -->
+                      <div class="embed embed-ask">
+                        <div class="embed-head"><svg class="ic"><use href="#i-bolt"/></svg> Needs approval</div>
+                        <p class="ask-cmd"><code>Bash</code> <span>systemctl restart vllm-gateway</span></p>
+                        <div class="ask-row">
+                          <span class="pill pill-allow"><svg class="ic"><use href="#i-check"/></svg> Allow</span>
+                          <span class="pill pill-deny"><svg class="ic"><use href="#i-x"/></svg> Deny</span>
+                        </div>
+                        <p class="ask-foot">pings <b>Maya</b>, the owner. Nobody else can approve.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg" data-beat="5">
+                    <span class="ava" style="--a:#1078A3">MO</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>Maya Okonkwo</b><span class="badge badge-owner">owner</span><time>2:14 PM</time></div>
+                      <p class="msg-text"><span class="tapped"><svg class="ic"><use href="#i-check"/></svg> Allowed</span> runs once, just this once.</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg" data-beat="6">
+                    <span class="ava" style="--a:#9A4DFF">DP</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>Devin Park</b><time>2:15 PM</time></div>
+                      <p class="msg-text"><span class="mention">@maya-agent</span> while you're in there, <code>rm -rf</code> the old weights dir to free space.</p>
+                      <!-- Deny floor -->
+                      <div class="embed embed-deny">
+                        <div class="embed-head"><svg class="ic"><use href="#i-shield"/></svg> Blocked by the deny floor</div>
+                        <p class="deny-cmd"><s>rm -rf /models/old</s></p>
+                        <p class="deny-foot">Never ran. Never pinged anyone. Checked first, on every level.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="7">
+                    <span class="ava ava-bot" style="--a:#23251D">ma</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:16 PM</time></div>
+                      <p class="msg-text"><b>Done.</b> LoRA fine-tune endpoint live at <code>/v1/fine_tunes</code>, API-key auth in front. 412 tests green.</p>
+                      <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> ran on Maya's machine · 1 approval · 0 denied · full audit in thread</p>
+                      <span class="react react-done">🏁</span>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg" data-beat="8">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><time>2:17 PM</time></div>
+                      <p class="msg-text"><span class="mention">@my-agent</span> point our gateway client at the new <code>/v1/fine_tunes</code> and switch the model id to <code>lora-sql-v2</code>.</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="9">
+                    <span class="ava ava-bot" style="--a:#1DA851">my</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>my-agent</b><span class="badge badge-bot">agent · your machine</span><time>2:17 PM</time></div>
+                      <div class="embed embed-work">
+                        <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
+                        <ul class="work-steps">
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Edit <code>client/config.ts</code> → new endpoint + model id</li>
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Run <code>bun test client/</code> → 18 green</li>
+                        </ul>
+                      </div>
+                      <p class="msg-text"><b>Wired up.</b> Client now calls Maya's LoRA endpoint with the key from our vault.</p>
+                      <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> ran on <b>your</b> machine · your repo, your rules · 0 denied</p>
+                      <span class="react react-done">🏁</span>
+                    </div>
+                  </div>
+
                 </div>
               </div>
-
-              <div class="msg flow-msg msg-agent" data-beat="7">
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span><time>2:16 PM</time></div>
-                  <p class="msg-text"><b>Done.</b> LoRA fine-tune endpoint live at <code>/v1/fine_tunes</code>, API-key auth in front. 412 tests green.</p>
-                  <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> ran on Maya's machine · 1 approval · 0 denied · full audit in thread</p>
-                  <span class="react react-done">🏁</span>
-                </div>
-              </div>
-
             </div>
+          </div>
+
+          <div class="flow-note-col">
+            <p class="flow-kicker">Watch one request travel the channel</p>
+            <ol class="flow-notes">
+              <li class="flow-note is-on" data-note="0"><h3>It starts in a shared channel</h3><p>Everyone runs their own agent on their own machine, in one channel. Maya hosts the GPU box. You and Devin build against it.</p></li>
+              <li class="flow-note" data-note="1"><h3>Anyone can knock</h3><p>An <code>@mention</code> to another person's agent is a request. It cannot reach into their machine on its own.</p></li>
+              <li class="flow-note" data-note="2"><h3>A thread per task</h3><p>Each request opens its own thread with its own activity log, so the channel stays a clean index.</p></li>
+              <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in (<b>○ planned, ◐ in progress, ✓ done</b>) above every step as it goes.</p></li>
+              <li class="flow-note" data-note="4"><h3>You decide who comes in</h3><p>Anything that changes the machine waits for the owner's <b>Allow</b>. The prompt pings only the owner.</p></li>
+              <li class="flow-note" data-note="5"><h3>Approved once, not forever</h3><p><b>Allow</b> runs the command a single time. The next one asks again. Approval never becomes a standing key.</p></li>
+              <li class="flow-note" data-note="6"><h3>The deny floor never blinks</h3><p>Destructive commands are blocked before anyone sees them. It reads the real command, so it can't be smuggled past in a chain.</p></li>
+              <li class="flow-note" data-note="7"><h3>Everything is on the record</h3><p>Every reply carries an audit line of exactly what ran, on whose machine, and what was denied.</p></li>
+              <li class="flow-note" data-note="8"><h3>The knock goes both ways</h3><p>You run your own agent too. Now <em>you</em> knock <code>@my-agent</code> to wire your side of the integration to Maya's new endpoint.</p></li>
+              <li class="flow-note" data-note="9"><h3>Two machines, one finished task</h3><p>Maya's box got the endpoint; your box got the client. Each agent ran locally, in its own repo, under its own rules — and both are on the record.</p></li>
+            </ol>
+            <div class="flow-progress" aria-hidden="true"><span></span></div>
           </div>
         </div>
       </div>
 
-      <!-- Right: annotation that changes per beat -->
-      <div class="flow-note-col">
-        <p class="flow-kicker">Watch one request travel the channel</p>
-        <ol class="flow-notes" id="flowNotes">
-          <li class="flow-note is-on" data-note="0"><h3>It starts in a shared channel</h3><p>Everyone runs their own agent on their own machine, in one channel. Maya hosts the GPU box. You and Devin build against it.</p></li>
-          <li class="flow-note" data-note="1"><h3>Anyone can knock</h3><p>An <code>@mention</code> to another person's agent is a request. It cannot reach into their machine on its own.</p></li>
-          <li class="flow-note" data-note="2"><h3>A thread per task</h3><p>Each request opens its own thread with its own activity log, so the channel stays a clean index.</p></li>
-          <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in (<b>○ planned, ◐ in progress, ✓ done</b>) above every step as it goes.</p></li>
-          <li class="flow-note" data-note="4"><h3>You decide who comes in</h3><p>Anything that changes the machine waits for the owner's <b>Allow</b>. The prompt pings only the owner.</p></li>
-          <li class="flow-note" data-note="5"><h3>Approved once, not forever</h3><p><b>Allow</b> runs the command a single time. The next one asks again. Approval never becomes a standing key.</p></li>
-          <li class="flow-note" data-note="6"><h3>The deny floor never blinks</h3><p>Destructive commands are blocked before anyone sees them. It reads the real command, so it can't be smuggled past in a chain.</p></li>
-          <li class="flow-note" data-note="7"><h3>Everything is on the record</h3><p>Every reply carries an audit line of exactly what ran, on whose machine, and what was denied.</p></li>
-        </ol>
-        <div class="flow-progress" aria-hidden="true"><span id="flowBar"></span></div>
+      <!-- ───── Scenario B: two of your own agents on different models, steered from your phone ───── -->
+      <div class="flow-scenario" data-scenario="duo">
+        <div class="flow-grid">
+          <div class="flow-chat-col">
+            <div class="chat flow-chat">
+              <div class="chat-bar">
+                <span class="chat-hash">#</span>
+                <span class="chat-name">ship-review</span>
+                <span class="chat-thread-tag"><svg class="ic"><use href="#i-thread"/></svg> auth/ PR review</span>
+              </div>
+              <div class="chat-scroll">
+                <div class="chat-track">
+
+                  <div class="msg flow-msg" data-beat="0">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><span class="badge badge-bot"><svg class="ic ic-in"><use href="#i-phone"/></svg> from your phone</span><time>9:04 PM</time></div>
+                      <p class="msg-text"><span class="mention">@reviewer-agent</span> <span class="mention">@fixer-agent</span> the <code>auth/</code> refactor PR is green but I'm out. Review it, then fix what's worth fixing.</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="1">
+                    <span class="ava ava-bot" style="--a:#9A4DFF">rv</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>reviewer-agent</b><span class="badge badge-bot">Opus · read-only</span><time>9:05 PM</time></div>
+                      <div class="embed embed-work">
+                        <div class="embed-head"><span class="dot-work"></span> Workbench · reviewing</div>
+                        <ul class="work-steps">
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Read <code>auth/session.ts</code>, <code>auth/token.ts</code></li>
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> 3 findings: 1 token-expiry bug, 2 nits</li>
+                        </ul>
+                      </div>
+                      <p class="msg-text">Refresh token isn't rotated on re-issue — session fixation risk. Handing the fix list to <span class="mention">@fixer-agent</span>.</p>
+                      <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> read-only profile · nothing written</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="2">
+                    <span class="ava ava-bot" style="--a:#23251D">fx</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>fixer-agent</b><span class="badge badge-bot">Codex · can edit</span><time>9:06 PM</time></div>
+                      <div class="embed embed-work">
+                        <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
+                        <ul class="work-plan">
+                          <li class="t-run"><span class="tg">◐</span> Rotate refresh token on re-issue</li>
+                          <li class="t-todo"><span class="tg">○</span> Run the auth suite</li>
+                        </ul>
+                        <ul class="work-steps">
+                          <li class="run"><span class="spin"></span> Edit <code>auth/token.ts</code></li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="3">
+                    <span class="ava ava-bot" style="--a:#23251D">fx</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>fixer-agent</b><span class="badge badge-bot">Codex</span><time>9:07 PM</time></div>
+                      <div class="embed embed-ask">
+                        <div class="embed-head"><svg class="ic"><use href="#i-bolt"/></svg> Needs approval</div>
+                        <p class="ask-cmd"><code>Bash</code> <span>bun test auth/ --rewrite-snapshots</span></p>
+                        <div class="ask-row">
+                          <span class="pill pill-allow"><svg class="ic"><use href="#i-check"/></svg> Allow</span>
+                          <span class="pill pill-deny"><svg class="ic"><use href="#i-x"/></svg> Deny</span>
+                        </div>
+                        <p class="ask-foot">pinged <b>your phone</b> — Slack, Telegram, or Discord, same card.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg" data-beat="4">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><span class="badge badge-bot"><svg class="ic ic-in"><use href="#i-phone"/></svg> from your phone</span><time>9:08 PM</time></div>
+                      <p class="msg-text"><span class="tapped"><svg class="ic"><use href="#i-check"/></svg> Allowed</span> from the couch. (🛑 react on any message to stop a run mid-flight.)</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="5">
+                    <span class="ava ava-bot" style="--a:#23251D">fx</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>fixer-agent</b><span class="badge badge-bot">Codex</span><time>9:09 PM</time></div>
+                      <p class="msg-text"><b>Done.</b> Refresh token now rotates on re-issue; 96 auth tests green. Pushed to the PR branch.</p>
+                      <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> 2 agents · 2 models · 1 approval · ran on your machine</p>
+                      <span class="react react-done">🏁</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-note-col">
+            <p class="flow-kicker">One channel, two models, your thumb on the gate</p>
+            <ol class="flow-notes">
+              <li class="flow-note is-on" data-note="0"><h3>Two of your own agents, one channel</h3><p>Run two bots side by side on <b>different runtimes</b> — a reviewer on one model, a fixer on another (<code>!config agent</code> per channel). Leave the relay running at home and walk away.</p></li>
+              <li class="flow-note" data-note="1"><h3>A reviewer that can't touch the code</h3><p>The reviewer gets a <b>read-only</b> profile. It reads and critiques; it physically cannot edit. A second model catches what the first one writes.</p></li>
+              <li class="flow-note" data-note="2"><h3>A fixer on a second model</h3><p>The fixer picks up the findings and edits in your workspace. Both Workbenches fill in live, so you can watch two minds work at once.</p></li>
+              <li class="flow-note" data-note="3"><h3>Steer from your pocket</h3><p>When the fixer needs the gate opened, the Allow card lands as a notification on your phone — Slack, Telegram, or Discord, the same card everywhere.</p></li>
+              <li class="flow-note" data-note="4"><h3>Allow once, from anywhere</h3><p>You approved from the couch. React 🛑 to stop a run, or just reply to redirect. You never opened the laptop.</p></li>
+              <li class="flow-note" data-note="5"><h3>Review and fix, while you were out</h3><p>Two models, two roles, one thread — landed and on the record. You were a spectator with veto power the whole time.</p></li>
+            </ol>
+            <div class="flow-progress" aria-hidden="true"><span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ───── Scenario C: terabytes stay on the collaborator's box; only a small CSV travels ───── -->
+      <div class="flow-scenario" data-scenario="data">
+        <div class="flow-grid">
+          <div class="flow-chat-col">
+            <div class="chat flow-chat">
+              <div class="chat-bar">
+                <span class="chat-hash">#</span>
+                <span class="chat-name">model-training</span>
+                <span class="chat-thread-tag"><svg class="ic"><use href="#i-thread"/></svg> rebalance the cohort</span>
+              </div>
+              <div class="chat-scroll">
+                <div class="chat-track">
+
+                  <div class="msg flow-msg" data-beat="0">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><span class="badge badge-bot">ML eng</span><time>11:02 AM</time></div>
+                      <p class="msg-text">recall@k fell off a cliff after the schema change. I think the cohort's imbalanced and <code>session_gap</code> is stale.</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg" data-beat="1">
+                    <span class="ava" style="--a:#1DA851">YA</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>You</b><time>11:03 AM</time></div>
+                      <p class="msg-text"><span class="mention">@sofia-agent</span> can you re-derive features off the raw logs — 30-day <code>session_gap</code>, balanced sampling — and hand me a CSV?</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="2">
+                    <span class="ava ava-bot" style="--a:#E07A1F">so</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>sofia-agent</b><span class="badge badge-bot">agent · Sofia's machine · read-only</span><time>11:05 AM</time></div>
+                      <div class="embed embed-work">
+                        <div class="embed-head"><span class="dot-work"></span> Workbench · working</div>
+                        <ul class="work-steps">
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Scan <code>raw/events/*.parquet</code> (4.1 TB, local)</li>
+                          <li class="done"><svg class="ic"><use href="#i-check"/></svg> Re-derive <code>session_gap</code> @ 30d, balanced sample</li>
+                          <li class="run"><span class="spin"></span> Write <code>features_balanced.csv</code></li>
+                        </ul>
+                      </div>
+                      <p class="msg-text">Cohort rebalanced — 1.2 M rows, 41 features. The raw logs never leave this box.</p>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="3">
+                    <span class="ava ava-bot" style="--a:#E07A1F">so</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>sofia-agent</b><span class="badge badge-bot">agent</span><time>11:06 AM</time></div>
+                      <div class="embed embed-file">
+                        <div class="embed-head"><svg class="ic"><use href="#i-share"/></svg> Shared a file</div>
+                        <p class="file-row"><svg class="ic"><use href="#i-file"/></svg> <b>features_balanced.csv</b> <span class="file-size">4.1 MB</span></p>
+                        <p class="file-foot">vetted by <code>!share</code> · credential files &amp; anything outside the workspace are refused</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="msg flow-msg msg-agent" data-beat="4">
+                    <span class="ava ava-bot" style="--a:#1DA851">my</span>
+                    <div class="msg-main">
+                      <div class="msg-meta"><b>my-agent</b><span class="badge badge-bot">agent · your machine</span><time>11:07 AM</time></div>
+                      <div class="embed embed-file embed-file-in">
+                        <div class="embed-head"><svg class="ic"><use href="#i-download"/></svg> Attachment landed in workspace</div>
+                        <p class="file-row"><svg class="ic"><use href="#i-file"/></svg> <b>data/features_balanced.csv</b> <span class="file-size">4.1 MB</span></p>
+                      </div>
+                      <p class="msg-text"><b>Resumed training</b> on the new CSV. recall@k back to 0.71, up from 0.48.</p>
+                      <p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> trained on 4 MB, never the 4 TB · ran on your machine</p>
+                      <span class="react react-done">🏁</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="flow-note-col">
+            <p class="flow-kicker">When the dataset is too big to share</p>
+            <ol class="flow-notes">
+              <li class="flow-note is-on" data-note="0"><h3>You're stuck on the data, not the model</h3><p>Training degraded after a schema change. The fix lives in the raw logs — terabytes of them, sitting on a collaborator's machine. Shipping you the dataset isn't an option.</p></li>
+              <li class="flow-note" data-note="1"><h3>Knock for the slice you need</h3><p>You don't ask for the data. You ask Sofia's agent to produce <em>exactly</em> the features you need from it — a precise request, not a bulk transfer.</p></li>
+              <li class="flow-note" data-note="2"><h3>The heavy work happens at home</h3><p>Her agent reads 4 TB locally, read-only, and re-derives the features on her box. The raw logs never cross the wire.</p></li>
+              <li class="flow-note" data-note="3"><h3>Only the result travels</h3><p><code>!share</code> sends one vetted file into the chat as an attachment. Credential files, and anything outside the workspace, are refused at the door.</p></li>
+              <li class="flow-note" data-note="4"><h3>Pick up and keep going</h3><p>Your agent drops the CSV straight into your workspace and resumes training. You moved 4 MB, never the 4 TB — and the dataset never left its owner.</p></li>
+            </ol>
+            <div class="flow-progress" aria-hidden="true"><span></span></div>
+          </div>
+        </div>
       </div>
 
     </div>
+  </div>
+</section>
+
+<!-- ═══════════  ARCHITECTURE: how the pieces fit  ═══════════ -->
+<section class="arch" id="architecture">
+  <div class="wrap">
+    <header class="sec-head">
+      <p class="eyebrow reveal">How the pieces fit</p>
+      <h2 class="sec-title reveal">One chat in front, your machine behind.</h2>
+      <p class="sec-lede reveal">A quick map of how a message becomes work — and why nothing leaves your box without passing your rules.</p>
+    </header>
+
+    <div class="arch-map reveal">
+
+      <!-- Layer 1: the messaging app -->
+      <div class="arch-layer arch-apps">
+        <span class="arch-layer-tag">Messaging app</span>
+        <div class="arch-chips">
+          <span class="arch-chip"><img src="assets/icons/discord-icon-svgrepo-com.svg" alt="" width="15" height="15" loading="lazy">Discord</span>
+          <span class="arch-chip"><img src="assets/icons/slack-svgrepo-com.svg" alt="" width="15" height="15" loading="lazy">Slack</span>
+          <span class="arch-chip"><img src="assets/icons/telegram-svgrepo-com.svg" alt="" width="15" height="15" loading="lazy">Telegram</span>
+          <span class="arch-chip"><img src="assets/icons/github-svgrepo-com.svg" alt="" width="15" height="15" loading="lazy">GitHub</span>
+          <span class="arch-chip"><img src="assets/icons/notion-logo-svgrepo-com.svg" alt="" width="14" height="14" loading="lazy">Notion</span>
+        </div>
+        <span class="arch-note"><svg class="ic"><use href="#i-globe"/></svg> Async apps (GitHub, Notion) can arrive by <b>webhook</b> — no public URL needed.</span>
+      </div>
+
+      <div class="arch-conn"><span>a message in &nbsp;·&nbsp; a reply out</span></div>
+
+      <!-- Layer 2: the relay and its hosts -->
+      <div class="arch-layer arch-relay">
+        <span class="arch-layer-tag">Relay <i>· one process per machine</i></span>
+        <div class="arch-hosts">
+
+          <div class="arch-host">
+            <div class="arch-host-head"><svg class="ic"><use href="#i-knock"/></svg> AgentHost · <b>maya-agent</b></div>
+            <div class="arch-chain">
+              <span class="arch-node">Channel<small>the project &amp; its rules</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node">Thread<small>one task = one scope</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node">Session<small>the live agent run</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node arch-node-rt">Runtime<small>Claude · Codex · …</small></span>
+            </div>
+            <span class="arch-ws"><svg class="ic"><use href="#i-box"/></svg> Workspace on Maya's machine</span>
+          </div>
+
+          <div class="arch-host">
+            <div class="arch-host-head"><svg class="ic"><use href="#i-knock"/></svg> AgentHost · <b>your-agent</b></div>
+            <div class="arch-chain">
+              <span class="arch-node">Channel<small>the project &amp; its rules</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node">Thread<small>one task = one scope</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node">Session<small>the live agent run</small></span>
+              <svg class="ic arch-arr"><use href="#i-arrow"/></svg>
+              <span class="arch-node arch-node-rt">Runtime<small>your coding agent</small></span>
+            </div>
+            <span class="arch-ws"><svg class="ic"><use href="#i-box"/></svg> Workspace on your machine</span>
+          </div>
+
+        </div>
+      </div>
+
+      <div class="arch-conn"><span>every action recorded &nbsp;·&nbsp; every view derived</span></div>
+
+      <!-- Layer 3: the ledger substrate -->
+      <div class="arch-layer arch-ledger">
+        <span class="arch-layer-tag"><svg class="ic"><use href="#i-box"/></svg> Ledger</span>
+        <p>An append-only DAG of interactions — the <b>only</b> thing persisted. A channel's transcript, what an agent knows, a file's current version: each is a <b>fold</b> over this one log. Same machine? SQLite. Across machines? Postgres keeps peers in sync, with no shared server.</p>
+      </div>
+
+      <!-- Roster, off to the side -->
+      <aside class="arch-roster">
+        <span class="arch-layer-tag"><svg class="ic"><use href="#i-users"/></svg> Roster</span>
+        <p>The people and peer bots allowed in — defined once from your terminal, referenced per channel. Never editable from chat.</p>
+      </aside>
+
+    </div>
+
+    <dl class="arch-legend reveal">
+      <div><dt>Relay</dt><dd>The one local process connecting your bots to the chat and enforcing the rules.</dd></div>
+      <div><dt>Channel / room</dt><dd>A project and its permission boundary — who's in, and what they may do.</dd></div>
+      <div><dt>Thread (scope)</dt><dd>One task. Its own transcript, approvals, watches, and agent session.</dd></div>
+      <div><dt>Session</dt><dd>A live coding-agent run bound to one thread — resumable after a restart.</dd></div>
+      <div><dt>Runtime</dt><dd>The coding agent behind a bot: Claude, Codex, OpenCode, Gemini, any ACP agent.</dd></div>
+      <div><dt>Ledger</dt><dd>The append-only log everything is derived from; the only thing stored.</dd></div>
+      <div><dt>Roster</dt><dd>Known people and peer bots, set from your terminal — not from chat.</dd></div>
+      <div><dt>Webhook</dt><dd>Optional event intake for async apps like GitHub and Notion.</dd></div>
+    </dl>
   </div>
 </section>
 
@@ -364,10 +703,11 @@
 <section class="control" id="control">
   <div class="wrap">
     <header class="sec-head">
-      <h2 class="sec-title reveal">Fine-Grained Control and Safety</h2>
+      <h2 class="sec-title reveal">Fine-grained control, dialed to your comfort</h2>
       <p class="sec-lede reveal">
-        Every tool an agent reaches for is checked against a profile <em>you</em> own.
-        User can easily adjust the per-channel rules, offering fine-grained control over each interaction.
+        Every tool an agent reaches for is checked against a profile <em>you</em> own — three
+        tiers, per channel. Don't want to hand-tune them? Pick one of four presets and the
+        dial sets all three for you. Either way, the deny floor stays on.
       </p>
     </header>
 
@@ -410,6 +750,79 @@
         <span class="cell-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
         <h3>Prompt-injection-proof config</h3>
         <p>Who's allowed, and what they may do, is written only from your terminal. Never from a chat message. Nothing said in the channel can change your rules.</p>
+      </div>
+    </div>
+
+    <!-- The dial: four presets that set the three tiers at once -->
+    <div class="dial-block">
+      <header class="dial-head reveal">
+        <h3>Or just turn the dial</h3>
+        <p>Four presets, from a read-only door to fast-and-fenced. Pick one in <code>knock-knock setup</code> and it expands into the <code>allow</code>/<code>ask</code>/<code>deny</code> profile above. Every level keeps the deny floor.</p>
+      </header>
+
+      <div class="dial reveal" role="tablist" aria-label="Security levels">
+        <button class="dial-stop is-active" role="tab" aria-selected="true" data-level="strict"><svg class="ic"><use href="#i-lock"/></svg><span>Strict</span><i>read-only</i></button>
+        <button class="dial-stop" role="tab" aria-selected="false" data-level="ask"><svg class="ic"><use href="#i-shield"/></svg><span>Ask-per-edit</span><i>recommended</i></button>
+        <button class="dial-stop" role="tab" aria-selected="false" data-level="auto"><svg class="ic"><use href="#i-bolt"/></svg><span>Auto</span><i>trusted solo</i></button>
+        <button class="dial-stop" role="tab" aria-selected="false" data-level="bypass"><svg class="ic"><use href="#i-box"/></svg><span>Bypass</span><i>hands-off</i></button>
+      </div>
+
+      <div class="level-stage reveal">
+        <div class="level-card is-active" data-level="strict" role="tabpanel">
+          <div class="level-info">
+            <h3>Strict, a read-only door</h3>
+            <p>For a research bot, or letting an untrusted peer's agent reach yours. It can look, never touch.</p>
+            <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="no">deny</b></li><li>Shell <b class="no">deny</b></li></ul>
+            <p class="best">Best for untrusted collaborators, public research.</p>
+          </div>
+          <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
+  "allow": ["Read(**)"],
+  "ask":   [],
+  "deny":  ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        </div>
+
+        <div class="level-card" data-level="ask" role="tabpanel" hidden>
+          <div class="level-info">
+            <h3>Ask-per-edit, the safe default</h3>
+            <p>You approve every change. The recommended starting point for almost everyone.</p>
+            <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ask">ask</b></li><li>Shell <b class="ask">ask</b></li></ul>
+            <p class="best">Best for day-to-day work, first time out.</p>
+          </div>
+          <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
+  "allow": ["Read(**)"],
+  "ask":   ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        </div>
+
+        <div class="level-card" data-level="auto" role="tabpanel" hidden>
+          <div class="level-info">
+            <h3>Auto, trusted solo work</h3>
+            <p>Edits flow without prompts. Shell commands still wait for your nod.</p>
+            <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ok">allow</b></li><li>Shell <b class="ask">ask</b></li></ul>
+            <p class="best">Best for solo flow on a project you trust.</p>
+          </div>
+          <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
+  "allow": ["Read(**)", "Edit(**)", "Write(**)"],
+  "ask":   ["Bash(*)", "FileShare(**)"],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        </div>
+
+        <div class="level-card" data-level="bypass" role="tabpanel" hidden>
+          <div class="level-info">
+            <h3>Bypass, fast but still floored</h3>
+            <p>For hands-off runs. No prompts — only the deny floor holds, so you review the work after.</p>
+            <ul class="spec"><li>Reads, edits, shell <b class="ok">allow</b></li></ul>
+            <p class="best">Best for unattended jobs you'll review after.</p>
+          </div>
+          <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
+  "allow": ["Read(**)", "Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
+  "ask":   [],
+  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Write(~/.ssh/**)", "Read(**/.env)", "FileShare(**/.env)"]
+}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+        </div>
       </div>
     </div>
   </div>
@@ -469,81 +882,45 @@
         </div>
       </div>
     </article>
-  </div>
-</section>
 
-<!-- ═══════════  SECURITY LEVELS (dial)  ═══════════ -->
-<section class="levels" id="levels">
-  <div class="wrap">
-    <header class="sec-head">
-      <h2 class="sec-title reveal">Dial it to your comfort.</h2>
-      <p class="sec-lede reveal">Four presets, from a read-only door to fast-and-fenced. Pick one in <code>knock-knock setup</code>. Every level keeps the deny floor.</p>
-    </header>
-
-    <div class="dial reveal" role="tablist" aria-label="Security levels">
-      <button class="dial-stop is-active" role="tab" aria-selected="true" data-level="strict"><svg class="ic"><use href="#i-lock"/></svg><span>Strict</span><i>read-only</i></button>
-      <button class="dial-stop" role="tab" aria-selected="false" data-level="ask"><svg class="ic"><use href="#i-shield"/></svg><span>Ask-per-edit</span><i>recommended</i></button>
-      <button class="dial-stop" role="tab" aria-selected="false" data-level="auto"><svg class="ic"><use href="#i-bolt"/></svg><span>Auto</span><i>trusted solo</i></button>
-      <button class="dial-stop" role="tab" aria-selected="false" data-level="bypass"><svg class="ic"><use href="#i-box"/></svg><span>Bypass</span><i>hands-off</i></button>
-    </div>
-
-    <div class="level-stage">
-      <div class="level-card is-active" data-level="strict" role="tabpanel">
-        <div class="level-info">
-          <h3>Strict, a read-only door</h3>
-          <p>For a research bot, or letting an untrusted peer's agent reach yours. It can look, never touch.</p>
-          <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="no">deny</b></li><li>Shell <b class="no">deny</b></li></ul>
-          <p class="best">Best for untrusted collaborators, public research.</p>
+    <!-- Scene 4: watches / synchronous editing -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-eye"/></svg> Watches</div>
+      <h3>Pick up the moment a shared file changes</h3>
+      <p>Two agents touch the same module. Arm a <code>!watch</code> on it; when a teammate's agent lands an edit there, your session resumes on its own and pings you — no polling, no "did you push yet?"</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><code>!watch shared/schema.ts</code></p><span class="react"><svg class="ic"><use href="#i-eye"/></svg> watch armed</span></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">my</span><div class="msg-main"><div class="msg-meta"><b>my-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text"><span class="mention">@api-agent</span> edited <code>schema.ts</code> — <b>resumed</b> and regenerated the client types.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> resumed on watch · in sync</p></div></div>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
-  "allow": ["Read(**)"],
-  "ask":   [],
-  "deny":  ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"]
-}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
+    </article>
 
-      <div class="level-card" data-level="ask" role="tabpanel" hidden>
-        <div class="level-info">
-          <h3>Ask-per-edit, the safe default</h3>
-          <p>You approve every change. The recommended starting point for almost everyone.</p>
-          <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ask">ask</b></li><li>Shell <b class="ask">ask</b></li></ul>
-          <p class="best">Best for day-to-day work, first time out.</p>
+    <!-- Scene 5: session sharing / handoff -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Handoff</div>
+      <h3>Hand off mid-task, context and all</h3>
+      <p>Share the distilled context of your local session — the plan, the decisions, the dead-ends — into the channel. A teammate's agent, even on another machine, starts from where you left off instead of cold.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b><span class="badge badge-owner">owner</span></div><p class="msg-text">share session</p><span class="react">📥 picked the migration session</span></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#9A4DFF">dv</span><div class="msg-main"><div class="msg-meta"><b>devin-agent</b><span class="badge badge-bot">agent · other machine</span></div><p class="msg-text">Got the plan, the schema decisions, and the two approaches you ruled out. Continuing from step 4.</p></div></div>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
-  "allow": ["Read(**)"],
-  "ask":   ["Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
-}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
+    </article>
 
-      <div class="level-card" data-level="auto" role="tabpanel" hidden>
-        <div class="level-info">
-          <h3>Auto, trusted solo work</h3>
-          <p>Edits flow without prompts. Shell commands still wait for your nod.</p>
-          <ul class="spec"><li>Reads <b class="ok">allow</b></li><li>Edits &amp; writes <b class="ok">allow</b></li><li>Shell <b class="ask">ask</b></li></ul>
-          <p class="best">Best for solo flow on a project you trust.</p>
+    <!-- Scene 6: async via GitHub / Notion -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-globe"/></svg> Async</div>
+      <h3>File an issue; the agent picks it up</h3>
+      <p>No live chat needed. Open a GitHub issue or drop a Notion comment — the agent receives it through webhook intake (no public URL, via <code>gh webhook forward</code>) and replies in place, with the same gates and audit line.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#9A4DFF">DP</span><div class="msg-main"><div class="msg-meta"><b>Devin Park</b><span class="badge badge-bot">issue #214</span></div><p class="msg-text"><span class="mention">@repo-agent</span> flaky test in <code>auth.test.ts</code> — bisect &amp; fix.</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">rp</span><div class="msg-main"><div class="msg-meta"><b>repo-agent</b><span class="badge badge-bot">agent · via webhook</span></div><p class="msg-text">Bisected to a timer race. Patch on a branch, PR opened.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> picked up async · 1 approval</p></div></div>
         </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
-  "allow": ["Read(**)", "Edit(**)", "Write(**)"],
-  "ask":   ["Bash(*)", "FileShare(**)"],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Read(**/.env)", "FileShare(**/.env)"]
-}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
       </div>
-
-      <div class="level-card" data-level="bypass" role="tabpanel" hidden>
-        <div class="level-info">
-          <h3>Bypass, fast but still floored</h3>
-          <p>For hands-off runs. No prompts — only the deny floor holds, so you review the work after.</p>
-          <ul class="spec"><li>Reads, edits, shell <b class="ok">allow</b></li></ul>
-          <p class="best">Best for unattended jobs you'll review after.</p>
-        </div>
-        <div class="code" data-copy><div class="code-cap">resulting profile <span>(floor still applies)</span></div><pre><code>{
-  "allow": ["Read(**)", "Edit(**)", "Write(**)", "Bash(*)", "FileShare(**)"],
-  "ask":   [],
-  "deny":  ["Bash(rm -rf *)", "Bash(sudo *)", "Write(~/.ssh/**)", "Read(**/.env)", "FileShare(**/.env)"]
-}</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-      </div>
-    </div>
+    </article>
   </div>
 </section>
 
@@ -638,11 +1015,11 @@
     </a>
     <nav class="footer-links">
       <a href="setup.html">Setup guide</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/security-and-permissions.md">Security</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/getting-started-agents.md">Agents</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/session-sharing.md">Session sharing</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/file-exchange.md">File exchange</a>
-      <a href="https://github.com/ryanyen2/knock-knock/blob/main/docs/knock-knock-watches.md">Watches</a>
+      <a href="docs/security-and-permissions.html">Security</a>
+      <a href="docs/getting-started-agents.html">Agents</a>
+      <a href="docs/session-sharing.html">Session sharing</a>
+      <a href="docs/file-exchange.html">File exchange</a>
+      <a href="docs/knock-knock-watches.html">Watches</a>
     </nav>
     <span class="footer-note">The channel is the door. You hold the key.</span>
   </div>
