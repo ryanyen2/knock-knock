@@ -95,10 +95,10 @@ fold engine, cutover phases, cross-machine) lives in
 ### Concepts, artifacts, synchronizations
 
 A **concept**'s state *is* its named fold; nothing else. Registered in
-`relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`, `config`
-(`ledger/concepts/`) and the `knowledge` + `versionable` artifact folds
-(`ledger/artifacts/`). Folds **reuse the pure functions in `lib.ts` verbatim**
-(e.g. `LoopGuard.step` calls `loopGuard(...)`).
+`relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`, `config`,
+`coordination-board`, `task-dag` (`ledger/concepts/`) and the `knowledge` +
+`versionable` artifact folds (`ledger/artifacts/`). Folds **reuse the pure
+functions in `lib.ts` verbatim** (e.g. `LoopGuard.step` calls `loopGuard(...)`).
 
 The **`config`** fold is the owner's behavioral overlay (`!config`), keyed by
 artifact `cfg:channel/<id>` — and because the id can be a **room OR a thread
@@ -116,7 +116,9 @@ shared-context notes over the same `knowledge` fold session-sharing imports into
 
 Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 = one new synchronization, zero edits to concepts). Registered today:
-`classify-on-tool-request`, `prompt-on-message`, `drive-turn`, `post-on-reply`,
+`classify-on-tool-request`, `reply-claim` (turn-taking: exactly one agent
+replies, see "Coordination" below — replaced `prompt-on-message`), `drive-turn`,
+`post-on-reply`, `capture-presence` + `task-scheduler` (coordination),
 `dm-on-supersede` (§4.4), `conflict-card` (§4.2), `retry-on-reaction` (§4.5),
 `resume-on-watch`, `apply-supersession` (local-first cross-machine supersession
 convergence — re-derives a lifecycle change on each peer from the winner's
@@ -124,6 +126,22 @@ immutable `supersedes` op, which crosses NOTIFY where the UPDATE does not), and
 the file-edit pair `capture-workspace-edit` + `write-back-versionable` (see
 "File-edit sync" below), and the file-exchange pair `ingest-attachment`
 (inbound) + `share-file` (outbound) (see "File exchange" below).
+
+### Coordination (turn-taking, awareness, task allocation)
+
+Multiple agents (co-resident or cross-machine) coordinate over the ledger with no
+server. The **mechanism** (the `external_claim` two-claim pattern, the
+`coordination-board` + `task-dag` folds, the `task-scheduler` reconcile tick) is
+pattern-agnostic; the collaboration **topology** is pure **policy** selected via
+`!config`: `responder` (`race`/`designated`/`role-priority`) and `allocation`
+(`pull-claim`/`push-assign`/`bid`), defaulting to decentralized peers. `reply-claim`
+fixes the duplicate-reply bug (reply election holder=agentKey, drive election
+holder=relayId, keyed on the platform `ref.id`); `!delegate` seeds a task DAG;
+`task-scheduler` claims/assigns/bids ready tasks and fails a lapsed claim over on a
+half-TTL reconcile tick. All INSERT-derived, so it converges cross-machine on
+Postgres (SQLite is same-machine only). Pure logic in `lib.ts`, tested in
+`tests/lib.test.ts` + `tests/ledger/coordination*.test.ts`. Full design:
+**`docs/knock-knock-coordination.md`**.
 
 ### The AgentAdapter seam (`agent-adapter.ts`)
 
