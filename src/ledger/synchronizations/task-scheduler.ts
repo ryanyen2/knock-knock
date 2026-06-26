@@ -35,7 +35,16 @@ import {
   type TaskDagFoldState,
 } from '../concepts/task-dag.ts'
 
-const TASK_CLAIM_TTL_MS = 30_000
+// TTL must comfortably exceed the relay reconcile interval (15s) so a healthy
+// owner's serial-reconcile renewal can't be starved past expiry and falsely fail
+// over (which would let a second agent drive the same task). 60s ≈ 4 renewal cycles.
+const TASK_CLAIM_TTL_MS = 60_000
+
+// Cap new claims+wakes admitted per scheduling pass, staying well under the
+// synchronizer's 16-admit wave cap (each wake is 2 admits + downstream presence).
+// Excess ready tasks are picked up by the next reconcile tick — bounded and
+// recovered, never a silent wave-cap drop.
+const MAX_WAKES_PER_PASS = 5
 
 /** Per-scope scheduling context the host resolves for the LOCAL agent. */
 export type ScheduleContext = {
@@ -103,6 +112,7 @@ export async function scheduleScope(deps: {
   // owner renews and a lapsed claim can be re-taken for failover).
   const candidates = [...readyTasks(board), ...[...board.values()].filter(t => t.status === 'claimed')]
 
+  let wakes = 0 // new claims+wakes this pass — bounded to stay under the wave cap
   for (const task of candidates) {
     const taskBids = bids.get(task.id) ?? []
 
@@ -111,6 +121,7 @@ export async function scheduleScope(deps: {
       // reconcile pass so peers' bids have time to land (the bid window).
       const alreadyBid = taskBids.some(b => b.bidder === sched.agentKey)
       if (task.status === 'open' && !alreadyBid) {
+        if (wakes >= MAX_WAKES_PER_PASS) continue // bounded; reconcile bids the rest
         await deps.admit({
           actor: sched.agentKey,
           role: 'agent' as Role,
@@ -124,6 +135,7 @@ export async function scheduleScope(deps: {
           effect: 'pure',
           caused_by: [],
         })
+        wakes++
         continue
       }
       if (!deps.allowBidClaim) continue // bid window still open — don't claim yet
@@ -138,9 +150,13 @@ export async function scheduleScope(deps: {
     // (crash/stall) — let it lapse so failover can reassign.
     if (mineAlready && !sched.isTurnLive()) continue
 
+    // Cap NEW wakes per pass (renewals below are exempt — they don't admit a wake).
+    if (!mineAlready && wakes >= MAX_WAKES_PER_PASS) continue
+
     const claim = await deps.store.acquireClaim(taskClaimKey(deps.scope, task.id), sched.agentKey, ttl)
     if (!claim.acquired) continue // held live by another agent
     if (mineAlready) continue // renewed only — don't re-wake an in-flight turn
+    wakes++
 
     // Newly acquired (fresh ready task, or reassignment of a lapsed claim): elect
     // the driving relay, then record ownership and wake the agent.
