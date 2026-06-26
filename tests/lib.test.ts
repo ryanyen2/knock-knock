@@ -1395,3 +1395,34 @@ test('isDirectoryBot: true only for a known directory userId', () => {
   expect(isDirectoryBot(dir, 'U_CC')).toBe(true)
   expect(isDirectoryBot(dir, 'U_HUMAN')).toBe(false)
 })
+
+// ─── Selecting collaboration / allocation policy from chat (!config) ──────────
+
+test('!config responder: every responder policy is selectable; bad value rejected', () => {
+  for (const v of ['race', 'designated', 'role-priority'] as const) {
+    expect(parseConfigCommand(`!config responder ${v}`)).toEqual({ action: 'set', delta: { responder: v } })
+  }
+  expect(parseConfigCommand('!config responder bogus')?.action).toBe('error')
+  // the designated front-door bot id rides its own key
+  expect(parseConfigCommand('!config responder-agent reviewer')).toEqual({
+    action: 'set',
+    delta: { responderAgent: 'reviewer' },
+  })
+})
+
+test('!config allocation: every allocation method is selectable; bad value rejected', () => {
+  for (const v of ['pull-claim', 'push-assign', 'bid'] as const) {
+    expect(parseConfigCommand(`!config allocation ${v}`)).toEqual({ action: 'set', delta: { allocation: v } })
+  }
+  expect(parseConfigCommand('!config allocation nope')?.action).toBe('error')
+})
+
+test('responder/allocation selections land in the projected config (round-trip)', () => {
+  const recs: ConfigDeltaRecord[] = [
+    { delta: { responder: 'designated' }, createdAt: '2026-06-26T10:00:00Z', hash: 'h1' },
+    { delta: { allocation: 'bid' }, createdAt: '2026-06-26T10:00:01Z', hash: 'h2' },
+  ]
+  const cfg = projectChannelConfig(recs)
+  expect(cfg.responder).toBe('designated')
+  expect(cfg.allocation).toBe('bid')
+})

@@ -750,7 +750,6 @@ async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
     options: [
       { value: 'runtime', label: 'Coding agent runtime', hint: bot.runtime },
       { value: 'blurb', label: 'Blurb description', hint: bot.blurb ?? '(none)' },
-      { value: 'sandbox', label: 'Sandbox', hint: bot.sandbox ? `fs:${bot.sandbox.fs} · net:${bot.sandbox.network}` : 'off' },
     ],
     required: false,
   }))
