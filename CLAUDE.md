@@ -118,7 +118,7 @@ Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 = one new synchronization, zero edits to concepts). Registered today:
 `classify-on-tool-request`, `reply-claim` (turn-taking: exactly one agent
 replies, see "Coordination" below — replaced `prompt-on-message`), `drive-turn`,
-`post-on-reply`, `capture-presence` + `task-scheduler` (coordination),
+`post-on-reply`, `capture-presence` + `task-scheduler` + `complete-task-on-turn` (coordination),
 `dm-on-supersede` (§4.4), `conflict-card` (§4.2), `retry-on-reaction` (§4.5),
 `resume-on-watch`, `apply-supersession` (local-first cross-machine supersession
 convergence — re-derives a lifecycle change on each peer from the winner's

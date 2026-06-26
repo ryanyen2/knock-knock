@@ -128,6 +128,16 @@ tick** in `relay.ts` re-takes the lapsed claim even when no new event arrives (t
 watches §7 lesson). Reassignment rides immutable INSERTs (a new `task.claimed`), so
 it converges cross-machine with no lifecycle UPDATE.
 
+`complete-task-on-turn` closes the loop: when a scheduler-driven turn replies
+(its `caused_by` chain reaches `task.created`), the task is marked done — but only
+if `replied.actor` is the task's current owner and it isn't already done, so a
+forged/foreign `turn.replied` or a 🔁-retry can't complete someone else's task or
+double-complete. A crashed turn never replies, so failover (reconcile) still
+applies. Per-pass wakes are capped (`MAX_WAKES_PER_PASS`) to stay under the
+synchronizer's admit budget; an over-cap frontier drains on subsequent reconcile
+ticks with no permanent loss. The claim TTL (60s) is ~4× the reconcile interval so
+a healthy owner's renewal can't be starved into a false failover.
+
 **Contract-net** (`allocation=bid`): agents submit a `task.bid` (deterministic
 `scoreBid` utility) on sight; claiming defers to the reconcile pass (the bid
 window), where `winningBid` (highest utility, deterministic tiebreak) claims via the
@@ -169,3 +179,4 @@ operations alone. The ship gate is the property battery
 - Finer stall detection (progress heartbeat) — v1 fails over on crash/turn-end via active-turn liveness.
 - Loop-guard fold exemption for scheduler/reply-synthesized turns (shared with the watches follow-up).
 - A second messaging platform adapter — the layer is platform-*neutral*, but Discord is the only live surface today.
+- **Designated-responder failure fallback.** Under `responder=designated`/`role-priority`, the non-preferred agent makes a single deferred claim attempt; if the preferred agent *wins the reply claim and then its turn fails* (no `turn.replied`), the message is unanswered until the reply claim's TTL lapses. A release-on-failure + fallback-retry is the planned fix; the default `race` policy is unaffected.
