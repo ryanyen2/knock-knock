@@ -723,9 +723,19 @@ export type ChannelConfig = {
   ackReaction?: string
   /** How much detail the pinned Workbench shows in this channel. */
   workbenchVerbosity?: WorkbenchVerbosity
+  /** Collaboration responder policy: who fields a message among eligible agents. */
+  responder?: ResponderPolicy
+  /** For responder=designated: the agentKey/botId of the front-door agent. */
+  responderAgent?: string
 }
 
 export type WorkbenchVerbosity = 'quiet' | 'normal' | 'verbose'
+
+/** Responder policy — who replies among eligible agents (Problem A / Problem D).
+ *  `race`: first to claim wins (peer default). `designated`: a named front-door
+ *  agent answers (orchestrator-worker). `role-priority`: the owner's own bot
+ *  precedes peer bots. Selected per-room/thread via `!config responder`. */
+export type ResponderPolicy = 'race' | 'designated' | 'role-priority'
 
 /** Extended-thinking modes; mapped to the SDK's ThinkingConfig by `toThinkingConfig`. */
 export type ThinkingMode = 'off' | 'auto' | 'high'
@@ -789,6 +799,10 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
     help: '`!config mention <pat,pat…>` — extra @mention regexes (comma-separated), unioned with the global ones' },
   { chatKey: 'ack', field: 'ackReaction', kind: 'text', maxLen: 64,
     help: '`!config ack <emoji>` — the presence reaction used while working here' },
+  { chatKey: 'responder', field: 'responder', kind: 'enum', values: ['race', 'designated', 'role-priority'],
+    help: '`!config responder <race|designated|role-priority>` — who answers when multiple agents are eligible' },
+  { chatKey: 'responder-agent', field: 'responderAgent', kind: 'token', maxLen: 64,
+    help: '`!config responder-agent <botId>` — the front-door agent for `responder=designated`' },
   { chatKey: 'workbench', field: 'workbenchVerbosity', kind: 'enum', values: ['quiet', 'normal', 'verbose'],
     help: '`!config workbench <quiet|normal|verbose>` — how much the pinned Workbench shows' },
 ]
@@ -1378,6 +1392,52 @@ export function isEligibleToReply(
   mentionPatterns?: string[],
 ): boolean {
   return isAddressed(sig, mentionPatterns) || !requireMention
+}
+
+/** How long a non-preferred eligible agent waits before attempting the reply
+ *  claim — long enough for the preferred agent to win the race, short enough that
+ *  it still steps in if the preferred one is absent/silent (graceful degradation,
+ *  never a deadlock). */
+export const RESPONDER_FALLBACK_MS = 1500
+
+/** Resolve the effective responder policy from merged (room ⊕ thread) config,
+ *  defaulting to `race` so a room that sets nothing behaves as decentralized peers. */
+export function resolveResponderPolicy(cfg: ChannelConfig): ResponderPolicy {
+  return cfg.responder ?? 'race'
+}
+
+/** What a single relay can know about ITSELF for the responder decision — no
+ *  global participant set (a relay only knows its own bot). */
+export type ResponderSelf = {
+  agentKey: string     // my bot's key/id
+  isOwnerBot: boolean  // is my bot owned by the room owner? (for role-priority)
+}
+
+/** Self-relative, pure: how long should THIS agent wait before attempting the
+ *  reply claim under `policy`? 0 = attempt immediately. The claim still guarantees
+ *  exactly one winner regardless of policy; the delay only biases WHO wins the
+ *  race, and always degrades to a plain race if the preferred agent never claims.
+ *  - `race`: everyone attempts at 0.
+ *  - `designated`: the configured front-door agent attempts at 0; others wait the
+ *    fallback window, so they only step in if the designate is absent/silent.
+ *  - `role-priority`: the owner's own bot attempts at 0; peer bots wait the window. */
+export function preferredResponderDelayMs(
+  policy: ResponderPolicy,
+  self: ResponderSelf,
+  cfg: ChannelConfig,
+): number {
+  switch (policy) {
+    case 'designated': {
+      const front = cfg.responderAgent
+      if (!front) return 0 // misconfigured (no front-door named) → behave as race
+      return self.agentKey === front ? 0 : RESPONDER_FALLBACK_MS
+    }
+    case 'role-priority':
+      return self.isOwnerBot ? 0 : RESPONDER_FALLBACK_MS
+    case 'race':
+    default:
+      return 0
+  }
 }
 
 // ─── Room vs scope ───────────────────────────────────────────────────────────

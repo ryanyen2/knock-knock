@@ -55,11 +55,16 @@ import {
   driveClaimKey,
   isAddressed,
   isEligibleToReply,
+  resolveResponderPolicy,
+  preferredResponderDelayMs,
+  RESPONDER_FALLBACK_MS,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
   type AuthoringAccess,
   type AddressSignals,
+  type ResponderSelf,
+  type ChannelConfig,
 } from '../src/lib.ts'
 
 // ─── classifyTool ────────────────────────────────────────────────────────────
@@ -997,4 +1002,33 @@ test('isEligibleToReply: addressed bots always eligible; broadcast only when req
   expect(isEligibleToReply(unaddressed, true)).toBe(false)
   // unaddressed + require-mention off ⇒ eligible (broadcast; election decides one winner)
   expect(isEligibleToReply(unaddressed, false)).toBe(true)
+})
+
+// ─── Coordination: ResponderPolicy seam (U13) ─────────────────────────────────
+
+test('resolveResponderPolicy: defaults to race so an unconfigured room stays peer', () => {
+  expect(resolveResponderPolicy({})).toBe('race')
+  expect(resolveResponderPolicy({ responder: 'designated' })).toBe('designated')
+  expect(resolveResponderPolicy({ responder: 'role-priority' })).toBe('role-priority')
+})
+
+test('preferredResponderDelayMs: race → everyone attempts immediately', () => {
+  const self: ResponderSelf = { agentKey: 'bot002', isOwnerBot: false }
+  expect(preferredResponderDelayMs('race', self, {})).toBe(0)
+})
+
+test('preferredResponderDelayMs: designated → front-door at 0, others wait the fallback window', () => {
+  const cfg: ChannelConfig = { responder: 'designated', responderAgent: 'bot002' }
+  expect(preferredResponderDelayMs('designated', { agentKey: 'bot002', isOwnerBot: false }, cfg)).toBe(0)
+  expect(preferredResponderDelayMs('designated', { agentKey: 'bot101', isOwnerBot: false }, cfg)).toBe(RESPONDER_FALLBACK_MS)
+})
+
+test('preferredResponderDelayMs: designated with no front-door named → degrades to race (no deadlock)', () => {
+  const cfg: ChannelConfig = { responder: 'designated' } // responderAgent unset
+  expect(preferredResponderDelayMs('designated', { agentKey: 'bot101', isOwnerBot: false }, cfg)).toBe(0)
+})
+
+test('preferredResponderDelayMs: role-priority → owner-bot at 0, peer bots wait the window', () => {
+  expect(preferredResponderDelayMs('role-priority', { agentKey: 'mine', isOwnerBot: true }, {})).toBe(0)
+  expect(preferredResponderDelayMs('role-priority', { agentKey: 'peer', isOwnerBot: false }, {})).toBe(RESPONDER_FALLBACK_MS)
 })
