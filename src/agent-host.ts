@@ -38,6 +38,7 @@ import {
   wrapChannelRole,
   wrapChannelGoal,
   pickFreshCoordination,
+  parseDelegateCommand,
   formatAttachedFilesBlock,
   parseShareCommand,
   classifyTool,
@@ -88,6 +89,7 @@ import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
+import { taskArtifact } from './ledger/concepts/task-dag.ts'
 
 const RECENT_BOT_MSG_CAP = 200
 
@@ -841,6 +843,16 @@ export class AgentHost {
       return
     }
 
+    // Owner task delegation (!delegate) — short-circuit before any admit. NOT admitted
+    // as a channel.message, so only the owner (never a peer/injection) can seed tasks.
+    if (kind === 'owner' && (m.text === '!delegate' || m.text.startsWith('!delegate'))) {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.handleDelegateCommand(controlScope, m.text, m.authorId).catch(e =>
+        this.ui.error(this.key, `delegate command: ${e}`),
+      )
+      return
+    }
+
     // Resolve the task scope. A thread message stays in its thread; a top-level
     // @mention spawns (or reuses) a task thread; a top-level non-mention stays at the
     // channel. Thread-creation failure degrades to the channel.
@@ -1012,6 +1024,40 @@ export class AgentHost {
   /** This scope's approval timeout override (ms), or undefined for the default. */
   private approvalTimeoutFor(scopeId: ChannelId): number | undefined {
     return this.channelConfigFor(scopeId).approvalTimeoutMs
+  }
+
+  /** Owner `!delegate` → seed the task DAG. Parsed purely (cycles/dupes rejected),
+   *  then each task admitted as an owner-role task.created on the scope's task
+   *  artifact. The task-scheduler sync (U9) takes it from there. */
+  private async handleDelegateCommand(scope: ChannelId, text: string, authorId: string): Promise<void> {
+    const parsed = parseDelegateCommand(text)
+    if (!parsed) return
+    if (!parsed.ok) {
+      await this.discordSend(scope, `⚠️ ${parsed.error}`)
+      return
+    }
+    for (const t of parsed.tasks) {
+      await admit(this.store, {
+        actor: authorId,
+        role: 'owner',
+        channel: scope,
+        target: { artifactId: taskArtifact(scope), anchor: { kind: 'none' } },
+        verb: 'task.created',
+        patch: {
+          kind: 'task',
+          data: {
+            id: t.id,
+            label: t.label,
+            dependsOn: t.dependsOn,
+            ...(t.assignee ? { assignee: t.assignee } : {}),
+          },
+        },
+        effect: 'pure',
+        caused_by: [],
+      })
+    }
+    const shape = parsed.tasks.map(t => (t.assignee ? `${t.id}→${t.assignee}` : t.id)).join(', ')
+    await this.discordSend(scope, `📋 delegated ${parsed.tasks.length} task(s): ${shape}`)
   }
 
   /** A `<coordination>` block telling THIS agent what other agents in the scope are

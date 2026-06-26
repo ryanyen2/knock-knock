@@ -1122,3 +1122,41 @@ test('projectTaskDag: claimed sets owner + status; deterministic under shuffle',
   expect(fwd.get('A')?.assignee).toBe('bot002')
   expect(readyTasks(fwd)).toEqual([]) // claimed ⇒ not in the open frontier
 })
+
+// ─── parseDelegateCommand (U8) ────────────────────────────────────────────────
+
+import { parseDelegateCommand, hasDependencyCycle } from '../src/lib.ts'
+
+test('parseDelegateCommand: parses ids, labels, deps (after), and @assignee', () => {
+  const out = parseDelegateCommand('!delegate\nA: write parser\nB: add tests after A\nC: review after B @bot002')
+  expect(out?.ok).toBe(true)
+  if (!out || !out.ok) throw new Error('expected ok')
+  expect(out.tasks).toEqual([
+    { id: 'A', label: 'write parser', dependsOn: [], assignee: undefined },
+    { id: 'B', label: 'add tests', dependsOn: ['A'], assignee: undefined },
+    { id: 'C', label: 'review', dependsOn: ['B'], assignee: 'bot002' },
+  ])
+})
+
+test('parseDelegateCommand: non-command → null; empty → usage error', () => {
+  expect(parseDelegateCommand('hello')).toBeNull()
+  const empty = parseDelegateCommand('!delegate')
+  expect(empty?.ok).toBe(false)
+})
+
+test('parseDelegateCommand: rejects malformed line, duplicate id, and unknown dep', () => {
+  expect((parseDelegateCommand('!delegate\njust some text') as any).ok).toBe(false)
+  expect((parseDelegateCommand('!delegate\nA: x\nA: y') as any).ok).toBe(false)
+  expect((parseDelegateCommand('!delegate\nA: x after Z') as any).ok).toBe(false)
+})
+
+test('parseDelegateCommand: rejects a dependency cycle at parse time', () => {
+  const out = parseDelegateCommand('!delegate\nA: x after B\nB: y after A')
+  expect(out?.ok).toBe(false)
+  if (out && !out.ok) expect(out.error).toContain('cycle')
+})
+
+test('hasDependencyCycle: detects cycles, passes DAGs', () => {
+  expect(hasDependencyCycle([{ id: 'A', dependsOn: ['B'] }, { id: 'B', dependsOn: ['A'] }])).toBe(true)
+  expect(hasDependencyCycle([{ id: 'A', dependsOn: [] }, { id: 'B', dependsOn: ['A'] }])).toBe(false)
+})

@@ -1540,6 +1540,77 @@ export function ownerOf(board: TaskBoard, id: string): string | undefined {
   return board.get(id)?.owner
 }
 
+export type DelegateTask = { id: string; label: string; dependsOn: string[]; assignee?: string }
+export type ParsedDelegate =
+  | { ok: true; tasks: DelegateTask[] }
+  | { ok: false; error: string }
+  | null // not a !delegate command
+
+const DELEGATE_USAGE =
+  'usage: `!delegate` then one task per line — `A: do the thing`, `B: next after A`, `C: review after B @botId`'
+
+/** True if `dependsOn` edges over `tasks` contain a cycle (DFS). Pure. */
+export function hasDependencyCycle(tasks: ReadonlyArray<{ id: string; dependsOn: string[] }>): boolean {
+  const deps = new Map(tasks.map(t => [t.id, t.dependsOn]))
+  const state = new Map<string, 'visiting' | 'done'>()
+  const dfs = (id: string): boolean => {
+    const s = state.get(id)
+    if (s === 'visiting') return true
+    if (s === 'done') return false
+    state.set(id, 'visiting')
+    for (const d of deps.get(id) ?? []) if (deps.has(d) && dfs(d)) return true
+    state.set(id, 'done')
+    return false
+  }
+  return tasks.some(t => dfs(t.id))
+}
+
+/** Parse an owner `!delegate` command into a task set. Each line is
+ *  `id: description`, where the description may carry `after X, Y` (dependencies)
+ *  and `@agentId` (push assignee). Rejects malformed lines, duplicate ids, unknown
+ *  dependencies, and dependency CYCLES at parse time — so a cycle can never be
+ *  admitted and the task-DAG fold never has to handle one. Pure. */
+export function parseDelegateCommand(text: string): ParsedDelegate {
+  const trimmed = text.trim()
+  if (!/^!delegate\b/.test(trimmed)) return null
+  const body = trimmed.replace(/^!delegate\b/, '').trim()
+  if (!body) return { ok: false, error: DELEGATE_USAGE }
+
+  const tasks: DelegateTask[] = []
+  const seen = new Set<string>()
+  for (const raw of body.split('\n').map(l => l.trim()).filter(Boolean)) {
+    const m = raw.match(/^([A-Za-z0-9_-]+)\s*:\s*(.+)$/)
+    if (!m) return { ok: false, error: `can't parse task line: "${raw}" (expected "id: description")` }
+    const id = m[1]!
+    if (seen.has(id)) return { ok: false, error: `duplicate task id: ${id}` }
+    seen.add(id)
+
+    let rest = m[2]!
+    let assignee: string | undefined
+    const at = rest.match(/@(\S+)/)
+    if (at) {
+      assignee = at[1]
+      rest = rest.replace(at[0], '').trim()
+    }
+    let dependsOn: string[] = []
+    const after = rest.match(/\bafter\s+([A-Za-z0-9_,\s-]+)$/i)
+    if (after) {
+      dependsOn = after[1]!.split(/[,\s]+/).map(s => s.trim()).filter(Boolean)
+      rest = rest.replace(after[0], '').trim()
+    }
+    tasks.push({ id, label: rest.trim(), dependsOn, assignee })
+  }
+  if (tasks.length === 0) return { ok: false, error: DELEGATE_USAGE }
+
+  for (const t of tasks) {
+    for (const d of t.dependsOn) {
+      if (!seen.has(d)) return { ok: false, error: `task ${t.id} depends on unknown task ${d}` }
+    }
+  }
+  if (hasDependencyCycle(tasks)) return { ok: false, error: 'dependency cycle detected — tasks cannot wait on each other in a loop' }
+  return { ok: true, tasks }
+}
+
 /** How long a non-preferred eligible agent waits before attempting the reply
  *  claim — long enough for the preferred agent to win the race, short enough that
  *  it still steps in if the preferred one is absent/silent (graceful degradation,
