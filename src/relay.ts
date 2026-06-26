@@ -11,6 +11,9 @@ import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
 import { resolveLedgerConfig } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
+import type { RelayUI } from './console-ui.ts'
+import { PaneTUI } from './tui.ts'
+import { gatherQuickConfig, applyQuickConfig, type QuickConfig } from './relay-startup.ts'
 import { SqliteStore } from './ledger/store-sqlite.ts'
 import { PgStore } from './ledger/store-pg.ts'
 import type { Store } from './ledger/store.ts'
@@ -46,6 +49,11 @@ import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from './ledger/s
 import { completeTaskOnTurn } from './ledger/synchronizations/complete-task-on-turn.ts'
 import { admit } from './ledger/admit.ts'
 import { WatchSupervisor, bunSpawn } from './watch-supervisor.ts'
+import {
+  startWebhookReceiver,
+  DEFAULT_WEBHOOK_PORT,
+  type WebhookReceiverHandle,
+} from './webhook-receiver.ts'
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
@@ -72,6 +80,11 @@ if (agentEntries.length === 0) {
 // Default: all agents. Narrow with positional keys or `--pick`.
 const argv = process.argv.slice(2)
 const wantPick = argv.includes('--pick') || argv.includes('-p')
+const wantTui = argv.includes('--tui')
+const wantConfig = argv.includes('--config') || argv.includes('-c')
+// Daemon mode: connect EVERY credentialed bot (so all can hear), but only the picked
+// ones are active (have a pane). The rest start idle and wake on their first message.
+const wantDaemon = argv.includes('--daemon') || argv.includes('--wake')
 const requestedKeys = argv.filter(a => !a.startsWith('-'))
 
 let selectedEntries = agentEntries
@@ -117,9 +130,21 @@ if (selectedEntries.length !== agentEntries.length) {
   )
 }
 
-const ui = new ConsoleUI()
+// Optional per-bot quick config (coding agent / model / thinking / effort / sessions),
+// gathered interactively NOW (clack) — before any TUI takes the screen — and applied to
+// the ledger after the folds are live (below). Offered with `--pick`, `--config`/`-c`.
+const quickConfig: Map<string, QuickConfig> =
+  (wantPick || wantConfig) && process.stdin.isTTY
+    ? await gatherQuickConfig(selectedEntries)
+    : new Map()
+
+// Renderer seam: the multi-pane TUI (one pane per bot) on an interactive TTY with
+// `--tui`, else the single-stream console (also the CI / piped fallback).
+const useTui = wantTui && !!process.stdout.isTTY
+const ui: RelayUI = useTui ? new PaneTUI() : new ConsoleUI()
+const paneTui = useTui ? (ui as PaneTUI) : undefined
 const hosts: AgentHost[] = []
-const bootEntries: Array<{ key: string; runtime: string; workspace: string }> = []
+const bootEntries: Array<{ key: string; runtime: string; workspace: string; idle?: boolean }> = []
 
 // One ledger + one fold engine shared across every agent on this machine.
 const ledgerConfig = resolveLedgerConfig(process.env, readSettings())
@@ -164,8 +189,25 @@ await engine.register(configFold)
 await engine.register(coordBoardFold)
 await engine.register(taskDagFold)
 
+// Apply any startup quick config now that the folds are live and before the hosts
+// connect — so the first turn already resolves the seeded model/agent/etc.
+await applyQuickConfig(store, engine, access, quickConfig, msg => process.stderr.write(`relay: ${msg}\n`))
+
+// In daemon mode, boot EVERY configured bot (so idle ones can still hear messages);
+// otherwise only the selected set. The picked set is always "active"; in daemon mode
+// the rest start idle. Idle still requires credentials — an unconfigured bot can't listen.
+const activeKeys = new Set(selectedEntries.map(([k]) => k))
+const bootSource = wantDaemon ? agentEntries : selectedEntries
+
+// A woken idle bot: promote its UI to an active pane (the session is created lazily by
+// the turn the wake message drives). Quiet by design — no chat message.
+const onWake = (key: string): void => {
+  if (paneTui) paneTui.activate(key, access.agents[key]?.runtime)
+  else ui.note(key, 'woke on message (idle → active)')
+}
+
 // Create AgentHosts (each builds its messaging adapter; not yet connected).
-for (const [key, agent] of selectedEntries) {
+for (const [key, agent] of bootSource) {
   const token = process.env[agent.tokenEnv]
   if (!token) {
     process.stderr.write(
@@ -190,8 +232,11 @@ for (const [key, agent] of selectedEntries) {
   }
 
   const host = new AgentHost(key, agent, readAccessFile, ui, ledger, store, engine)
+  // Idle iff daemon mode AND not in the picked/active set.
+  if (wantDaemon && !activeKeys.has(key)) host.setIdle()
+  host.onWake = onWake
   hosts.push(host)
-  bootEntries.push({ key, runtime: agent.runtime, workspace: agent.workspace })
+  bootEntries.push({ key, runtime: agent.runtime, workspace: agent.workspace, idle: !host.isActive })
 }
 
 if (hosts.length === 0) {
@@ -204,11 +249,12 @@ if (hosts.length === 0) {
 {
   const lines: string[] = ['relay: listening —']
   const claimants = new Map<string, string[]>() // channelId → bot keys
-  for (const { key } of bootEntries) {
+  for (const { key, idle } of bootEntries) {
     const agent = access.agents[key]
     if (!agent) continue
     const rooms = Object.entries(agent.rooms)
-    lines.push(`  ● ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime} (default)`)
+    const stateNote = idle ? '  ·  idle (wakes on message)' : ''
+    lines.push(`  ${idle ? '○' : '●'} ${key}  ·  ${agent.platform ?? 'discord'}  ·  ${agent.runtime} (default)${stateNote}`)
     if (rooms.length === 0) lines.push('      (no channels — add one with `knock-knock setup`)')
     for (const [channelId, room] of rooms) {
       const agentNote = room.runtime && room.runtime !== agent.runtime ? `  [${room.runtime}]` : ''
@@ -562,7 +608,27 @@ for (let n = 0; n < hosts.length; n++) {
   })
 }
 
-ui.banner(bootEntries)
+// Event-driven intake (opt-in): if any bot is `intake: 'webhook'`, open the single
+// local HTTP receiver and route /<platform>/<botKey> to that host. Poll-mode bots open
+// no server — this is the only place the "no public URL" default is relaxed.
+let webhookReceiver: WebhookReceiverHandle | undefined
+const webhookHosts = hosts.filter(h => h.usesWebhookIntake)
+if (webhookHosts.length > 0) {
+  const portEnv = Number(process.env.KNOCK_KNOCK_WEBHOOK_PORT)
+  webhookReceiver = startWebhookReceiver({
+    hosts: webhookHosts,
+    port: Number.isFinite(portEnv) && portEnv > 0 ? portEnv : DEFAULT_WEBHOOK_PORT,
+    log: msg => ui.note('webhook', msg),
+  })
+}
+
+// Banner the active bots (they get panes); idle bots ride the TUI idle strip instead.
+ui.banner(bootEntries.filter(e => !e.idle))
+paneTui?.setIdle(
+  bootEntries
+    .filter(e => e.idle)
+    .map(e => ({ key: e.key, rooms: Object.keys(access.agents[e.key]?.rooms ?? {}).length })),
+)
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
 
@@ -575,7 +641,9 @@ process.on('uncaughtException', err => {
 })
 
 async function shutdown(): Promise<void> {
+  paneTui?.stop() // restore the terminal before any further stderr writes
   process.stderr.write('relay: shutting down\n')
+  webhookReceiver?.stop()
   await Promise.all(hosts.map(h => h.stop()))
   clearInterval(taskReconcileTimer)
   synchronizer.stop()

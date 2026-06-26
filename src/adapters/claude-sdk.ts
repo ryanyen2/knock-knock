@@ -23,6 +23,10 @@ import type {
 } from '../agent-adapter.ts'
 import { pickAnthropicEnv, toThinkingConfig } from '../lib.ts'
 import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
+import { makeNotionMcpServer, NOTION_TOOL_NAMES, NOTION_MCP_SERVER } from './notion-mcp.ts'
+
+/** Optional page-scoped Notion read/write tools for a Notion-platform bot. */
+export type NotionToolConfig = { token: string; pageId: string }
 
 /** Env for the SDK subprocess: process.env plus the Anthropic auth/gateway keys
  *  from the global settings.json env block (isolation mode doesn't read it). */
@@ -48,14 +52,22 @@ export class ClaudeSdkAdapter implements AgentAdapter {
   private readonly alwaysAllow: string[]
   private readonly env = resolveSdkEnv()
 
-  constructor(private readonly cwd: string, watchTools?: WatchToolHandlers) {
-    // Watch MCP server lets the agent arm watches by tool call; commands stay deny-floored by the host.
+  constructor(private readonly cwd: string, watchTools?: WatchToolHandlers, notion?: NotionToolConfig) {
+    // In-process MCP servers: the watch tool (arm/disarm) and, for a Notion bot, the
+    // page-scoped read/write tools. Both stay deny-floored / classified by the host;
+    // their tool names are auto-allowed so the agent isn't prompted to use its own seam.
+    const servers: Record<string, McpServerConfig> = {}
+    const allow: string[] = []
     if (watchTools) {
-      this.mcpServers = { 'knock-knock': makeWatchMcpServer(watchTools) }
-      this.alwaysAllow = WATCH_TOOL_NAMES
-    } else {
-      this.alwaysAllow = []
+      servers['knock-knock'] = makeWatchMcpServer(watchTools)
+      allow.push(...WATCH_TOOL_NAMES)
     }
+    if (notion) {
+      servers[NOTION_MCP_SERVER] = makeNotionMcpServer(notion.token, notion.pageId)
+      allow.push(...NOTION_TOOL_NAMES)
+    }
+    if (Object.keys(servers).length > 0) this.mcpServers = servers
+    this.alwaysAllow = allow
   }
 
   applyPolicy(profile: PermissionProfile): void {

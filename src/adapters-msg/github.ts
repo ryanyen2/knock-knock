@@ -26,6 +26,7 @@
  * mint installation tokens; the rest of this adapter is unchanged by that.
  */
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import { Octokit } from '@octokit/rest'
 import type {
   MessagingAdapter,
@@ -37,6 +38,8 @@ import type {
   ScopeId,
   SendOpts,
   Glyph,
+  WebhookRequest,
+  WebhookResponse,
 } from '../messaging-adapter.ts'
 import { choiceMenuText, outboundFileNotice } from '../messaging-fallback.ts'
 import { toGitHubMarkdown } from './dialect.ts'
@@ -143,12 +146,27 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
   /** Per-scope cursor: only fetch comments created after this ISO timestamp. */
   private readonly threadCursor = new Map<ScopeId, string>()
 
+  // ─── runtime config (configure, before connect) ──────────────────────────────
+  /** Repos (`owner/repo`) this bot serves; notifications from other repos are
+   *  skipped. Empty ⇒ accept any mentioning repo (back-compat). */
+  private trackedRepos = new Set<string>()
+  /** 'poll' (default) or 'webhook' — in webhook mode the poll loop is not armed. */
+  private intake: 'poll' | 'webhook' = 'poll'
+  /** Optional `X-Hub-Signature-256` secret for webhook verification (from `secrets`). */
+  private webhookSecret: string | undefined
+
+  configure(opts: { trackedRooms?: string[]; intake?: 'poll' | 'webhook' }): void {
+    this.trackedRepos = new Set(opts.trackedRooms ?? [])
+    if (opts.intake) this.intake = opts.intake
+  }
+
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
-  /** GitHub is single-token (PAT) in v1; `secrets` is part of the seam contract. */
-  async connect(token: string, _secrets?: Record<string, string>): Promise<void> {
+  /** GitHub is single-token (PAT) in v1; `secrets` may carry a `webhookSecret`. */
+  async connect(token: string, secrets?: Record<string, string>): Promise<void> {
     this.octokit = new Octokit({ auth: token })
     this.stopped = false
+    this.webhookSecret = secrets?.webhookSecret
     try {
       const me = await this.octokit.users.getAuthenticated()
       this._botUserId = me.data.login
@@ -156,8 +174,9 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
     } catch {
       // Auth probe failed; leave ids undefined (host falls back to undefined).
     }
-    // START THE POLL LOOP — this is the intake. No public server is opened.
-    this.scheduleNextPoll(0)
+    // INTAKE: poll the Notifications API (no public server) unless the host opted
+    // this bot into webhook mode, in which case the WebhookReceiver feeds us instead.
+    if (this.intake !== 'webhook') this.scheduleNextPoll(0)
   }
 
   async disconnect(): Promise<void> {
@@ -308,6 +327,9 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
     const issueNumber = issueNumberFromSubjectUrl(thread.subject?.url ?? undefined)
     if (!owner || !repo || issueNumber == null) return
 
+    // Scope the sweep to the repos this bot serves (when the host configured a set).
+    if (this.trackedRepos.size > 0 && !this.trackedRepos.has(buildRoomId(owner, repo))) return
+
     const scope = buildScopeId(owner, repo, issueNumber)
     const since = this.threadCursor.get(scope)
 
@@ -346,6 +368,7 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
           authorName: authorLogin,
           text: body,
           mentionsBot,
+          authorAssociation: c.author_association,
           isThread: true, // the issue/PR is the task scope; the repo is the room
           scopeLabel: scope,
         })
@@ -354,6 +377,59 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
       }
     }
     if (newestSeen) this.threadCursor.set(scope, newestSeen)
+  }
+
+  // ─── webhook intake (event-driven mode; the relay's WebhookReceiver feeds this) ──
+
+  /**
+   * Parse a pushed GitHub webhook and surface new `issue_comment` events as
+   * `IncomingMessage`s. Handles the `ping` handshake (200) and verifies
+   * `X-Hub-Signature-256` when a `webhookSecret` is configured (401 on mismatch).
+   * No extra REST call is needed — the payload carries the comment body, author,
+   * and `author_association` directly. Deduped against the same `seenComments` the
+   * poll path uses, so flipping modes (or a hybrid) never double-fires.
+   */
+  async ingestWebhook(req: WebhookRequest): Promise<WebhookResponse> {
+    const event = req.headers['x-github-event']
+    if (event === 'ping') return { status: 200, body: 'pong' }
+
+    if (this.webhookSecret) {
+      const sig = req.headers['x-hub-signature-256']
+      if (!verifyGitHubSignature(this.webhookSecret, req.body, sig)) return { status: 401 }
+    }
+    if (event !== 'issue_comment') return { status: 202 } // accepted but not acted on
+
+    const parsed = parseIssueCommentEvent(req.body)
+    if (!parsed || parsed.action === 'deleted') return { status: 200 }
+
+    // Scope to the repos this bot serves, when configured.
+    if (this.trackedRepos.size > 0 && !this.trackedRepos.has(parsed.room)) return { status: 200 }
+    // Self-filter and dedup against the poll path's seen set.
+    if (this._botUserId && parsed.authorLogin === this._botUserId) return { status: 200 }
+    if (this.seenComments.has(parsed.commentId)) return { status: 200 }
+    this.seenComments.add(parsed.commentId)
+
+    const h = this.onMessageHandler
+    if (h) {
+      try {
+        h({
+          ref: { id: String(parsed.commentId), scope: parsed.scope },
+          scope: parsed.scope,
+          authorId: parsed.authorLogin,
+          authorName: parsed.authorLogin,
+          text: parsed.body,
+          // A webhook subscription delivers every comment on subscribed repos, not
+          // only @mentions — leave directedness to the host's mention gate.
+          mentionsBot: this._botUserId ? parsed.body.includes(`@${this._botUserId}`) : false,
+          authorAssociation: parsed.authorAssociation,
+          isThread: true,
+          scopeLabel: parsed.scope,
+        })
+      } catch {
+        /* host isolates handler errors */
+      }
+    }
+    return { status: 200 }
   }
 
   // ─── outbound ─────────────────────────────────────────────────────────────
@@ -547,4 +623,60 @@ export function issueNumberFromSubjectUrl(url: string | undefined): number | und
   if (!last) return undefined
   const n = Number(last)
   return Number.isInteger(n) && n > 0 ? n : undefined
+}
+
+/** Verify a GitHub `X-Hub-Signature-256` header (`sha256=<hex>`) against the raw
+ *  body using the shared webhook secret. Constant-time compare; false on any
+ *  malformed input. Pure (unit-testable). */
+export function verifyGitHubSignature(
+  secret: string,
+  body: string,
+  signature: string | undefined,
+): boolean {
+  if (!signature || !signature.startsWith('sha256=')) return false
+  const expected = 'sha256=' + createHmac('sha256', secret).update(body).digest('hex')
+  const a = Buffer.from(signature)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+type ParsedIssueComment = {
+  action: string
+  room: ScopeId
+  scope: ScopeId
+  commentId: number
+  authorLogin: string
+  authorAssociation?: string
+  body: string
+}
+
+/** Parse an `issue_comment` webhook body into the fields we surface, or undefined if
+ *  the shape is unexpected. Pure (unit-testable). Works for issue and PR-conversation
+ *  comments alike (GitHub models a PR as an issue). */
+export function parseIssueCommentEvent(body: string): ParsedIssueComment | undefined {
+  let p: {
+    action?: string
+    comment?: { id?: number; body?: string; user?: { login?: string }; author_association?: string }
+    issue?: { number?: number }
+    repository?: { name?: string; owner?: { login?: string } }
+  }
+  try {
+    p = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  const owner = p.repository?.owner?.login
+  const repo = p.repository?.name
+  const num = p.issue?.number
+  const commentId = p.comment?.id
+  if (!owner || !repo || typeof num !== 'number' || typeof commentId !== 'number') return undefined
+  return {
+    action: p.action ?? '',
+    room: buildRoomId(owner, repo),
+    scope: buildScopeId(owner, repo, num),
+    commentId,
+    authorLogin: p.comment?.user?.login ?? '',
+    authorAssociation: p.comment?.author_association,
+    body: p.comment?.body ?? '',
+  }
 }

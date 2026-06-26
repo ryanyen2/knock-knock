@@ -74,7 +74,22 @@ export type TurnContext = {
   text: string
 }
 
-export class ConsoleUI {
+/** Boot-banner entry — one per started agent. */
+export type BannerAgent = { key: string; runtime: string; workspace: string }
+
+/** The operator-facing renderer seam. The relay/host speak only this interface, so the
+ *  single-stream `ConsoleUI` and the multi-pane `PaneTUI` (src/tui.ts) are interchangeable.
+ *  Per-bot methods are keyed by `agentKey`; `banner` is global. */
+export interface RelayUI {
+  banner(agents: BannerAgent[]): void
+  connected(agentKey: string, displayName: string): void
+  turnStart(agentKey: string, ctx: TurnContext): void
+  event(agentKey: string, e: AgentEvent): void
+  note(agentKey: string, text: string): void
+  error(agentKey: string, text: string): void
+}
+
+export class ConsoleUI implements RelayUI {
   /** toolCallId → display label, so a failed result can name its tool. */
   private readonly toolLabels = new Map<string, string>()
   /** Agents that already showed an assistant-text preview this turn (collapse a streamed reply to one line). */

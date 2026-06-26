@@ -12,7 +12,9 @@ const USAGE = `knock-knock ${pkg.version} — your agents, their agents, one cha
 
 Usage:
   knock-knock setup                  Configure bots, channels, roster, tokens, ledger
-  knock-knock relay [key…] [--pick]  Start the relay (default: every configured bot)
+  knock-knock relay [key…] [flags]   Start the relay (default: every configured bot)
+       flags: --pick choose active bots · --config quick per-bot setup
+              --tui multi-pane view · --daemon idle bots wake on message
   knock-knock                        Setup if nothing is configured yet, else relay
   knock-knock --version              Print the version
   knock-knock --help                 Print this help

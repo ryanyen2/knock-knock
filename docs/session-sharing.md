@@ -19,6 +19,13 @@ thread's next turn picks the context up. (Run it at the top level, with no
 thread, and it lands at the channel scope instead.) The control command itself
 never opens a thread — it acts in the scope it was typed in.
 
+> **Importing at relay launch.** `knock-knock relay --config` (or `--pick`) can also
+> import a session as part of per-bot quick setup. Because no task thread exists yet at
+> launch, a startup import lands on the **room/channel scope** — top-level turns in that
+> channel see it, but the per-task threads spawned later (each its own scope) do not.
+> For thread-scoped context, use the in-chat `share session` inside that thread instead.
+> Startup import is best-effort (`applyQuickConfig` in `src/relay-startup.ts`).
+
 Two modes:
 - **import** (`share session` / `import session`) — distill a one-shot context
   brief and inject it. Cross-runtime, cross-machine, low-risk.

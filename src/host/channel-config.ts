@@ -6,7 +6,7 @@ import { admit } from '../ledger/admit.ts'
 import type { ChannelId } from '../ledger/interaction.ts'
 import {
   CONFIG_FOLD,
-  configArtifact,
+  buildConfigSet,
   configFor,
   resolveConfigFor,
   latestConfigHash,
@@ -80,16 +80,7 @@ export class ChannelConfigControl {
     // Chain caused_by onto the latest config so re-affirming a value isn't hash-deduped.
     const latest = latestConfigHash(this.state(), writeScope)
     const delta = parsed.action === 'reset' ? { _clear: parsed.keys } : parsed.delta
-    await admit(this.ctx.store, {
-      actor: ownerId,
-      role: 'owner',
-      channel: writeScope,
-      target: { artifactId: configArtifact(writeScope), anchor: { kind: 'none' } },
-      verb: 'config.set',
-      patch: { kind: 'external', intent: { channel: 'tool', op: 'config.set', args: delta } },
-      effect: 'pure',
-      caused_by: latest ? [latest] : [],
-    })
+    await admit(this.ctx.store, buildConfigSet(ownerId, writeScope, delta, latest))
 
     if (parsed.action === 'reset') {
       await this.ctx.discordSend(scopeId, renderConfigReset(parsed.keys))

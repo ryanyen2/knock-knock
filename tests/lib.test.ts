@@ -24,6 +24,7 @@ import {
   threadNameFromPrompt,
   matchesMentionPattern,
   guildSenderAllowed,
+  githubAssociationTrusted,
   senderKind,
   isShareSessionCommand,
   isResumeSessionCommand,
@@ -51,6 +52,7 @@ import {
   FILE_INGEST_LIMITS,
   channelKey,
   projectToRuntime,
+  renameBot,
   replyClaimKey,
   driveClaimKey,
   isAddressed,
@@ -282,6 +284,37 @@ test('channelKey: namespaces a channel id by platform', () => {
   expect(channelKey('slack', 'C1')).not.toBe(channelKey('discord', 'C1'))
 })
 
+// ─── renameBot (bot-centric authoring edit) ──────────────────────────────────
+
+test('renameBot: moves the bot and rewrites every membership reference', () => {
+  const out = renameBot(AUTHORING, 'reviewer', 'critic')
+  expect(Object.keys(out.bots).sort()).toEqual(['builder', 'critic'])
+  expect(out.bots.critic!.tokenEnv).toBe('REVIEWER_TOKEN') // tokenEnv untouched (keeps .env entry)
+  // Memberships that named the old key now name the new one; others are untouched.
+  expect(out.channels['discord:C_INFRA']!.members[0]!.bot).toBe('critic')
+  expect(out.channels['discord:C_WEB']!.members[0]!.bot).toBe('critic')
+  expect(out.channels['discord:C_Z']!.members[0]!.bot).toBe('builder')
+})
+
+test('renameBot: does not mutate the input', () => {
+  const out = renameBot(AUTHORING, 'reviewer', 'critic')
+  expect(out).not.toBe(AUTHORING)
+  expect(AUTHORING.bots.reviewer).toBeDefined() // original still has the old key
+  expect(AUTHORING.channels['discord:C_INFRA']!.members[0]!.bot).toBe('reviewer')
+})
+
+test('renameBot: no-op when the key is unchanged', () => {
+  expect(renameBot(AUTHORING, 'reviewer', 'reviewer')).toBe(AUTHORING)
+})
+
+test('renameBot: rejects an unknown source key', () => {
+  expect(() => renameBot(AUTHORING, 'ghost', 'critic')).toThrow('no bot "ghost"')
+})
+
+test('renameBot: rejects a collision with an existing bot', () => {
+  expect(() => renameBot(AUTHORING, 'reviewer', 'builder')).toThrow('already exists')
+})
+
 // ─── resolveReactionScope ────────────────────────────────────────────────────
 
 test('resolveReactionScope: a reaction on a message that spawned a thread targets the thread', () => {
@@ -500,6 +533,18 @@ test('guildSenderAllowed: owner allowed, self denied, peer/human allowed, strang
   expect(guildSenderAllowed(ROOM, 'STRANGER', 'SELF', 'OWNER')).toBe(false)
 })
 
+test('githubAssociationTrusted: OWNER/MEMBER/COLLABORATOR trusted, rest not', () => {
+  expect(githubAssociationTrusted('OWNER')).toBe(true)
+  expect(githubAssociationTrusted('MEMBER')).toBe(true)
+  expect(githubAssociationTrusted('COLLABORATOR')).toBe(true)
+  expect(githubAssociationTrusted('collaborator')).toBe(true) // case-insensitive
+  expect(githubAssociationTrusted('CONTRIBUTOR')).toBe(false)
+  expect(githubAssociationTrusted('FIRST_TIME_CONTRIBUTOR')).toBe(false)
+  expect(githubAssociationTrusted('NONE')).toBe(false)
+  expect(githubAssociationTrusted(undefined)).toBe(false)
+  expect(githubAssociationTrusted('')).toBe(false)
+})
+
 test('senderKind: classifies owner/human/agent/unknown', () => {
   expect(senderKind(ROOM, 'OWNER', 'OWNER')).toBe('owner')
   expect(senderKind(ROOM, 'HUMAN1', 'OWNER')).toBe('human')
@@ -628,11 +673,18 @@ test('parseConfigCommand: reset requires a settable key', () => {
 })
 
 test('parseConfigCommand: a terminal-only key is refused by name (the trust surface)', () => {
-  for (const key of ['humans', 'token', 'sandbox', 'deny', 'preset', 'runtime']) {
+  for (const key of ['humans', 'token', 'sandbox', 'deny', 'preset', 'workspace']) {
     const r = parseConfigCommand(`!config ${key} whatever`)
     expect(r?.action).toBe('error')
     if (r?.action === 'error') expect(r.message.toLowerCase()).toContain('terminal')
   }
+})
+
+test('parseConfigCommand: the coding agent is chat-switchable via the `agent` key', () => {
+  expect(parseConfigCommand('!config agent codex')).toEqual({ action: 'set', delta: { runtime: 'codex' } })
+  expect(CHAT_SETTABLE_KEYS).toContain('agent')
+  // An unknown runtime is rejected (enum validation), not silently accepted.
+  expect(parseConfigCommand('!config agent not-a-runtime')?.action).toBe('error')
 })
 
 test('parseConfigCommand: role plus the safety/limit knobs are settable from chat', () => {

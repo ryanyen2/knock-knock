@@ -29,6 +29,7 @@
  * to a fast-follow; this file is purely the polling substrate (B) it would sit on.
  */
 
+import { createHmac, timingSafeEqual } from 'crypto'
 import { Client } from '@notionhq/client'
 import type {
   MessagingAdapter,
@@ -40,6 +41,8 @@ import type {
   ScopeId,
   SendOpts,
   Glyph,
+  WebhookRequest,
+  WebhookResponse,
 } from '../messaging-adapter.ts'
 import { choiceMenuText, outboundFileNotice } from '../messaging-fallback.ts'
 import { toNotionRichText } from './dialect.ts'
@@ -116,11 +119,31 @@ export class NotionMessagingAdapter implements MessagingAdapter {
   // Cache: page id → display label, for IncomingMessage.scopeLabel.
   private readonly pageLabel = new Map<ScopeId, string>()
 
+  // ─── runtime config (configure, before connect) ──────────────────────────────
+  /** Database / page ids this bot serves. When non-empty the sweep polls only these
+   *  (a database room is expanded into its child pages), instead of search-everything.
+   *  Empty ⇒ the v1 search-all fallback. */
+  private trackedRooms: string[] = []
+  /** 'poll' (default) or 'webhook' — in webhook mode the sweep is not armed. */
+  private intake: 'poll' | 'webhook' = 'poll'
+  /** Notion webhook `verification_token` (from the subscription handshake, or
+   *  pre-seeded via the `notionVerificationToken` secret). When set, `X-Notion-Signature`
+   *  is verified on each event. */
+  private verificationToken: string | undefined
+
+  configure(opts: { trackedRooms?: string[]; intake?: 'poll' | 'webhook' }): void {
+    // Canonicalize tracked ids to the hyphenless form so they match scope ids the
+    // adapter emits (and so a hyphenated entry in access.json still lines up).
+    this.trackedRooms = (opts.trackedRooms ?? []).map(normalizeNotionId)
+    if (opts.intake) this.intake = opts.intake
+  }
+
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
-  // Notion is single-token; `secrets` (unused) is part of the seam contract.
-  async connect(token: string, _secrets?: Record<string, string>): Promise<void> {
+  // Notion is single-token; `secrets` may carry a pre-seeded webhook verification token.
+  async connect(token: string, secrets?: Record<string, string>): Promise<void> {
     this.notion = new Client({ auth: token })
+    this.verificationToken = secrets?.notionVerificationToken
     try {
       const me = (await this.notion.users.me({})) as { id?: string; name?: string | null }
       this._botUserId = me.id
@@ -129,8 +152,9 @@ export class NotionMessagingAdapter implements MessagingAdapter {
       // A bad token surfaces later on the first poll; don't throw out of connect.
     }
     this.stopped = false
-    // Start the local poll loop — there is NO public server (the GA path).
-    this.scheduleNextSweep(0)
+    // INTAKE: poll comments locally (no public server) unless the host opted this bot
+    // into webhook mode, in which case the WebhookReceiver feeds `ingestWebhook` instead.
+    if (this.intake !== 'webhook') this.scheduleNextSweep(0)
   }
 
   async disconnect(): Promise<void> {
@@ -158,10 +182,10 @@ export class NotionMessagingAdapter implements MessagingAdapter {
       threads: false,
       // No inline interactive components → choices render as a numbered text menu.
       buttons: false,
-      // Comments aren't editable in place via the API, so edit() always returns
-      // false (the seam treats that as "re-post"). The capability must agree —
-      // advertising edit:true would make the host trust an edit that can't succeed.
-      edit: false,
+      // Comments ARE editable in place via `PATCH /v1/comments` (SDK
+      // `comments.update`), so status/Workbench updates rewrite a comment instead of
+      // spamming new ones.
+      edit: true,
       pin: false,
       dm: false,
       // No native "integration was mentioned" event — detected by scanning text.
@@ -230,13 +254,24 @@ export class NotionMessagingAdapter implements MessagingAdapter {
     }
   }
 
-  /** Notion comments are NOT editable in the seam's sense. (`comments.update`
-   *  exists, but our contract is "false ⇒ caller re-posts"; treating a status
-   *  edit as a fresh comment is the honest degradation, since callers expect
-   *  edit-in-place and Notion's update semantics/visibility differ.) Returning
-   *  false lets the host re-post a fresh status comment instead. */
-  async edit(_ref: MessageRef, _text: string, _opts?: SendOpts): Promise<boolean> {
-    return false
+  /** Edit a comment in place via `PATCH /v1/comments` (SDK `comments.update`). The
+   *  body is re-rendered to rich_text the same way `send` builds it; returns false on
+   *  any failure so the host can fall back to a re-post. */
+  async edit(ref: MessageRef, text: string, opts?: SendOpts): Promise<boolean> {
+    if (!this.notion) return false
+    let content = text
+    if (opts?.choices && opts.choices.length > 0) content += `\n\n${choiceMenuText(opts.choices)}`
+    const notice = opts?.files ? outboundFileNotice(opts.files, this.capabilities()) : null
+    if (notice) content += `\n${notice}`
+    const richText = toNotionRichText(content).slice(0, 100)
+    try {
+      // `comments.update` is typed loosely across SDK minor versions; the REST shape
+      // is { comment_id, rich_text }. Cast to satisfy the param type without re-deriving it.
+      await this.notion.comments.update({ comment_id: ref.id, rich_text: richText } as never)
+      return true
+    } catch {
+      return false
+    }
   }
 
   // No reactions API for comments — no-op (capability reactions:'none').
@@ -309,16 +344,14 @@ export class NotionMessagingAdapter implements MessagingAdapter {
   }
 
   /**
-   * One poll sweep: discover accessible pages, then for each list its comments and
+   * One poll sweep: discover the pages to poll, then list each one's comments and
    * emit IncomingMessage for ones we haven't seen.
    *
-   * TODO(coordinator): this scans EVERY page the integration can see, which is
-   * crude and burns the ~3 req/s budget. The host should instead pass an explicit
-   * set of "tracked" page/database ids — the `notion:<id>` channels from
-   * access.json — so the loop only polls the project boundaries that matter. The
-   * search-everything path below is the v1 placeholder until that config seam
-   * exists. Requests are already serialized + spaced (`pace()`) to respect the
-   * rate limit, but a large workspace still wants the explicit tracked set.
+   * When the host has configured `trackedRooms` (the `notion:<id>` channels from
+   * access.json), the sweep polls only those project boundaries — closing the old
+   * search-everything path that scanned (and was injection-exposed to) every page the
+   * integration could see. Search-all remains only as the unconfigured fallback.
+   * Requests are serialized + spaced (`pace()`) to respect the ~3 req/s ceiling.
    */
   private async sweep(): Promise<void> {
     if (!this.notion || this.stopped) return
@@ -332,10 +365,13 @@ export class NotionMessagingAdapter implements MessagingAdapter {
     this.primed = true
   }
 
-  /** Accessible page ids (v1: search-everything; see sweep() TODO for the
-   *  tracked-ids config gap the coordinator should close). */
+  /** The page ids to poll this sweep. With `trackedRooms` set: each tracked id is
+   *  polled directly (a page room), and best-effort expanded as a data source into its
+   *  child pages (a database room) — bounded by MAX_PAGES_PER_SWEEP. Unconfigured:
+   *  fall back to v1 search-everything. */
   private async discoverPages(): Promise<ScopeId[]> {
     if (!this.notion) return []
+    if (this.trackedRooms.length > 0) return this.discoverTrackedPages()
     try {
       await this.pace()
       const res = (await this.notion.search({
@@ -345,15 +381,47 @@ export class NotionMessagingAdapter implements MessagingAdapter {
       const out: ScopeId[] = []
       for (const r of res.results ?? []) {
         if (!r.id) continue
+        const pageId = normalizeNotionId(r.id)
         // Opportunistically cache the scope→room parent so parentOfSync is warm.
         const room = roomFromParent(r.parent)
-        if (room) this.scopeToRoom.set(r.id, room)
-        out.push(r.id)
+        if (room) this.scopeToRoom.set(pageId, room)
+        out.push(pageId)
       }
       return out
     } catch {
       return []
     }
+  }
+
+  /** Expand the configured tracked rooms into pages to poll: the id itself (page
+   *  room), plus any child pages when it's a data source (database room). */
+  private async discoverTrackedPages(): Promise<ScopeId[]> {
+    if (!this.notion) return []
+    const out: ScopeId[] = []
+    for (const id of this.trackedRooms) {
+      if (out.length >= MAX_PAGES_PER_SWEEP) break
+      // Always poll the id directly — comments on a page room live on the page itself.
+      out.push(id)
+      // Best-effort: if it's a data source (database), pull its child pages too. A page
+      // id will just throw here and is skipped.
+      try {
+        await this.pace()
+        const res = (await this.notion.dataSources.query({
+          data_source_id: id,
+          page_size: Math.max(1, MAX_PAGES_PER_SWEEP - out.length),
+        } as never)) as { results?: Array<{ id?: string }> }
+        for (const r of res.results ?? []) {
+          if (r.id && out.length < MAX_PAGES_PER_SWEEP) {
+            const childId = normalizeNotionId(r.id)
+            this.scopeToRoom.set(childId, id) // child page's room is the database
+            out.push(childId)
+          }
+        }
+      } catch {
+        // Not a data source (or query unsupported) — the direct poll above covers it.
+      }
+    }
+    return out
   }
 
   /** List one page's comments and emit IncomingMessage for new, non-self ones. */
@@ -399,6 +467,72 @@ export class NotionMessagingAdapter implements MessagingAdapter {
     }
   }
 
+  // ─── webhook intake (event-driven mode; the relay's WebhookReceiver feeds this) ──
+
+  /**
+   * Parse a pushed Notion webhook. Handles the one-time subscription **verification**
+   * handshake (Notion POSTs `{ verification_token }` when you create the subscription —
+   * we capture it and echo 200), then `comment.created` events. Notion payloads are
+   * ID-only, so we fetch the comment body via REST (reusing the poll path's shape),
+   * dedup against `seenComments`, self-filter, and emit an IncomingMessage. When a
+   * verification token is known, `X-Notion-Signature` is verified (401 on mismatch).
+   */
+  async ingestWebhook(req: WebhookRequest): Promise<WebhookResponse> {
+    let payload: {
+      verification_token?: string
+      type?: string
+      entity?: { id?: string; type?: string }
+      data?: { page_id?: string }
+    }
+    try {
+      payload = JSON.parse(req.body)
+    } catch {
+      return { status: 400 }
+    }
+
+    // 1. Verification handshake — capture the token, echo it, and surface it on the
+    //    relay console so the operator can paste it into Notion's "Verify" dialog and
+    //    save it as NOTION_VERIFICATION_TOKEN to survive restarts.
+    if (payload.verification_token) {
+      this.verificationToken = payload.verification_token
+      return {
+        status: 200,
+        body: payload.verification_token,
+        log:
+          `Notion webhook verification token (paste into the subscription's Verify ` +
+          `dialog, and save as NOTION_VERIFICATION_TOKEN to persist):\n    ${payload.verification_token}`,
+      }
+    }
+
+    // 2. Signature check when we have a token to verify against.
+    if (this.verificationToken) {
+      const sig = req.headers['x-notion-signature']
+      if (!verifyNotionSignature(this.verificationToken, req.body, sig)) return { status: 401 }
+    }
+
+    // 3. Only act on new comments; other event types are accepted but ignored.
+    if (payload.type !== 'comment.created') return { status: 202 }
+    const commentId = payload.entity?.id
+    const pageId = payload.data?.page_id ? normalizeNotionId(payload.data.page_id) : undefined
+    if (!commentId || !pageId) return { status: 200 }
+    if (this.seenComments.has(commentId)) return { status: 200 }
+    this.seenComments.add(commentId)
+
+    // 4. Fetch the comment body (the payload is ID-only), then emit.
+    if (this.notion) {
+      try {
+        const c = (await this.notion.comments.retrieve({ comment_id: commentId })) as NotionComment
+        if (!c.created_by?.id || c.created_by.id !== this._botUserId) {
+          const h = this.onMessageHandler
+          if (h) h(this.toIncoming(pageId, c))
+        }
+      } catch {
+        /* best-effort; a failed fetch just drops this event */
+      }
+    }
+    return { status: 200 }
+  }
+
   // ─── translation ──────────────────────────────────────────────────────────────
 
   private toIncoming(pageId: ScopeId, c: NotionComment): IncomingMessage {
@@ -406,15 +540,19 @@ export class NotionMessagingAdapter implements MessagingAdapter {
     const text = nodes.map(n => n.plain_text ?? '').join('')
     const authorId = c.created_by?.id ?? 'unknown'
     const authorName = c.display_name?.resolved_name ?? authorId
+    // Canonicalize the page id so the scope matches the hyphenless room key in
+    // access.json regardless of whether it arrived via poll (already hyphenless) or
+    // webhook (hyphenated). Without this the host's exact-key room lookup misses.
+    const scope = normalizeNotionId(pageId)
     return {
-      ref: { id: c.id, scope: pageId },
-      scope: pageId,
+      ref: { id: c.id, scope },
+      scope,
       authorId,
       authorName,
       text,
       mentionsBot: this.detectMention(nodes, text),
       isThread: false, // comment threads collapse to the page scope (threads:false)
-      scopeLabel: this.pageLabel.get(pageId) ?? `notion:${pageId}`,
+      scopeLabel: this.pageLabel.get(scope) ?? `notion:${scope}`,
     }
   }
 
@@ -446,15 +584,39 @@ export class NotionMessagingAdapter implements MessagingAdapter {
   }
 }
 
+/** Verify a Notion `X-Notion-Signature` header (`sha256=<hex>`) against the raw body,
+ *  keyed by the subscription's `verification_token`. Constant-time; false on any
+ *  malformed input. Pure (unit-testable). */
+export function verifyNotionSignature(
+  token: string,
+  body: string,
+  signature: string | undefined,
+): boolean {
+  if (!signature) return false
+  const expected = 'sha256=' + createHmac('sha256', token).update(body).digest('hex')
+  const a = Buffer.from(signature)
+  const b = Buffer.from(expected)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
+
+/** Canonicalize a Notion id to the hyphenless, lowercase form. The REST API and
+ *  webhooks return hyphenated UUIDs, while `access.json` channel ids are stored
+ *  hyphenless (`notionId` in setup) — so scope/room ids MUST be normalized to one form
+ *  or an exact-key room lookup in the host fails (a webhook'd comment would be dropped).
+ *  Pure; idempotent; passes non-id strings through unchanged. */
+export function normalizeNotionId(id: string | undefined): string {
+  return (id ?? '').replace(/-/g, '').toLowerCase()
+}
+
 /** Project a Notion page parent onto a room id (database / data_source / page /
- *  block). Workspace- and agent-parented pages have no room → undefined. Pure. */
+ *  block), normalized to the hyphenless form. Workspace- and agent-parented pages have
+ *  no room → undefined. Pure. */
 function roomFromParent(parent: NotionPageParent | undefined): ScopeId | undefined {
-  if (!parent) return undefined
-  return (
-    parent.database_id ??
-    parent.data_source_id ??
-    parent.page_id ??
-    parent.block_id ??
+  const raw =
+    parent?.database_id ??
+    parent?.data_source_id ??
+    parent?.page_id ??
+    parent?.block_id ??
     undefined
-  )
+  return raw ? normalizeNotionId(raw) : undefined
 }

@@ -319,6 +319,24 @@ Each phase ends green on `bun test` + `bun run typecheck` with Discord untouched
 
 ---
 
+## Implementation status (2026-06-26)
+
+GitHub + Notion hardened from "scaffold" to "usable", plus opt-in event-driven intake.
+**`bun run typecheck` clean; `bun test` 318/318; Discord + ledger untouched.**
+
+| Area | State | Where |
+|---|---|---|
+| Buttons-as-text → action (§A) | **done** (was already wired) | `PendingChoicePrompts`, `tryResolveTextChoice` (`agent-host.ts`) |
+| setup platform picker + secrets | **done** (+ intake picker) | `PLATFORMS`, `pickPlatform`, `addBot` (`setup.ts`) |
+| GitHub author gating (§C) | **done** | `githubAssociationTrusted` (`lib.ts`); gate in `agent-host.ts`; `author_association` surfaced (`github.ts`) |
+| Tracked-room scoping (§D) | **done** | `configure({trackedRooms})` seam; `discoverTrackedPages` (`notion.ts`); repo filter (`github.ts`) |
+| Notion edit-in-place | **done** | `comments.update` PATCH; `capabilities().edit=true` (`notion.ts`) |
+| Event-driven webhook intake | **done, opt-in** | `webhook-receiver.ts`; `ingestWebhook` (`github.ts`/`notion.ts`); relay wiring; `Bot.intake` |
+| Notion PAT | **supported** | single bearer token (no code change); auth verified live (create/edit needs a connected page) |
+
+Design + usage of the webhook layer: `docs/messaging-event-driven-intake.md`. Setup
+(tokens, intake, gating) per platform: `docs/messaging-platforms-setup.md`.
+
 ## Implementation status (2026-06-24)
 
 Phase 0 + all four adapter scaffolds landed in one coordinator-led pass.
@@ -439,10 +457,25 @@ bot can be `claude-sdk` on Discord and `codex` on a GitHub repo (per-channel
 
 ### Prioritized next tasks (post-scaffold)
 
-1. **Host buttons-as-text → `IncomingAction`** (unblocks GitHub/Notion approvals; §A).
-2. **Per-platform author gating** into `guildSenderAllowed` (GitHub/Notion safety; §C).
-3. **Pass tracked channel ids to poll-based adapters** (Notion/GitHub scoping; §D).
-4. **setup.ts**: platform picker + per-platform secret capture (`secretEnv`).
-5. Live smoke test each adapter against real credentials (the SDK-payload field
-   names are matched to docs, not types — one live run each).
-6. Slack outbound file upload; GitHub App identity; Telegram local Bot API server.
+Status as of 2026-06-26 — most of this list shipped; see "Implementation status
+(2026-06-26)" below.
+
+1. ~~**Host buttons-as-text → `IncomingAction`**~~ — **done** (`PendingChoicePrompts` +
+   `tryResolveTextChoice` in `agent-host.ts`, routed through `dispatchAction`; §A).
+2. ~~**Per-platform author gating**~~ — **done for GitHub** (`githubAssociationTrusted`
+   widens the inbound gate to OWNER/MEMBER/COLLABORATOR; Notion stays strict — owner +
+   roster only; §C).
+3. ~~**Pass tracked channel ids to poll-based adapters**~~ — **done** (`configure({
+   trackedRooms })` seam; Notion polls only tracked pages/databases; GitHub filters
+   notifications by repo; §D).
+4. ~~**setup.ts**: platform picker + per-platform secret capture~~ — **done**, now also
+   an **intake mode** picker (poll/webhook) for github/notion.
+5. **Event-driven (webhook) intake** — **done, opt-in** (`src/webhook-receiver.ts` +
+   adapter `ingestWebhook`; GitHub via `gh webhook forward`, Notion via tunnel +
+   subscription). See `docs/messaging-event-driven-intake.md`.
+6. **Notion edit-in-place** — **done** (`comments.update` PATCH; `capabilities().edit`
+   true). PAT supported as the bearer token, no code change.
+7. Live smoke test the remaining adapters against real credentials (Notion PAT auth
+   verified; create/edit needs a connected page). Slack/Telegram/GitHub live runs pending.
+8. Slack outbound file upload; GitHub App identity; Telegram local Bot API server;
+   Notion file exchange; Notion Workers/External-Agents cloud bridge.

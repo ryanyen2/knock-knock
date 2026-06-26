@@ -14,6 +14,8 @@ import type {
   IncomingAction,
   IncomingReaction,
   Choice,
+  WebhookRequest,
+  WebhookResponse,
 } from './messaging-adapter.ts'
 import {
   readSessionBinding,
@@ -26,6 +28,7 @@ import {
   type RoomConfig,
   type PreambleContext,
   guildSenderAllowed,
+  githubAssociationTrusted,
   senderKind,
   buildRosterLinesForRoom,
   approverForAgent,
@@ -61,7 +64,7 @@ import {
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
-import { ConsoleUI } from './console-ui.ts'
+import type { RelayUI } from './console-ui.ts'
 import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
 import type { AgentEvent, PermissionProfile } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
@@ -115,6 +118,9 @@ function boundedMapSet<K, V>(map: Map<K, V>, key: K, value: V, cap: number): voi
 /** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
   driver: Driver
+  /** The coding-agent runtime this session was built for. A `!config agent` change
+   *  makes the resolved runtime differ, which forces a rebuild in getOrCreateSession. */
+  runtime: string
   /** True until the first turn completes (or a resume binding is rebound): the runtime
    *  has no memory of this scope yet, so a cold session is fed a `<thread-recap>`. */
   cold: boolean
@@ -144,6 +150,14 @@ export class AgentHost {
   private readonly messaging: MessagingAdapter
   private readonly approvals: Approvals
   private readonly courier: DmCourier
+  /** Activation state (daemon/idle mode). Active = picked at boot (has a pane); idle =
+   *  connected-and-listening but no pane/session until its first message wakes it. Defaults
+   *  to active so non-daemon launches are unchanged. Coding-agent sessions are lazy either
+   *  way, so an idle host costs only its gateway connection. */
+  private active = true
+  /** Called the first time an idle host admits an inbound message (it wakes). The relay
+   *  uses this to allocate a TUI pane / promote the bot. Set by the relay; no-op otherwise. */
+  onWake?: (key: string) => void
   private readonly sessions = new Map<ChannelId, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
@@ -187,7 +201,7 @@ export class AgentHost {
     private readonly key: string,
     private readonly agent: AgentConfig,
     private readonly getAccess: () => Access,
-    private readonly ui: ConsoleUI,
+    private readonly ui: RelayUI,
     private readonly ledger: Ledger,
     private readonly store: Store,
     private readonly engine: FoldEngine,
@@ -300,14 +314,61 @@ export class AgentHost {
     const secrets: Record<string, string> = {}
     const needed = this.messaging.requiredSecrets ?? []
     const secretEnv = this.agent.secretEnv ?? {}
-    for (const name of needed) {
-      const envName = secretEnv[name]
+    // Resolve every declared secret (required + optional, e.g. a webhook secret) from
+    // its env var, then warn only for missing REQUIRED ones — an unset optional secret
+    // (no webhook configured) is fine.
+    for (const [name, envName] of Object.entries(secretEnv)) {
       const value = envName ? process.env[envName] : undefined
       if (value) secrets[name] = value
-      else this.ui.note(this.key, `missing secret "${name}" (set ${envName ?? `secretEnv.${name}`})`)
     }
+    for (const name of needed) {
+      if (!secrets[name]) {
+        this.ui.note(this.key, `missing secret "${name}" (set ${secretEnv[name] ?? `secretEnv.${name}`})`)
+      }
+    }
+    // Apply runtime config (tracked rooms scope the poll/sweep; intake selects
+    // poll vs webhook) before connecting. No-op on adapters without `configure`.
+    this.messaging.configure?.({
+      trackedRooms: Object.keys(this.agent.rooms),
+      ...(this.agent.intake ? { intake: this.agent.intake } : {}),
+    })
     await this.messaging.connect(token, secrets)
     this.ui.connected(this.key, this.messaging.botLabel ?? this.messaging.botUserId ?? this.key)
+  }
+
+  /** This host's bot key (the access.json bot id) — used to route webhook paths. */
+  get botKey(): string {
+    return this.key
+  }
+
+  /** Whether this host is active (vs idle/listening). */
+  get isActive(): boolean {
+    return this.active
+  }
+
+  /** Mark this host idle (daemon mode): connected and listening, but no pane/session
+   *  until its first inbound message wakes it. */
+  setIdle(): void {
+    this.active = false
+  }
+
+  /** The messaging platform this host speaks (e.g. 'github', 'notion'). */
+  get platform(): string {
+    return this.messaging.platform
+  }
+
+  /** Whether this host's adapter is in event-driven (webhook) intake mode — the relay
+   *  uses this to decide whether to open the shared WebhookReceiver. */
+  get usesWebhookIntake(): boolean {
+    return this.agent.intake === 'webhook' && typeof this.messaging.ingestWebhook === 'function'
+  }
+
+  /** Feed a pushed webhook to this host's adapter (event-driven intake). Delegates to
+   *  the adapter, which parses + emits via its `onMessage` handler. 501 if the adapter
+   *  has no webhook support. */
+  async ingestWebhook(req: WebhookRequest): Promise<WebhookResponse> {
+    if (!this.messaging.ingestWebhook) return { status: 501 }
+    return this.messaging.ingestWebhook(req)
   }
 
   async stop(): Promise<void> {
@@ -827,7 +888,12 @@ export class AgentHost {
     }
 
     const ownerId = liveAgent.ownerUserId
-    if (!guildSenderAllowed(room, m.authorId, botId, ownerId)) return
+    // Sender allowlist (owner + roster). On the open GitHub surface, also admit a
+    // trusted repo author (OWNER/MEMBER/COLLABORATOR) so a repo's real collaborators
+    // work without being re-listed — the deny floor + ask-first model still bounds them.
+    const trustedByPlatform =
+      this.messaging.platform === 'github' && githubAssociationTrusted(m.authorAssociation)
+    if (!guildSenderAllowed(room, m.authorId, botId, ownerId) && !trustedByPlatform) return
 
     // Per-channel overlay (owner `!config`): rate cap, require-mention, mention
     // patterns, ack. Room-keyed — these gate inbound BEFORE a thread exists (raw room overlay).
@@ -999,6 +1065,15 @@ export class AgentHost {
       caused_by: prior ? [prior.hash] : [],
     })
     if (inboundResult.kind !== 'admitted') return
+
+    // Wake on first message (daemon/idle mode): this host just admitted a message, so all
+    // the gates (allowlist, mention, rate, reply-claim/targeting) already decided it should
+    // engage — promote it to active so it gets a pane. The turn then drives normally
+    // (reply-claim → drive-turn → lazy session). Quiet by design: no chat message.
+    if (!this.active) {
+      this.active = true
+      try { this.onWake?.(this.key) } catch {}
+    }
 
     // Stash messaging context so sync-driven UX can react/edit the inbound later.
     const channelLabel = m.scopeLabel ?? `#${roomId}`
@@ -1422,20 +1497,36 @@ export class AgentHost {
     liveAgent: AgentConfig,
     room: AgentConfig['rooms'][string],
   ): Session {
+    // Runtime resolves config-first: `!config agent` (owner-only) overrides the
+    // per-channel Membership.runtime and the bot default. Resolve it before the cache
+    // check so a chat-driven switch rebuilds the session instead of reusing a stale one.
+    const runtime = this.channelConfigFor(channelId).runtime ?? room.runtime ?? liveAgent.runtime
     const existing = this.sessions.get(channelId)
-    if (existing) return existing
+    if (existing) {
+      if (existing.runtime === runtime) return existing
+      // Coding agent switched in chat: drop the stale session and its resume binding
+      // (a foreign runtime can't resume — same guard as the rebind below) so a fresh
+      // adapter is built for the new runtime.
+      this.sessions.delete(channelId)
+      clearSessionBinding(this.key, channelId)
+      this.ui.note(this.key, `coding agent → ${runtime} in ${channelId} (new session)`)
+    }
 
     // applyPolicy is the real enforcement point; resolveRoomProfile re-unions DENY_FLOOR
     // so a threaded session is floored the same as a top-level one even for older profiles.
     const profile = resolveRoomProfile(room.profile)
-    // Workspace + runtime are membership-scoped (a bot is a portal); fall back to the
-    // bot defaults. Terminal-written, so fixed for the session's life (changes on restart).
+    // Workspace is membership-scoped (a bot is a portal); fall back to the bot default.
     const workspace = room.workspace ?? liveAgent.workspace
-    const runtime = room.runtime ?? liveAgent.runtime
+    // A Notion bot gets page-scoped read/write tools (claude-sdk only) so it can write
+    // INTO the page instead of editing local files. The page IS the scope (channelId);
+    // the token is the bot's transport token, resolved from its tokenEnv.
+    const notionToken =
+      liveAgent.platform === 'notion' ? process.env[liveAgent.tokenEnv] : undefined
     const adapter = makeAdapter(runtime, {
       workspace,
       watchTools: this.watchControl.toolsFor(channelId),
       sandbox: liveAgent.sandbox,
+      ...(notionToken ? { notion: { token: notionToken, pageId: channelId } } : {}),
     })
     const ctx: PreambleContext = {
       identity: {
@@ -1445,8 +1536,18 @@ export class AgentHost {
       },
       rosterLines: buildRosterLinesForRoom(room),
       canWatch: runtimeSelfArmsWatches(runtime),
+      ...(notionToken
+        ? {
+            platformNote:
+              'You are working on a Notion PAGE (not Discord). Your chat reply is posted as a COMMENT on the page. ' +
+              'To change the page itself, use the notion tools: read_page to see current content, append_to_page to write ' +
+              'paragraphs INTO the page body. When asked to add/write/describe something "in the page", use append_to_page — ' +
+              'do NOT edit local files to satisfy a page-editing request.',
+          }
+        : {}),
     }
     const created: Session = {
+      runtime,
       // Cold until proven warm: a fresh session has no runtime memory of this scope.
       // A valid resume binding (rebound below) clears it; so does the first completed turn.
       cold: true,

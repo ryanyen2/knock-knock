@@ -41,6 +41,16 @@ as **synchronizations**, not imperative branches.
   messaging client (via the `MessagingAdapter` seam — Discord today, see
   "Messaging platforms" below), token, runtime, workspace, and rooms.
 
+**Startup surface (`relay.ts` flags).** `--pick` chooses which bots are *active*;
+`--config`/`-c` gathers optional per-bot quick config (coding agent / model / thinking /
+effort / sessions) and seeds it as `config.set` per room before connect
+(`relay-startup.ts`); `--tui` swaps the single-stream `ConsoleUI` for a multi-pane
+`PaneTUI` (one pane per active bot) — both implement the `RelayUI` seam in `console-ui.ts`,
+so hosts are unchanged. `--daemon`/`--wake` connects EVERY credentialed bot but leaves the
+unpicked ones **idle** (listening, no pane/session) until their first message wakes them
+(`AgentHost.setIdle`/`onWake`; sessions are lazy, so idle costs only the gateway). Full
+design: **`docs/idle-wake.md`**.
+
 Inbound/outbound flow is entirely ledger-driven:
 
 ```
@@ -110,9 +120,12 @@ the room config (no thread). The room is the inherited default; rate-cap /
 require-mention / mention / ack stay **room-keyed** (they gate inbound *before* a
 thread exists). `role`/`end-goal` ride the per-turn `contextPrefix`;
 `model`/`thinking`/`effort` ride the per-turn `TurnOptions` (claude-sdk only; ACP
-self-manages); the permission `mode` applies a vetted preset to the room profile
-with `deny` always UNIONed (`applyModeToProfile`). `!context` curates a thread's
-shared-context notes over the same `knowledge` fold session-sharing imports into.
+self-manages); the `agent` key (`!config agent <runtime>`) switches the coding-agent
+runtime for the scope (owner-only; resolved config-first in `getOrCreateSession`, which
+rebuilds the session + drops its resume binding on a change); the permission `mode`
+applies a vetted preset to the room profile with `deny` always UNIONed
+(`applyModeToProfile`). `!context` curates a thread's shared-context notes over the
+same `knowledge` fold session-sharing imports into.
 
 Each behavior is one file in `ledger/synchronizations/` (rubric: a new behavior
 = one new synchronization, zero edits to concepts). Registered today:
@@ -168,10 +181,36 @@ Linux `bwrap`); the in-process `claude-sdk` can't be OS-jailed (it warns).
 react / dm / start-thread, plus `capabilities()` and reaction normalization), not
 a Discord SDK directly. `makeMessagingAdapter(agent.platform ?? 'discord')`
 (`adapters-msg/index.ts`) builds the concrete adapter; `discord.js` is confined to
-`adapters-msg/discord.ts`. **Discord is the live surface and the only `Platform`.**
+`adapters-msg/discord.ts`. **Discord is the most-tested surface**; `slack`, `telegram`,
+`github`, and `notion` adapters also implement the seam (`Platform` union in `lib.ts`).
 Supporting another platform is one new adapter file in `adapters-msg/` implementing
 the seam plus a branch in the factory — nothing else changes. Pure formatting/fallback
 helpers live in `messaging-fallback.ts` + `lib.ts`.
+
+**Intake strategy.** Discord/Slack ride a gateway; the poll-based platforms (github
+~60 s, notion ~10 s) default to local polling but can opt into **event-driven webhook
+intake** (`Bot.intake: 'webhook'`). When any bot opts in, the relay starts one shared
+inbound `Bun.serve` (`webhook-receiver.ts`, the only inbound server, bound to localhost)
+that routes `POST /<platform>/<botKey>` → `AgentHost.ingestWebhook` → the adapter's
+`ingestWebhook` (which verifies signature/handshake, then emits via the same `onMessage`
+path as polling). GitHub needs no public URL (`gh webhook forward`); Notion needs a
+tunnel. The host applies `configure({trackedRooms, intake})` before `connect` — tracked
+rooms scope the poll/sweep (notion stops scanning the whole workspace; github filters by
+repo). **Open-surface gating:** on GitHub, `githubAssociationTrusted` widens the inbound
+allowlist to OWNER/MEMBER/COLLABORATOR authors (notion stays owner+roster strict). Notion
+comments edit in place via `comments.update`. Full design:
+**`docs/messaging-event-driven-intake.md`**; per-platform setup:
+**`docs/messaging-platforms-setup.md`**.
+
+**Notion page-write tools.** A Notion bot's chat reply posts as a page *comment*; to
+edit the page *body* the `claude-sdk` agent gets a page-scoped in-process MCP server
+(`adapters/notion-mcp.ts`, mirrors `adapters/watch-mcp.ts`): `mcp__notion__read_page`
+and `mcp__notion__append_to_page`, locked to the conversation's page id (so it can't
+roam). Wired in `getOrCreateSession` (token from the bot's `tokenEnv`, page = the scope)
+→ `makeAdapter({notion})` → `ClaudeSdkAdapter`. A `PreambleContext.platformNote` tells
+the Notion bot its reply is a comment and page edits go through these tools, not local
+files. claude-sdk only. The host also gates `DmCourier` on `capabilities().dm` so
+DM-less platforms (Notion/GitHub) don't retry `dm()` every tool event.
 
 ### `AgentHost` (`agent-host.ts` + `host/`)
 
@@ -441,7 +480,7 @@ All persistent config lives in `~/.knock-knock/` (overridable via `KNOCK_KNOCK_S
 - `access.json` — written in the **channel-centric authoring shape** (`AuthoringAccess`, `lib.ts`): `{ me?, bots, channels, roster, mentionPatterns?, ackReaction? }`.
   - `me` — `Partial<Record<Platform, userId>>`: the owner's id per platform, entered **once** and reused (no per-bot owner re-entry).
   - `bots` — `Record<botId, Bot>`: `{platform, tokenEnv, runtime, sandbox?, displayName?, blurb?}`. A bot is a **portal** — a platform identity, not a fixed coding agent. Its `runtime` is only the **default** coding agent. The name/avatar live on the platform (fetched live, never typed).
-  - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace`, inline `profile`, `preset`, and an optional per-channel `runtime` override — the same bot can drive `claude-sdk` in one channel and `codex` in another) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`. The effective runtime per channel is `Membership.runtime ?? Bot.runtime`, resolved in `getOrCreateSession`. Runtime is terminal-written only (it selects which local binary runs with workspace access), never chat-settable.
+  - `channels` — `Record<"${platform}:${channelId}", Channel>`: a channel = a project = a permission boundary. Each lists `members` (`Membership[]`, one per *my* bot active here, carrying that bot's per-project `workspace`, inline `profile`, `preset`, and an optional per-channel `runtime` override — the same bot can drive `claude-sdk` in one channel and `codex` in another) and `collaborators` (roster refs), plus `requireMention?`/`approvalActorId?`. The effective runtime per channel is `cfg.runtime (!config agent) ?? Membership.runtime ?? Bot.runtime`, resolved in `getOrCreateSession`. The terminal sets the default/per-channel runtime; the owner can switch it live in chat via `!config agent <runtime>` (owner-gated like every `!config` set — it selects which local binary runs with workspace access, so it stays owner-only and rebuilds the session on change).
   - `roster` — `{people: Record<id, Person>, peers: Record<id, Peer>}`: known humans + peer bots, entered once and referenced by id from a channel's `collaborators`.
   - **Read via `readAccessFile()`**, which projects this to the agent-keyed runtime `Access` (`{agents: Record<botId, AgentConfig>}`) via the pure `projectToRuntime` — so the relay/hosts/folds are unchanged. `readAuthoringAccess`/`saveAuthoringAccess` operate on the authoring shape (setup only). Written only by the setup CLI — never mutated from channel messages (prompt-injection protection).
 - Permission profiles are **inline** on each `Membership.profile` in `access.json` (`{allow, ask, deny, tiers?}`, expanded from a named `preset`). They are the only profile store — there is no separate on-disk profile file. The enforced profile is resolved through the pure `resolveRoomProfile` (re-unions `DENY_FLOOR`; an absent profile fails restrictive to deny-floor-only).

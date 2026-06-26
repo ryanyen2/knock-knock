@@ -139,7 +139,8 @@ terminal config:
 !config mode strict     # read-only for this task
 ```
 
-This is the **one** trust-adjacent knob settable from chat, and it is contained:
+This is a trust-adjacent knob settable from chat (the coding-agent `agent` switch
+below is the other), and it is contained:
 
 - **Owner-only.** `!config` is short-circuited before any message reaches the
   agent and only runs for the agent's owner — a peer/human (or a prompt injection)
@@ -158,6 +159,23 @@ This is the **one** trust-adjacent knob settable from chat, and it is contained:
 The thread's current mode (and the rest of its setup) is shown on the **pinned
 config card** at the top of the thread, and every `!config mode` change is an
 auditable, owner-attributed ledger entry, reversible with `!config reset mode`.
+
+### Switching the coding agent (`!config agent …`)
+
+The owner can also switch the **coding-agent runtime** for a scope from chat —
+`!config agent codex`, `!config agent claude-sdk`, etc. This selects which local
+binary runs with workspace access, so it is trust-adjacent and held to the same
+fences as `mode`:
+
+- **Owner-only**, gated identically (a peer/human or prompt injection can never set
+  it; the runtime value is validated against the known runtimes, never free text).
+- **No permission widening.** Changing the runtime does **not** touch
+  `allow`/`ask`/`deny` — the room profile (and the DENY_FLOOR) are re-applied to the
+  rebuilt session unchanged. A different agent is still fenced by the same rules.
+- **Session is rebuilt** on the next turn, and the old runtime's resume binding is
+  dropped (a foreign runtime can't resume) — so context does not leak across a switch.
+- The resolved agent is shown on the pinned config card; reversible with
+  `!config reset agent`.
 
 ---
 

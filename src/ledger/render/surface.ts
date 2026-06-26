@@ -552,9 +552,9 @@ export function renderConfigCard(
     const spec = configFieldSpec(field)
     lines.push(`> ${spec?.chatKey ?? field}: ${spec ? formatConfigValue(spec, r.v) : String(r.v)} (${r.src})`)
   }
-  // Compact knob line: model / thinking / effort / mode.
+  // Compact knob line: coding agent / model / thinking / effort / mode.
   const knobs: string[] = []
-  for (const field of ['model', 'thinking', 'effort', 'permissionPreset'] as const) {
+  for (const field of ['runtime', 'model', 'thinking', 'effort', 'permissionPreset'] as const) {
     const r = resolve(field)
     if (!r) continue
     const spec = configFieldSpec(field)

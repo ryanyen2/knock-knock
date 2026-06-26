@@ -29,6 +29,7 @@ import type {
 import {
   channelKey,
   expandPreset,
+  renameBot,
   PRESET_MODES,
   PRESET_HINTS,
   DEFAULT_PRESET,
@@ -172,8 +173,17 @@ function notionId(v?: string): string | undefined {
   return /^[0-9a-f]{32}$/i.test(s) ? undefined : 'A Notion ID is 32 hex characters (copy the page link).'
 }
 
-/** An extra secret a platform needs beyond the primary token (e.g. Slack's app token). */
-type SecretSpec = { name: string; envBase: string; label: string; howto: string }
+/** An extra secret a platform needs beyond the primary token (e.g. Slack's app token).
+ *  `optional` secrets may be left blank at save time; `whenWebhook` secrets are only
+ *  collected when the bot uses `intake: 'webhook'`. */
+type SecretSpec = {
+  name: string
+  envBase: string
+  label: string
+  howto: string
+  optional?: boolean
+  whenWebhook?: boolean
+}
 
 type PlatformSpec = {
   value: Platform
@@ -190,6 +200,10 @@ type PlatformSpec = {
   ownerValidate: (v?: string) => string | undefined
   memberIdLabel: string // roster person/peer id prompt
   notes: string[] // post-setup reminders printed after adding a bot/channel
+  /** Poll-based platforms (github/notion) can opt into event-driven webhook intake. */
+  supportsWebhook?: boolean
+  /** Onboarding lines printed when the bot is set to `intake: 'webhook'`. */
+  webhookNotes?: string[]
 }
 
 const PLATFORMS: Record<Platform, PlatformSpec> = {
@@ -245,10 +259,15 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     ],
   },
   github: {
-    value: 'github', label: 'GitHub', hint: 'async (~60s) · issues / PRs',
+    value: 'github', label: 'GitHub', hint: 'async (~60s poll, or webhook) · issues / PRs',
     tokenEnvBase: 'GITHUB_BOT_TOKEN',
     tokenHowto: 'github.com → Settings → Developer settings → PAT (scopes: repo, notifications) on a machine-user account',
-    secrets: [],
+    secrets: [{
+      name: 'webhookSecret', envBase: 'GITHUB_WEBHOOK_SECRET',
+      label: 'GitHub webhook secret (optional — verifies X-Hub-Signature-256)',
+      howto: 'the secret you set on the App/repo webhook (or `gh webhook forward`); leave blank to skip verification',
+      optional: true, whenWebhook: true,
+    }],
     idLabel: 'Repository (owner/repo)',
     idPlaceholder: 'acme/widgets',
     idValidate: mkValidate(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/repo, e.g. acme/widgets.'),
@@ -258,14 +277,26 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     memberIdLabel: 'Their GitHub login',
     notes: [
       'The bot account must be a collaborator/member of the repo.',
-      '~60s latency; on public repos restrict to allowed authors.',
+      'Poll mode: ~60s latency. On public repos only OWNER/MEMBER/COLLABORATOR authors are auto-trusted.',
+    ],
+    supportsWebhook: true,
+    webhookNotes: [
+      'Webhook intake (no public URL needed): install the CLI extension `gh extension install cli/gh-webhook`,',
+      'then forward issue comments to the relay:',
+      '  gh webhook forward --repo <owner/repo> --events issue_comment --url http://localhost:8787/github/<botKey>',
+      'Set KNOCK_KNOCK_WEBHOOK_PORT if 8787 is taken. For a GitHub App webhook, front it with smee.io instead.',
     ],
   },
   notion: {
-    value: 'notion', label: 'Notion', hint: 'async · degraded · page comments',
+    value: 'notion', label: 'Notion', hint: 'async (~10s poll, or webhook) · page comments',
     tokenEnvBase: 'NOTION_TOKEN',
-    tokenHowto: 'notion.so/my-integrations → New integration → Internal Integration Secret (ntn_…)',
-    secrets: [],
+    tokenHowto: 'notion.so/profile/integrations → New connection → Access token (workspace-scoped, ntn_…). A user PAT or an internal-integration secret both work.',
+    secrets: [{
+      name: 'notionVerificationToken', envBase: 'NOTION_VERIFICATION_TOKEN',
+      label: 'Notion webhook verification token (optional — auto-captured on first event)',
+      howto: 'shown when you Create the subscription in the integration; leave blank to capture it from the handshake',
+      optional: true, whenWebhook: true,
+    }],
     idLabel: 'Notion page or database ID (32 hex chars from the page link)',
     idPlaceholder: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
     idValidate: notionId,
@@ -274,8 +305,14 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     ownerValidate: (v?: string) => ((v ?? '').trim() ? undefined : 'Required.'),
     memberIdLabel: 'Their Notion user ID',
     notes: [
-      'CRITICAL: share each page/database with the integration (Page → ••• → Connections) — or it sees nothing.',
-      'Enable integration capabilities: Read/Insert content, Read/Insert comments, Read user info.',
+      'CRITICAL: connect each page/database to the integration (Page → ••• → Connections) — or it sees nothing.',
+      'Enable capabilities: Read/Insert content, Read/Insert comments, Read user info. Comments are edited in place.',
+    ],
+    supportsWebhook: true,
+    webhookNotes: [
+      'Webhook intake needs a public URL: run a tunnel (cloudflared/ngrok) to KNOCK_KNOCK_WEBHOOK_PORT (default 8787),',
+      'then in the integration → Webhooks → Create subscription, paste https://<tunnel>/notion/<botKey>,',
+      'pick the Comment events, and Notion will POST a verification token (auto-captured on the first request).',
     ],
   },
 }
@@ -448,12 +485,22 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
   const spec = PLATFORMS[platform]
   await ensureMe(a, spec)
 
-  const runtime = orCancel(await p.select({
-    message: 'Which coding agent powers this bot? (its default — switchable per channel)',
-    options: RUNTIMES,
-    initialValue: 'claude-sdk',
+  // The coding agent is a DEFAULT, not part of the bot's identity — it's switchable
+  // per channel and in chat (`!config agent`). Offer to set one now, or take the
+  // Claude Code default and move on.
+  let runtime = 'claude-sdk'
+  const setAgent = orCancel(await p.confirm({
+    message: 'Set this bot’s default coding agent now? (switchable per-channel & in chat — defaults to Claude Code)',
+    initialValue: false,
   }))
-  await ensureRuntimeAuth(runtime)
+  if (setAgent) {
+    runtime = orCancel(await p.select({
+      message: 'Default coding agent for this bot',
+      options: RUNTIMES,
+      initialValue: 'claude-sdk',
+    }))
+    await ensureRuntimeAuth(runtime)
+  }
 
   const blurb = orCancel(await p.text({
     message: 'One-line description peers see (optional)',
@@ -475,11 +522,27 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     sandbox = { fs: 'workspace', network: allowNet ? 'allow' : 'deny' }
   }
 
+  // Intake mode: poll (default, no inbound server) vs webhook (event-driven, lower
+  // latency; needs forwarding/tunnel). Only the poll-based platforms offer the choice.
+  let intake: 'poll' | 'webhook' = 'poll'
+  if (spec.supportsWebhook) {
+    intake = orCancel(await p.select({
+      message: 'Inbound intake mode?',
+      options: [
+        { value: 'poll', label: 'Poll (default)', hint: 'pure local · no inbound server' },
+        { value: 'webhook', label: 'Webhook', hint: 'event-driven · lower latency · needs forwarding/tunnel' },
+      ],
+      initialValue: 'poll',
+    })) as 'poll' | 'webhook'
+  }
+
   const taken = envTaken(a, key)
   const tokenEnv = deriveEnv(spec.tokenEnvBase, key, taken)
   taken.add(tokenEnv)
   const secretEnv: Record<string, string> = {}
-  for (const s of spec.secrets) {
+  // Webhook-only secrets are skipped unless this bot uses webhook intake.
+  const applicableSecrets = spec.secrets.filter(s => !s.whenWebhook || intake === 'webhook')
+  for (const s of applicableSecrets) {
     const env = deriveEnv(s.envBase, key, taken)
     secretEnv[s.name] = env
     taken.add(env)
@@ -490,13 +553,16 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     tokenEnv,
     ...(Object.keys(secretEnv).length ? { secretEnv } : {}),
     runtime,
+    ...(intake === 'webhook' ? { intake } : {}),
     ...(blurb ? { blurb } : {}),
     ...(sandbox ? { sandbox } : {}),
   }
   saveAuthoringAccess(a)
-  const secretNote = spec.secrets.length ? ` (+${spec.secrets.length} secret)` : ''
-  p.log.success(`Saved bot ${color.cyan(key)} ${color.dim(`· ${platform} · token env: ${tokenEnv}${secretNote}`)}`)
+  const secretNote = applicableSecrets.length ? ` (+${applicableSecrets.length} secret)` : ''
+  const intakeNote = intake === 'webhook' ? ' · webhook' : ''
+  p.log.success(`Saved bot ${color.cyan(key)} ${color.dim(`· ${platform}${intakeNote} · token env: ${tokenEnv}${secretNote}`)}`)
   if (spec.notes.length) p.log.info(spec.notes.join('\n'))
+  if (intake === 'webhook' && spec.webhookNotes?.length) p.log.info(spec.webhookNotes.join('\n'))
   return key
 }
 
@@ -683,14 +749,15 @@ async function removeChannel(a: AuthoringAccess): Promise<void> {
   p.log.success(`Removed channel ${ck}`)
 }
 
-/** Edit a bot's mutable fields (runtime / blurb / sandbox). Platform + tokenEnv are immutable. */
-async function editBot(a: AuthoringAccess): Promise<void> {
+/** Edit a bot's mutable coding-agent defaults (runtime / blurb / sandbox). Platform +
+ *  tokenEnv are immutable. `preKey` skips the picker (used by the bot-centric bundle). */
+async function editBot(a: AuthoringAccess, preKey?: string): Promise<void> {
   const keys = Object.keys(a.bots)
   if (keys.length === 0) { p.log.info('No bots to edit.'); return }
-  const key = keys.length === 1 ? keys[0]! : (orCancel(await p.select({
+  const key = preKey ?? (keys.length === 1 ? keys[0]! : (orCancel(await p.select({
     message: 'Edit which bot?',
     options: keys.map(k => ({ value: k, label: k, hint: `${a.bots[k]!.platform} · ${a.bots[k]!.runtime}` })),
-  })) as string)
+  })) as string))
   const bot = a.bots[key]!
 
   type Field = 'runtime' | 'blurb' | 'sandbox'
@@ -746,17 +813,259 @@ async function removeRosterEntry(a: AuthoringAccess): Promise<void> {
   p.log.success(`Removed ${picked} from the roster`)
 }
 
-/** Remove a bot (and drop it from every channel's members). */
-async function removeBot(a: AuthoringAccess): Promise<void> {
-  const keys = Object.keys(a.bots)
-  if (keys.length === 0) { p.log.info('No bots to remove.'); return }
-  const key = orCancel(await p.select({ message: 'Remove which bot?', options: keys.map(k => ({ value: k, label: k })) })) as string
-  const confirm = orCancel(await p.confirm({ message: `Remove bot ${key}?`, initialValue: false }))
-  if (!confirm) return
-  delete a.bots[key]
-  for (const ch of Object.values(a.channels)) ch.members = ch.members.filter(m => m.bot !== key)
+// ─── Bot-centric bundle ("Manage a bot") ──────────────────────────────────────
+// Everything about ONE bot in one place: identity (key/owner/token), the channels
+// it works in (workspace + preset + collaborators per channel), and its coding-agent
+// defaults. A bot is a portal — the coding agent (runtime) is a default here and is
+// switchable per channel and in chat (`!config agent`), so it is de-emphasized.
+
+/** Channels this bot is a member of, as [channelKey, Channel] pairs. */
+function botChannels(a: AuthoringAccess, key: string): Array<[string, Channel]> {
+  return Object.entries(a.channels).filter(([, ch]) => ch.members.some(m => m.bot === key))
+}
+
+/** A bot-scoped summary (identity + its channels + defaults), printed atop the bundle menu. */
+function botBundleSummary(a: AuthoringAccess, key: string): string {
+  const bot = a.bots[key]!
+  const lines: string[] = []
+  const tok = botFullyTokened(bot) ? color.green('● token set') : color.red('○ token missing')
+  const owner = a.me?.[bot.platform] ?? color.red('(owner id not set)')
+  lines.push(`${color.cyan(key)}  ${color.dim(bot.platform)}  ${tok}`)
+  lines.push(`  ${color.dim('owner')}    ${owner}`)
+  lines.push(`  ${color.dim('agent')}    ${bot.runtime} ${color.dim('(default · switchable per-channel & in chat)')}${bot.sandbox ? color.dim(` · sandbox fs:${bot.sandbox.fs}/net:${bot.sandbox.network}`) : ''}`)
+  if (bot.blurb) lines.push(`  ${color.dim('blurb')}    ${bot.blurb}`)
+  const chans = botChannels(a, key)
+  lines.push(`  ${color.dim('channels')} ${chans.length === 0 ? color.dim('(none — add one below)') : ''}`)
+  for (const [, ch] of chans) {
+    const m = ch.members.find(x => x.bot === key)!
+    const rt = m.runtime ? color.dim(` · ${m.runtime}`) : ''
+    lines.push(`    ${color.cyan(ch.label ?? `#${ch.channelId}`)}  ${color.dim(`·${m.preset ?? DEFAULT_PRESET}·`)}  ${color.dim(m.workspace)}${rt}`)
+    if (ch.collaborators.length) {
+      const names = ch.collaborators.map(c => {
+        const r = c.kind === 'human' ? a.roster.people[c.id] : a.roster.peers[c.id]
+        return (c.kind === 'human' ? '👤' : '🤖') + (r?.label ?? r?.userId ?? c.id)
+      })
+      lines.push(`      ${color.dim('collab:')} ${names.join(' ')}`)
+    }
+  }
+  return lines.join('\n')
+}
+
+/** Rename a bot key (rewrites every membership reference). Returns the resulting key. */
+async function renameBotFlow(a: AuthoringAccess, key: string): Promise<string> {
+  const next = orCancel(await p.text({
+    message: 'New bot key (lowercase letters, digits, hyphens)',
+    initialValue: key,
+    validate: v => {
+      const e = validateBotKey(v)
+      if (e) return e
+      const s = (v ?? '').trim()
+      if (s !== key && a.bots[s]) return 'A bot with that key already exists.'
+      return undefined
+    },
+  })).trim()
+  if (next === key) { p.log.info('Unchanged.'); return key }
+  const updated = renameBot(a, key, next)
+  saveAuthoringAccess(updated)
+  p.log.success(`Renamed bot ${color.cyan(key)} → ${color.cyan(next)} ${color.dim(`· token env unchanged (${a.bots[key]!.tokenEnv})`)}`)
+  return next
+}
+
+/** Edit the owner id for this bot's platform (the `me[platform]` shared identity). */
+async function editOwnerFlow(a: AuthoringAccess, key: string): Promise<void> {
+  const bot = a.bots[key]!
+  const spec = PLATFORMS[bot.platform]
+  const id = orCancel(await p.text({
+    message: spec.ownerLabel + color.dim('  (shared by every bot on this platform)'),
+    placeholder: spec.ownerPlaceholder,
+    initialValue: a.me?.[bot.platform] ?? '',
+    validate: spec.ownerValidate,
+  })).trim()
+  a.me = { ...(a.me ?? {}), [bot.platform]: id }
   saveAuthoringAccess(a)
-  p.log.success(`Removed bot ${key}`)
+  p.log.success(`Owner id for ${spec.label} set to ${id}`)
+}
+
+/** Add this bot to a channel (existing project or a new one); sets its workspace + preset + collaborators. */
+async function addBotToChannel(a: AuthoringAccess, key: string): Promise<void> {
+  const bot = a.bots[key]!
+  const platform = bot.platform
+  const spec = PLATFORMS[platform]
+  const NEW = ' new'
+  // Existing channels on this platform this bot is NOT already in, plus "+ new".
+  const candidates = Object.entries(a.channels).filter(
+    ([, ch]) => ch.platform === platform && !ch.members.some(m => m.bot === key),
+  )
+  let ck: string
+  if (candidates.length > 0) {
+    ck = orCancel(await p.select({
+      message: `Add ${color.cyan(key)} to which channel?`,
+      options: [
+        ...candidates.map(([k, ch]) => ({ value: k, label: ch.label ?? `#${ch.channelId}`, hint: k })),
+        { value: NEW, label: color.dim('+ a new channel') },
+      ],
+    })) as string
+  } else {
+    ck = NEW
+  }
+
+  let ch: Channel
+  if (ck === NEW) {
+    const channelId = orCancel(await p.text({
+      message: spec.idLabel,
+      placeholder: spec.idPlaceholder,
+      validate: spec.idValidate,
+    })).trim()
+    ck = channelKey(platform, channelId)
+    ch = a.channels[ck] ?? { platform, channelId, members: [], collaborators: [] }
+    if (!ch.label) {
+      const label = orCancel(await p.text({
+        message: 'Friendly project name for this channel (optional)',
+        placeholder: '#infra-prod',
+      })).trim()
+      if (label) ch.label = label
+    }
+  } else {
+    ch = a.channels[ck]!
+  }
+
+  await ensureMe(a, spec)
+  const workspace = orCancel(await p.text({
+    message: `Workspace folder for ${key} in this channel (absolute)`,
+    placeholder: process.cwd(),
+    initialValue: process.cwd(),
+    validate: validateAbsPath,
+  })).trim()
+  if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
+  const preset = await pickPreset()
+  ch.members.push({ bot: key, workspace, preset, profile: profileFromPreset(preset) })
+
+  await pickCollaborators(a, platform, ch)
+  ch.requireMention = orCancel(await p.confirm({
+    message: 'Require an @mention before a bot responds here?',
+    initialValue: ch.requireMention ?? true,
+  }))
+
+  a.channels[ck] = ch
+  saveAuthoringAccess(a)
+  p.log.success(`Added ${color.cyan(key)} to ${color.cyan(ch.label ?? `#${ch.channelId}`)}`)
+  if (spec.notes.length) p.log.info(spec.notes.join('\n'))
+}
+
+/** Remove this bot from one of its channels (drops just its membership; offers to delete an emptied channel). */
+async function removeBotFromChannel(a: AuthoringAccess, key: string): Promise<void> {
+  const chans = botChannels(a, key)
+  if (chans.length === 0) { p.log.info('This bot is not in any channel.'); return }
+  const ck = orCancel(await p.select({
+    message: `Remove ${color.cyan(key)} from which channel?`,
+    options: chans.map(([k, ch]) => ({ value: k, label: ch.label ?? `#${ch.channelId}`, hint: k })),
+  })) as string
+  const ch = a.channels[ck]!
+  ch.members = ch.members.filter(m => m.bot !== key)
+  if (ch.members.length === 0) {
+    const drop = orCancel(await p.confirm({
+      message: `${ch.label ?? `#${ch.channelId}`} now has no member bots — remove the channel entirely?`,
+      initialValue: true,
+    }))
+    if (drop) delete a.channels[ck]
+  }
+  saveAuthoringAccess(a)
+  p.log.success(`Removed ${color.cyan(key)} from ${ch.label ?? `#${ch.channelId}`}`)
+}
+
+/** Edit this bot's per-channel workspace (and optionally its preset). */
+async function editBotChannel(a: AuthoringAccess, key: string): Promise<void> {
+  const chans = botChannels(a, key)
+  if (chans.length === 0) { p.log.info('This bot is not in any channel — add it to one first.'); return }
+  const ck = chans.length === 1 ? chans[0]![0] : (orCancel(await p.select({
+    message: 'Edit this bot in which channel?',
+    options: chans.map(([k, ch]) => ({ value: k, label: ch.label ?? `#${ch.channelId}`, hint: k })),
+  })) as string)
+  const ch = a.channels[ck]!
+  const m = ch.members.find(x => x.bot === key)!
+  const workspace = orCancel(await p.text({
+    message: `Workspace folder for ${key} in ${ch.label ?? `#${ch.channelId}`} (absolute)`,
+    placeholder: process.cwd(),
+    initialValue: m.workspace,
+    validate: validateAbsPath,
+  })).trim()
+  if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
+  m.workspace = workspace
+  const preset = await pickPreset(m.preset ?? DEFAULT_PRESET)
+  m.preset = preset
+  m.profile = profileFromPreset(preset)
+  saveAuthoringAccess(a)
+  p.log.success(`Updated ${color.cyan(key)} in ${ch.label ?? `#${ch.channelId}`}`)
+}
+
+/** The bot-centric bundle: pick a bot (or add one), then edit everything about it in one place. */
+async function manageBot(a: AuthoringAccess): Promise<void> {
+  const keys = Object.keys(a.bots)
+  const ADD = ' add'
+  let key: string
+  if (keys.length === 0) {
+    const added = await addBot(a)
+    if (!added) return
+    key = added
+  } else {
+    const picked = orCancel(await p.select({
+      message: 'Manage which bot?',
+      options: [
+        ...keys.map(k => ({ value: k, label: k, hint: `${a.bots[k]!.platform} · ${botChannels(a, k).length} channel(s)` })),
+        { value: ADD, label: color.dim('+ add a new bot') },
+      ],
+    })) as string
+    if (picked === ADD) {
+      const added = await addBot(a)
+      if (!added) return
+      key = added
+    } else {
+      key = picked
+    }
+  }
+
+  // Bundle loop — re-read from disk each pass so the summary reflects prior edits.
+  let running = true
+  while (running) {
+    a = readAuthoringAccess()
+    if (!a.bots[key]) { p.log.info('Bot no longer exists.'); return }
+    p.note(botBundleSummary(a, key), `Bot · ${key}`)
+    type Act = 'channel-add' | 'channel-edit' | 'channel-remove' | 'token' | 'owner' | 'rename' | 'defaults' | 'remove' | 'done'
+    const act = orCancel(await p.select<Act>({
+      message: `What about ${color.cyan(key)}?`,
+      options: [
+        { value: 'channel-add', label: 'Add to a channel', hint: 'project: workspace + preset + collaborators' },
+        { value: 'channel-edit', label: 'Edit a channel', hint: 'workspace / preset / collaborators' },
+        { value: 'channel-remove', label: 'Remove from a channel' },
+        { value: 'token', label: 'Save / update token' },
+        { value: 'owner', label: 'Edit owner id', hint: 'your user id on this platform' },
+        { value: 'rename', label: 'Rename bot key' },
+        { value: 'defaults', label: 'Coding-agent defaults', hint: 'default agent / sandbox / blurb' },
+        { value: 'remove', label: color.red('Remove this bot') },
+        { value: 'done', label: color.dim('← back') },
+      ],
+    }))
+    a = readAuthoringAccess()
+    if (act === 'channel-add') await addBotToChannel(a, key)
+    else if (act === 'channel-edit') await editBotChannel(a, key)
+    else if (act === 'channel-remove') await removeBotFromChannel(a, key)
+    else if (act === 'token') await saveBotToken(a, key)
+    else if (act === 'owner') await editOwnerFlow(a, key)
+    else if (act === 'rename') key = await renameBotFlow(a, key)
+    else if (act === 'defaults') await editBot(a, key)
+    else if (act === 'remove') {
+      const confirm = orCancel(await p.confirm({ message: `Remove bot ${key}? (drops it from every channel)`, initialValue: false }))
+      if (confirm) {
+        delete a.bots[key]
+        for (const ch of Object.values(a.channels)) ch.members = ch.members.filter(m => m.bot !== key)
+        saveAuthoringAccess(a)
+        p.log.success(`Removed bot ${key}`)
+        return
+      }
+    } else {
+      running = false
+    }
+  }
 }
 
 // ─── Tokens ─────────────────────────────────────────────────────────────────────
@@ -776,11 +1085,19 @@ async function saveBotToken(a: AuthoringAccess, botKey?: string): Promise<void> 
   p.log.success(`Saved to .env as ${bot.tokenEnv} ${color.dim(`· ***${token.slice(-4)}`)}`)
 
   // Extra secrets (e.g. Slack's app-level token), keyed by logical name in secretEnv.
+  // Only those the bot actually declared in secretEnv are prompted; an `optional`
+  // secret may be left blank (skipped) — e.g. a webhook secret/verification token.
   for (const s of spec.secrets) {
     const envName = bot.secretEnv?.[s.name]
     if (!envName) continue
     p.log.message(color.dim(`Get it from: ${s.howto}`))
-    const val = orCancel(await p.password({ message: `${s.label} (${envName})`, validate: required })).trim()
+    const val = orCancel(
+      await p.password({ message: `${s.label} (${envName})`, validate: s.optional ? undefined : required }),
+    ).trim()
+    if (!val && s.optional) {
+      p.log.info(`Skipped ${envName} (optional).`)
+      continue
+    }
     setToken(envName, val)
     p.log.success(`Saved to .env as ${envName} ${color.dim(`· ***${val.slice(-4)}`)}`)
   }
@@ -905,7 +1222,7 @@ function finishWithNextSteps(a: AuthoringAccess): void {
   const noToken = Object.entries(a.bots).filter(([, b]) => !botFullyTokened(b)).map(([k]) => k)
   const memberOf = new Set(Object.values(a.channels).flatMap(c => c.members.map(m => m.bot)))
   const noChannel = Object.keys(a.bots).filter(k => !memberOf.has(k))
-  if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Save a bot token"`)
+  if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Manage a bot" → Save / update token`)
   if (noChannel.length) tips.push(`${color.yellow('!')} ${noChannel.join(', ')} isn't a member of any channel — add it to one`)
   const noKey = runtimeKeysInUse(a).filter(k => {
     if (isTokenSet(k.envVar)) return false
@@ -945,7 +1262,7 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAuthoringAccess()), 'Current setup')
 
-  const TASK_ORDER = ['bot', 'bot-edit', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'token', 'api-key', 'ledger', 'bot-remove'] as const
+  const TASK_ORDER = ['bot', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'api-key', 'ledger'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
@@ -953,17 +1270,14 @@ async function interactiveMenu(): Promise<void> {
     const tasks = orCancel(await p.multiselect<Task>({
       message: 'What would you like to do? (space to toggle, enter to run — nothing selected = done)',
       options: [
-        { value: 'bot', label: 'Add a bot', hint: 'a bot identity you run' },
-        { value: 'bot-edit', label: 'Edit a bot', hint: 'runtime / blurb / sandbox' },
+        { value: 'bot', label: 'Manage a bot', hint: 'identity · token · channels · agent — all in one place' },
         { value: 'channel', label: 'Add / edit a channel', hint: 'project: members + workspaces + collaborators' },
         { value: 'channel-remove', label: 'Remove a channel' },
         { value: 'person', label: 'Add a person to the roster' },
         { value: 'peer', label: 'Add a peer bot to the roster' },
         { value: 'roster-remove', label: 'Remove a roster entry', hint: 'person or peer (drops it from channels too)' },
-        { value: 'token', label: 'Save / update a bot token' },
         { value: 'api-key', label: 'Save / update a coding-agent API key', hint: 'e.g. ANTHROPIC_API_KEY / OPENAI_API_KEY' },
         { value: 'ledger', label: 'Choose ledger backend', hint: 'local SQLite or remote Postgres' },
-        { value: 'bot-remove', label: 'Remove a bot' },
       ],
       required: false,
     }))
@@ -972,17 +1286,14 @@ async function interactiveMenu(): Promise<void> {
     const sorted = [...tasks].sort((x, y) => TASK_ORDER.indexOf(x) - TASK_ORDER.indexOf(y))
     for (const task of sorted) {
       const a = readAuthoringAccess()
-      if (task === 'bot') await addBot(a)
-      else if (task === 'bot-edit') await editBot(a)
+      if (task === 'bot') await manageBot(a)
       else if (task === 'channel') await addChannel(a)
       else if (task === 'channel-remove') await removeChannel(a)
       else if (task === 'person') await addPerson(a, await pickRosterPlatform(a))
       else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a))
       else if (task === 'roster-remove') await removeRosterEntry(a)
-      else if (task === 'token') await saveBotToken(a)
       else if (task === 'api-key') await saveCodingAgentKey(a)
       else if (task === 'ledger') await collectLedger()
-      else if (task === 'bot-remove') await removeBot(a)
     }
     p.note(statusReport(readAuthoringAccess()), 'Current setup')
   }

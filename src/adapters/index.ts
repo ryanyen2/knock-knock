@@ -39,7 +39,14 @@ export function runtimeSelfArmsWatches(runtime: string): boolean {
 
 export function makeAdapter(
   runtime: string,
-  opts: { workspace: string; watchTools?: WatchToolHandlers; sandbox?: SandboxOpt },
+  opts: {
+    workspace: string
+    watchTools?: WatchToolHandlers
+    sandbox?: SandboxOpt
+    /** Page-scoped Notion read/write tools (claude-sdk only). Set for a Notion bot so
+     *  the agent can write INTO the page, not just comment. ACP runtimes ignore it. */
+    notion?: { token: string; pageId: string }
+  },
 ): AgentAdapter {
   // Explicit command override (agent without a preset).
   const override = process.env.KNOCK_KNOCK_ACP_COMMAND
@@ -58,5 +65,5 @@ export function makeAdapter(
         `use runtime "claude-acp" for confinement. Relying on the deny floor.\n`,
     )
   }
-  return new ClaudeSdkAdapter(opts.workspace, opts.watchTools)
+  return new ClaudeSdkAdapter(opts.workspace, opts.watchTools, opts.notion)
 }

@@ -2,11 +2,12 @@
  *  config.set uses anchor:none so it's admitted applied and never conflicts. */
 
 import type { Fold } from '../fold.ts'
-import type { Interaction, ChannelId, ArtifactId } from '../interaction.ts'
+import type { Interaction, ChannelId, ArtifactId, ProposedInteraction, Hash } from '../interaction.ts'
 import {
   projectChannelConfig,
   resolveTwoLayerConfig,
   type ChannelConfig,
+  type ChannelConfigDelta,
   type ConfigDeltaRecord,
 } from '../../lib.ts'
 
@@ -17,6 +18,28 @@ export const CONFIG_FOLD = 'config'
 /** The overlay artifact for a room. */
 export function configArtifact(roomId: ChannelId): ArtifactId {
   return `cfg:channel/${roomId}`
+}
+
+/** Build an owner-role `config.set` proposal for a scope (room OR thread). Pure — the
+ *  caller `admit`s it. Shared by the chat `!config` surface and relay startup quick-config.
+ *  `causedBy` should be `latestConfigHash(state, scope)` so re-affirming a value isn't
+ *  hash-deduped to an older interaction. Anchor is `none`, so it's admitted applied. */
+export function buildConfigSet(
+  actor: string,
+  scope: ChannelId,
+  delta: ChannelConfigDelta,
+  causedBy?: Hash,
+): ProposedInteraction {
+  return {
+    actor,
+    role: 'owner',
+    channel: scope,
+    target: { artifactId: configArtifact(scope), anchor: { kind: 'none' } },
+    verb: 'config.set',
+    patch: { kind: 'external', intent: { channel: 'tool', op: 'config.set', args: delta } },
+    effect: 'pure',
+    caused_by: causedBy ? [causedBy] : [],
+  }
 }
 
 function deltaOf(i: Interaction): ConfigDeltaRecord['delta'] | undefined {

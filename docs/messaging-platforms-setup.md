@@ -28,9 +28,9 @@ Capability-driven degradation means the host **never branches on platform name**
 
 | Capability | Discord | Slack | Telegram | GitHub | Notion |
 |---|:---:|:---:|:---:|:---:|:---:|
-| **Inbound transport** | WebSocket gateway | Socket Mode WS | long-poll | poll ~60 s | poll ~10 s |
+| **Inbound transport** | WebSocket gateway | Socket Mode WS | long-poll | poll ~60 s _or webhook_ | poll ~10 s _or webhook_ |
 | **Send / post** | ✅ | ✅ | ✅ | ✅ (comment) | ✅ (comment) |
-| **Edit in place** | ✅ | ✅ | ✅ | ✅ (comment) | ❌ re-posts |
+| **Edit in place** | ✅ | ✅ | ✅ | ✅ (comment) | ✅ (comment, PATCH) |
 | **Reactions** | any emoji | any emoji | whitelist (11) | whitelist (8 names) | ❌ none |
 | **Approval buttons** | ✅ native | ✅ Block Kit | ✅ inline kbd | ❌ numbered text | ❌ numbered text |
 | **Task threads** | ✅ Discord thread | ✅ thread reply | ✅ forum topic | ✅ issue / PR | ❌ comment-only |
@@ -489,7 +489,7 @@ This token is `GITHUB_BOT_TOKEN`.
 **Step 5 — Run setup and relay**
 
 ```bash
-knock-knock setup    # choose GitHub → type owner/repo → pick bot → workspace + preset → save token
+knock-knock setup    # choose GitHub → poll or webhook → type owner/repo → pick bot → workspace + preset → save token
 knock-knock relay
 ```
 
@@ -498,6 +498,23 @@ knock-knock relay
 | Env var | Token type | Starts with | Where |
 |---------|-----------|-------------|-------|
 | `GITHUB_BOT_TOKEN` | Personal Access Token | `ghp_` (classic) or `github_pat_` (fine-grained) | Machine user → Settings → Developer Settings |
+| `GITHUB_WEBHOOK_SECRET` _(optional)_ | webhook signing secret | — | only for webhook intake with a signed App/repo webhook |
+
+### Intake mode: poll (default) or webhook
+
+GitHub is poll-based by default (~60 s; setup picks this unless you choose webhook). For
+near-instant delivery, choose **webhook** intake in setup and forward events to the relay's
+local receiver — **no public URL needed**:
+
+```bash
+gh extension install cli/gh-webhook        # once
+gh webhook forward --repo <owner/repo> --events issue_comment \
+  --url http://localhost:8787/github/<botKey>
+```
+
+Keep that running next to `knock-knock relay`. Set `KNOCK_KNOCK_WEBHOOK_PORT` if `8787` is
+taken. Full details, signing, and the GitHub-App/smee.io path:
+[messaging-event-driven-intake.md](messaging-event-driven-intake.md).
 
 ### How scopes map
 
@@ -536,8 +553,12 @@ routes it as an approval action.
 - **~60 s latency floor** (`X-Poll-Interval` from the Notifications API) — right
   for async coding, wrong for live chat.
 - **Public repos are an open prompt-injection surface** — anyone can @mention the
-  bot on a public repo. The sender allowlist restricts to collaborators/members;
-  **do not point the bot at a public repo without reviewing who can trigger it.**
+  bot on a public repo. The relay auto-trusts only comment authors whose
+  `author_association` is `OWNER`, `MEMBER`, or `COLLABORATOR` (plus the configured
+  owner + roster); `CONTRIBUTOR` / `FIRST_TIMER` / `NONE` are ignored. So a repo's real
+  collaborators "just work" without being re-listed, while drive-by commenters can't
+  trigger the bot. **Still review who has collaborator access before pointing at a
+  public repo.**
 - **REST quota** — each new mention fetches comment history; watch usage with a
   busy public repo. A GitHub App identity (higher rate ceiling) is a deferred
   fast-follow; v1 is a PAT machine-user.
@@ -556,18 +577,29 @@ lives in Notion.
 
 ### What you are creating
 
-A Notion **internal integration** (a server-to-server credential scoped to your
-workspace), connected to specific pages or databases. Unlike the other platforms
-there is no "bot account" — the integration itself posts as a named entity.
+A Notion **connection** (Notion's current Developer Portal term for an integration) —
+a credential scoped to your workspace, connected to specific pages or databases. Unlike
+the other platforms there is no "bot account"; the connection itself posts as a named
+entity.
+
+In the **New connection** dialog (notion.so/profile/integrations → New connection) pick
+the **Authentication method**:
+
+- **Access token** (recommended for knock-knock) — a workspace-scoped static token
+  (`ntn_…`). Single workspace, not Marketplace-eligible. This is the simplest path and
+  what the relay uses. A user **Personal Access Token (PAT)** works identically — both are
+  bearer tokens you save as `NOTION_TOKEN`.
+- **OAuth** — user-scoped OAuth 2.0, multi-workspace, Marketplace-eligible. Only needed if
+  you're distributing a public integration; not required for self-hosting the relay.
 
 ```
-notion.so/my-integrations  →  New integration
-  ├── Name it + pick workspace
+notion.so/profile/integrations  →  New connection
+  ├── Name it + choose "Access token" + pick workspace
   ├── Capabilities: Read/Insert content, Read/Insert comments, Read user info
-  └── Copy Internal Integration Secret  (ntn_…)
+  └── Copy the Access token / Internal Integration Secret  (ntn_…)
         ↓
   For EACH page or database the bot should watch:
-  Open page → ••• (top-right) → Connections → add your integration
+  Open page → ••• (top-right) → Connections → add your connection
 ```
 
 > **The sharing step is mandatory.** A valid token that has not been connected
@@ -644,7 +676,27 @@ knock-knock relay
 
 | Env var | Token type | Starts with | Where |
 |---------|-----------|-------------|-------|
-| `NOTION_TOKEN` | Internal Integration Secret | `ntn_` | notion.so/my-integrations → your integration |
+| `NOTION_TOKEN` | Access token / Internal Integration Secret / PAT | `ntn_` | notion.so/profile/integrations → your connection |
+| `NOTION_VERIFICATION_TOKEN` _(optional)_ | webhook verification token | — | only for webhook intake; auto-captured on the subscription handshake |
+
+### Intake mode: poll (default) or webhook
+
+Notion polls page comments every ~10 s by default. When the host configures the bot's
+tracked page/database ids (from your `notion:<id>` channels), the sweep polls **only those
+pages** instead of scanning the whole workspace — faster and a smaller injection surface.
+
+For near-instant delivery, choose **webhook** intake in setup. Notion webhooks need a
+public HTTPS URL, so front the relay's receiver with a tunnel and create a subscription:
+
+```bash
+cloudflared tunnel --url http://localhost:8787      # or: ngrok http 8787
+```
+
+Then in your connection → **Webhooks → Create subscription**: paste
+`https://<tunnel-host>/notion/<botKey>`, pick API version `2026-03-11`, select the
+**Comment** events, and create. Notion sends a one-time verification token that the relay
+captures automatically. Full details:
+[messaging-event-driven-intake.md](messaging-event-driven-intake.md).
 
 ### How scopes map
 
@@ -669,12 +721,19 @@ text menu in a comment; reply with the number in the same page thread.
   all current comments as "seen" and only responds to new ones. Pre-existing
   discussion is not replayed.
 - **~10 s polling latency** (Notion's comment API is rate-limited to ~3 req/s;
-  the adapter spaces requests to stay under the ceiling).
-- **No reactions, no buttons, no DM, no edit** — status is conveyed in text
-  appended to comments; approvals are numbered text menus; the bot re-posts
-  instead of editing.
-- **`edit()` always returns false** — Notion's comment API does not support
-  updating an existing comment; each "edit" is a new comment.
+  the adapter spaces requests to stay under the ceiling). Webhook intake removes the
+  poll delay — see Intake mode above.
+- **No reactions, no buttons, no DM** — status is conveyed in text appended to
+  comments; approvals are numbered text menus (reply with the number).
+- **Comments ARE edited in place** — the adapter uses `PATCH /v1/comments`
+  (`comments.update`), so status/Workbench updates rewrite a comment instead of posting
+  a new one each time.
+- **Writing INTO the page (not just comments)** — a Notion bot on the `claude-sdk`
+  runtime gets page-scoped tools (`read_page`, `append_to_page`) locked to the page the
+  conversation is on. So "add a paragraph describing X to the page" appends to the page
+  *body*; the agent's chat reply still posts as a *comment*. The agent is told (via its
+  preamble) to use these tools rather than editing local files for page changes. (ACP
+  runtimes don't expose these yet.)
 - **File exchange deferred** — Notion's file upload API is multi-step; inbound
   and outbound file handling is not yet wired.
 - **Workers bridge (future)** — a Notion Worker + External Agents API

@@ -83,6 +83,11 @@ export type IncomingMessage = {
   mentionsBot: boolean
   /** Platform id of the replied-to message, if any (host treats a reply to one of our messages as "directed"). */
   replyToMessageId?: string
+  /** Platform-native author-trust signal, when the platform exposes one (e.g. GitHub's
+   *  `author_association`: OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR/NONE). The host uses it
+   *  as an open-surface allowlist floor (see `githubAssociationTrusted`); absent on
+   *  platforms without the concept. */
+  authorAssociation?: string
   /** Is `scope` a sub-conversation (thread/topic) rather than the room itself? */
   isThread: boolean
   /** Attached files when delivered + `Capabilities.files.inbound`. Uploader-controlled/untrusted: download at ingest, sniff bytes, sanitize name. */
@@ -113,6 +118,30 @@ export type IncomingReaction = {
   glyph: Glyph
   userId: string
 }
+
+/** Host→adapter runtime configuration, applied once before `connect`. Optional and
+ *  additive: an adapter that doesn't implement `configure` is unaffected. */
+export type AdapterConfig = {
+  /** The room ids (channel keys' platform-native part) this bot serves — lets a
+   *  poll-based adapter scope its sweep to project boundaries instead of the whole
+   *  workspace/account (Notion especially). Empty/absent ⇒ adapter's own default. */
+  trackedRooms?: string[]
+  /** 'poll' (default) or 'webhook' (event-driven; the relay opens a local HTTP
+   *  receiver and routes pushes to `ingestWebhook`). Poll adapters suppress their
+   *  sweep when 'webhook'. */
+  intake?: 'poll' | 'webhook'
+}
+
+/** A raw inbound HTTP webhook delivered by the relay's WebhookReceiver to an adapter
+ *  running in `intake: 'webhook'` mode. `body` is the exact request body string (so
+ *  signature verification can hash it byte-for-byte). */
+export type WebhookRequest = { headers: Record<string, string>; body: string }
+
+/** The HTTP response the adapter wants the receiver to return (e.g. 200 for a parsed
+ *  event, the echoed challenge for a platform verification handshake, 401 on a bad
+ *  signature). `log`, when set, is printed to the relay console by the receiver — used
+ *  to surface a one-time verification token the operator must copy. */
+export type WebhookResponse = { status: number; body?: string; log?: string }
 
 /** The contract. Implementations live in `adapters-msg/`, selected by `makeMessagingAdapter`. Lifecycle: construct, register handlers, `connect(token)`. */
 export interface MessagingAdapter {
@@ -167,4 +196,13 @@ export interface MessagingAdapter {
   parentOf(scope: ScopeId): Promise<ScopeId | undefined>
   /** Sync, no-I/O variant of `parentOf` — parent room only if already cached, else undefined (host then falls back to its scope→room memo). */
   parentOfSync(scope: ScopeId): ScopeId | undefined
+
+  // ─── optional runtime configuration & event-driven intake ────────────────────
+  /** Apply host runtime config (tracked rooms, intake mode) once before `connect`.
+   *  Optional — adapters that don't need it omit it. */
+  configure?(opts: AdapterConfig): void
+  /** Parse a pushed webhook in `intake: 'webhook'` mode: emit `IncomingMessage`s via
+   *  the registered `onMessage` handler and return the HTTP response (200, an echoed
+   *  verification challenge, or 401). Optional — only event-capable adapters implement it. */
+  ingestWebhook?(req: WebhookRequest): Promise<WebhookResponse>
 }

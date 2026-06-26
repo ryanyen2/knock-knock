@@ -6,8 +6,6 @@ Your bot and a collaborator's bot each run on your own machines, connected to th
 
 **The channel is the project — and the permission boundary.**
 
----
-
 ## How it works
 
 The config is **channel-centric** and normalized into four nouns: a **bot** (one coding-agent identity you run = one Discord app), a **channel** (a platform channel = a project = a permission boundary), a **membership** (one of your bots active in one channel, carrying that bot's workspace folder + allow/ask/deny profile *for that project*), and a **roster** (people + peer bots you collaborate with, entered once and referenced by id). A **thread** is a single task inside a channel.

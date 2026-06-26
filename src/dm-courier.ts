@@ -58,6 +58,11 @@ export class DmCourier {
   async beginTurn(ctx: DmTurnContext): Promise<TurnHandle> {
     const ownerId = this.getOwnerId()
     if (!ownerId || this.disabled.has(ownerId)) return noopHandle
+    // Platforms without a DM channel (Notion, GitHub) can never deliver a live DM
+    // transcript — skip silently instead of re-attempting `dm()` on every fold delta
+    // (which spammed "DM send failed" once per tool call). Progress still shows in the
+    // terminal, and DM-shaped surfacing degrades to in-scope posts elsewhere.
+    if (!this.messaging.capabilities().dm) return noopHandle
 
     return new LiveTurn(this.messaging, ownerId, ctx, this.engine, () => {
       this.disabled.add(ownerId)
