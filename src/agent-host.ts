@@ -39,6 +39,10 @@ import {
   wrapChannelGoal,
   pickFreshCoordination,
   parseDelegateCommand,
+  selectRelatedContext,
+  wrapRelatedContext,
+  extractKeywords,
+  type RetrievalCandidate,
   formatAttachedFilesBlock,
   parseShareCommand,
   classifyTool,
@@ -154,6 +158,8 @@ export class AgentHost {
   /** Per-scope set of coordination-board digests already injected, so a static
    *  board isn't re-delivered every turn (same lifetime as the turn loop). */
   private readonly coordDelivered = new Map<ChannelId, Set<string>>()
+  /** Per-scope set of related-context blocks already injected (once-only). */
+  private readonly relatedDelivered = new Map<ChannelId, Set<string>>()
   /** DM-courier handles awaiting their turn's activeTurn. onTurnPrompted and
    *  runTurnForChannel race on the same turn.prompted; whichever runs second reconciles here. */
   private readonly pendingDmByPrompt = new Map<Hash, DmTurnHandle>()
@@ -1060,6 +1066,45 @@ export class AgentHost {
     await this.discordSend(scope, `📋 delegated ${parsed.tasks.length} task(s): ${shape}`)
   }
 
+  /** A `<related-context>` block: the most relevant prior chat from OTHER threads
+   *  in this room (R8). Candidate set is BOUNDED (recent messages from a few sibling
+   *  scopes) before scoring, so this never scans the full log. Once-only per block. */
+  private async relatedContextPrefixFor(
+    scope: ChannelId,
+    roomId: ChannelId,
+    promptText: string,
+  ): Promise<{ prefix?: string; key?: string }> {
+    const siblings = [...this.scopeToRoom]
+      .filter(([s, r]) => r === roomId && s !== scope)
+      .map(([s]) => s)
+      .slice(0, 5)
+    if (siblings.length === 0) return {}
+    const candidates: RetrievalCandidate[] = []
+    for (const sib of siblings) {
+      let rows
+      try {
+        rows = await this.store.listByChannel(sib)
+      } catch {
+        continue
+      }
+      for (const r of rows.slice(-20)) {
+        if (r.verb !== 'channel.message' || r.patch.kind !== 'external') continue
+        const text = String((r.patch.intent.args as { text?: unknown })?.text ?? '')
+        if (text) candidates.push({ hash: r.hash, scope: sib, text, author: r.actor, createdAt: r.createdAt })
+      }
+    }
+    if (candidates.length === 0) return {}
+    const top = selectRelatedContext(
+      candidates,
+      { currentScope: scope, keywords: extractKeywords(promptText), participants: [], now: Date.now() },
+      3,
+    )
+    const block = wrapRelatedContext(top.map(t => ({ scope: t.scope, author: t.author, text: t.text })))
+    if (!block) return {}
+    if ((this.relatedDelivered.get(scope) ?? new Set<string>()).has(block)) return {}
+    return { prefix: block, key: block }
+  }
+
   /** Is this agent's turn on `scopeId` live? Used by the task scheduler to gate
    *  claim renewal: when a turn ends (completion) or the relay dies (crash), there
    *  is no active turn, so the task claim lapses and another claimant fails it over.
@@ -1152,9 +1197,12 @@ export class AgentHost {
     const attachedFilesPrefix = ingested.files.length ? formatAttachedFilesBlock(ingested.files) : undefined
     // Coordination board: what peers are doing, injected once per distinct board.
     const coordCtx = this.coordinationPrefixFor(channelId)
+    // Related prior chat from sibling threads (R8), bounded + once-only.
+    const relatedCtx = await this.relatedContextPrefixFor(channelId, roomId, opts.promptText)
     const contextPrefix =
-      [personaPrefix, coordCtx.prefix, attachedFilesPrefix, pendingCtx.prefix].filter(Boolean).join('\n\n') ||
-      undefined
+      [personaPrefix, coordCtx.prefix, relatedCtx.prefix, attachedFilesPrefix, pendingCtx.prefix]
+        .filter(Boolean)
+        .join('\n\n') || undefined
 
     // Per-turn runtime knobs (model/thinking/effort): claude-sdk honors them, ACP ignores them.
     const turnCfg = this.channelConfigFor(channelId)
@@ -1203,6 +1251,11 @@ export class AgentHost {
         const set = this.coordDelivered.get(channelId) ?? new Set<string>()
         set.add(coordCtx.key)
         this.coordDelivered.set(channelId, set)
+      }
+      if (relatedCtx.key) {
+        const set = this.relatedDelivered.get(channelId) ?? new Set<string>()
+        set.add(relatedCtx.key)
+        this.relatedDelivered.set(channelId, set)
       }
     }
 

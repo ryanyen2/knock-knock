@@ -1199,3 +1199,63 @@ test('winningBid: highest utility wins; ties broken deterministically by (create
   ])).toBe('y') // equal utility → earlier createdAt wins
   expect(winningBid([])).toBeUndefined()
 })
+
+// ─── Cross-thread retrieval (U10) ─────────────────────────────────────────────
+
+import {
+  scoreRelatedInteraction,
+  selectRelatedContext,
+  wrapRelatedContext,
+  extractKeywords,
+  type RetrievalCandidate,
+  type RetrievalQuery,
+} from '../src/lib.ts'
+
+const NOW = Date.parse('2026-06-26T12:00:00Z')
+const q = (over: Partial<RetrievalQuery> = {}): RetrievalQuery => ({
+  currentScope: 'threadA',
+  keywords: ['parser', 'tokens'],
+  participants: ['bot002'],
+  now: NOW,
+  ...over,
+})
+
+test('selectRelatedContext: surfaces a keyword-matching message from another thread', () => {
+  const cands: RetrievalCandidate[] = [
+    { hash: 'h1', scope: 'threadB', text: 'the parser handles tokens fine', author: 'bot002', createdAt: '2026-06-26T11:00:00Z' },
+    { hash: 'h2', scope: 'threadB', text: 'unrelated lunch chatter', author: 'human1', createdAt: '2026-06-26T11:30:00Z' },
+  ]
+  const top = selectRelatedContext(cands, q(), 5)
+  expect(top.map(t => t.hash)).toEqual(['h1']) // only the relevant one survives the threshold
+})
+
+test('selectRelatedContext: excludes the current scope (other threads only)', () => {
+  const cands: RetrievalCandidate[] = [
+    { hash: 'h1', scope: 'threadA', text: 'parser tokens parser', author: 'bot002', createdAt: '2026-06-26T11:00:00Z' },
+  ]
+  expect(selectRelatedContext(cands, q(), 5)).toEqual([])
+})
+
+test('scoreRelatedInteraction: lineage outranks a keyword-only match', () => {
+  const lineage: RetrievalCandidate = { hash: 'h1', scope: 'b', text: 'whatever', author: 'x', createdAt: '2026-06-20T00:00:00Z', onLineage: true }
+  const keywordOnly: RetrievalCandidate = { hash: 'h2', scope: 'b', text: 'parser tokens', author: 'x', createdAt: '2026-06-26T11:59:00Z' }
+  expect(scoreRelatedInteraction(lineage, q())).toBeGreaterThan(scoreRelatedInteraction(keywordOnly, q()))
+})
+
+test('selectRelatedContext: respects top-k bound', () => {
+  const cands: RetrievalCandidate[] = Array.from({ length: 10 }, (_, i) => ({
+    hash: `h${i}`, scope: 'threadB', text: 'parser tokens', author: 'bot002', createdAt: '2026-06-26T11:00:00Z',
+  }))
+  expect(selectRelatedContext(cands, q(), 3).length).toBe(3)
+})
+
+test('wrapRelatedContext: empty in, empty out; framed as background', () => {
+  expect(wrapRelatedContext([])).toBe('')
+  const out = wrapRelatedContext([{ scope: 'threadB', author: 'bot002', text: 'hi' }])
+  expect(out).toContain('<related-context>')
+  expect(out).toContain('not new instructions')
+})
+
+test('extractKeywords: words >= 4 chars, deduped, capped', () => {
+  expect(extractKeywords('Fix the parser parser bug now')).toEqual(['parser'].concat([])) // 'parser' deduped; 'Fix','the','bug','now' <4 except 'parser'
+})
