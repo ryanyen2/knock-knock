@@ -26,6 +26,7 @@ import {
   type AgentConfig,
   type Access,
   type RoomConfig,
+  type RoomParticipant,
   type PreambleContext,
   guildSenderAllowed,
   githubAssociationTrusted,
@@ -48,6 +49,8 @@ import {
   wrapRelatedContext,
   selectThreadRecap,
   wrapThreadRecap,
+  peerDirectoryParticipants,
+  isDirectoryBot,
   extractKeywords,
   type RetrievalCandidate,
   type RecapSource,
@@ -102,6 +105,12 @@ import { ContextControl } from './host/context-control.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
+import {
+  AGENT_DIRECTORY_FOLD,
+  dirArtifact,
+  directoryFor,
+  type AgentDirectoryFoldState,
+} from './ledger/concepts/agent-directory.ts'
 import { taskArtifact } from './ledger/concepts/task-dag.ts'
 
 const RECENT_BOT_MSG_CAP = 200
@@ -334,6 +343,37 @@ export class AgentHost {
     })
     await this.messaging.connect(token, secrets)
     this.ui.connected(this.key, this.messaging.botLabel ?? this.messaging.botUserId ?? this.key)
+    await this.publishIdentity().catch(err => this.ui.error(this.key, `publish identity: ${err}`))
+  }
+
+  /** Publish this bot's platform identity to the shared agent directory so peers — co-resident
+   *  AND cross-machine — can discover and address it (anchor `none`, admitted applied; the
+   *  relay stamps agentKey/userId from THIS bot, so it can only publish itself). Re-published
+   *  each connect; content-addressed ⇒ idempotent, and a changed label/rooms supersedes by LWW. */
+  private async publishIdentity(): Promise<void> {
+    const userId = this.messaging.botUserId
+    if (!userId) return // platform id not resolved (e.g. poll adapters without a self id)
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: 'agent-directory',
+      target: { artifactId: dirArtifact(this.key), anchor: { kind: 'none' } },
+      verb: 'agent.identity',
+      patch: {
+        kind: 'identity',
+        data: {
+          agentKey: this.key,
+          platform: this.platform,
+          userId,
+          ...(this.messaging.botLabel ? { label: this.messaging.botLabel } : {}),
+          ...(liveAgent.blurb ? { blurb: liveAgent.blurb } : {}),
+          rooms: Object.keys(this.agent.rooms),
+        },
+      },
+      effect: 'pure',
+      caused_by: [],
+    })
   }
 
   /** This host's bot key (the access.json bot id) — used to route webhook paths. */
@@ -888,12 +928,16 @@ export class AgentHost {
     }
 
     const ownerId = liveAgent.ownerUserId
-    // Sender allowlist (owner + roster). On the open GitHub surface, also admit a
-    // trusted repo author (OWNER/MEMBER/COLLABORATOR) so a repo's real collaborators
-    // work without being re-listed — the deny floor + ask-first model still bounds them.
+    // Auto-discovered peer bots (from the shared directory) merged into the room's
+    // participants so they're both heard (allowlist) and addressable (roster) — covers
+    // co-resident siblings AND cross-machine collaborators with no manual roster entry.
+    const gateRoom = this.roomWithPeers(roomId, room)
+    // Sender allowlist (owner + roster + discovered peers). On the open GitHub surface,
+    // also admit a trusted repo author (OWNER/MEMBER/COLLABORATOR) so a repo's real
+    // collaborators work without being re-listed — the deny floor + ask-first still bound them.
     const trustedByPlatform =
       this.messaging.platform === 'github' && githubAssociationTrusted(m.authorAssociation)
-    if (!guildSenderAllowed(room, m.authorId, botId, ownerId) && !trustedByPlatform) return
+    if (!guildSenderAllowed(gateRoom, m.authorId, botId, ownerId) && !trustedByPlatform) return
 
     // Per-channel overlay (owner `!config`): rate cap, require-mention, mention
     // patterns, ack. Room-keyed — these gate inbound BEFORE a thread exists (raw room overlay).
@@ -916,19 +960,24 @@ export class AgentHost {
     const requireMention = cfg.requireMention ?? room.requireMention ?? true
     const mentionPatterns = [...(access.mentionPatterns ?? []), ...(cfg.mentionPatterns ?? [])]
     let mentioned = await this.isMentioned(m, mentionPatterns)
+    // A peer BOT (in the directory) engages this bot ONLY when it explicitly @mentions or
+    // replies to it — regardless of the room's require-mention setting — so two bots don't
+    // loop on every broadcast in a busy multi-bot channel. Humans keep the behavior below.
+    const senderIsPeerBot = isDirectoryBot(this.directoryIdentities(), m.authorId)
     // Thread follow-up (Discord parity): a message in a thread the bot is already
     // engaged in is a follow-up to that task, so it triggers without a fresh
     // @mention. Platforms like Slack have no per-message reply pointer in a thread,
     // so engagement (a live session, or prior admitted history in the scope) is the
-    // signal. Plain-channel scopes still require a mention.
-    if (!mentioned && m.isThread && (await this.isEngagedThread(m.scope))) {
+    // signal. Plain-channel scopes still require a mention. Peer bots are exempt — they
+    // must address this bot explicitly even in an engaged thread.
+    if (!mentioned && !senderIsPeerBot && m.isThread && (await this.isEngagedThread(m.scope))) {
       mentioned = true
     }
-    if (requireMention && !mentioned) return
+    if ((requireMention || senderIsPeerBot) && !mentioned) return
 
     this.messaging.typing(m.scope)
 
-    const kind = senderKind(room, m.authorId, ownerId)
+    const kind = senderKind(gateRoom, m.authorId, ownerId)
 
     // Owner control commands act at the scope they're TYPED in and never spawn a thread.
     const controlScope = m.isThread ? m.scope : roomId
@@ -1304,6 +1353,31 @@ export class AgentHost {
     return { prefix: block, key }
   }
 
+  /** All bot identities in the shared directory (latest per agentKey), or [] if the
+   *  fold isn't registered. Used to discover peers — co-resident and cross-machine. */
+  private directoryIdentities(): ReturnType<typeof directoryFor> {
+    try {
+      return directoryFor(this.engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+    } catch {
+      return []
+    }
+  }
+
+  /** Peer bots (others) that serve `roomId` on this platform, as participant entries to
+   *  merge into the room's `participants` — so they're both addressable (roster) and
+   *  heard (allowlist). */
+  private peerParticipantsFor(roomId: ChannelId): Record<string, RoomParticipant> {
+    return peerDirectoryParticipants(this.directoryIdentities(), this.key, roomId, this.platform)
+  }
+
+  /** The room config with auto-discovered peer bots merged into `participants` (static
+   *  roster collaborators still win on a userId collision). */
+  private roomWithPeers(roomId: ChannelId, room: RoomConfig): RoomConfig {
+    const peers = this.peerParticipantsFor(roomId)
+    if (Object.keys(peers).length === 0) return room
+    return { ...room, participants: { ...peers, ...room.participants } }
+  }
+
   /** A `<thread-recap>` block replaying this scope's prior messages — injected only
    *  for a COLD session (newly added bot, or a restart with no resume binding), so a
    *  fresh runtime catches up on the conversation instead of seeing only the latest
@@ -1533,7 +1607,11 @@ export class AgentHost {
         ownerUserId: liveAgent.ownerUserId,
         blurb: liveAgent.blurb,
       },
-      rosterLines: buildRosterLinesForRoom(room),
+      // Roster includes auto-discovered peer bots (co-resident + cross-machine) so the
+      // agent has a real <@id> to address them with — and never has to address itself.
+      rosterLines: buildRosterLinesForRoom(
+        this.roomWithPeers(this.roomForScope(channelId) ?? channelId, room),
+      ),
       canWatch: runtimeSelfArmsWatches(runtime),
       ...(notionToken
         ? {

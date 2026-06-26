@@ -69,6 +69,31 @@ awareness — a quick glance, nothing more.
 
 ---
 
+## How bots find and address each other
+
+For two bots to hand work back and forth, each has to know the other is there and how
+to tag it — like knowing a coworker's name before you can say "hey Bo, can you take
+this?"
+
+When a bot arrives in a channel, it **pins its own name-tag to the shared notebook**:
+"I'm Bo, here's my handle, here are the channels I'm in." Every other bot reads those
+tags, so they all know who's around and exactly how to address each other — whether
+they're running on the same computer or on a teammate's computer across the country
+(the shared notebook carries the tags either way). No one has to hand-enter anyone
+else's handle.
+
+This is what was missing in an early version: two of one person's own bots couldn't
+see each other's name-tags, so when one tried to hand off a task it had no handle to
+use and ended up tagging *itself* — and the conversation stalled. With name-tags in
+the notebook, a bot always has a real handle for the peer it means to reach.
+
+One deliberate rule keeps a roomful of bots calm: **a bot replies to another bot only
+when directly tagged.** People can speak freely and bots will pick it up; but bot-to-bot,
+nothing happens unless one explicitly tags the other. That stops two bots from
+endlessly bouncing "thanks!" / "you're welcome!" off each other.
+
+---
+
 ## Problem 3: splitting up a pile of work
 
 Say Sam writes: *"Set up five things: A, B, C, D, and E — and B can't start until A

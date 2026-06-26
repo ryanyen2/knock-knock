@@ -106,9 +106,25 @@ fold engine, cutover phases, cross-machine) lives in
 
 A **concept**'s state *is* its named fold; nothing else. Registered in
 `relay.ts`: `loop-guard`, `channel`, `turn`, `approval`, `watch`, `config`,
-`coordination-board`, `task-dag` (`ledger/concepts/`) and the `knowledge` +
-`versionable` artifact folds (`ledger/artifacts/`). Folds **reuse the pure
-functions in `lib.ts` verbatim** (e.g. `LoopGuard.step` calls `loopGuard(...)`).
+`coordination-board`, `task-dag`, `agent-directory` (`ledger/concepts/`) and the
+`knowledge` + `versionable` artifact folds (`ledger/artifacts/`). Folds **reuse the
+pure functions in `lib.ts` verbatim** (e.g. `LoopGuard.step` calls `loopGuard(...)`).
+
+The **`agent-directory`** fold is shared bot discovery across the mesh (own co-resident
+bots + cross-machine collaborators). On connect each `AgentHost` admits an
+`agent.identity` (anchor `none` ⇒ applied; the relay stamps `agentKey`/`userId` from
+*this* bot, so it can only publish itself) carrying its platform userId, label, and member
+channels; the fold projects the latest identity per agentKey (LWW). `peerDirectoryParticipants`
+(`lib.ts`) turns it into the per-room peers a bot can **address** (preamble roster) and
+**hear** (the `guildSenderAllowed` allowlist) — merged into `room.participants` at the
+inbound gate + `getOrCreateSession` roster, so co-resident *and* cross-machine bots discover
+each other with no manual roster entry. This closes the bug where two own bots couldn't see
+each other and one addressed *itself*. `participants` here gates **engagement + addressing
+only** — tool permissions stay per-room owner-curated. A peer **bot** engages this bot only
+when it explicitly @mentions/replies (`isDirectoryBot` gate in `handleInbound`), regardless
+of require-mention, so bots don't loop on broadcasts; humans keep normal engagement. Static
+roster `peers` still work and merge alongside. Cross-machine convergence needs Postgres
+(SQLite directory is local-only). Plain-language writeup in `docs/how-coordination-works.md`.
 
 The **`config`** fold is the owner's behavioral overlay (`!config`), keyed by
 artifact `cfg:channel/<id>` — and because the id can be a **room OR a thread

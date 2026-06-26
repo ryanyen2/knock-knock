@@ -4,7 +4,8 @@
  */
 
 import type { PermissionProfile } from './agent-adapter.ts'
-import type { CoordNote, TaskPatchData } from './ledger/interaction.ts'
+import type { CoordNote, TaskPatchData, AgentIdentity } from './ledger/interaction.ts'
+export type { AgentIdentity } from './ledger/interaction.ts'
 
 /** A peer agent registered in a room. */
 export type RoomParticipant = {
@@ -303,6 +304,39 @@ export function buildRosterLinesForRoom(room: RoomConfig | undefined): string {
   return Object.entries(room.participants)
     .map(([botId, p]) => `  • ${p.name ? `${p.name} ` : ''}(<@${botId}>): ${p.blurb}`)
     .join('\n')
+}
+
+// ─── Peer directory (auto-discovery across the multi-bot mesh) ────────────────
+// Bots publish their platform identity to the shared ledger on connect; every relay
+// folds a directory. These pure helpers turn that directory into the per-room peers a
+// bot can address (roster) and is allowed to hear (allowlist) — covering co-resident
+// AND cross-machine bots, with no manual roster. `participants` gates engagement +
+// addressing only; tool permissions stay owner-curated.
+
+/** Peer bots (other than self) that serve `roomId` on this `platform`, shaped as
+ *  RoomParticipant entries keyed by their platform userId — ready to merge into a
+ *  room's `participants`. Pure. */
+export function peerDirectoryParticipants(
+  identities: ReadonlyArray<AgentIdentity>,
+  selfKey: string,
+  roomId: string,
+  platform: string,
+): Record<string, RoomParticipant> {
+  const out: Record<string, RoomParticipant> = {}
+  for (const id of identities) {
+    if (id.agentKey === selfKey) continue
+    if (id.platform !== platform) continue
+    if (!id.rooms.includes(roomId)) continue
+    if (!id.userId) continue
+    out[id.userId] = { blurb: id.blurb ?? '', ...(id.label ? { name: id.label } : {}) }
+  }
+  return out
+}
+
+/** Is this inbound author a known bot in the directory? Used to gate peer-bot
+ *  engagement to addressed-only (so bots don't loop on every broadcast). Pure. */
+export function isDirectoryBot(identities: ReadonlyArray<AgentIdentity>, userId: string): boolean {
+  return identities.some(id => id.userId === userId)
 }
 
 // ─── Policy classification for adapters without native pattern matching ───────
@@ -607,7 +641,7 @@ export function buildPreamble(ctx: PreambleContext): string {
     '',
     'Messages arrive as <channel source="discord" kind="..." chat_id="..." message_id="..." user="..." ts="...">.',
     '',
-    'Address a peer by putting their <@botId> in your reply text. Peer responses arrive as new <channel> events — async, so never block waiting for one.',
+    'To hand a subtask to a peer or ask one a question, put THAT peer\'s <@botId> (from the roster below) in your reply — never your own; addressing yourself goes nowhere. A peer only acts when you tag it, and its response arrives as a new <channel> event — async, so never block waiting for one.',
     rosterSection,
     ctx.canWatch
       ? '\nTo monitor something that changes over time — a file, a long-running command, a job finishing, a deadline — use the watch tool. It runs the command in the background and re-prompts you the instant its output gate fires, so never block or poll in a turn waiting; unwatch and watch_list manage them.'

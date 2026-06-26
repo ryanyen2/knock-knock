@@ -44,6 +44,7 @@ import { versionableFold } from './ledger/artifacts/versionable.ts'
 import { watchFold } from './ledger/concepts/watch.ts'
 import { configFold, CONFIG_FOLD, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { coordBoardFold } from './ledger/concepts/coordination-board.ts'
+import { agentDirectoryFold } from './ledger/concepts/agent-directory.ts'
 import { taskDagFold, TASK_DAG_FOLD, taskArtifact, type TaskDagFoldState } from './ledger/concepts/task-dag.ts'
 import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from './ledger/synchronizations/task-scheduler.ts'
 import { completeTaskOnTurn } from './ledger/synchronizations/complete-task-on-turn.ts'
@@ -188,6 +189,7 @@ await engine.register(versionableFold)
 await engine.register(configFold)
 await engine.register(coordBoardFold)
 await engine.register(taskDagFold)
+await engine.register(agentDirectoryFold)
 
 // Apply any startup quick config now that the folds are live and before the hosts
 // connect — so the first turn already resolves the seeded model/agent/etc.

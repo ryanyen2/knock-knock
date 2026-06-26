@@ -1356,3 +1356,42 @@ test('wrapThreadRecap: empty in, empty out; non-empty framed as context not inst
   expect(out).toContain('- owner: ship it')
   expect(out).toContain('- Alice: on it')
 })
+
+// ─── Peer directory (multi-bot mesh visibility) ──────────────────────────────
+
+import { peerDirectoryParticipants, isDirectoryBot, type AgentIdentity } from '../src/lib.ts'
+
+const ident = (over: Partial<AgentIdentity>): AgentIdentity => ({
+  agentKey: 'cc', platform: 'discord', userId: 'U_CC', rooms: ['chan1'], ...over,
+})
+
+test('peerDirectoryParticipants: surfaces other bots in the same room, keyed by userId', () => {
+  const dir = [
+    ident({ agentKey: 'cc', userId: 'U_CC', label: 'cc', blurb: 'codebase' }),
+    ident({ agentKey: 'd-bot', userId: 'U_D', label: 'd-bot', blurb: 'docs' }),
+  ]
+  const peers = peerDirectoryParticipants(dir, 'd-bot', 'chan1', 'discord')
+  expect(Object.keys(peers)).toEqual(['U_CC']) // self (d-bot) excluded
+  expect(peers['U_CC']).toEqual({ blurb: 'codebase', name: 'cc' })
+})
+
+test('peerDirectoryParticipants: excludes self, other platforms, and other rooms', () => {
+  const dir = [
+    ident({ agentKey: 'self', userId: 'U_SELF', rooms: ['chan1'] }),
+    ident({ agentKey: 'wrongPlatform', userId: 'U_WP', platform: 'slack', rooms: ['chan1'] }),
+    ident({ agentKey: 'otherRoom', userId: 'U_OR', rooms: ['chan2'] }),
+    ident({ agentKey: 'good', userId: 'U_GOOD', rooms: ['chan1', 'chan2'] }),
+  ]
+  const peers = peerDirectoryParticipants(dir, 'self', 'chan1', 'discord')
+  expect(Object.keys(peers)).toEqual(['U_GOOD'])
+})
+
+test('peerDirectoryParticipants: empty when no other bots share the room', () => {
+  expect(peerDirectoryParticipants([ident({ agentKey: 'self', userId: 'U' })], 'self', 'chan1', 'discord')).toEqual({})
+})
+
+test('isDirectoryBot: true only for a known directory userId', () => {
+  const dir = [ident({ userId: 'U_CC' })]
+  expect(isDirectoryBot(dir, 'U_CC')).toBe(true)
+  expect(isDirectoryBot(dir, 'U_HUMAN')).toBe(false)
+})
