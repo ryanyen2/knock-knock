@@ -32,6 +32,26 @@ export type SandboxConfig = {
   network: 'deny' | 'allow'
 }
 
+/** PATH binary each runtime spawns at launch time. Pure data, the single source
+ *  of truth for both the adapter factory (what to spawn) and setup (what to probe
+ *  for on PATH). `null` = nothing to check: in-process SDK or a user-supplied
+ *  command. ACP runtimes driven via `npx` resolve to `npx` (the agent package is
+ *  fetched on demand). */
+export const RUNTIME_BINARY: Record<string, string | null> = {
+  'claude-sdk': null, // in-process SDK
+  'claude-acp': 'npx',
+  codex: 'npx',
+  opencode: 'opencode',
+  gemini: 'gemini',
+  acp: null, // user-supplied KNOCK_KNOCK_ACP_COMMAND, validated separately
+}
+
+/** The PATH binary a runtime needs at spawn time, or null when there's nothing
+ *  to probe (in-process or user-supplied). Unknown runtimes → null (no false alarm). */
+export function runtimeBinary(runtime: string): string | null {
+  return RUNTIME_BINARY[runtime] ?? null
+}
+
 /** A single coding-agent identity. */
 export type AgentConfig = {
   name?: string // live messaging-platform username; overwritten on connect

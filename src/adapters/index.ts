@@ -6,6 +6,7 @@ import { ClaudeSdkAdapter } from './claude-sdk.ts'
 import { AcpAdapter, type AcpLaunch } from './acp.ts'
 import type { WatchToolHandlers } from '../agent-adapter.ts'
 import { buildSandboxLaunch } from '../sandbox.ts'
+import { RUNTIME_BINARY } from '../lib.ts'
 
 /** OS-sandbox config for an agent (a subset of AgentConfig.sandbox). */
 type SandboxOpt = { network: 'deny' | 'allow' }
@@ -22,12 +23,14 @@ function wrapSandbox(launch: AcpLaunch, workspace: string, sandbox?: SandboxOpt)
   return { command: res.command, args: res.args, env: launch.env }
 }
 
-/** Built-in ACP launch presets, keyed by an agent's `runtime`. */
+/** Built-in ACP launch presets, keyed by an agent's `runtime`. The spawn binary
+ *  comes from `RUNTIME_BINARY` (`lib.ts`) — the single source of truth shared with
+ *  setup's PATH probe — so the two never drift; only the args live here. */
 const ACP_PRESETS: Record<string, AcpLaunch> = {
-  'claude-acp': { command: 'npx', args: ['-y', '@agentclientprotocol/claude-agent-acp'] },
-  opencode: { command: 'opencode', args: ['acp'] },
-  codex: { command: 'npx', args: ['-y', '@agentclientprotocol/codex-acp'] },
-  gemini: { command: 'gemini', args: ['--experimental-acp'] },
+  'claude-acp': { command: RUNTIME_BINARY['claude-acp']!, args: ['-y', '@agentclientprotocol/claude-agent-acp'] },
+  opencode: { command: RUNTIME_BINARY.opencode!, args: ['acp'] },
+  codex: { command: RUNTIME_BINARY.codex!, args: ['-y', '@agentclientprotocol/codex-acp'] },
+  gemini: { command: RUNTIME_BINARY.gemini!, args: ['--experimental-acp'] },
 }
 
 /** Does this runtime expose the in-process watch tool? Only the SDK adapter. */

@@ -33,6 +33,7 @@ import {
   PRESET_HINTS,
   DEFAULT_PRESET,
   resolveLedgerConfig,
+  runtimeBinary,
 } from './lib.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -103,6 +104,28 @@ function hasAlternateAuth(runtime: string): string | null {
     return null
   }
   return null
+}
+
+/** Where to get each runtime's CLI when it's missing from PATH. Keyed by the
+ *  spawn binary (`runtimeBinary`), so `npx`-driven runtimes share one hint. */
+const INSTALL_HINTS: Record<string, string> = {
+  gemini: 'install: `npm i -g @google/gemini-cli` — then run `gemini` once to sign in',
+  opencode: 'install: see opencode.ai/docs — then `opencode` → /connect to auth',
+  npx: 'install Node.js (npx ships with it) — npmjs.com/get-npm',
+}
+
+/** Probe PATH for the runtime's CLI and surface a warning (non-blocking) when it's
+ *  absent — otherwise a missing binary only shows up as a spawn ENOENT at relay
+ *  runtime, the first time the bot is prompted. The runtime stays saved either way
+ *  (the relay may run on a different machine than setup). */
+function checkRuntimeBinary(runtime: string): void {
+  const bin = runtimeBinary(runtime)
+  if (!bin) return // in-process (claude-sdk) or user-supplied command (acp)
+  if (Bun.which(bin)) return // installed — stay silent, only speak up on a problem
+  const hint = INSTALL_HINTS[bin] ?? `install \`${bin}\` and make sure it's on your PATH`
+  p.log.warn(
+    `\`${bin}\` is not on your PATH — ${runtime} can't start until it's installed.\n${hint}`,
+  )
 }
 
 /** Offer to save a coding agent's API key into .env when unset (shared keys asked once).
@@ -453,6 +476,7 @@ async function addBot(a: AuthoringAccess): Promise<string | null> {
     options: RUNTIMES,
     initialValue: 'claude-sdk',
   }))
+  checkRuntimeBinary(runtime)
   await ensureRuntimeAuth(runtime)
 
   const blurb = orCancel(await p.text({
@@ -635,7 +659,10 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
       options: RUNTIMES,
       initialValue: prev?.runtime ?? botDefault,
     }))
-    if (runtime !== botDefault) await ensureRuntimeAuth(runtime)
+    if (runtime !== botDefault) {
+      checkRuntimeBinary(runtime)
+      await ensureRuntimeAuth(runtime)
+    }
     members.push({
       bot: botKey,
       workspace,
