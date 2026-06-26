@@ -23,6 +23,7 @@ import {
 import {
   type AgentConfig,
   type Access,
+  type RoomConfig,
   type PreambleContext,
   guildSenderAllowed,
   senderKind,
@@ -42,8 +43,11 @@ import {
   parseDelegateCommand,
   selectRelatedContext,
   wrapRelatedContext,
+  selectThreadRecap,
+  wrapThreadRecap,
   extractKeywords,
   type RetrievalCandidate,
+  type RecapSource,
   formatAttachedFilesBlock,
   parseShareCommand,
   classifyTool,
@@ -94,6 +98,7 @@ import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
+import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
 import { taskArtifact } from './ledger/concepts/task-dag.ts'
 
 const RECENT_BOT_MSG_CAP = 200
@@ -110,6 +115,9 @@ function boundedMapSet<K, V>(map: Map<K, V>, key: K, value: V, cap: number): voi
 /** A per-channel session: the live adapter + driver + per-turn state. */
 type Session = {
   driver: Driver
+  /** True until the first turn completes (or a resume binding is rebound): the runtime
+   *  has no memory of this scope yet, so a cold session is fed a `<thread-recap>`. */
+  cold: boolean
   /** In-flight turn metadata for adapter event fanout. */
   activeTurn?: {
     promptHash: Hash
@@ -1221,6 +1229,45 @@ export class AgentHost {
     return { prefix: block, key }
   }
 
+  /** A `<thread-recap>` block replaying this scope's prior messages — injected only
+   *  for a COLD session (newly added bot, or a restart with no resume binding), so a
+   *  fresh runtime catches up on the conversation instead of seeing only the latest
+   *  message. Read from the durable channel transcript fold; the current inbound
+   *  message is excluded (it already rides the envelope). One-shot: gated on
+   *  `session.cold`, which the first completed turn clears. */
+  private threadRecapPrefixFor(
+    scopeId: ChannelId,
+    session: Session,
+    room: RoomConfig,
+    liveAgent: AgentConfig,
+    excludeHash: string,
+  ): { prefix?: string } {
+    if (!session.cold) return {}
+    let state: ChannelFoldState
+    try {
+      state = this.engine.get<ChannelFoldState>(CHANNEL_FOLD)
+    } catch {
+      return {} // channel fold not registered
+    }
+    const entries = (state.get(scopeId) ?? []) as ReadonlyArray<RecapSource>
+    const selected = selectThreadRecap(entries, { excludeHash })
+    if (selected.length === 0) return {}
+    const lines = selected.map(e => ({ who: this.recapLabel(room, liveAgent, e), text: e.text }))
+    const block = wrapThreadRecap(lines)
+    return block ? { prefix: block } : {}
+  }
+
+  /** Display label for a recap entry's author: the owner, a peer's roster name, this
+   *  agent's own name for its replies, else the raw id. */
+  private recapLabel(room: RoomConfig, liveAgent: AgentConfig, e: RecapSource): string {
+    if (e.kind === 'reply') {
+      if (e.agentKey === this.key) return liveAgent.name ?? room.participants[e.agentKey]?.name ?? e.agentKey
+      return room.participants[e.agentKey]?.name ?? e.agentKey
+    }
+    if (e.role === 'owner') return 'owner'
+    return room.participants[e.senderId]?.name ?? e.senderId
+  }
+
   private async runTurnForChannel(
     channelId: ChannelId,
     opts: {
@@ -1291,8 +1338,11 @@ export class AgentHost {
     const coordCtx = this.coordinationPrefixFor(channelId)
     // Related prior chat from sibling threads (R8), bounded + once-only.
     const relatedCtx = await this.relatedContextPrefixFor(channelId, roomId, opts.promptText)
+    // Thread recap: catch a COLD session up on this thread's prior messages (newly
+    // added bot / restart with no resume binding). One-shot — gated on session.cold.
+    const recapCtx = this.threadRecapPrefixFor(channelId, session, room, liveAgent, opts.inboundHash)
     const contextPrefix =
-      [personaPrefix, coordCtx.prefix, relatedCtx.prefix, attachedFilesPrefix, pendingCtx.prefix]
+      [personaPrefix, recapCtx.prefix, coordCtx.prefix, relatedCtx.prefix, attachedFilesPrefix, pendingCtx.prefix]
         .filter(Boolean)
         .join('\n\n') || undefined
 
@@ -1341,6 +1391,25 @@ export class AgentHost {
       this.confirmIngestedDelivered(channelId, ingested.freshHashes)
       if (coordCtx.key) this.rememberDelivered(this.coordDelivered, channelId, coordCtx.key)
       if (relatedCtx.key) this.rememberDelivered(this.relatedDelivered, channelId, relatedCtx.key)
+      // The runtime now holds this scope: warm, so the recap is a one-shot.
+      session.cold = false
+      // Persist the runtime session id so a restart resumes the real conversation
+      // (not just a text recap). Only for resume-capable runtimes; the workspace is
+      // recorded so getOrCreateSession's rebind guard can reject a cross-workspace resume.
+      const effectiveRuntime = room.runtime ?? liveAgent.runtime
+      const sessRuntime = sessionRuntimeForAgent(effectiveRuntime)
+      const sid = session.driver.currentSessionId
+      if (sessRuntime && sid) {
+        try {
+          writeSessionBinding(this.key, channelId, {
+            runtime: sessRuntime,
+            sessionId: sid,
+            workspace: room.workspace ?? liveAgent.workspace,
+          })
+        } catch (err) {
+          this.ui.error(this.key, `persist session binding: ${err}`)
+        }
+      }
     }
 
     return { chunks, error: turnError }
@@ -1378,6 +1447,9 @@ export class AgentHost {
       canWatch: runtimeSelfArmsWatches(runtime),
     }
     const created: Session = {
+      // Cold until proven warm: a fresh session has no runtime memory of this scope.
+      // A valid resume binding (rebound below) clears it; so does the first completed turn.
+      cold: true,
       driver: new Driver(
         adapter,
         channelId,
@@ -1421,6 +1493,9 @@ export class AgentHost {
       const workspaceOk = !binding.workspace || binding.workspace === workspace
       if (runtimeOk && workspaceOk) {
         created.driver.bindSession(binding.sessionId)
+        // The runtime resumes its own transcript, so it already holds this thread —
+        // warm, no recap needed.
+        created.cold = false
         this.ui.note(this.key, `rebinding ${binding.runtime} session ${binding.sessionId.slice(0, 8)} in ${channelId}`)
       } else {
         clearSessionBinding(this.key, channelId)

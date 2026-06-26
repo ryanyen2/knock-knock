@@ -35,6 +35,13 @@ export class Driver {
     adapter.onPermissionRequest(permissionHandler)
   }
 
+  /** The runtime session id established by the latest turn (undefined until the first
+   *  turn runs). Read after `await runTurn` resolves — the resolve happens after the
+   *  sessionId write — so the host can persist it for resume-after-restart. */
+  get currentSessionId(): string | undefined {
+    return this.sessionId
+  }
+
   /** Bind to an existing runtime session id, resumed on the next turn; resets the preamble flag. Enqueued onto the serialized queue so it can't race an in-flight turn's sessionId write. */
   bindSession(sessionId: string): void {
     this.queue = this.queue.then(() => {

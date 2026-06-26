@@ -1259,3 +1259,48 @@ test('wrapRelatedContext: empty in, empty out; framed as background', () => {
 test('extractKeywords: words >= 4 chars, deduped, capped', () => {
   expect(extractKeywords('Fix the parser parser bug now')).toEqual(['parser'].concat([])) // 'parser' deduped; 'Fix','the','bug','now' <4 except 'parser'
 })
+
+// ─── Cold-session thread recap ────────────────────────────────────────────────
+
+import { selectThreadRecap, wrapThreadRecap, type RecapSource } from '../src/lib.ts'
+
+const recapMsg = (hash: string, text: string, over: Partial<Extract<RecapSource, { kind: 'message' }>> = {}): RecapSource => ({
+  kind: 'message', hash, senderId: 'u1', role: 'human', text, ts: '2026-06-26T11:00:00Z', ...over,
+})
+const recapReply = (hash: string, text: string): RecapSource => ({
+  kind: 'reply', hash, agentKey: 'bot001', text, ts: '2026-06-26T11:01:00Z',
+})
+
+test('selectThreadRecap: excludes the current inbound message and empty-text entries', () => {
+  const entries = [recapMsg('h1', 'first'), recapReply('h2', ''), recapMsg('h3', '   '), recapMsg('cur', 'the latest message')]
+  const out = selectThreadRecap(entries, { excludeHash: 'cur' })
+  expect(out.map(e => e.hash)).toEqual(['h1']) // h2/h3 empty, cur excluded
+})
+
+test('selectThreadRecap: keeps the most recent maxEntries in chronological order', () => {
+  const entries = Array.from({ length: 10 }, (_, i) => recapMsg(`h${i}`, `line ${i}`))
+  const out = selectThreadRecap(entries, { maxEntries: 3 })
+  expect(out.map(e => e.hash)).toEqual(['h7', 'h8', 'h9']) // last 3, oldest→newest
+})
+
+test('selectThreadRecap: trims oldest first to honor the char budget', () => {
+  const entries = [recapMsg('h1', 'aaaa'), recapMsg('h2', 'bbbb'), recapMsg('h3', 'cccc')]
+  const out = selectThreadRecap(entries, { maxChars: 8 }) // room for 2 of the 4-char lines
+  expect(out.map(e => e.hash)).toEqual(['h2', 'h3']) // freshest kept, oldest dropped
+})
+
+test('selectThreadRecap: clamps an over-long line with an ellipsis', () => {
+  const out = selectThreadRecap([recapMsg('h1', 'x'.repeat(900))], {})
+  expect(out[0]!.text.length).toBeLessThanOrEqual(500)
+  expect(out[0]!.text.endsWith('…')).toBe(true)
+})
+
+test('wrapThreadRecap: empty in, empty out; non-empty framed as context not instructions', () => {
+  expect(wrapThreadRecap([])).toBe('')
+  const out = wrapThreadRecap([{ who: 'owner', text: 'ship it' }, { who: 'Alice', text: 'on it' }])
+  expect(out).toContain('<thread-recap>')
+  expect(out).toContain('</thread-recap>')
+  expect(out).toContain('not new instructions')
+  expect(out).toContain('- owner: ship it')
+  expect(out).toContain('- Alice: on it')
+})

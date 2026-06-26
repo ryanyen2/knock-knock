@@ -419,6 +419,19 @@ prior plan, decisions, and pitfalls instead of cold. See
   sessions don't cross machines) and rebound on restart in `getOrCreateSession`.
   Resume itself stays in `AgentHost` (Driver/Session lifecycle); `SessionSharing`
   delegates to it.
+- **Continuity after restart / cold join** — two complementary mechanisms keep a
+  bot from going blank. (1) **Automatic binding persistence:** every *successful*
+  turn writes the same per-scope `session.json` binding (gated on a resume-capable
+  `sessionRuntimeForAgent` + the live `Driver.currentSessionId`), so a same-bot/
+  same-runtime/same-workspace restart rebinds and resumes its *real* runtime session
+  — no explicit `sess:resume` needed. (2) **Cold-session `<thread-recap>`:** a
+  `Session.cold` flag (set true at creation, cleared when a binding is rebound or the
+  first turn completes) gates `threadRecapPrefixFor`, which on a genuinely cold turn
+  injects a once-only recap of the scope's prior transcript (pure `selectThreadRecap`/
+  `wrapThreadRecap` over the durable `channel:transcript` fold, current inbound message
+  excluded). This covers exactly the cases binding-resume can't: a newly-added bot, a
+  cross-runtime switch, or a runtime whose foreign-session load fails. Plain-language
+  writeup in `docs/how-coordination-works.md`.
 
 📥 is the session-sharing glyph (`GLYPHS.session`); like ✅/❌/🛑 it is reserved.
 

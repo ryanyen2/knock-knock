@@ -119,6 +119,41 @@ rough edge we plan to sharpen.)
 
 ---
 
+## If you turn everything off and on again
+
+The notebook is written to disk, so **turning the relay off loses nothing**. While
+it's off, nobody can reach the bots — knock all you like, no one's home. But the
+moment it starts back up, it reads the whole notebook back in, and every thread,
+every task, every "who's doing what" note is exactly where it was.
+
+There's a second kind of memory, though: the bot's own *train of thought* — the live
+back-and-forth it was having inside a thread. That lives in the bot's head, not the
+notebook. So when the relay restarts, knock-knock does two things so a bot doesn't
+go blank:
+
+1. **A returning bot picks up its real conversation.** Each time a bot finishes a
+   reply, knock-knock quietly bookmarks where that bot was in its thinking. After a
+   restart, the bot reopens that exact spot and carries on — same train of thought,
+   nothing lost. (This works when it's the same bot using the same coding agent in
+   the same folder; otherwise the bookmark is dropped on purpose, so it can't reopen
+   the wrong thing.)
+
+2. **A bot with no bookmark gets caught up from the notebook.** If there's no
+   bookmark to reopen — the bot is brand new to this thread, or its coding agent
+   can't reopen old sessions — knock-knock hands it a short **recap**: the recent
+   messages in that thread, pulled straight from the notebook, so it can read the
+   room before it answers instead of replying to a single message with no context.
+
+## When a new bot joins a thread mid-conversation
+
+This is just case 2 above. A freshly added bot has never seen the thread, so on its
+first turn it's handed the recap — the prior back-and-forth from the notebook — and
+the whiteboard of who's been doing what. So it can jump into an in-flight
+conversation already knowing what's been said and decided, rather than starting cold
+and asking everyone to repeat themselves.
+
+---
+
 ## Remembering the relevant earlier conversation
 
 When a bot starts working on something, it can **flip back through the notebook** to
