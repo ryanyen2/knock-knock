@@ -25,6 +25,7 @@ import { approvalFold } from './ledger/concepts/approval.ts'
 import { knowledgeFold } from './ledger/artifacts/knowledge.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
 import { replyClaim } from './ledger/synchronizations/reply-claim.ts'
+import { capturePresence } from './ledger/synchronizations/capture-presence.ts'
 import { driveTurn } from './ledger/synchronizations/drive-turn.ts'
 import { postOnReply } from './ledger/synchronizations/post-on-reply.ts'
 import { dmOnSupersede } from './ledger/synchronizations/dm-on-supersede.ts'
@@ -320,6 +321,8 @@ synchronizer.register(
     },
   }),
 )
+// Presence capture: turn.prompted/turn.replied → coordination-board notes.
+synchronizer.register(capturePresence())
 synchronizer.register(
   driveTurn({
     getDriveHandle: channelId => {

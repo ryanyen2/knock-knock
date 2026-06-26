@@ -232,3 +232,58 @@ test('reply-claim → board shows the winning agent as the designated responder 
   expect(board.responders).toEqual([{ agentKey: 'bot002', ref: 'msgM' }])
   store.close()
 })
+
+// ─── U5: presence capture from the turn lifecycle ─────────────────────────────
+
+import { capturePresence } from '../../src/ledger/synchronizations/capture-presence.ts'
+
+function turnInteraction(channel: ChannelId, agentKey: string, verb: 'turn.prompted' | 'turn.replied') {
+  return {
+    actor: agentKey,
+    role: 'agent' as Role,
+    channel,
+    target: { artifactId: discordArtifact(channel), anchor: { kind: 'none' as const } },
+    verb,
+    patch: { kind: 'none' as const },
+    effect: 'pure' as const,
+    caused_by: [] as string[],
+  }
+}
+
+test('capture-presence: turn.prompted→working then turn.replied→done (latest wins)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(coordBoardFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(capturePresence())
+  sync.start()
+
+  await admit(store, turnInteraction('chan1', 'bot002', 'turn.prompted'))
+  await flush()
+  let state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  expect(boardFor(state, 'chan1').presence.find(p => p.agentKey === 'bot002')?.status).toBe('working')
+
+  await admit(store, turnInteraction('chan1', 'bot002', 'turn.replied'))
+  await flush()
+  state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  expect(boardFor(state, 'chan1').presence.find(p => p.agentKey === 'bot002')?.status).toBe('done')
+  store.close()
+})
+
+test('capture-presence: two agents working in one scope without collision', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(coordBoardFold)
+  const sync = new Synchronizer(store, engine)
+  sync.register(capturePresence())
+  sync.start()
+
+  await admit(store, turnInteraction('chan1', 'bot002', 'turn.prompted'))
+  await admit(store, turnInteraction('chan1', 'bot101', 'turn.prompted'))
+  await flush()
+
+  const state = engine.get<import('../../src/ledger/concepts/coordination-board.ts').CoordBoardFoldState>(coordBoardFold.name)
+  const board = boardFor(state, 'chan1')
+  expect(board.presence.map(p => p.agentKey).sort()).toEqual(['bot002', 'bot101'])
+  store.close()
+})
