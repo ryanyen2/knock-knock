@@ -104,6 +104,7 @@ import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
 import { MeshSync } from './host/mesh-sync.ts'
+import { Billboard } from './host/billboard.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
@@ -206,6 +207,8 @@ export class AgentHost {
   private readonly workbench: Workbench
   /** Pinned per-thread config/setup card. */
   private readonly configCard: ConfigCard
+  /** Pinned shared coordination billboard (mesh mode; maintained by the elected scribe). */
+  private readonly billboard: Billboard
   private storeUnsub?: () => void
   /** No-Postgres cross-machine transport (publish/ingest coordination over the
    *  messaging channel). Constructed on connect only when mesh is enabled. */
@@ -270,6 +273,7 @@ export class AgentHost {
     }
     this.workbench = new Workbench(ctx)
     this.configCard = new ConfigCard(ctx)
+    this.billboard = new Billboard(ctx)
     this.conflictUI = new ConflictUI(ctx)
     this.watchControl = new WatchControl(ctx, this.approvals)
     this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
@@ -319,6 +323,13 @@ export class AgentHost {
       // file.received is admitted in the same wave, BEFORE the turn is prompted;
       // buffering here lets the very turn the file rode in on see it.
       else if (i.verb === 'file.received') this.bufferIngestedFile(i)
+      // Mesh: a coordination change (presence/designation or a task op) updates the
+      // shared billboard. The Billboard self-gates to the elected scribe, so only one
+      // bot actually edits the pin. (agent.identity carries no real scope — the next
+      // coord/task event refreshes the roster.)
+      if (this.meshEnabled && (i.verb === 'coord.note' || i.verb.startsWith('task.'))) {
+        this.billboard.refresh(i.channel)
+      }
     })
   }
 
@@ -444,6 +455,7 @@ export class AgentHost {
     this.mesh?.stop()
     this.workbench.stop()
     this.configCard.stop()
+    this.billboard.stop()
     await this.messaging.disconnect()
   }
 

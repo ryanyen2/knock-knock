@@ -70,6 +70,8 @@ import {
   encodeMeshEvent,
   decodeMeshEvent,
   meshProvenanceOk,
+  meshTaskClaimant,
+  renderBillboard,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -1592,4 +1594,36 @@ test('MESH_VERB_ALLOWLIST excludes anything touching permissions or native chat'
   expect(MESH_VERB_ALLOWLIST).not.toContain('config.set')
   expect(MESH_VERB_ALLOWLIST).not.toContain('channel.message')
   expect(MESH_VERB_ALLOWLIST).not.toContain('workspace.edit')
+})
+
+// ─── renderBillboard (the shared coordination pin) ────────────────────────────
+
+test('renderBillboard: shows roster with presence + task DAG glyphs', () => {
+  const out = renderBillboard(
+    [{ agentKey: 'cc', label: 'CC' }, { agentKey: 'd-bot' }],
+    [{ agentKey: 'cc', status: 'working', label: 'scanning' }],
+    [
+      { id: 'T1', label: 'scan', dependsOn: [], status: 'claimed', owner: 'cc' },
+      { id: 'T2', label: 'review', dependsOn: ['T1'], status: 'open' },
+    ],
+  )
+  expect(out).toContain('🤝')
+  expect(out).toContain('CC — working (scanning)')
+  expect(out).toContain('◐ T1 scan ←cc')
+  expect(out).toContain('○ T2 review (after T1)')
+})
+
+test('renderBillboard: empty when there is nothing to show', () => {
+  expect(renderBillboard([], [], [])).toBe('')
+})
+
+test('meshTaskClaimant: window 0 = elected winner; later windows walk the failover ladder', () => {
+  const elig = ['cc', 'd-bot', 'alice']
+  const w0 = meshTaskClaimant(elig, 'T1', 0, 1000)
+  const w1 = meshTaskClaimant(elig, 'T1', 1500, 1000)
+  const w2 = meshTaskClaimant(elig, 'T1', 2500, 1000)
+  expect(w0).toBe(electWinner(elig, 'T1')) // window 0 = the election winner
+  expect(new Set([w0, w1, w2]).size).toBe(3) // ladder advances through distinct ranks
+  expect(meshTaskClaimant(elig, 'T1', 999999, 1000)).toBe(w2) // clamps at the last rank
+  expect(meshTaskClaimant([], 'T1', 0, 1000)).toBeUndefined()
 })

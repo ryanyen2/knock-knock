@@ -1542,6 +1542,39 @@ export function electScribe(present: ReadonlyArray<string>): string | undefined 
   return electWinner(present, 'scribe')
 }
 
+/** Render the shared "billboard" — a single pinned, human-readable snapshot of the
+ *  multi-agent coordination for a scope (the no-Postgres mesh's visible payoff). One
+ *  elected scribe maintains it (see electScribe). Shows WHO is here + what each is
+ *  doing (presence) and the task DAG with ○ planned / ◐ in-progress / ✓ done. Pure —
+ *  returns '' when there's nothing to show, so the scribe can skip an empty pin. */
+export function renderBillboard(
+  roster: ReadonlyArray<{ agentKey: string; label?: string }>,
+  presence: ReadonlyArray<{ agentKey: string; status?: string; label?: string }>,
+  tasks: ReadonlyArray<Task>,
+): string {
+  if (roster.length === 0 && tasks.length === 0) return ''
+  const statusOf = new Map(presence.map(p => [p.agentKey, p]))
+  const glyph: Record<string, string> = { open: '○', claimed: '◐', done: '✓' }
+  const lines: string[] = ['🤝 **Coordination**']
+  if (roster.length) {
+    lines.push('', '__Who__')
+    for (const r of [...roster].sort((a, b) => (a.agentKey < b.agentKey ? -1 : 1))) {
+      const p = statusOf.get(r.agentKey)
+      const act = p ? ` — ${p.status ?? 'active'}${p.label ? ` (${p.label})` : ''}` : ''
+      lines.push(`• ${r.label ?? r.agentKey}${act}`)
+    }
+  }
+  if (tasks.length) {
+    lines.push('', '__Tasks__')
+    for (const t of [...tasks].sort((a, b) => (a.id < b.id ? -1 : 1))) {
+      const dep = t.dependsOn.length ? ` (after ${t.dependsOn.join(', ')})` : ''
+      const owner = t.owner ? ` ←${t.owner}` : ''
+      lines.push(`${glyph[t.status] ?? '·'} ${t.id} ${t.label ?? ''}${owner}${dep}`)
+    }
+  }
+  return lines.join('\n')
+}
+
 /** Mesh task allocation (pull-claim, no shared lock): whose turn is it to claim
  *  `taskId` right NOW? A deterministic time-sliced failover ladder — rank 0 owns the
  *  first window, rank 1 the next, and so on — so a winner that never claims (offline)
