@@ -1010,6 +1010,11 @@ export class AgentHost {
     const requireMention = cfg.requireMention ?? room.requireMention ?? true
     const mentionPatterns = [...(access.mentionPatterns ?? []), ...(cfg.mentionPatterns ?? [])]
     let mentioned = await this.isMentioned(m, mentionPatterns)
+    // Whether THIS bot is explicitly addressed (native @mention, a reply to one of MY
+    // messages, or a name pattern) — captured BEFORE the engaged-thread waiver below, so
+    // it means "addressed", not "engaged". reply-claim uses it (with the global markup set)
+    // to route directed messages: each addressed bot answers, others stand down.
+    const addressedMe = mentioned
     // A peer BOT (in the directory) engages this bot ONLY when it explicitly @mentions or
     // replies to it — regardless of the room's require-mention setting — so two bots don't
     // loop on every broadcast in a busy multi-bot channel. Humans keep the behavior below.
@@ -1156,6 +1161,9 @@ export class AgentHost {
             text: m.text,
             messageId: m.ref.id,
             targetAgent: this.key,
+            // Addressing signals for reply-claim's directed/broadcast routing.
+            addressedMe,
+            isReply: !!m.replyToMessageId,
             ...(attachmentMeta ? { attachments: attachmentMeta } : {}),
           },
         },

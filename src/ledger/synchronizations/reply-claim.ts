@@ -69,13 +69,23 @@ export type ReplyClaimOpts = {
   resolveAddressing?: (channel: ChannelId, messageId: string, text: string) => string[]
 }
 
-function messageArgs(i: Interaction): { messageId?: string; targetAgent?: string; text: string } {
-  if (i.patch.kind !== 'external') return { text: '' }
-  const a = i.patch.intent.args as { messageId?: unknown; targetAgent?: unknown; text?: unknown } | undefined
+function messageArgs(i: Interaction): {
+  messageId?: string
+  targetAgent?: string
+  text: string
+  addressedMe: boolean
+  isReply: boolean
+} {
+  if (i.patch.kind !== 'external') return { text: '', addressedMe: false, isReply: false }
+  const a = i.patch.intent.args as
+    | { messageId?: unknown; targetAgent?: unknown; text?: unknown; addressedMe?: unknown; isReply?: unknown }
+    | undefined
   return {
     messageId: typeof a?.messageId === 'string' ? a.messageId : undefined,
     targetAgent: typeof a?.targetAgent === 'string' ? a.targetAgent : undefined,
     text: typeof a?.text === 'string' ? a.text : '',
+    addressedMe: a?.addressedMe === true,
+    isReply: a?.isReply === true,
   }
 }
 
@@ -115,7 +125,7 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
       i.verb === 'channel.message' &&
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
     fire: async (i, ctx) => {
-      const { messageId, targetAgent, text } = messageArgs(i)
+      const { messageId, targetAgent, text, addressedMe, isReply } = messageArgs(i)
       if (!messageId) return // can't key a per-message claim without the platform id
 
       const coord = opts.resolveCoord(i.channel, targetAgent)
@@ -126,12 +136,27 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
       const lg = ctx.engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)
       if (!decideLoopGuard(lg, i.channel, i.role, now(), coord.loopGuardOpts).allow) return
 
-      // Directed vs broadcast. A message that explicitly @mentions specific bots is
-      // DIRECTED: each named bot answers its own part (per-agent claim), and a bot that
-      // isn't named stays out. Only a true broadcast (no bot named) elects one responder.
-      const addressed = opts.resolveAddressing?.(i.channel, messageId, text) ?? []
-      const directed = addressed.length > 0
-      if (directed && !addressed.includes(coord.agentKey)) return // named someone else, not me
+      // ── Addressing precedence (the fix for thread/reply/mention confusion) ──────
+      // A message can address bots three ways; resolve to "directed" (I answer my own
+      // part, others stay out) vs "broadcast" (one responder elected):
+      //   1. @mention markup — GLOBAL (every bot sees the same set). If ANY bot is named,
+      //      the message is directed: each named bot answers, an unnamed bot stands down.
+      //   2. reply pointer — a reply is directed at whoever it replies to. The replied-to
+      //      bot (addressedMe) answers; every other bot stands down (a reply to a peer/human
+      //      is not a broadcast). This is the "I replied to one bot in a busy thread" case.
+      //   3. name pattern — per-bot; the matched bot answers (others may not see it).
+      // Only a message that addresses NO ONE (no markup mention, not a reply) is a broadcast.
+      const markupAddressed = opts.resolveAddressing?.(i.channel, messageId, text) ?? []
+      let directed: boolean
+      if (markupAddressed.length > 0) {
+        if (!markupAddressed.includes(coord.agentKey) && !addressedMe) return // named others
+        directed = true
+      } else if (isReply) {
+        if (!addressedMe) return // a reply directed at someone else (or a human) — stay quiet
+        directed = true
+      } else {
+        directed = addressedMe // name-pattern address ⇒ directed; otherwise broadcast
+      }
 
       const policy = resolveResponderPolicy(coord.cfg)
       const self: ResponderSelf = { agentKey: coord.agentKey, isOwnerBot: coord.isOwnerBot }

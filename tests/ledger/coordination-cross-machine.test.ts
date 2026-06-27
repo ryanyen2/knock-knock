@@ -23,14 +23,22 @@ import { projectTaskDag, readyTasks, type ChannelConfig } from '../../src/lib.ts
 
 const flush = () => new Promise(r => setTimeout(r, 15))
 
-function channelMessage(channel: ChannelId, messageId: string, targetAgent: string) {
+function channelMessage(
+  channel: ChannelId,
+  messageId: string,
+  targetAgent: string,
+  extra: { addressedMe?: boolean; isReply?: boolean } = {},
+) {
   return {
     actor: 'human1',
     role: 'human' as Role,
     channel,
     target: { artifactId: discordArtifact(channel), anchor: { kind: 'none' as const } },
     verb: 'channel.message' as const,
-    patch: { kind: 'external' as const, intent: { channel: 'discord', op: 'received', args: { text: 'hi', messageId, targetAgent } } },
+    patch: {
+      kind: 'external' as const,
+      intent: { channel: 'discord', op: 'received', args: { text: 'hi', messageId, targetAgent, ...extra } },
+    },
     effect: 'external' as const,
     caused_by: [] as string[],
   }
@@ -176,5 +184,65 @@ test('directed: a message naming only ONE bot is not grabbed by the other', asyn
   const prompted = await store.listByVerb('turn.prompted')
   expect(prompted.length).toBe(1) // only the named bot answers
   expect(prompted[0]!.actor).toBe('bot002')
+  store.close()
+})
+
+test('reply routing: a reply to ONE bot in a busy thread engages only that bot', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sA = new Synchronizer(store, engine)
+  const sB = new Synchronizer(store, engine)
+  // No markup mention (reply has no <@id>); addressing stub returns none.
+  const noMarkup = () => []
+  sA.register(replyClaim({ resolveCoord: coordResolver('bot002', 'relayA'), resolveAddressing: noMarkup }))
+  sB.register(replyClaim({ resolveCoord: coordResolver('bot101', 'relayB'), resolveAddressing: noMarkup }))
+  sA.start()
+  sB.start()
+  // User replies to bot002's message: bot002 sees addressedMe (reply-to-me); bot101 also
+  // engaged in the thread (its copy admitted) but addressedMe=false on a reply → stands down.
+  await admit(store, channelMessage('chan1', 'msgM', 'bot002', { addressedMe: true, isReply: true }))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101', { addressedMe: false, isReply: true }))
+  await flush()
+  const prompted = await store.listByVerb('turn.prompted')
+  expect(prompted.length).toBe(1)
+  expect(prompted[0]!.actor).toBe('bot002') // only the replied-to bot
+  store.close()
+})
+
+test('reply routing: a no-mention reply addressed to no bot (e.g. a human) wakes nobody', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sA = new Synchronizer(store, engine)
+  const sB = new Synchronizer(store, engine)
+  const noMarkup = () => []
+  sA.register(replyClaim({ resolveCoord: coordResolver('bot002', 'relayA'), resolveAddressing: noMarkup }))
+  sB.register(replyClaim({ resolveCoord: coordResolver('bot101', 'relayB'), resolveAddressing: noMarkup }))
+  sA.start()
+  sB.start()
+  await admit(store, channelMessage('chan1', 'msgM', 'bot002', { addressedMe: false, isReply: true }))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101', { addressedMe: false, isReply: true }))
+  await flush()
+  expect((await store.listByVerb('turn.prompted')).length).toBe(0) // @mention a bot to pull it in
+  store.close()
+})
+
+test('broadcast still elects exactly one when no bot is addressed (plain message)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sA = new Synchronizer(store, engine)
+  const sB = new Synchronizer(store, engine)
+  const noMarkup = () => []
+  sA.register(replyClaim({ resolveCoord: coordResolver('bot002', 'relayA'), resolveAddressing: noMarkup }))
+  sB.register(replyClaim({ resolveCoord: coordResolver('bot101', 'relayB'), resolveAddressing: noMarkup }))
+  sA.start()
+  sB.start()
+  // Plain message (no mention, not a reply): broadcast → exactly one responder.
+  await admit(store, channelMessage('chan1', 'msgM', 'bot002', { addressedMe: false, isReply: false }))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101', { addressedMe: false, isReply: false }))
+  await flush()
+  expect((await store.listByVerb('turn.prompted')).length).toBe(1)
   store.close()
 })
