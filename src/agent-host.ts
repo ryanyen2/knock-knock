@@ -72,7 +72,6 @@ import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
 import type { RelayUI } from './console-ui.ts'
-import { DmCourier, type TurnHandle as DmTurnHandle } from './dm-courier.ts'
 import type { AgentEvent, PermissionProfile } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
@@ -143,7 +142,6 @@ type Session = {
   activeTurn?: {
     promptHash: Hash
     recorder: TurnRecorder
-    dmHandle: DmTurnHandle
     /** Aborts this turn when the owner reacts 🛑. */
     abort: AbortController
   }
@@ -153,9 +151,6 @@ type Session = {
 type InboundSideTable = {
   ref: MessageRef
   ackEmoji: string
-  senderLabel: string
-  channelLabel: string
-  userPrompt: string
   /** Full inbound attachments (incl. signed/expiring URLs). Held in-process only —
    *  never persisted (the URL expires + leaks its signature). */
   attachments?: IncomingAttachment[]
@@ -164,7 +159,6 @@ type InboundSideTable = {
 export class AgentHost {
   private readonly messaging: MessagingAdapter
   private readonly approvals: Approvals
-  private readonly courier: DmCourier
   /** Activation state (daemon/idle mode). Active = picked at boot (has a pane); idle =
    *  connected-and-listening but no pane/session until its first message wakes it. Defaults
    *  to active so non-daemon launches are unchanged. Coding-agent sessions are lazy either
@@ -182,8 +176,8 @@ export class AgentHost {
    *  retries) keyed by `${scope} ${messageId}`. Orthogonal to reply-claim
    *  (which dedups WHICH agent answers, not duplicate deliveries of one message). */
   private readonly seenInbound = new Set<string>()
-  /** Inbound side-table keyed by channel.message hash. Consumed by the turn.prompted
-   *  subscriber (DmCourier kickoff) and turn.replied (ack cleanup). */
+  /** Inbound side-table keyed by channel.message hash. Consumed by markInboundOutcome
+   *  (ack→outcome reaction) and the file-ingest buffer. */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
   /** Per-scope ingested files not yet delivered into a turn. Removed only after the
    *  turn succeeds, so a failed turn re-offers them. */
@@ -204,9 +198,6 @@ export class AgentHost {
   private readonly coordDelivered = new Map<ChannelId, Set<string>>()
   /** Per-scope set of related-context blocks already injected (once-only). */
   private readonly relatedDelivered = new Map<ChannelId, Set<string>>()
-  /** DM-courier handles awaiting their turn's activeTurn. onTurnPrompted and
-   *  runTurnForChannel race on the same turn.prompted; whichever runs second reconciles here. */
-  private readonly pendingDmByPrompt = new Map<Hash, DmTurnHandle>()
   private readonly workbench: Workbench
   /** Pinned per-thread config/setup card. */
   private readonly configCard: ConfigCard
@@ -251,13 +242,6 @@ export class AgentHost {
       // resolve it where buttons/reactions are unavailable (GitHub, Notion).
       (scope, messageId, choices) => this.pendingChoicePrompts.add(scope, messageId, choices),
       (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
-    )
-
-    this.courier = new DmCourier(
-      this.messaging,
-      this.engine,
-      () => liveAgentGetter().ownerUserId,
-      reason => this.ui.note(this.key, reason),
     )
 
     // Shared capabilities the UI collaborators reach back into — no host back-reference.
@@ -322,14 +306,11 @@ export class AgentHost {
       }
     })
 
-    // turn.prompted → start the DmCourier. (The 👀→done/failed transition is owned
-    // by runTurnForChannel, which knows outcomes that never reach turn.replied.)
     this.storeUnsub = this.store.subscribe(i => {
       if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
-      if (i.verb === 'turn.prompted') void this.onTurnPrompted(i.hash, i.caused_by[0])
       // file.received is admitted in the same wave, BEFORE the turn is prompted;
       // buffering here lets the very turn the file rode in on see it.
-      else if (i.verb === 'file.received') this.bufferIngestedFile(i)
+      if (i.verb === 'file.received') this.bufferIngestedFile(i)
       // Mesh: a coordination change (presence/designation or a task op) updates the
       // shared billboard. The Billboard self-gates to the elected scribe, so only one
       // bot actually edits the pin. (agent.identity carries no real scope — the next
@@ -1230,9 +1211,6 @@ export class AgentHost {
     boundedMapSet(this.inboundByHash, inboundResult.interaction.hash, {
       ref: m.ref,
       ackEmoji,
-      senderLabel: m.authorName,
-      channelLabel,
-      userPrompt: m.text,
       attachments: m.attachments,
     }, 500)
 
@@ -1247,31 +1225,6 @@ export class AgentHost {
   }
 
   // ─── Ledger-driven side effects (subscribed in constructor) ───────────────
-
-  private async onTurnPrompted(promptHash: Hash, inboundHash: Hash | undefined): Promise<void> {
-    if (!inboundHash) return
-    const side = this.inboundByHash.get(inboundHash)
-    if (!side) return // not our channel.message, or already consumed
-    try {
-      const dmHandle = await this.courier.beginTurn({
-        senderLabel: side.senderLabel,
-        channelLabel: side.channelLabel,
-        userPrompt: side.userPrompt,
-        promptHash,
-      })
-      // Reconcile with runTurnForChannel order-independently: attach directly if the
-      // activeTurn exists, else stash for it to pick up. Synchronous after the await,
-      // so exactly one of the two paths attaches the handle.
-      const session = this.sessionForPrompt(promptHash)
-      if (session?.activeTurn?.promptHash === promptHash) {
-        session.activeTurn.dmHandle = dmHandle
-      } else {
-        this.rememberPendingDm(promptHash, dmHandle)
-      }
-    } catch (err) {
-      this.ui.error(this.key, `dm courier begin: ${err}`)
-    }
-  }
 
   /** Transition the inbound reactions when a turn winds down: drop the transient 👀
    *  and add a persistent outcome marker (done/failed/stopped). Called from
@@ -1291,19 +1244,6 @@ export class AgentHost {
       if (g !== glyph) void this.messaging.unreact(side.ref, g).catch(() => {})
     }
     void this.messaging.react(side.ref, glyph).catch(() => {})
-  }
-
-  /** The session whose active turn matches this promptHash, if one exists yet. */
-  private sessionForPrompt(promptHash: Hash): Session | undefined {
-    for (const sess of this.sessions.values()) {
-      if (sess.activeTurn?.promptHash === promptHash) return sess
-    }
-    return undefined
-  }
-
-  /** Stash a DM handle for runTurnForChannel to claim, FIFO-bounded. */
-  private rememberPendingDm(promptHash: Hash, handle: DmTurnHandle): void {
-    boundedMapSet(this.pendingDmByPrompt, promptHash, handle, 256)
   }
 
   // ─── Adapter driver (called by drive-turn via getDriveHandle) ─────────────
@@ -1563,12 +1503,8 @@ export class AgentHost {
       opts.inboundHash,
       opts.promptHash,
     )
-    // Claim the DM handle onTurnPrompted opened, if it ran first; else it attaches when
-    // it resumes. get+delete and the activeTurn assignment are one synchronous block (race-free).
     const abort = new AbortController()
-    const pendingDm = this.pendingDmByPrompt.get(opts.promptHash)
-    this.pendingDmByPrompt.delete(opts.promptHash)
-    session.activeTurn = { promptHash: opts.promptHash, recorder, dmHandle: pendingDm ?? noopDm(), abort }
+    session.activeTurn = { promptHash: opts.promptHash, recorder, abort }
 
     const meta: TurnMeta = {
       senderId: opts.senderId,
@@ -1624,8 +1560,6 @@ export class AgentHost {
       .finishTurn(replyText)
       .catch(err => this.ui.error(this.key, `ledger finish turn: ${err}`))
 
-    // Finalize the DM transcript with any error (the reply text already landed in the Turn fold).
-    void session.activeTurn?.dmHandle.finalize(turnError).catch(() => {})
     session.activeTurn = undefined
 
     // Transition the inbound reaction to a persistent outcome marker.
@@ -1828,10 +1762,6 @@ export class AgentHost {
 
     return matchesMentionPattern(m.text, mentionPatterns)
   }
-}
-
-function noopDm(): DmTurnHandle {
-  return { finalize: async () => {} }
 }
 
 /** Tracks interactive choice prompts awaiting a text reply, per scope. At most a
