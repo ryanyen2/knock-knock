@@ -39,7 +39,6 @@ import {
   resolveReactionScope,
   resolveProfileForActor,
   resolveRoomProfile,
-  threadNameFromPrompt,
   matchesMentionPattern,
   wrapChannelRole,
   wrapChannelGoal,
@@ -509,11 +508,6 @@ export class AgentHost {
     }
   }
 
-  /** Record the task scope a top-level message spawned, FIFO-bounded. */
-  private rememberTaskScope(messageId: string, scope: ChannelId): void {
-    boundedMapSet(this.taskScopeByMessage, messageId, scope, 1000)
-  }
-
   /** Make an absolute edit path workspace-relative. Undefined when the scope is
    *  unserved or the file escapes the workspace — only in-workspace edits become
    *  versionable artifacts (artifact id stays stable across machines). */
@@ -944,12 +938,6 @@ export class AgentHost {
 
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
-  /** Get or create the task thread for a top-level message (race-tolerant). Undefined
-   *  if a thread can't be created, so the caller falls back to the channel. */
-  private async ensureTaskThread(m: IncomingMessage): Promise<ChannelId | undefined> {
-    return this.messaging.startThread(m.ref, threadNameFromPrompt(m.text))
-  }
-
   private async handleInbound(m: IncomingMessage): Promise<void> {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
@@ -1142,20 +1130,12 @@ export class AgentHost {
       return
     }
 
-    // Resolve the task scope. A thread message stays in its thread; a top-level
-    // @mention spawns (or reuses) a task thread; a top-level non-mention stays at the
-    // channel. Thread-creation failure degrades to the channel.
-    let scopeId: ChannelId
-    if (m.isThread) {
-      scopeId = m.scope
-    } else if (mentioned) {
-      scopeId = (await this.ensureTaskThread(m)) ?? m.scope
-    } else {
-      scopeId = m.scope
-    }
+    // Tasks run inline in the message's own scope — we never spawn a task thread (that
+    // scattered the conversation into a thread hanging off every @mention). A genuine
+    // platform thread reply (a human typing inside a pre-existing thread) keeps its thread
+    // scope; everything else runs in the channel.
+    const scopeId: ChannelId = m.scope
     this.scopeToRoom.set(scopeId, roomId)
-    // So a 🛑/🔁 reaction on the original message resolves to the thread it spawned.
-    if (scopeId !== m.scope) this.rememberTaskScope(m.ref.id, scopeId)
     // Surface the thread's pinned setup card (no-op for a plain-channel scope).
     this.configCard.refresh(scopeId)
 

@@ -21,7 +21,6 @@ import {
   watchGate,
   parseWatchCommand,
   pickFreshContext,
-  threadNameFromPrompt,
   matchesMentionPattern,
   guildSenderAllowed,
   githubAssociationTrusted,
@@ -507,31 +506,6 @@ test('pickFreshContext: returns only the not-yet-delivered note', () => {
   const out = pickFreshContext(NOTES, new Set(['h1']))
   expect(out.prefix).toBe('second brief')
   expect(out.freshHashes).toEqual(['h2'])
-})
-
-// ─── threadNameFromPrompt ────────────────────────────────────────────────────
-
-test('threadNameFromPrompt: strips @mentions and collapses whitespace', () => {
-  expect(threadNameFromPrompt('<@!123>  fix   the parser <@456>')).toBe('fix the parser')
-})
-
-test('threadNameFromPrompt: caps at 80 chars with an ellipsis', () => {
-  const long = 'x'.repeat(100)
-  const out = threadNameFromPrompt(long)
-  expect(out.endsWith('…')).toBe(true)
-  expect(out.length).toBe(81) // 80 chars + ellipsis
-})
-
-test('threadNameFromPrompt: strips role and channel mentions too', () => {
-  // The user's "@cc work with @d-bot" arrives as role mentions; without stripping them the
-  // thread title was raw "<@&1508…> work with <@&1520…>".
-  expect(threadNameFromPrompt('<@&1508101528827727968> work with <@&1520107340685377732> on docs'))
-    .toBe('work with on docs')
-  expect(threadNameFromPrompt('check <#999> channel')).toBe('check channel')
-})
-
-test('threadNameFromPrompt: empty after stripping falls back to "task"', () => {
-  expect(threadNameFromPrompt('<@!123>')).toBe('task')
 })
 
 // ─── matchesMentionPattern ───────────────────────────────────────────────────

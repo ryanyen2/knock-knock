@@ -1426,16 +1426,6 @@ export function parseWatchCommand(text: string): ParsedWatchCommand {
   }
 }
 
-// ─── Discord threads ─────────────────────────────────────────────────────────
-
-/** Derive a Discord thread name from message text: strip @mentions, cap at 80 chars. */
-export function threadNameFromPrompt(text: string): string {
-  // Strip user (`<@id>`/`<@!id>`), role (`<@&id>`), and channel (`<#id>`) mention markup —
-  // a bot addressed by its managed role would otherwise leave `<@&123…>` in the title.
-  const stripped = text.replace(/<(@[!&]?|#)\d+>/g, '').replace(/\s+/g, ' ').trim()
-  const trimmed = stripped.slice(0, 80) || 'task'
-  return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
-}
 
 /** Does any configured mention pattern (case-insensitive regex) match the text?
  *  Pure; malformed patterns are skipped, never thrown. */
