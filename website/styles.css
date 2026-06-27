@@ -92,6 +92,17 @@ a { color: inherit; text-decoration: none; }
 }
 .sec-head { margin-bottom: 56px; max-width: 80ch; }
 
+.icon-stack {
+  display: inline-flex; align-items: center; vertical-align: middle;
+  margin: 0 3px;
+}
+.icon-stack .si {
+  width: 22px; height: 22px; border-radius: 50%;
+  border: 1.5px solid var(--bg); object-fit: contain; background: #fff;
+  margin-left: -5px; box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.icon-stack .si:first-child { margin-left: 0; }
+
 /* ─────────────  BUTTONS  ───────────── */
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -495,7 +506,7 @@ a { color: inherit; text-decoration: none; }
 
 /* ═════════════  FLOW (pinned scrollytelling, tabbed scenarios)  ═════════════ */
 .flow { position: relative; }
-.flow-stage { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding: 0 24px; }
+.flow-stage { min-height: 100dvh; display: flex; flex-direction: column; justify-content: center; padding: 0 24px; background: var(--canvas); z-index: 2; }
 .flow-inner { width: 100%; max-width: var(--maxw); margin: 0 auto; }
 
 /* Scenario tabs — same visual language as the security dial / setup tabs */

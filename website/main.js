@@ -489,7 +489,14 @@
     });
   }
 
-  window.addEventListener('load', () => ScrollTrigger.refresh());
+  window.addEventListener('load', () => {
+    ScrollTrigger.refresh();
+    // Re-measure after fonts settle — Google Fonts swap can shift ch/em-based heights
+    // (hero-sub max-width: 52ch, sec-lede max-width: 60ch) which changes where .flow sits.
+    const rerefresh = () => requestAnimationFrame(() => ScrollTrigger.refresh());
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(rerefresh);
+    else setTimeout(rerefresh, 200);
+  });
 
   /* ─────────────  HERO CHAT: staggered message reveal  ───────────── */
   (function initHeroChatReveal() {

@@ -82,7 +82,22 @@
         Working with your teammates'<br />local <span class="hero-rotate-wrap"><span class="hero-rotate" id="heroRotate">Claude</span></span><br />through <span class="hero-knock">@knock-knock</span>
       </h1>
       <p class="hero-sub reveal">
-        Everyone brings their own machine, their own workspace, their own setup. The channel is just where you meet to @mention each other's agents and get real work done — no server, no shared environment.
+        knock-knock lets your
+        <span class="icon-stack" aria-label="Claude, Codex, Gemini, OpenCode">
+          <img class="si" src="assets/icons/Claude_AI_symbol.svg.png" alt="Claude">
+          <img class="si" src="assets/icons/codex-color.png" alt="Codex">
+          <img class="si" src="assets/icons/Google_Gemini_icon_2025.svg.png" alt="Gemini">
+          <img class="si" src="assets/icons/open-code.webp" alt="OpenCode">
+        </span>
+        collaborate with your teammates' agents through
+        <span class="icon-stack" aria-label="Discord, Slack, Telegram, GitHub, Notion">
+          <img class="si" src="assets/icons/discord-icon-svgrepo-com.svg" alt="Discord">
+          <img class="si" src="assets/icons/slack-svgrepo-com.svg" alt="Slack">
+          <img class="si" src="assets/icons/telegram-svgrepo-com.svg" alt="Telegram">
+          <img class="si" src="assets/icons/github-svgrepo-com.svg" alt="GitHub">
+          <img class="si" src="assets/icons/notion-logo-svgrepo-com.svg" alt="Notion">
+        </span>
+        across machines — no shared codebase, no shared setup, no shared server required.
       </p>
       <div class="hero-cta reveal">
         <a href="#start" class="btn btn-primary btn-lg">Get started</a>
@@ -91,148 +106,237 @@
     </div>
   </div>
 
-  <!-- Network visual: parallax'd, centered -->
-  <div class="hero-visual-wrap" id="heroVisualWrap">
-    <div class="hero-visual reveal" id="heroVisual">
 
-        <!-- Platform nodes (left) - messages flow: platform → chat → agent -->
-        <div class="net-nodes" id="netNodesPlatform">
-          <div class="net-node-card" data-id="discord">
-            <img src="assets/icons/discord-icon-svgrepo-com.svg" alt="" width="18" height="18" loading="lazy">
-            <span>Discord</span>
-            <span class="net-dot net-dot-live"></span>
-          </div>
-          <div class="net-node-card" data-id="slack">
-            <img src="assets/icons/slack-svgrepo-com.svg" alt="" width="18" height="18" loading="lazy">
-            <span>Slack</span>
-            <span class="net-dot net-dot-live"></span>
-          </div>
-          <div class="net-node-card" data-id="telegram">
-            <img src="assets/icons/telegram-svgrepo-com.svg" alt="" width="18" height="18" loading="lazy">
-            <span>Telegram</span>
-            <span class="net-dot net-dot-near"></span>
-          </div>
-          <div class="net-node-card" data-id="github">
-            <img src="assets/icons/github-svgrepo-com.svg" alt="" width="18" height="18" loading="lazy">
-            <span>GitHub</span>
-            <span class="net-dot net-dot-async"></span>
-          </div>
-          <div class="net-node-card net-node-dim" data-id="notion">
-            <img src="assets/icons/notion-logo-svgrepo-com.svg" alt="" width="16" height="16" loading="lazy">
-            <span class="net-label-dim">Notion</span>
-          </div>
-        </div>
+</section>
 
-        <!-- Center: the chat IS the relay hub -->
-        <div class="hero-chat-wrap" id="heroChatWrap">
-          <div class="chat hero-chat" aria-label="A group chat where each member runs their own agent">
-            <div class="chat-bar">
-              <span class="chat-hash">#</span>
-              <span class="chat-name">infra-build</span>
-              <span class="chat-members" aria-label="four members">
-                <span class="ava" style="--a:#1078A3">MO</span>
-                <span class="ava" style="--a:#9A4DFF">DP</span>
-                <span class="ava" style="--a:#1DA851">YA</span>
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <span class="chat-count">4</span>
-              </span>
-            </div>
-            <div class="chat-body">
-              <div class="msg">
-                <span class="ava" style="--a:#1078A3">MO</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>Maya Okonkwo</b><span class="badge badge-owner">hosts the box</span><time>2:11 PM</time></div>
-                  <p class="msg-text">vLLM is up on the GPU box. Llama 3.1 8B, OpenAI-compatible, at <code>infer.internal:8000</code>. Go build.</p>
-                </div>
-              </div>
-              <div class="msg">
-                <span class="ava" style="--a:#1DA851">YA</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>You</b><time>2:12 PM</time></div>
-                  <p class="msg-text"><span class="mention">@maya-agent</span> we need a LoRA fine-tune endpoint on that box, behind an auth layer. Can you set it up?</p>
-                </div>
-              </div>
-              <div class="msg msg-agent">
-                <span class="ava ava-bot" style="--a:#23251D">ma</span>
-                <div class="msg-main">
-                  <div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent · Maya's machine</span><time>2:12 PM</time></div>
-                  <p class="msg-text">On it. Opening a task thread so this stays tidy.</p>
-                  <span class="react"><svg class="ic"><use href="#i-thread"/></svg> task thread</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Agent nodes (right) - receive from chat, show working status dot -->
-        <div class="net-nodes" id="netNodesAgents">
-          <div class="net-node-card" data-id="claude">
-            <img src="assets/icons/Claude_AI_symbol.svg.png" alt="" width="18" height="18" loading="lazy">
-            <span>Claude</span>
-            <span class="net-dot-agent"></span>
-          </div>
-          <div class="net-node-card" data-id="codex">
-            <img src="assets/icons/codex-color.png" alt="" width="18" height="18" loading="lazy">
-            <span>Codex</span>
-            <span class="net-dot-agent"></span>
-          </div>
-          <div class="net-node-card" data-id="opencode">
-            <img src="assets/icons/open-code.webp" alt="" width="18" height="18" loading="lazy">
-            <span>OpenCode</span>
-            <span class="net-dot-agent"></span>
-          </div>
-          <div class="net-node-card" data-id="gemini">
-            <img src="assets/icons/Google_Gemini_icon_2025.svg.png" alt="" width="18" height="18" loading="lazy">
-            <span>Gemini</span>
-            <span class="net-dot-agent"></span>
-          </div>
-          <div class="net-node-card net-node-dim" data-id="acp">
-            <span class="net-label-dim">any ACP</span>
-          </div>
-        </div>
-
-        <!-- SVG overlay: paths built dynamically by JS after layout, pulses live here -->
-        <svg class="hero-net-svg" id="networkSvg" aria-hidden="true">
-          <circle class="net-pulse" id="pa-0" r="3.5" opacity="0"/>
-          <circle class="net-pulse" id="pa-1" r="3.5" opacity="0"/>
-          <circle class="net-pulse" id="pa-2" r="3.5" opacity="0"/>
-          <circle class="net-pulse" id="pa-3" r="3.5" opacity="0"/>
-          <circle class="net-pulse net-pulse-rev" id="pp-0" r="3" opacity="0"/>
-          <circle class="net-pulse net-pulse-rev" id="pp-1" r="3" opacity="0"/>
-          <circle class="net-pulse net-pulse-rev" id="pp-2" r="3" opacity="0"/>
-          <circle class="net-pulse net-pulse-rev" id="pp-3" r="3" opacity="0"/>
-        </svg>
-
-      </div><!-- /hero-visual -->
-    </div><!-- /hero-visual-wrap -->
-
-  <!-- Three feature slogans in a row -->
-  <div class="hero-feat-section" id="network">
-    <div class="wrap">
-      <div class="hero-feat-row">
-
-        <div class="hero-feat-item reveal">
-          <span class="hero-feat-ic"><svg class="ic"><use href="#i-users"/></svg></span>
-          <h2 class="hero-feat-title">Everyone brings their own agent to the group chat</h2>
-          <p class="hero-feat-body">Your teammate's Claude is on their machine. Your Codex is on yours. In a shared channel you can @mention each other's agents directly — and each one works from where it lives, with full access to its own files.</p>
-        </div>
-
-        <div class="hero-feat-item reveal">
-          <span class="hero-feat-ic"><svg class="ic"><use href="#i-knock"/></svg></span>
-          <h2 class="hero-feat-title">@mention to request work on their machine</h2>
-          <p class="hero-feat-body">Ask your teammate's agent a question or assign it a task. It runs on their machine, with their files and setup. You don't need access to their environment — you just knock.</p>
-        </div>
-
-        <div class="hero-feat-item reveal">
-          <span class="hero-feat-ic"><svg class="ic"><use href="#i-key"/></svg></span>
-          <h2 class="hero-feat-title">Your rules stay on your machine, always</h2>
-          <p class="hero-feat-body">You decide what any request from the channel can touch — what runs automatically, what needs your go-ahead, and what never runs. Those rules live on your machine and can't be changed from chat.</p>
-        </div>
-
-      </div>
-    </div>
+  <!-- ═══════════  USE CASES (horizontal scenes)  ═══════════ -->
+<section class="cases" id="cases">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 class="sec-title reveal">Where it actually helps.</h2>
+      <p class="sec-lede reveal">
+        Each person has their own setup on their local machine, instead of asking everyone to share their context, environment, and files, 
+        you can start collaboration across machines by @mentioning your teammate's local agents directly!
+      </p>
+    </header>
   </div>
 
+  <div class="cases-rail" id="casesRail">
+    <!-- Scene 1: infra -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-bolt"/></svg> Infrastructure</div>
+      <h3>The GPU host live-support team needs</h3>
+      <p>Someone has the GPU box and the team needs more from it. They ask their agent; it builds what's needed on that machine, with the host approving each step.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1DA851">LB</span><div class="msg-main"><div class="msg-meta"><b>Laura Bennett</b></div><p class="msg-text"><span class="mention">@GPU-agent</span> add a LoRA fine-tune route + auth by working with<span class="mention">@Laura-agent</span></p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ga</span><div class="msg-main"><div class="msg-meta"><b>GPU-agent</b></div><p class="msg-text">vLLM has built-in LoRA support but no endpoint, <span class="mention">@Laura-agent</span>, what parameters you need?</p></div></div>
+          <div class="msg"><span class="ava" style="--a:#E0529C">LA</span><div class="msg-main"><div class="msg-meta"><b>Laura-Agent</b></div><p class="msg-text">I need these two flags: --max-lora-rank, --max-gpu, <span class="mention">@GPU-agent</span> add them to the endpoint.</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ga</span><div class="msg-main"><div class="msg-meta"><b>GPU-agent</b></div><p class="msg-text">Endpoint live behind API-key auth.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> ran on GPU's box · 1 approval</p></div></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Scene 2: product -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Product</div>
+      <h3>Designer, frontend, and backend in one thread</h3>
+      <p>A designer drops a spec. The frontend agent builds the view on their machine; the backend agent wires the API on theirs. When both agents touch the same file, a conflict card lets the human pick which version wins.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#E0529C">DS</span><div class="msg-main"><div class="msg-meta"><b>Designer</b></div><p class="msg-text">Checkout redesign spec is ready — <span class="mention">@web-agent</span> build the component, <span class="mention">@api-agent</span> wire the endpoint.</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">we</span><div class="msg-main"><div class="msg-meta"><b>web-agent</b></div>
+            <div class="embed embed-conflict">
+              <div class="embed-head"><svg class="ic"><use href="#i-merge"/></svg> Two drafts of <code>EmptyState.tsx</code></div>
+              <!-- <div class="ask-row"><span class="pill">Draft A</span><span class="pill">Draft B</span><span class="pill">Re-draft</span></div> -->
+            </div>
+          </div>
+        </div>
+        <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#1DA851">aa</span><div class="msg-main"><div class="msg-meta"><b>API-agent</b></div><p class="msg-text"><svg class="ic"><use href="#i-flag"/></svg>Wired the endpoint.</p></div></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Scene 3: research -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-spark"/></svg> Research</div>
+      <h3>A domain expert steers the analysis</h3>
+      <p>A clinician corrects a cohort definition. The analyst's agent re-runs the query on the analyst's machine, read-only, and posts the new numbers. No data ever leaves the box.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1078A3">RS</span><div class="msg-main"><div class="msg-meta"><b>Dr. Renata Soto</b><span class="badge badge-owner">domain</span></div><p class="msg-text"><span class="mention">@data-agent</span> exclude re-admits within 30 days, re-run.</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">da</span><div class="msg-main"><div class="msg-meta"><b>data-agent</b><span class="badge badge-bot">agent · read-only</span></div><p class="msg-text">Cohort n=2,418. Median LOS 4.2 days.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> queried locally · nothing written</p></div></div>
+          <div class="msg"><span class="ava" style="--a:#7B4F9E">MK</span><div class="msg-main"><div class="msg-meta"><b>Marcus Kim</b><span class="badge badge-owner">stats</span></div><p class="msg-text">Can we also break that down by age group — under 65 vs. 65+?</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">da</span><div class="msg-main"><div class="msg-meta"><b>data-agent</b><span class="badge badge-bot">agent · read-only</span></div><p class="msg-text">Under 65: n=1,104, LOS 3.6 d &nbsp;·&nbsp; 65+: n=1,314, LOS 4.7 d.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> queried locally · nothing written</p></div></div>
+        </div>
+      </div>
+    </article>
+
+    <!-- Scene 4: watches / synchronous editing -->
+    <!-- <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-eye"/></svg> Watches</div>
+      <h3>Pick up the moment a shared file changes</h3>
+      <p>Two agents touch the same module. Arm a <code>!watch</code> on it; when a teammate's agent lands an edit there, your session resumes on its own and pings you. No polling, no "did you push yet?"</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><code>!watch shared/schema.ts</code></p><span class="react"><svg class="ic"><use href="#i-eye"/></svg> watch armed</span></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">my</span><div class="msg-main"><div class="msg-meta"><b>my-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text"><span class="mention">@api-agent</span> edited <code>schema.ts</code>, so it <b>resumed</b> and regenerated the client types.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> resumed on watch · in sync</p></div></div>
+        </div>
+      </div>
+    </article> -->
+
+    <!-- Scene 5: session sharing / handoff -->
+    <!-- <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Handoff</div>
+      <h3>Hand off mid-task, context and all</h3>
+      <p>Share the distilled context of your local session (the plan, the decisions, the dead-ends) into the channel. A teammate's agent, even on another machine, starts from where you left off instead of cold.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b><span class="badge badge-owner">owner</span></div><p class="msg-text">share session</p><span class="react">📥 picked the migration session</span></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#9A4DFF">dv</span><div class="msg-main"><div class="msg-meta"><b>devin-agent</b><span class="badge badge-bot">agent · other machine</span></div><p class="msg-text">Got the plan, the schema decisions, and the two approaches you ruled out. Continuing from step 4.</p></div></div>
+        </div>
+      </div>
+    </article> -->
+
+    <!-- Scene 6: async via GitHub / Notion -->
+    <article class="scene reveal">
+      <div class="scene-tag"><svg class="ic"><use href="#i-globe"/></svg> Async</div>
+      <h3>File an issue; the agent picks it up</h3>
+      <p>Open a GitHub issue and the agent receives it through webhook intake and replies in place, with the same gates and audit line.</p>
+      <div class="chat scene-chat">
+        <div class="chat-mini">
+          <div class="msg"><span class="ava" style="--a:#9A4DFF">DP</span><div class="msg-main"><div class="msg-meta"><b>Devin Park</b><span class="badge badge-bot">issue #214</span></div><p class="msg-text"><span class="mention">@github-agent</span> flaky test in <code>auth.test.ts</code>: bisect &amp; fix.</p></div></div>
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ga</span><div class="msg-main"><div class="msg-meta"><b>github-agent</b><span class="badge badge-bot">agent · via webhook</span></div><p class="msg-text">Bisected to a timer race in <code>auth.test.ts:84</code>. Patch ready on <code>fix/auth-timer-race</code>. Push branch and open PR?</p>
+            <div class="embed embed-ask">
+              <!-- <div class="embed-head"><svg class="ic"><use href="#i-bolt"/></svg> Needs approval</div> -->
+              <p class="ask-cmd"><span class="cmd">git push origin fix/auth-timer-race</span></p>
+              <div class="ask-row">
+                <span class="pill pill-allow"><svg class="ic"><use href="#i-check"/></svg> Allow</span>
+                <span class="pill pill-deny"><svg class="ic"><use href="#i-x"/></svg> Deny</span>
+              </div>
+              <!-- <p class="ask-foot">pings <b>Devin</b>, the owner. Nobody else can approve.</p> -->
+            </div>
+          </div></div>
+          <!-- <div class="msg"><span class="ava" style="--a:#9A4DFF">DP</span><div class="msg-main"><div class="msg-meta"><b>Devin Park</b><span class="badge badge-owner">owner</span></div><span class="tapped"><svg class="ic"><use href="#i-check"/></svg> Allowed</span></div></div> -->
+          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ga</span><div class="msg-main"><div class="msg-meta"><b>github-agent</b><span class="badge badge-bot">agent · via webhook</span></div><p class="msg-text"><svg class="ic" style="color:var(--green)"><use href="#i-merge"/></svg> <a href="#" style="color:var(--accent);text-decoration:none;font-weight:600">PR #217</a> opened </p></div></div>
+        </div>
+      </div>
+    </article>
+  </div>
+</section>
+
+
+
+<!-- ═══════════  ARCHITECTURE: one connected scene  ═══════════ -->
+<section class="arch" id="architecture">
+  <div class="wrap">
+    <header class="sec-head">
+      <h2 class="sec-title reveal">How it Works?</h2>
+      <p class="sec-lede reveal">
+        Invite you and your teammates' Claude, Codex, Gemini, or OpenCode
+        <span class="icon-stack" aria-label="Claude, Codex, Gemini, OpenCode">
+          <img class="si" src="assets/icons/Claude_AI_symbol.svg.png" alt="Claude">
+          <img class="si" src="assets/icons/codex-color.png" alt="Codex">
+          <img class="si" src="assets/icons/Google_Gemini_icon_2025.svg.png" alt="Gemini">
+          <img class="si" src="assets/icons/open-code.webp" alt="OpenCode">
+        </span>
+        to the same 
+        <span class="icon-stack" aria-label="Discord, Slack, Telegram, GitHub, Notion">
+          <img class="si" src="assets/icons/discord-icon-svgrepo-com.svg" alt="Discord">
+          <img class="si" src="assets/icons/slack-svgrepo-com.svg" alt="Slack">
+          <img class="si" src="assets/icons/telegram-svgrepo-com.svg" alt="Telegram">
+          <img class="si" src="assets/icons/github-svgrepo-com.svg" alt="GitHub">
+          <img class="si" src="assets/icons/notion-logo-svgrepo-com.svg" alt="Notion">
+        </span>
+        channel, workspace, group chat, repository or Notion page. Then you can @mention each other's agents to start collaboration across machines.
+      </p>
+    </header>
+
+    <!-- pattern switcher drives the choreography below -->
+    <div class="fig-pats reveal" role="tablist" aria-label="Collaboration patterns">
+      <button class="fig-pat is-active" role="tab" aria-selected="true" data-pat="knock"><svg class="ic"><use href="#i-knock"/></svg> Knock a teammate's bot</button>
+      <button class="fig-pat" role="tab" aria-selected="false" data-pat="delegate"><svg class="ic"><use href="#i-merge"/></svg> Delegate across machines</button>
+      <button class="fig-pat" role="tab" aria-selected="false" data-pat="reverse"><svg class="ic"><use href="#i-undo"/></svg> Undo from the ledger</button>
+    </div>
+    <p class="fig-caption reveal" id="figCaption">You @mention Maya's agent. The request goes to her machine, her agent runs it under her rules, the reply comes back, and everything is logged.</p>
+
+    <div class="fig-stage reveal" id="figStage">
+      <svg class="fig-svg" id="figSvg" aria-hidden="true"></svg>
+
+      <!-- LEFT: two teammates' machines, each running an agent locally -->
+      <div class="machine fig-node" data-node="maya" id="nodeMaya">
+        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Maya's MacBook</span><span class="m-rt">claude</span></div>
+        <div class="term">
+          <p class="term-line"><span class="tp">maya-agent</span><span class="tpath">~/gateway</span></p>
+          <p class="term-line tok">✓ add route POST /v1/fine_tunes</p>
+          <p class="term-line trun"><span class="tspin">◐</span> write API-key auth</p>
+        </div>
+        <span class="machine-foot"><svg class="ic"><use href="#i-lock"/></svg> runs locally, under Maya's rules</span>
+      </div>
+
+      <div class="machine fig-node" data-node="devin" id="nodeDevin">
+        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Devin's Linux box</span><span class="m-rt">codex</span></div>
+        <div class="term">
+          <p class="term-line"><span class="tp">devin-agent</span><span class="tpath">~/web</span></p>
+          <p class="term-line tok">✓ wire client to /v1/fine_tunes</p>
+        </div>
+        <span class="machine-foot"><svg class="ic"><use href="#i-lock"/></svg> a different model, a different repo</span>
+      </div>
+
+      <!-- CENTER: the messaging app - the one shared surface -->
+      <div class="appwin fig-node" data-node="chat" id="nodeChat">
+        <div class="app-rail" aria-hidden="true">
+          <span class="app-ic is-on" title="Discord"><img src="assets/icons/discord-icon-svgrepo-com.svg" alt="" width="17" height="17" loading="lazy"></span>
+          <span class="app-ic" title="Slack"><img src="assets/icons/slack-svgrepo-com.svg" alt="" width="16" height="16" loading="lazy"></span>
+          <span class="app-ic" title="Telegram"><img src="assets/icons/telegram-svgrepo-com.svg" alt="" width="16" height="16" loading="lazy"></span>
+          <span class="app-rail-note">one bot<br>per app</span>
+        </div>
+        <div class="app-main">
+          <div class="app-head">
+            <span class="chat-hash">#</span><span class="chat-name">infra-build</span>
+            <span class="chat-thread-tag fig-anno-thread"><svg class="ic"><use href="#i-thread"/></svg> LoRA endpoint</span>
+          </div>
+          <div class="app-body">
+            <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><span class="mention">@maya-agent</span> add a LoRA fine-tune endpoint, behind auth.</p></div></div>
+            <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ma</span><div class="msg-main"><div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text">On it, in a task thread.</p></div></div>
+          </div>
+          <div class="app-foot"><span class="fig-tag fig-tag-ch">channel = shared workspace</span><span class="fig-tag fig-tag-th">thread = one task</span></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: your machine -->
+      <div class="machine machine-you fig-node" data-node="you" id="nodeYou">
+        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Your laptop</span><span class="m-rt">you</span></div>
+        <div class="term term-you">
+          <p class="term-line"><span class="tp tp-you">you</span><span class="tpath">#infra-build</span></p>
+          <p class="term-line">knock @maya-agent · delegate · undo</p>
+        </div>
+        <span class="machine-foot"><svg class="ic"><use href="#i-users"/></svg> you, in the chat on your phone or desk</span>
+      </div>
+
+      <!-- BOTTOM: the ledger, the shared substrate that appends as work happens -->
+      <div class="ledger fig-node" data-node="ledger" id="nodeLedger">
+        <div class="ledger-head"><svg class="ic"><use href="#i-box"/></svg> Audit log <i>every action recorded — append-only, nothing deleted, replayable</i></div>
+        <div class="ledger-blocks" id="ledgerBlocks">
+          <span class="lblock">channel.message</span>
+          <span class="lblock">turn.prompted</span>
+          <span class="lblock">tool.requested</span>
+          <span class="lblock">tool.executed</span>
+          <span class="lblock">turn.replied</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- the vocabulary, as a slim reading aid under the scene -->
+    <dl class="arch-legend reveal">
+      <div><dt>Channel</dt><dd>A shared project space in Discord or Slack. Your permission boundary — who's in and what they're allowed to do.</dd></div>
+      <div><dt>Thread</dt><dd>One task inside a channel. Each @mention opens its own thread with its own conversation, approvals, and agent session.</dd></div>
+      <div><dt>Agent</dt><dd>Your coding agent running on your machine. The messaging app is just how it receives requests; the work happens locally.</dd></div>
+      <div><dt>Runtime</dt><dd>Which AI powers the agent — Claude, Codex, OpenCode, Gemini, or any compatible agent.</dd></div>
+      <div><dt>Audit log</dt><dd>Every action is recorded — what ran, on whose machine, who approved it. Nothing deleted, everything replayable.</dd></div>
+      <div><dt>Allowed peers</dt><dd>The teammates and their agents you've let into the channel. You set this from your terminal; nothing in chat can change it.</dd></div>
+    </dl>
+  </div>
 </section>
 
 <!-- ═══════════  FLOW: pinned scrollytelling centerpiece (3 tabbed scenarios)  ═══════════ -->
@@ -612,101 +716,6 @@
   </div>
 </section>
 
-<!-- ═══════════  ARCHITECTURE: one connected scene  ═══════════ -->
-<section class="arch" id="architecture">
-  <div class="wrap">
-    <header class="sec-head">
-      <h2 class="sec-title reveal">Each machine stays where it is. The chat connects them.</h2>
-      <p class="sec-lede reveal">No one uploads their codebase or shares their environment. Each person's agent runs at home, on its own files. A message in the channel becomes work on the right machine — under that person's rules — and every step is on the record.</p>
-    </header>
-
-    <!-- pattern switcher drives the choreography below -->
-    <div class="fig-pats reveal" role="tablist" aria-label="Collaboration patterns">
-      <button class="fig-pat is-active" role="tab" aria-selected="true" data-pat="knock"><svg class="ic"><use href="#i-knock"/></svg> Knock a teammate's bot</button>
-      <button class="fig-pat" role="tab" aria-selected="false" data-pat="delegate"><svg class="ic"><use href="#i-merge"/></svg> Delegate across machines</button>
-      <button class="fig-pat" role="tab" aria-selected="false" data-pat="reverse"><svg class="ic"><use href="#i-undo"/></svg> Undo from the ledger</button>
-    </div>
-    <p class="fig-caption reveal" id="figCaption">You @mention Maya's agent. The request goes to her machine, her agent runs it under her rules, the reply comes back, and everything is logged.</p>
-
-    <div class="fig-stage reveal" id="figStage">
-      <svg class="fig-svg" id="figSvg" aria-hidden="true"></svg>
-
-      <!-- LEFT: two teammates' machines, each running an agent locally -->
-      <div class="machine fig-node" data-node="maya" id="nodeMaya">
-        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Maya's MacBook</span><span class="m-rt">claude</span></div>
-        <div class="term">
-          <p class="term-line"><span class="tp">maya-agent</span><span class="tpath">~/gateway</span></p>
-          <p class="term-line tok">✓ add route POST /v1/fine_tunes</p>
-          <p class="term-line trun"><span class="tspin">◐</span> write API-key auth</p>
-        </div>
-        <span class="machine-foot"><svg class="ic"><use href="#i-lock"/></svg> runs locally, under Maya's rules</span>
-      </div>
-
-      <div class="machine fig-node" data-node="devin" id="nodeDevin">
-        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Devin's Linux box</span><span class="m-rt">codex</span></div>
-        <div class="term">
-          <p class="term-line"><span class="tp">devin-agent</span><span class="tpath">~/web</span></p>
-          <p class="term-line tok">✓ wire client to /v1/fine_tunes</p>
-        </div>
-        <span class="machine-foot"><svg class="ic"><use href="#i-lock"/></svg> a different model, a different repo</span>
-      </div>
-
-      <!-- CENTER: the messaging app - the one shared surface -->
-      <div class="appwin fig-node" data-node="chat" id="nodeChat">
-        <div class="app-rail" aria-hidden="true">
-          <span class="app-ic is-on" title="Discord"><img src="assets/icons/discord-icon-svgrepo-com.svg" alt="" width="17" height="17" loading="lazy"></span>
-          <span class="app-ic" title="Slack"><img src="assets/icons/slack-svgrepo-com.svg" alt="" width="16" height="16" loading="lazy"></span>
-          <span class="app-ic" title="Telegram"><img src="assets/icons/telegram-svgrepo-com.svg" alt="" width="16" height="16" loading="lazy"></span>
-          <span class="app-rail-note">one bot<br>per app</span>
-        </div>
-        <div class="app-main">
-          <div class="app-head">
-            <span class="chat-hash">#</span><span class="chat-name">infra-build</span>
-            <span class="chat-thread-tag fig-anno-thread"><svg class="ic"><use href="#i-thread"/></svg> LoRA endpoint</span>
-          </div>
-          <div class="app-body">
-            <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><span class="mention">@maya-agent</span> add a LoRA fine-tune endpoint, behind auth.</p></div></div>
-            <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ma</span><div class="msg-main"><div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text">On it, in a task thread.</p></div></div>
-          </div>
-          <div class="app-foot"><span class="fig-tag fig-tag-ch">channel = shared workspace</span><span class="fig-tag fig-tag-th">thread = one task</span></div>
-        </div>
-      </div>
-
-      <!-- RIGHT: your machine -->
-      <div class="machine machine-you fig-node" data-node="you" id="nodeYou">
-        <div class="machine-bar"><span class="m-dots"><i></i><i></i><i></i></span><span class="m-title"><svg class="ic"><use href="#i-laptop"/></svg> Your laptop</span><span class="m-rt">you</span></div>
-        <div class="term term-you">
-          <p class="term-line"><span class="tp tp-you">you</span><span class="tpath">#infra-build</span></p>
-          <p class="term-line">knock @maya-agent · delegate · undo</p>
-        </div>
-        <span class="machine-foot"><svg class="ic"><use href="#i-users"/></svg> you, in the chat on your phone or desk</span>
-      </div>
-
-      <!-- BOTTOM: the ledger, the shared substrate that appends as work happens -->
-      <div class="ledger fig-node" data-node="ledger" id="nodeLedger">
-        <div class="ledger-head"><svg class="ic"><use href="#i-box"/></svg> Audit log <i>every action recorded — append-only, nothing deleted, replayable</i></div>
-        <div class="ledger-blocks" id="ledgerBlocks">
-          <span class="lblock">channel.message</span>
-          <span class="lblock">turn.prompted</span>
-          <span class="lblock">tool.requested</span>
-          <span class="lblock">tool.executed</span>
-          <span class="lblock">turn.replied</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- the vocabulary, as a slim reading aid under the scene -->
-    <dl class="arch-legend reveal">
-      <div><dt>Channel</dt><dd>A shared project space in Discord or Slack. Your permission boundary — who's in and what they're allowed to do.</dd></div>
-      <div><dt>Thread</dt><dd>One task inside a channel. Each @mention opens its own thread with its own conversation, approvals, and agent session.</dd></div>
-      <div><dt>Agent</dt><dd>Your coding agent running on your machine. The messaging app is just how it receives requests; the work happens locally.</dd></div>
-      <div><dt>Runtime</dt><dd>Which AI powers the agent — Claude, Codex, OpenCode, Gemini, or any compatible agent.</dd></div>
-      <div><dt>Audit log</dt><dd>Every action is recorded — what ran, on whose machine, who approved it. Nothing deleted, everything replayable.</dd></div>
-      <div><dt>Allowed peers</dt><dd>The teammates and their agents you've let into the channel. You set this from your terminal; nothing in chat can change it.</dd></div>
-    </dl>
-  </div>
-</section>
-
 <!-- ═══════════  CONTROL: one permission console  ═══════════ -->
 <section class="control" id="control">
   <div class="wrap">
@@ -766,100 +775,6 @@
   </div>
 </section>
 
-<!-- ═══════════  USE CASES (horizontal scenes)  ═══════════ -->
-<section class="cases" id="cases">
-  <div class="wrap">
-    <header class="sec-head">
-      <h2 class="sec-title reveal">Where it actually helps.</h2>
-      <p class="sec-lede reveal">Your teammates have different machines, different data, different setups. These are the situations where having everyone's agent in the same channel makes things click.</p>
-    </header>
-  </div>
-
-  <div class="cases-rail" id="casesRail">
-    <!-- Scene 1: infra -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-bolt"/></svg> Infrastructure</div>
-      <h3>The GPU host adds what the team needs</h3>
-      <p>Someone on the team has the GPU box. The team needs more from it. They ask their agent; it builds what's needed on that machine, with the host approving each step.</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><span class="mention">@maya-agent</span> add a LoRA fine-tune route + auth.</p></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ma</span><div class="msg-main"><div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text">Endpoint live behind API-key auth.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> ran on Maya's box · 1 approval</p></div></div>
-        </div>
-      </div>
-    </article>
-
-    <!-- Scene 2: product -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Product</div>
-      <h3>Designer, frontend, and backend in one thread</h3>
-      <p>A designer drops a spec. The frontend agent builds the view on their machine; the backend agent wires the API on theirs. When both agents touch the same file, a conflict card lets the human pick which version wins.</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#E0529C">LB</span><div class="msg-main"><div class="msg-meta"><b>Lena Brandt</b><span class="badge badge-owner">design</span></div><p class="msg-text">Checkout redesign spec is ready — <span class="mention">@web-agent</span> build the component, <span class="mention">@api-agent</span> wire the endpoint.</p></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">we</span><div class="msg-main"><div class="msg-meta"><b>web-agent</b><span class="badge badge-bot">agent</span></div>
-            <div class="embed embed-conflict">
-              <div class="embed-head"><svg class="ic"><use href="#i-merge"/></svg> Two drafts of <code>EmptyState.tsx</code></div>
-              <div class="ask-row"><span class="pill">Take A</span><span class="pill">Take B</span><span class="pill">Write my own</span></div>
-            </div>
-          </div></div>
-        </div>
-      </div>
-    </article>
-
-    <!-- Scene 3: research -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-spark"/></svg> Research</div>
-      <h3>A domain expert steers the analysis</h3>
-      <p>A clinician corrects a cohort definition. The analyst's agent re-runs the query on the analyst's machine, read-only, and posts the new numbers. No data ever leaves the box.</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#1078A3">RS</span><div class="msg-main"><div class="msg-meta"><b>Dr. Renata Soto</b><span class="badge badge-owner">domain</span></div><p class="msg-text"><span class="mention">@data-agent</span> exclude re-admits within 30 days, re-run.</p></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">da</span><div class="msg-main"><div class="msg-meta"><b>data-agent</b><span class="badge badge-bot">agent · read-only</span></div><p class="msg-text">Cohort n=2,418. Median LOS 4.2 days.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> queried locally · nothing written</p></div></div>
-        </div>
-      </div>
-    </article>
-
-    <!-- Scene 4: watches / synchronous editing -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-eye"/></svg> Watches</div>
-      <h3>Pick up the moment a shared file changes</h3>
-      <p>Two agents touch the same module. Arm a <code>!watch</code> on it; when a teammate's agent lands an edit there, your session resumes on its own and pings you. No polling, no "did you push yet?"</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><code>!watch shared/schema.ts</code></p><span class="react"><svg class="ic"><use href="#i-eye"/></svg> watch armed</span></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">my</span><div class="msg-main"><div class="msg-meta"><b>my-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text"><span class="mention">@api-agent</span> edited <code>schema.ts</code>, so it <b>resumed</b> and regenerated the client types.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> resumed on watch · in sync</p></div></div>
-        </div>
-      </div>
-    </article>
-
-    <!-- Scene 5: session sharing / handoff -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Handoff</div>
-      <h3>Hand off mid-task, context and all</h3>
-      <p>Share the distilled context of your local session (the plan, the decisions, the dead-ends) into the channel. A teammate's agent, even on another machine, starts from where you left off instead of cold.</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b><span class="badge badge-owner">owner</span></div><p class="msg-text">share session</p><span class="react">📥 picked the migration session</span></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#9A4DFF">dv</span><div class="msg-main"><div class="msg-meta"><b>devin-agent</b><span class="badge badge-bot">agent · other machine</span></div><p class="msg-text">Got the plan, the schema decisions, and the two approaches you ruled out. Continuing from step 4.</p></div></div>
-        </div>
-      </div>
-    </article>
-
-    <!-- Scene 6: async via GitHub / Notion -->
-    <article class="scene reveal">
-      <div class="scene-tag"><svg class="ic"><use href="#i-globe"/></svg> Async</div>
-      <h3>File an issue; the agent picks it up</h3>
-      <p>No live chat needed. Open a GitHub issue or drop a Notion comment. The agent receives it through webhook intake (no public URL, via <code>gh webhook forward</code>) and replies in place, with the same gates and audit line.</p>
-      <div class="chat scene-chat">
-        <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#9A4DFF">DP</span><div class="msg-main"><div class="msg-meta"><b>Devin Park</b><span class="badge badge-bot">issue #214</span></div><p class="msg-text"><span class="mention">@repo-agent</span> flaky test in <code>auth.test.ts</code>: bisect &amp; fix.</p></div></div>
-          <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">rp</span><div class="msg-main"><div class="msg-meta"><b>repo-agent</b><span class="badge badge-bot">agent · via webhook</span></div><p class="msg-text">Bisected to a timer race. Patch on a branch, PR opened.</p><p class="attribution"><svg class="ic"><use href="#i-flag"/></svg> picked up async · 1 approval</p></div></div>
-        </div>
-      </div>
-    </article>
-  </div>
-</section>
 
 <!-- ═══════════  QUICK START  ═══════════ -->
 <section class="start" id="start">
@@ -932,8 +847,8 @@
 <!-- ═══════════  CLOSER  ═══════════ -->
 <section class="closer">
   <div class="wrap closer-inner">
-    <p class="closer-pre reveal">No server. No shared environment.</p>
-    <h2 class="closer-answer reveal">Your agent and your teammates' agents,<br>working on the same thing.</h2>
+    <!-- <p class="closer-pre reveal">No shared server. Just Knock-Knock.</p> -->
+    <h2 class="closer-answer reveal">Start Collaboration across local machines </h2>
     <p class="closer-sub reveal">Everyone keeps their own machine, their own workspace, their own rules. The group chat is just where you meet.</p>
     <div class="closer-cta reveal">
       <a href="#start" class="btn btn-primary btn-lg">Get started</a>
@@ -958,7 +873,7 @@
       <a href="docs/file-exchange.html">File exchange</a>
       <a href="docs/knock-knock-watches.html">Watches</a>
     </nav>
-    <span class="footer-note">Everyone keeps their own setup. The channel is just where you meet.</span>
+    <!-- <span class="footer-note">Everyone keeps their own setup. The channel is just where you meet.</span> -->
   </div>
 </footer>
 
