@@ -341,3 +341,86 @@ test('bid policy converges to one deterministic winner across separate stores', 
   a.store.close()
   b.store.close()
 })
+
+// ─── Phase 3: directed addressing across separate stores (no Postgres) ────────
+// The broadcast tests above use mesh election to pick ONE winner. Directed messages
+// are different: each NAMED bot answers its own part (per-agent claim key), and the
+// mesh election is bypassed — no contention, no delay, no stand-down. Each bot's
+// relay sees one channel.message (its own, stamped targetAgent=self), and
+// resolveAddressing gates who engages via the markupAddressed check.
+
+async function makeMachineDirected(botKey: string, userId: string, relayId: string, addressing: (channel: string, msgId: string, text: string) => string[]) {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  await engine.register(agentDirectoryFold)
+  await engine.register(coordBoardFold)
+  const sync = new Synchronizer(store, engine)
+  const election: MeshElection = {
+    rankFor: (channel, messageId, text, self) => {
+      const dir = directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+      const order = responderElection(dir, channel, 'discord', text, messageId)
+      const rank = order.indexOf(self)
+      return rank < 0 ? undefined : rank
+    },
+    alreadyDesignated: (channel, messageId, self) =>
+      boardFor(engine.get<CoordBoardFoldState>(COORD_BOARD_FOLD), channel).responders.some(
+        r => r.ref === messageId && r.agentKey !== self,
+      ),
+    stepMs: 50,
+  }
+  sync.register(
+    replyClaim({
+      resolveCoord: (_c, target) =>
+        !target || target === botKey ? { agentKey: botKey, isOwnerBot: true, cfg: {}, relayId } : undefined,
+      election,
+      resolveAddressing: addressing,
+      defer: (fn, ms) => void setTimeout(fn, ms),
+    }),
+  )
+  sync.start()
+  return { store, engine, sync, botKey, userId }
+}
+
+test('directed (mesh): @both bots across separate stores → each answers their own part', async () => {
+  // Both bots are mentioned; each relay's resolveAddressing returns ['cc', 'd-bot'].
+  // Per-agent claim keys mean no contention — both engage without racing or silencing.
+  // Distinct from the broadcast test at line 126: here election is BYPASSED (directed=true).
+  const addressing = () => ['cc', 'd-bot']
+  const a = await makeMachineDirected('cc', 'U_cc', 'relayA', addressing)
+  const b = await makeMachineDirected('d-bot', 'U_db', 'relayB', addressing)
+  bridge(a, b)
+  bridge(b, a)
+  await admit(a.store, identity('cc', 'U_cc'))
+  await admit(b.store, identity('d-bot', 'U_db'))
+  await flush()
+  const text = 'hey <@U_cc> <@U_db> split this'
+  await admit(a.store, channelMessage('msgD', 'cc', text))
+  await admit(b.store, channelMessage('msgD', 'd-bot', text))
+  await flush(100)
+  // Both named → per-agent claims on each store → BOTH answer (not one winner).
+  expect(await totalPrompted([a, b])).toBe(2)
+  a.store.close()
+  b.store.close()
+})
+
+test('directed (mesh): @one bot only → the other stays silent with separate stores', async () => {
+  // Only cc is named. d-bot's relay sees markupAddressed=['cc']; since 'd-bot' is not
+  // in the list, replyClaim returns without acquiring a claim. No fallback to election.
+  const ccOnly = () => ['cc']
+  const a = await makeMachineDirected('cc', 'U_cc', 'relayA', ccOnly)
+  const b = await makeMachineDirected('d-bot', 'U_db', 'relayB', ccOnly)
+  bridge(a, b)
+  bridge(b, a)
+  await admit(a.store, identity('cc', 'U_cc'))
+  await admit(b.store, identity('d-bot', 'U_db'))
+  await flush()
+  const text = 'hey <@U_cc> only you handle this'
+  await admit(a.store, channelMessage('msgE', 'cc', text))
+  await admit(b.store, channelMessage('msgE', 'd-bot', text)) // d-bot relay sees this but stands down
+  await flush(100)
+  const prompted = await totalPrompted([a, b])
+  expect(prompted).toBe(1) // only cc — d-bot silenced by resolveAddressing guard
+  a.store.close()
+  b.store.close()
+})

@@ -697,3 +697,37 @@ test('fan-out: per-pass cap bounds wakes; reconcile drains all ready tasks (no p
   expect(countClaimed()).toBe(9) // remaining 4 drained on the next tick — none dropped
   store.close()
 })
+
+test('failover: a dead agent (isTurnLive=false) lets its claim expire so the next agent takes over', async () => {
+  // Verifies that the renewal gate (`if (mineAlready && !isTurnLive()) continue`) correctly
+  // starves a hung agent's claim renewal, causing the TTL to lapse so a healthy agent
+  // can re-acquire the task without manual intervention.
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+
+  const TINY_TTL = 20 // ms — expires well before the second scheduleScope
+  let ccAlive = true
+  const optsCC = schedOpts('cc', {
+    claimTtlMs: TINY_TTL,
+    isTurnLive: () => ccAlive,
+  })
+  const optsDBot = schedOpts('d-bot', { claimTtlMs: TINY_TTL })
+
+  await admit(store, taskOp('chan1', 'task.created', { id: 'T1' }))
+
+  // Round 1: cc claims T1 (isTurnLive=true → acquires + renews normally).
+  await scheduleScope({ store, engine, admit: p => admit(store, p), opts: optsCC, scope: 'chan1' })
+  const after1 = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(after1, 'chan1').get('T1')?.owner).toBe('cc')
+
+  // cc's turn goes dead; wait past the TTL so the claim row expires in SQLite.
+  ccAlive = false
+  await new Promise<void>(r => setTimeout(r, TINY_TTL + 20))
+
+  // Round 2: d-bot reconciles — cc's claim is gone, d-bot acquires it and re-assigns.
+  await scheduleScope({ store, engine, admit: p => admit(store, p), opts: optsDBot, scope: 'chan1' })
+  const after2 = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(after2, 'chan1').get('T1')?.owner).toBe('d-bot')
+  store.close()
+})

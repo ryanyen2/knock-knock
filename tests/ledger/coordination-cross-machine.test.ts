@@ -246,3 +246,58 @@ test('broadcast still elects exactly one when no bot is addressed (plain message
   expect((await store.listByVerb('turn.prompted')).length).toBe(1)
   store.close()
 })
+
+// ─── Co-resident directed addressing (one relay, one synchronizer) ────────────
+// Distinct from the cross-machine tests above (two synchronizers, shared store):
+// here ONE synchronizer handles both bots — the same relay.ts setup when cc and
+// d-bot run on the same machine. Each bot's handleInbound admits a channel.message
+// stamped with its own targetAgent; replyClaim fires once per message, routing by
+// that targetAgent. resolveAddressing is the shared guard that each fire consults.
+
+test('co-resident directed: @both bots on one synchronizer prompts each independently', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sync = new Synchronizer(store, engine)
+  // The resolver mirrors relay.ts resolveCoord — iterates both co-resident agents.
+  const resolver = (_c: ChannelId, target: string | undefined): ReplyCoordContext | undefined => {
+    if (target === 'cc') return { agentKey: 'cc', isOwnerBot: true, cfg: {}, relayId: 'relay1' }
+    if (target === 'bot101') return { agentKey: 'bot101', isOwnerBot: true, cfg: {}, relayId: 'relay1' }
+    return undefined
+  }
+  const addressing = () => ['cc', 'bot101'] // user named both
+  sync.register(replyClaim({ resolveCoord: resolver, resolveAddressing: addressing }))
+  sync.start()
+  // Each bot's handleInbound admits its own copy (same msgId, different targetAgent).
+  await admit(store, channelMessage('chan1', 'msgM', 'cc'))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101'))
+  await flush()
+  // Both are named → per-agent claim keys → BOTH engage independently.
+  expect((await store.listByVerb('turn.prompted')).length).toBe(2)
+  store.close()
+})
+
+test('co-resident directed: @only-one on one synchronizer leaves the other bot silent', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sync = new Synchronizer(store, engine)
+  const resolver = (_c: ChannelId, target: string | undefined): ReplyCoordContext | undefined => {
+    if (target === 'cc') return { agentKey: 'cc', isOwnerBot: true, cfg: {}, relayId: 'relay1' }
+    if (target === 'bot101') return { agentKey: 'bot101', isOwnerBot: true, cfg: {}, relayId: 'relay1' }
+    return undefined
+  }
+  const addressing = () => ['cc'] // only cc named
+  sync.register(replyClaim({ resolveCoord: resolver, resolveAddressing: addressing }))
+  sync.start()
+  // In production, standDownForDirected (handleInbound gate) prevents bot101 from even
+  // admitting its channel.message. Here we admit it anyway to verify that replyClaim's
+  // markupAddressed guard is a complete second firewall — bot101 still stays silent.
+  await admit(store, channelMessage('chan1', 'msgM', 'cc'))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101'))
+  await flush()
+  const prompted = await store.listByVerb('turn.prompted')
+  expect(prompted.length).toBe(1)
+  expect(prompted[0]!.actor).toBe('cc')
+  store.close()
+})
