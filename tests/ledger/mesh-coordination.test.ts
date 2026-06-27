@@ -16,6 +16,9 @@ import { Synchronizer } from '../../src/ledger/sync.ts'
 import { admit } from '../../src/ledger/admit.ts'
 import { discordArtifact, type ChannelId, type Role } from '../../src/ledger/interaction.ts'
 import { replyClaim, type MeshElection } from '../../src/ledger/synchronizations/reply-claim.ts'
+import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from '../../src/ledger/synchronizations/task-scheduler.ts'
+import { taskDagFold, tasksFor, taskArtifact, TASK_DAG_FOLD, type TaskDagFoldState } from '../../src/ledger/concepts/task-dag.ts'
+import type { ChannelConfig } from '../../src/lib.ts'
 import { loopGuardFold } from '../../src/ledger/concepts/loop-guard.ts'
 import {
   coordBoardFold,
@@ -196,6 +199,145 @@ test('mesh ingest preserves createdAt + is idempotent → boards converge', asyn
   expect(boardFor(b.engine.get<CoordBoardFoldState>(COORD_BOARD_FOLD), ROOM).presence).toEqual(
     boardFor(a.engine.get<CoordBoardFoldState>(COORD_BOARD_FOLD), ROOM).presence,
   )
+  a.store.close()
+  b.store.close()
+})
+
+// ─── Phase 2: task allocation across separate stores (no shared lock) ─────────
+
+function taskCreated(botKey: string, id: string, extra: { assignee?: string } = {}) {
+  return {
+    actor: botKey, // agent-authored so it bridges with directory provenance
+    role: 'agent' as Role,
+    channel: ROOM,
+    target: { artifactId: taskArtifact(ROOM), anchor: { kind: 'none' as const } },
+    verb: 'task.created' as const,
+    patch: { kind: 'task' as const, data: { id, ...extra } },
+    effect: 'pure' as const,
+    caused_by: [] as string[],
+  }
+}
+
+type TaskMachine = Awaited<ReturnType<typeof makeTaskMachine>>
+
+async function makeTaskMachine(botKey: string, userId: string, cfg: ChannelConfig, nowRef: { v: number }) {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(agentDirectoryFold)
+  await engine.register(taskDagFold)
+  const sync = new Synchronizer(store, engine)
+  const opts: TaskSchedulerOpts = {
+    resolveSchedule: () => ({ agentKey: botKey, cfg, relayId: `relay-${botKey}`, isTurnLive: () => true }),
+    now: () => nowRef.v,
+    election: {
+      eligibleClaimants: () =>
+        directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+          .filter(id => id.rooms.includes(ROOM))
+          .map(id => id.agentKey),
+      windowMs: 1000,
+    },
+  }
+  sync.register(taskScheduler(opts))
+  sync.start()
+  return { store, engine, sync, botKey, userId, opts }
+}
+
+function bridgeTask(src: TaskMachine, dst: TaskMachine): void {
+  src.store.subscribe(i => {
+    if (i.actor !== src.botKey) return
+    if (i.lifecycle !== 'applied' && i.lifecycle !== 'admitted') return
+    if (!MESH_VERB_ALLOWLIST.includes(i.verb)) return
+    const line = encodeMeshEvent(i)
+    const decoded = decodeMeshEvent(line, src.userId, directoryFor(dst.engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD)))
+    if (decoded) void dst.store.append(decoded)
+  })
+}
+
+// Distinct claims across the mesh, deduped by content hash — a winner's task.claimed
+// bridges to every store (correctly!), so the SAME claim appears in each. Counting
+// distinct hashes gives the number of LOGICAL claims (the exactly-one we care about).
+async function totalClaimed(ms: TaskMachine[]): Promise<{ owner: string }[]> {
+  const byHash = new Map<string, { owner: string }>()
+  for (const m of ms) {
+    for (const r of await m.store.listByVerb('task.claimed')) {
+      if (r.patch.kind === 'task' && r.patch.data.owner) byHash.set(r.hash, { owner: r.patch.data.owner })
+    }
+  }
+  return [...byHash.values()]
+}
+
+test('pull-claim: two laptops, separate stores → EXACTLY ONE task owner (election ladder)', async () => {
+  const nowRef = { v: Date.now() }
+  const a = await makeTaskMachine('cc', 'U_cc', {}, nowRef)
+  const b = await makeTaskMachine('d-bot', 'U_db', {}, nowRef)
+  bridgeTask(a, b)
+  bridgeTask(b, a)
+  await admit(a.store, identity('cc', 'U_cc'))
+  await admit(b.store, identity('d-bot', 'U_db'))
+  await flush()
+
+  // cc seeds the task (agent-authored → bridges to B with cc's provenance).
+  await admit(a.store, taskCreated('cc', 'T1'))
+  await flush(200)
+
+  const owners = await totalClaimed([a, b])
+  expect(owners.length).toBe(1) // no double-claim despite separate stores + local-only acquireClaim
+  a.store.close()
+  b.store.close()
+})
+
+test('pull-claim failover: the elected winner is offline → the next rank claims after a window', async () => {
+  const nowRef = { v: Date.now() }
+  // Run ONLY the loser's machine; seed both identities so its election sees the full set.
+  const dir = [
+    { agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: [ROOM] },
+    { agentKey: 'd-bot', platform: 'discord', userId: 'U_db', rooms: [ROOM] },
+  ]
+  // Which key is rank 1 for T1? (the loser/failover claimant)
+  const { electOrder } = await import('../../src/lib.ts')
+  const order = electOrder(['cc', 'd-bot'], 'T1')
+  const loserKey = order[1]!
+  const loserUser = loserKey === 'cc' ? 'U_cc' : 'U_db'
+
+  const loser = await makeTaskMachine(loserKey, loserUser, {}, nowRef)
+  await admit(loser.store, identity('cc', 'U_cc'))
+  await admit(loser.store, identity('d-bot', 'U_db'))
+  await flush()
+  await admit(loser.store, taskCreated(loserKey, 'T1'))
+  await flush(100)
+
+  // Window 0 belongs to the (absent) winner — the loser must NOT claim yet.
+  expect((await totalClaimed([loser])).length).toBe(0)
+
+  // Advance past the window; the reconcile pass now promotes rank 1 (the loser).
+  nowRef.v += 2000 // > windowMs (1000)
+  await scheduleScope({ store: loser.store, engine: loser.engine, admit: p => admit(loser.store, p), opts: loser.opts, scope: ROOM, allowBidClaim: true })
+  await flush(100)
+  const owners = await totalClaimed([loser])
+  expect(owners.length).toBe(1)
+  expect(owners[0]!.owner).toBe(loserKey) // failover promoted the next rank — no stall
+  loser.store.close()
+})
+
+test('bid policy converges to one deterministic winner across separate stores', async () => {
+  const nowRef = { v: Date.now() }
+  const a = await makeTaskMachine('cc', 'U_cc', { allocation: 'bid' }, nowRef)
+  const b = await makeTaskMachine('d-bot', 'U_db', { allocation: 'bid' }, nowRef)
+  bridgeTask(a, b)
+  bridgeTask(b, a)
+  await admit(a.store, identity('cc', 'U_cc'))
+  await admit(b.store, identity('d-bot', 'U_db'))
+  await flush()
+  await admit(a.store, taskCreated('cc', 'T1'))
+  await flush(200)
+
+  // Both bid (bids bridge); the reconcile pass on each machine claims for the winner.
+  await scheduleScope({ store: a.store, engine: a.engine, admit: p => admit(a.store, p), opts: a.opts, scope: ROOM, allowBidClaim: true })
+  await scheduleScope({ store: b.store, engine: b.engine, admit: p => admit(b.store, p), opts: b.opts, scope: ROOM, allowBidClaim: true })
+  await flush(200)
+
+  const owners = await totalClaimed([a, b])
+  expect(owners.length).toBe(1) // deterministic winningBid → exactly one owner
   a.store.close()
   b.store.close()
 })

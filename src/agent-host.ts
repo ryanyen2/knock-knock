@@ -1077,7 +1077,7 @@ export class AgentHost {
     // as a channel.message, so only the owner (never a peer/injection) can seed tasks.
     if (kind === 'owner' && (m.text === '!delegate' || m.text.startsWith('!delegate'))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.handleDelegateCommand(controlScope, m.text, m.authorId).catch(e =>
+      await this.handleDelegateCommand(controlScope, m.text).catch(e =>
         this.ui.error(this.key, `delegate command: ${e}`),
       )
       return
@@ -1286,9 +1286,13 @@ export class AgentHost {
   }
 
   /** Owner `!delegate` → seed the task DAG. Parsed purely (cycles/dupes rejected),
-   *  then each task admitted as an owner-role task.created on the scope's task
-   *  artifact. The task-scheduler sync (U9) takes it from there. */
-  private async handleDelegateCommand(scope: ChannelId, text: string, authorId: string): Promise<void> {
+   *  then each task admitted as an AGENT-role task.created (actor = this bot, relaying the
+   *  owner's intent) on the scope's task artifact. The task-scheduler sync (U9) takes it
+   *  from there. Agent-authored on purpose: it lets the task.created bridge over the
+   *  no-Postgres mesh with the bot's directory provenance (so a peer can't forge a task
+   *  with an attacker-controlled label = prompt injection); the role is inert for the
+   *  task folds (they key on verb/id, never role), so this is unchanged on the Postgres path. */
+  private async handleDelegateCommand(scope: ChannelId, text: string): Promise<void> {
     const parsed = parseDelegateCommand(text)
     if (!parsed) return
     if (!parsed.ok) {
@@ -1297,8 +1301,8 @@ export class AgentHost {
     }
     for (const t of parsed.tasks) {
       await admit(this.store, {
-        actor: authorId,
-        role: 'owner',
+        actor: this.key,
+        role: 'agent',
         channel: scope,
         target: { artifactId: taskArtifact(scope), anchor: { kind: 'none' } },
         verb: 'task.created',

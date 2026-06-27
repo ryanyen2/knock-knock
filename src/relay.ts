@@ -426,6 +426,22 @@ const schedulerOpts: TaskSchedulerOpts = {
     const cfg = resolveConfigFor(engine.get<ConfigFoldState>(CONFIG_FOLD), roomId, scope)
     return { agentKey: info.agentKey, cfg, relayId, isTurnLive: () => host.isTurnLive(scope) }
   },
+  // Mesh mode only: deterministic pull-claim allocation over the shared directory
+  // (bid/push converge on their own once task.* events bridge).
+  ...(meshEnabled
+    ? {
+        election: {
+          eligibleClaimants: scope => {
+            const host = hosts.find(h => h.getAgentForChannel(scope))
+            const roomId = host?.roomForScope(scope)
+            if (!host || !roomId) return []
+            return directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+              .filter(id => id.platform === host.platform && id.rooms.includes(roomId))
+              .map(id => id.agentKey)
+          },
+        },
+      }
+    : {}),
 }
 synchronizer.register(taskScheduler(schedulerOpts))
 // Close the loop: a scheduler-driven turn replying marks its task done (unlocks

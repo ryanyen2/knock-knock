@@ -1542,6 +1542,25 @@ export function electScribe(present: ReadonlyArray<string>): string | undefined 
   return electWinner(present, 'scribe')
 }
 
+/** Mesh task allocation (pull-claim, no shared lock): whose turn is it to claim
+ *  `taskId` right NOW? A deterministic time-sliced failover ladder — rank 0 owns the
+ *  first window, rank 1 the next, and so on — so a winner that never claims (offline)
+ *  is picked up by the next rank with no central coordinator: every relay computes the
+ *  same answer from the eligible set + the task's age. Once any peer actually claims
+ *  (its `task.claimed` reaches the bridged board), the caller fixes the owner and stops
+ *  consulting this ladder, so a live owner is never stolen from. Pure. */
+export function meshTaskClaimant(
+  eligible: ReadonlyArray<string>,
+  taskId: string,
+  ageMs: number,
+  windowMs: number,
+): string | undefined {
+  const order = electOrder(eligible, taskId)
+  if (order.length === 0) return undefined
+  const slot = Math.min(Math.floor(Math.max(0, ageMs) / Math.max(1, windowMs)), order.length - 1)
+  return order[slot]
+}
+
 // ─── Mesh responder election (uses the shared directory — a GLOBAL set, unlike the
 //     self-relative helpers above, which only knew a relay's own bots) ──────────────
 // With the agent-directory mesh-synced, every relay can compute the SAME eligible

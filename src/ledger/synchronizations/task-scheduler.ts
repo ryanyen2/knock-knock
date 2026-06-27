@@ -23,6 +23,7 @@ import {
   claimantFor,
   winningBid,
   scoreBid,
+  meshTaskClaimant,
   taskClaimKey,
   taskDriveKey,
   type ChannelConfig,
@@ -46,6 +47,21 @@ const TASK_CLAIM_TTL_MS = 60_000
 // recovered, never a silent wave-cap drop.
 const MAX_WAKES_PER_PASS = 5
 
+// Mesh pull-claim: per-rank failover window. A window must span ≥1 reconcile tick (15s)
+// so the elected claimant is given real time to claim before the next rank steps in.
+const MESH_CLAIM_WINDOW_MS = 45_000
+
+/** Mesh mode (no shared Postgres): deterministic election over the shared directory
+ *  replaces the same-machine-only `acquireClaim` for pull-claim allocation. (bid is
+ *  already a deterministic election via scoreBid/winningBid; push-assign already targets
+ *  one agent — both converge cross-machine once `task.*` events bridge, so this gates
+ *  pull-claim only.) Provided by the relay only when mesh is enabled. */
+export type MeshTaskElection = {
+  /** Directory bots eligible to claim in this scope (the cross-machine candidate set). */
+  eligibleClaimants: (scope: ChannelId) => string[]
+  windowMs?: number
+}
+
 /** Per-scope scheduling context the host resolves for the LOCAL agent. */
 export type ScheduleContext = {
   agentKey: string
@@ -59,6 +75,9 @@ export type ScheduleContext = {
 export type TaskSchedulerOpts = {
   resolveSchedule: (scope: ChannelId) => ScheduleContext | undefined
   claimTtlMs?: number
+  /** Mesh mode only: deterministic pull-claim election (no shared lock). */
+  election?: MeshTaskElection
+  now?: () => number
 }
 
 type Admit = (p: ProposedInteraction) => Promise<AdmissionResult | undefined>
@@ -103,7 +122,13 @@ export async function scheduleScope(deps: {
   // task.created hash per id — the drivable parent the wake turn.prompted points at
   // (drive-turn synthesizes the prompt from the task op).
   const createdHash = new Map<string, string>()
-  for (const r of records) if (r.verb === 'task.created' && !createdHash.has(r.data.id)) createdHash.set(r.data.id, r.hash)
+  const createdAtById = new Map<string, string>()
+  for (const r of records)
+    if (r.verb === 'task.created' && !createdHash.has(r.data.id)) {
+      createdHash.set(r.data.id, r.hash)
+      createdAtById.set(r.data.id, r.createdAt)
+    }
+  const now = deps.opts.now ?? (() => Date.now())
   const policy = resolveAllocationPolicy(sched.cfg)
   const ttl = deps.opts.claimTtlMs ?? TASK_CLAIM_TTL_MS
   const art = taskArtifact(deps.scope)
@@ -146,6 +171,20 @@ export async function scheduleScope(deps: {
     }
 
     const mineAlready = task.status === 'claimed' && task.owner === sched.agentKey
+
+    // Mesh pull-claim election (no shared lock): defer to the deterministically-elected
+    // claimant for the current failover window. Once any peer's claim reaches the bridged
+    // board the owner is fixed, so a claimed task is never contended — no cross-machine
+    // double-claim, and a live owner is never stolen. (bid/push converge on their own.)
+    if (deps.opts.election && policy === 'pull-claim' && !mineAlready) {
+      if (task.status === 'claimed') continue // owner fixed by a bridged task.claimed
+      const eligible = deps.opts.election.eligibleClaimants(deps.scope)
+      const createdAt = createdAtById.get(task.id)
+      const ageMs = createdAt ? Math.max(0, now() - Date.parse(createdAt)) : 0
+      const whoseTurn = meshTaskClaimant(eligible, task.id, ageMs, deps.opts.election.windowMs ?? MESH_CLAIM_WINDOW_MS)
+      if (whoseTurn && whoseTurn !== sched.agentKey) continue // not my window yet
+    }
+
     // Renewal-progress gate: don't renew my own claim if my turn is no longer live
     // (crash/stall) — let it lapse so failover can reassign.
     if (mineAlready && !sched.isTurnLive()) continue
