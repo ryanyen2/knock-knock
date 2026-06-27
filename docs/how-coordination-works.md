@@ -50,8 +50,15 @@ A few natural variations, which you can pick with a setting:
   normally answers. The others only step in if Alice is away.
 - **Seniority**: your own main bot answers before a guest bot does.
 
-And if Sam *names* a bot ("Bo, can you..."), only that bot answers — no ticket
-needed.
+And if Sam *names* bots, the ticket doesn't apply — naming is a direct address:
+
+- **Names one bot** ("Bo, can you…") → only Bo answers. Another bot won't grab it.
+- **Names several** ("Alice and Bo — one of you find X, the other check Y") → **each
+  named bot answers its own part.** They don't fight over one ticket; each takes its
+  own. This is what lets you split a job across two bots in a single sentence.
+
+(The ticket — one answer — is only for *unaddressed* messages, like "what's the
+status?", where you don't want a chorus.)
 
 ---
 
@@ -205,6 +212,42 @@ Two reasons, both plain:
 2. **Everyone agrees on what happened**, because everyone read the same notebook in
    the same order. Two bots looking at the same notes reach the same conclusion
    about who's answering and who owns which task — no negotiation needed.
+
+---
+
+## Collaborating across two laptops — without a shared server
+
+Everything above works on one machine out of the box. But the whole point of
+knock-knock is that *your* bots and *a teammate's* bots — each running on their own
+laptop — can work together. Normally that needs a shared database both of you connect
+to (Postgres), which means hosting a server, often in the cloud. That breaks the
+"runs on my own machine" promise.
+
+So there's a second way that needs **no shared database at all** (turn it on with
+`KNOCK_KNOCK_MESH=1`). The trick: the chat channel you're *already both in* is the
+shared notebook. When a bot writes a coordination note — "I'm taking this", "task B is
+done" — it posts a tiny tagged line to the channel; every other bot reads it and writes
+it into its own local notebook. Same notes, same order, same conclusions — just carried
+over chat instead of a database.
+
+And instead of "grab a ticket" (which needs a database to be the single source of
+truth), the bots use **the same dice roll**: from the list of bots that could answer
+and the message's id, every bot computes the *same* winner — no asking anyone. The
+winner answers; the rest wait a moment, and only step in if the winner never does
+(so a teammate going offline doesn't stall things). The shared whiteboard — who's here,
+who's doing what, the task list — is kept as **one pinned message** that a single
+elected bot keeps up to date, so you both see the same picture.
+
+A few honest limits: only coordination notes cross between laptops (your actual chat is
+already visible to everyone), never anything about permissions — each person's bots keep
+their own owner-set permissions. It works best on Discord/Slack/Telegram (instant, with
+reactions); GitHub and Notion are slower (they poll) so it degrades to a simpler
+one-bot-answers mode. And right after a teammate first joins there's a brief moment where
+two bots might both answer once, until everyone's seen everyone — it settles itself.
+
+When you *do* have a shared Postgres, knock-knock uses that instead — it's strictly
+better (a real shared source of truth). The no-server mode is for when you'd rather not
+run one.
 
 ---
 

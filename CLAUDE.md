@@ -173,6 +173,35 @@ Postgres (SQLite is same-machine only). Pure logic in `lib.ts`, tested in
 **`docs/how-coordination-works.md`**; full technical design:
 **`docs/knock-knock-coordination.md`**.
 
+**Directed vs broadcast (turn-taking, every backend).** A message that explicitly
+@mentions specific bots is **directed**: each named bot answers its OWN part via a
+per-agent reply-claim key (`replyClaimKey/<agentKey>`), and an unnamed bot stands down
+— so "@cc and @d-bot, one does X one does Y" engages BOTH, and "@cc" is never grabbed by
+d-bot. A message naming no bot is a **broadcast**: exactly one responder is elected.
+`reply-claim` reads the explicitly-addressed set via `resolveAddressing`
+(`addressedAgentKeys` in `lib.ts`, from the shared agent-directory — present co-resident
+too, so this is not mesh-only).
+
+**No-Postgres mesh (`KNOCK_KNOCK_MESH=1`, SQLite only).** Local-first cross-machine
+coordination with no shared DB: the messaging channel everyone shares is the interaction
+bus, and **deterministic election** replaces the atomic claim. `src/host/mesh-sync.ts`
+publishes locally-authored coordination events (the strict `MESH_VERB_ALLOWLIST`:
+`agent.identity`/`coord.note`/`task.*`) to the room and ingests peers' events via
+`store.append` (createdAt verbatim so folds order identically; content-addressed ⇒
+idempotent). `decodeMeshEvent` (`lib.ts`) is the trust boundary — only pure, agent-role,
+allowlisted verbs cross, the hash must verify, and the posting identity must own the
+`actor` (so an ingested event can't touch permissions or impersonate; `!delegate` seeds
+`task.created` as **agent-role** so it bridges with bot provenance, never owner-forgeable).
+Turn-taking uses broadcast election (`responderElection` + a rank-ordered failover delay,
+with the mesh-synced `coord.note` designation as the stand-down signal); pull-claim uses a
+deterministic time-sliced ladder (`meshTaskClaimant`); `bid`/`push-assign` already
+converge once `task.*` bridge. One elected **scribe** (`electScribe`) maintains the pinned
+**billboard** (`src/host/billboard.ts`, `renderBillboard`). Cross-machine policy defaults
+to `race` (pure, agreement-free); `designated`/`role-priority` are best-effort across orgs
+(config never crosses the trust boundary). Full mesh on Discord/Slack/Telegram; degrades on
+GitHub/Notion (poll + limited reactions). Never wraps Postgres (its atomic claim + NOTIFY
+are strictly better). Tested in `tests/ledger/mesh-coordination.test.ts`.
+
 ### The AgentAdapter seam (`agent-adapter.ts`)
 
 The interface between the relay/driver and any agent runtime — four methods:
@@ -536,6 +565,7 @@ the token value itself lives in `.env`.
 | `KNOCK_KNOCK_STATE_DIR` | no | Override the state directory (default `~/.knock-knock`) |
 | `KNOCK_KNOCK_LEDGER_URL` | no | Postgres connection string; **overrides** the setup-managed `settings.json` ledger choice. Neither set → SQLite. Prefer choosing the backend in `bun setup.ts`. |
 | `KNOCK_KNOCK_LEDGER_FILE` | no | Override the SQLite ledger path (default `<state-dir>/ledger.sqlite`) |
+| `KNOCK_KNOCK_MESH` | no | Set to `1` to enable no-Postgres cross-machine coordination over the messaging channel (deterministic election; SQLite only — ignored on Postgres). See "No-Postgres mesh" above. |
 | `KNOCK_KNOCK_ACP_COMMAND` | when `runtime=acp` | Spawn command for the ACP subprocess |
 | `KNOCK_KNOCK_ACP_ARGS` | no | Space-separated args for `KNOCK_KNOCK_ACP_COMMAND` |
 | `KNOCK_KNOCK_DEBUG` | no | Set to `1` to log every SDK stream event and ACP permission decision |
