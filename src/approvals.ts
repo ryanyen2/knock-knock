@@ -70,20 +70,16 @@ export class Approvals {
       { id: `appr:deny:${prefix}`, label: 'Deny', glyph: '❌', style: 'danger' },
     ]
 
-    // DM the approver first; fall back to the origin channel (approver pinged) if a DM is impossible.
-    let destination: 'dm' | 'channel' | undefined
-    let reason: string | undefined
-    let ref = approverId ? await this.messaging.dm(approverId, body, { choices }) : undefined
-    if (ref) {
-      destination = 'dm'
-    } else {
-      if (approverId) reason = 'DM unavailable'
-      ref = await this.messaging.send(opts.channelId, body, { choices, mentionUser: approverId })
-      if (ref) destination = 'channel'
-    }
-
-    if (!ref || !destination) {
-      // Can't reach a channel — emit a `tool.denied` so the awaiter resolves.
+    // Post the prompt in the task's own channel so it lives where the work is (not a DM).
+    // The approver is pinged via `mentionOnly` so any `<@id>` in the input preview can't
+    // re-trigger a peer bot. Anyone can see it; only the approver's click resolves it
+    // (enforced in resolve()/resolveReaction()).
+    const ref = await this.messaging.send(opts.channelId, body, {
+      choices,
+      ...(approverId ? { mentionOnly: approverId } : {}),
+    })
+    if (!ref) {
+      // Can't reach the channel — emit a `tool.denied` so the awaiter resolves.
       await this._emitVerdict(opts, 'system:approvals', 'deny', 'Cannot reach a channel for approval prompt.')
       return
     }
@@ -98,7 +94,7 @@ export class Approvals {
     this._remember(posted, prefix)
     // Register for the text-reply fallback under the scope the prompt landed in.
     this.onPrompt?.(ref.scope, ref.id, choices)
-    this.onDelivery?.({ destination, reason })
+    this.onDelivery?.({ destination: 'channel' })
   }
 
   async resolve(action: IncomingAction): Promise<void> {
