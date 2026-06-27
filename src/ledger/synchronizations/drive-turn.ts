@@ -18,8 +18,11 @@ export type DriveTurnHandle = {
 }
 
 export type DriveTurnOpts = {
-  /** Resolve the handle owning the adapter + recorder for this channel. */
-  getDriveHandle: (channelId: string) => DriveTurnHandle | undefined
+  /** Resolve the handle owning the adapter + recorder for this turn. `agentKey` is the
+   *  `turn.prompted` actor: with co-resident bots in one room the handle MUST be the host
+   *  for that agent, not just any host serving the channel, or the wrong bot drives the
+   *  turn (the "@cc → d-bot answers, cc silent" bug). */
+  getDriveHandle: (channelId: string, agentKey: string) => DriveTurnHandle | undefined
   /** Look up an admitted interaction by hash. */
   getByHash: (hash: Hash) => Promise<Interaction | undefined>
 }
@@ -31,7 +34,7 @@ export function driveTurn(opts: DriveTurnOpts): Synchronization {
       i.verb === 'turn.prompted' &&
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied'),
     fire: async (prompted, _ctx) => {
-      const handle = opts.getDriveHandle(prompted.channel)
+      const handle = opts.getDriveHandle(prompted.channel, prompted.actor)
       if (!handle) return // no live agent — nothing to drive
 
       const inboundHash = prompted.caused_by[0]

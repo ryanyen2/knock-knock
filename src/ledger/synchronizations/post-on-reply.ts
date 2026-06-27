@@ -19,8 +19,11 @@ import {
 } from '../render/reply-annotations.ts'
 
 export type PostOnReplyOpts = {
-  /** Send a chunk; returns the posted message id (best-effort). Failures throw. */
-  discordSend: (channelId: string, text: string) => Promise<string | undefined>
+  /** Send a chunk; returns the posted message id (best-effort). Failures throw. `agentKey`
+   *  is the replying agent (the `turn.replied` actor) — with co-resident bots in one room
+   *  the reply MUST post via that agent's host, not just any host serving the channel, or
+   *  the wrong bot posts the reply (the "@cc → d-bot answers" bug). */
+  discordSend: (channelId: string, text: string, agentKey: string) => Promise<string | undefined>
   /** The platform's hard message-length cap for a channel; falls back to the default. */
   maxMessageLength?: (channelId: string) => number | undefined
   /** TTL for the claim while posting. */
@@ -75,7 +78,7 @@ export function postOnReply(opts: PostOnReplyOpts): Synchronization {
           // Split to stay under the platform's hard limit; sent sequentially.
           const limit = chunkLimitFor(opts.maxMessageLength?.(i.channel))
           for (const part of chunk(finalText, limit, 'newline')) {
-            await opts.discordSend(i.channel, part)
+            await opts.discordSend(i.channel, part, i.actor)
           }
         },
         ttl,

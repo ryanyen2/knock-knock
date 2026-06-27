@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
-import { resolveLedgerConfig, responderElection, addressedAgentKeys } from './lib.ts'
+import { resolveLedgerConfig, responderElection, addressedAgentKeys, selectActorHost } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import type { RelayUI } from './console-ui.ts'
@@ -462,25 +462,24 @@ synchronizer.register(taskScheduler(schedulerOpts))
 synchronizer.register(completeTaskOnTurn())
 synchronizer.register(
   driveTurn({
-    getDriveHandle: channelId => {
-      for (const h of hosts) {
-        const handle = h.getDriveHandle(channelId)
-        if (handle) return handle
-      }
-      return undefined
+    getDriveHandle: (channelId, agentKey) => {
+      // Route to the host whose botKey IS the turn's actor — not just the first host in
+      // array order serving the room, which let a co-resident sibling drive another bot's
+      // turn ("@cc → d-bot answers, cc silent"). Falls back to first-serving for non-local
+      // actors so cross-relay drive routing is unchanged.
+      const host = selectActorHost(hosts, agentKey, h => !!h.getAgentForChannel(channelId))
+      return host?.getDriveHandle(channelId)
     },
     getByHash: hash => store.getByHash(hash),
   }),
 )
 synchronizer.register(
   postOnReply({
-    discordSend: async (channelId, text) => {
-      for (const h of hosts) {
-        if (h.getAgentForChannel(channelId)) {
-          return h.discordSend(channelId, text)
-        }
-      }
-      return undefined
+    discordSend: async (channelId, text, agentKey) => {
+      // Post via the replying agent's own host, not the first sibling serving the room —
+      // otherwise the wrong bot posts the reply (the "@cc → d-bot answers" bug).
+      const host = selectActorHost(hosts, agentKey, h => !!h.getAgentForChannel(channelId))
+      return host?.discordSend(channelId, text)
     },
     maxMessageLength: channelId =>
       hosts.find(h => h.getAgentForChannel(channelId))?.maxMessageLength,
@@ -654,7 +653,9 @@ const PILL_VERBS = new Set([
 store.subscribe(i => {
   if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
   if (!PILL_VERBS.has(i.verb)) return
-  const host = hosts.find(h => h.getAgentForChannel(i.channel))
+  // The workbench belongs to the turn's agent (i.actor) — route to its own host so a
+  // co-resident sibling doesn't post another bot's workbench (the "@cc → d-bot answers" bug).
+  const host = selectActorHost(hosts, i.actor, h => !!h.getAgentForChannel(i.channel))
   if (!host) return
   let promptHash: string | undefined
   try {

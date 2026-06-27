@@ -75,6 +75,7 @@ import {
   addressedAgentKeys,
   standDownForDirected,
   botEngagedInScope,
+  selectActorHost,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -1676,6 +1677,28 @@ test('botEngagedInScope: only THIS bot\'s own footprint counts as engagement', (
   const dbotTurn = { actor: 'd-bot', verb: 'turn.replied', patch: { kind: 'none' } } as unknown as Parameters<typeof botEngagedInScope>[0][number]
   expect(botEngagedInScope([ccTurn, dbotTurn], 'd-bot')).toBe(true)
   expect(botEngagedInScope([], 'd-bot')).toBe(false)
+})
+
+test('selectActorHost: an interaction routes to the host whose botKey IS its actor', () => {
+  // hosts in startup order — d-bot before cc, both serving the same room/thread. This is
+  // the co-resident "@cc → d-bot answers, cc silent" setup: routing by "first serving host"
+  // hands cc's turn to d-bot. selectActorHost must pick the host matching the actor.
+  const dbot = { botKey: 'd-bot' }
+  const cc = { botKey: 'cc' }
+  const hosts = [dbot, cc]
+  const serves = () => true // both serve the channel
+  // turn.prompted{actor: cc} → cc drives, NOT the first-in-array d-bot.
+  expect(selectActorHost(hosts, 'cc', serves)).toBe(cc)
+  expect(selectActorHost(hosts, 'd-bot', serves)).toBe(dbot)
+  // No actor (system/broadcast) → first serving host, preserving prior behavior.
+  expect(selectActorHost(hosts, undefined, serves)).toBe(dbot)
+  // Actor runs on another relay (no co-resident match) → fall back to first serving host,
+  // so cross-relay routing is unchanged.
+  expect(selectActorHost(hosts, 'remote-bot', serves)).toBe(dbot)
+  // The actor-owned host must also actually serve the channel — skip it if it doesn't.
+  const servesOnlyCc = (h: { botKey: string }) => h.botKey === 'cc'
+  expect(selectActorHost(hosts, 'd-bot', servesOnlyCc)).toBe(cc)
+  expect(selectActorHost([], 'cc', serves)).toBeUndefined()
 })
 
 test('standDownForDirected: a bot stays out when only OTHER bots are addressed', () => {

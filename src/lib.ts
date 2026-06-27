@@ -1687,6 +1687,26 @@ export function standDownForDirected(
   return addressedKeys.length > 0 && !addressedKeys.includes(selfKey) && !addressedMe
 }
 
+/** Pick the host that should ACT for an interaction — drive its turn, post its reply,
+ *  refresh its workbench. With co-resident bots in one room, routing by "first host that
+ *  serves the channel" let the earliest bot in array order hijack another bot's turn: a
+ *  `turn.prompted{actor: cc}` was driven (and replied/workbenched) by `d-bot` simply
+ *  because d-bot precedes cc in the host list — the "@cc → d-bot answers, cc stays silent"
+ *  bug. Prefer the co-resident host whose `botKey` IS the interaction's `actor`; fall back
+ *  to the first serving host only when no local host matches (no actor, or the actor runs
+ *  on another relay), so cross-relay routing is unchanged. Pure over an opaque host. */
+export function selectActorHost<H extends { botKey: string }>(
+  hosts: ReadonlyArray<H>,
+  actor: string | undefined,
+  serves: (h: H) => boolean,
+): H | undefined {
+  if (actor) {
+    const owned = hosts.find(h => h.botKey === actor && serves(h))
+    if (owned) return owned
+  }
+  return hosts.find(serves)
+}
+
 // ─── Mesh transport codec (the no-Postgres NOTIFY substitute) ─────────────────────
 // Cross-machine, each relay keeps its own local ledger; the messaging channel everyone
 // already shares is the bus. A relay encodes each locally-authored COORDINATION
