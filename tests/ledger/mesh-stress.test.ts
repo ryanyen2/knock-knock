@@ -21,7 +21,7 @@ import { replyClaim } from '../../src/ledger/synchronizations/reply-claim.ts'
 import { taskScheduler, scheduleScope, type TaskSchedulerOpts } from '../../src/ledger/synchronizations/task-scheduler.ts'
 import { loopGuardFold } from '../../src/ledger/concepts/loop-guard.ts'
 import { coordBoardFold, boardFor, COORD_BOARD_FOLD, type CoordBoardFoldState } from '../../src/ledger/concepts/coordination-board.ts'
-import { taskDagFold, taskArtifact, type TaskDagFoldState } from '../../src/ledger/concepts/task-dag.ts'
+import { taskDagFold, tasksFor, taskArtifact, type TaskDagFoldState } from '../../src/ledger/concepts/task-dag.ts'
 import {
   agentDirectoryFold,
   directoryFor,
@@ -65,14 +65,18 @@ class Bus {
       if (!MESH_VERB_ALLOWLIST.includes(i.verb)) return
       const line = encodeMeshEvent(i)
       if (this.reorder) this.queue.push({ line, from: m.bot.userId })
-      else this.deliver(line, m.bot.userId, m.bot.key)
+      else void this.deliver(line, m.bot.userId, m.bot.key)
     })
   }
-  private deliver(line: string, fromUser: string, fromKey: string): void {
+  private async deliver(line: string, fromUser: string, fromKey: string): Promise<void> {
     for (const m of this.machines) {
       if (m.bot.key === fromKey) continue // don't echo to the author
       const decoded = decodeMeshEvent(line, fromUser, directoryFor(m.engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD)))
-      if (decoded) void m.store.append(decoded)
+      // AWAIT the append: the store notifies fold subscribers synchronously, so awaiting
+      // guarantees the directory has converged before the next delivery/assertion. A
+      // fire-and-forget append leaves a window where `meshTaskClaimant` sees a stale
+      // (peer-missing) directory and two machines disagree on the claimant.
+      if (decoded) await m.store.append(decoded)
     }
   }
   /** Flush a reordered queue in reverse (worst-case delivery order). */
@@ -80,7 +84,7 @@ class Bus {
     const q = this.queue.splice(0).reverse()
     for (const { line, from } of q) {
       const fromKey = this.machines.find(m => m.bot.userId === from)!.bot.key
-      this.deliver(line, from, fromKey)
+      await this.deliver(line, from, fromKey)
     }
     await flush()
   }
@@ -189,10 +193,16 @@ async function setupMesh(reorder = false) {
     m.sync.start()
     bus.attach(m)
   }
-  // Everyone publishes identity; the bus converges all three directories.
+  // Everyone publishes identity; the bus converges all three directories. Flush BEFORE
+  // draining so the (async) store-subscribe callbacks have enqueued every identity line —
+  // otherwise a reordered drain can run against a half-filled queue and leave a directory
+  // missing a peer, which would make `meshTaskClaimant` disagree across machines.
   for (const m of machines) await admit(m.store, identity(m.bot))
-  if (reorder) await bus.drainReversed()
   await flush()
+  if (reorder) {
+    await bus.drainReversed()
+    await flush()
+  }
   return { machines, bus, nowRef }
 }
 
@@ -297,6 +307,12 @@ test('stress: a delegated task converges to ONE owner even under reordered deliv
   await flush(120)
   await bus.drainReversed()
   await flush(200)
-  expect((await distinctClaims(machines)).size).toBe(1) // never two different owners
+  // The real no-split-brain guarantee is at the FOLD, not the raw claim count: under
+  // reordered delivery two machines can each emit a claim before seeing the other's, but
+  // every machine's task-dag projects the SAME single owner (resolved deterministically by
+  // (createdAt, hash)). So once the claims have bridged, all three agree on one owner.
+  const owners = machines.map(m => tasksFor(m.engine.get<TaskDagFoldState>(taskDagFold.name), ROOM).get('T1')?.owner)
+  expect(new Set(owners).size).toBe(1) // identical projected owner everywhere — no split-brain
+  expect(owners[0]).toBeDefined() // and the task IS owned
   for (const m of machines) m.store.close()
 })

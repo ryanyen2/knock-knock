@@ -129,7 +129,17 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
 
   // Discord is single-token; `secrets` (unused) is part of the seam contract.
   async connect(token: string, _secrets?: Record<string, string>): Promise<void> {
+    // `login()` resolves once the gateway handshake STARTS — before the `clientReady`
+    // event that populates `_botUserId`/`_botLabel`. Callers (AgentHost.start →
+    // publishIdentity) need the bot's own user id immediately after connect, so wait
+    // for ready. Without this, publishIdentity sees `botUserId === undefined` and
+    // silently skips — leaving the agent absent from the shared directory, which breaks
+    // @mention routing, peer-bot recognition, and mesh provenance.
+    const ready = this._botUserId
+      ? Promise.resolve()
+      : new Promise<void>(resolve => this.client.once('clientReady', () => resolve()))
     await this.client.login(token)
+    await ready
   }
 
   async disconnect(): Promise<void> {

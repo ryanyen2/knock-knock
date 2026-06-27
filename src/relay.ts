@@ -245,7 +245,10 @@ for (const [key, agent] of bootSource) {
   }
 
   const host = new AgentHost(key, agent, readAccessFile, ui, ledger, store, engine)
-  if (meshEnabled) host.enableMesh()
+  // Lazy: by the time the mesh consults it (post-connect), every host exists, so the
+  // set is the relay's full roster of co-resident bots. A directory entry outside it is
+  // a genuine remote peer — the only case where mesh gossip over the channel is useful.
+  if (meshEnabled) host.enableMesh(() => new Set(hosts.map(h => h.botKey)))
   // Idle iff daemon mode AND not in the picked/active set.
   if (wantDaemon && !activeKeys.has(key)) host.setIdle()
   host.onWake = onWake

@@ -192,9 +192,21 @@ follow-up that doesn't name a bot is a broadcast among the engaged, not a direct
 
 **No-Postgres mesh (`KNOCK_KNOCK_MESH=1`, SQLite only).** Local-first cross-machine
 coordination with no shared DB: the messaging channel everyone shares is the interaction
-bus, and **deterministic election** replaces the atomic claim. `src/host/mesh-sync.ts`
+bus, and **deterministic election** replaces the atomic claim. **Cross-machine only — do
+NOT enable for co-resident bots.** Two bots in one relay share one ledger and already
+coordinate through it; the mesh is the bridge to a *separate* relay. So `MeshSync` only
+broadcasts coordination events (`coord.note`/`task.*`) to a room that has a genuine
+**remote peer** (a directory bot this relay does not host); with only co-resident
+siblings it stays silent rather than flooding the human channel with `⟦kk-mesh⟧` lines.
+`agent.identity` beacons are the one unconditional publish (two relays must discover each
+other to bootstrap), plus a slow identity heartbeat (`MESH_IDENTITY_HEARTBEAT_MS`) that
+fires only once a remote peer is known — so a lone co-resident relay emits a single
+beacon then falls quiet. (Discovery requires `botUserId`, which the adapters resolve
+during `connect`: Slack `auth.test`, Telegram `bot.init`, and **Discord must await
+`clientReady`** — `login()` alone resolves before the id is set, which would skip
+`publishIdentity` and leave the bot absent from the directory.) `src/host/mesh-sync.ts`
 publishes locally-authored coordination events (the strict `MESH_VERB_ALLOWLIST`:
-`agent.identity`/`coord.note`/`task.*`) to the room and ingests peers' events via
+`agent.identity`/`coord.note`/`task.*`) and ingests peers' events via
 `store.append` (createdAt verbatim so folds order identically; content-addressed ⇒
 idempotent). `decodeMeshEvent` (`lib.ts`) is the trust boundary — only pure, agent-role,
 allowlisted verbs cross, the hash must verify, and the posting identity must own the
@@ -208,7 +220,8 @@ converge once `task.*` bridge. One elected **scribe** (`electScribe`) maintains 
 to `race` (pure, agreement-free); `designated`/`role-priority` are best-effort across orgs
 (config never crosses the trust boundary). Full mesh on Discord/Slack/Telegram; degrades on
 GitHub/Notion (poll + limited reactions). Never wraps Postgres (its atomic claim + NOTIFY
-are strictly better). Tested in `tests/ledger/mesh-coordination.test.ts`.
+are strictly better). Tested in `tests/ledger/mesh-coordination.test.ts` (cross-machine
+convergence) and `tests/host/mesh-sync.test.ts` (co-resident publish-gating).
 
 ### The AgentAdapter seam (`agent-adapter.ts`)
 

@@ -12,6 +12,15 @@
  *     re-stamp). Content-addressed ⇒ idempotent. The local synchronizer + folds then
  *     light up exactly as a NOTIFY delivery would have driven them.
  *
+ * Co-resident is NOT mesh's job. Two bots in one relay share one ledger, so they
+ * already coordinate through it — broadcasting base64 to the human channel would be
+ * pure noise. So coordination events (coord.note / task.*) are published to a room
+ * ONLY when that room has a genuine REMOTE peer (a directory bot this relay does not
+ * host). Identity beacons are the one exception: they must go out unconditionally on
+ * connect so two relays can discover each other (bootstrap), then a slow heartbeat
+ * keeps the directory fresh — but only once a remote peer is actually known, so a
+ * single co-resident relay falls silent after its initial beacon.
+ *
  * The trust boundary lives in `decodeMeshEvent` (lib.ts): only pure, agent-role,
  * allowlisted verbs cross, and the posting identity must own the `actor`. So an
  * ingested event can never alter permissions, escalate role, or impersonate a peer.
@@ -31,12 +40,20 @@ import {
   type AgentIdentity,
 } from '../lib.ts'
 
+/** How often a relay re-broadcasts its own identity to rooms with a remote peer, so a
+ *  later-joining peer's directory converges even if it missed the connect beacon. Only
+ *  fires once a remote peer is known, so a lone co-resident relay never heartbeats. */
+export const MESH_IDENTITY_HEARTBEAT_MS = 4 * 60_000
+
 export type MeshSyncDeps = {
   store: Store
   /** This host's single bot key — only its own events are published. */
   ownKey: string
-  /** The live agent directory (for ingest provenance). */
+  /** The live agent directory (for ingest provenance + remote-peer detection). */
   directory: () => AgentIdentity[]
+  /** Bot keys hosted by THIS relay (co-resident siblings, incl. self). A directory
+   *  identity outside this set is a genuine remote peer worth broadcasting to. */
+  coResidentKeys: () => ReadonlySet<string>
   /** Resolve a scope (thread/channel) to its room; undefined ⇒ not a served room. */
   resolveRoom: (scope: string) => string | undefined
   /** Every room this bot serves (where identity broadcasts and unresolved scopes go). */
@@ -50,6 +67,9 @@ export type MeshSyncDeps = {
 
 export class MeshSync {
   private unsub?: () => void
+  private heartbeat?: ReturnType<typeof setInterval>
+  /** The last identity line this bot published — re-sent by the heartbeat. */
+  private ownIdentityLine?: string
 
   constructor(private readonly deps: MeshSyncDeps) {}
 
@@ -63,11 +83,15 @@ export class MeshSync {
       if (!MESH_VERB_ALLOWLIST.includes(i.verb)) return
       void this.publish(i)
     })
+    this.heartbeat = setInterval(() => void this.pulse(), MESH_IDENTITY_HEARTBEAT_MS)
+    this.heartbeat.unref?.()
   }
 
   stop(): void {
     this.unsub?.()
     this.unsub = undefined
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = undefined
   }
 
   /** Ingest a peer's coordination line into the local ledger (or ignore a non-mesh
@@ -88,6 +112,16 @@ export class MeshSync {
     return true
   }
 
+  /** Does `room` contain a directory bot this relay does NOT host (a remote peer)?
+   *  When false, broadcasting coordination to that room is noise — co-resident bots
+   *  already share the ledger. */
+  private hasRemotePeerInRoom(room: string): boolean {
+    const local = this.deps.coResidentKeys()
+    return this.deps.directory().some(
+      id => !!id.userId && id.rooms.includes(room) && !local.has(id.agentKey),
+    )
+  }
+
   /** Where to broadcast an event so every peer sees it. The transport scope and the
    *  event's logical `channel` are independent — ingest preserves the original channel,
    *  so posting to the parent room (not a thread) reaches all peers reliably. */
@@ -99,13 +133,35 @@ export class MeshSync {
 
   private async publish(i: Interaction): Promise<void> {
     const line = encodeMeshEvent(i)
+    // Identity beacon: cache for the heartbeat and broadcast unconditionally (this is
+    // how two relays first discover each other — there's no remote peer to gate on yet).
+    if (i.verb === 'agent.identity') {
+      this.ownIdentityLine = line
+      for (const scope of this.targetScopes(i)) await this.sendLine(scope, line)
+      return
+    }
+    // Coordination event: only worth sending to rooms that have a remote peer. In a
+    // single co-resident relay this is always empty, so nothing is posted to the channel.
     for (const scope of this.targetScopes(i)) {
-      try {
-        const ref = await this.deps.send(scope, line)
-        if (ref) this.deps.noteBotMsg(ref.id)
-      } catch (err) {
-        this.deps.log(`mesh: publish to ${scope} failed: ${err}`)
-      }
+      if (this.hasRemotePeerInRoom(scope)) await this.sendLine(scope, line)
+    }
+  }
+
+  /** Heartbeat: keep remote peers' directories fresh by re-broadcasting our identity to
+   *  rooms that have a remote peer. Silent when no remote peer is known (lone relay). */
+  private async pulse(): Promise<void> {
+    if (!this.ownIdentityLine) return
+    for (const room of this.deps.allRooms()) {
+      if (this.hasRemotePeerInRoom(room)) await this.sendLine(room, this.ownIdentityLine)
+    }
+  }
+
+  private async sendLine(scope: string, line: string): Promise<void> {
+    try {
+      const ref = await this.deps.send(scope, line)
+      if (ref) this.deps.noteBotMsg(ref.id)
+    } catch (err) {
+      this.deps.log(`mesh: publish to ${scope} failed: ${err}`)
     }
   }
 }

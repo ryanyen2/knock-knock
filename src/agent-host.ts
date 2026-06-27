@@ -214,6 +214,10 @@ export class AgentHost {
    *  messaging channel). Constructed on connect only when mesh is enabled. */
   private mesh?: MeshSync
   private meshEnabled = false
+  /** Bot keys hosted by THIS relay (co-resident siblings, incl. self). Supplied by the
+   *  relay so the mesh knows which directory entries are remote peers worth broadcasting
+   *  to — co-resident siblings already share the ledger and need no channel gossip. */
+  private coResidentKeys: () => ReadonlySet<string> = () => new Set([this.key])
 
   constructor(
     private readonly key: string,
@@ -367,6 +371,7 @@ export class AgentHost {
         store: this.store,
         ownKey: this.key,
         directory: () => this.directoryIdentities(),
+        coResidentKeys: () => this.coResidentKeys(),
         resolveRoom: scope => this.roomForScope(scope),
         allRooms: () => Object.keys((this.getAccess().agents[this.key] ?? this.agent).rooms),
         send: (scope, text) => this.messaging.send(scope, text),
@@ -380,9 +385,12 @@ export class AgentHost {
 
   /** Enable the no-Postgres cross-machine mesh transport for this host. Set by the
    *  relay when the backend is SQLite and mesh is explicitly turned on; takes effect
-   *  at connect. No-op on Postgres (the relay never calls it there). */
-  enableMesh(): void {
+   *  at connect. No-op on Postgres (the relay never calls it there). `coResidentKeys`
+   *  reports every bot key hosted by this relay so the mesh can tell a co-resident
+   *  sibling (reachable via the shared ledger) from a genuine remote peer. */
+  enableMesh(coResidentKeys?: () => ReadonlySet<string>): void {
     this.meshEnabled = true
+    if (coResidentKeys) this.coResidentKeys = coResidentKeys
   }
 
   /** Publish this bot's platform identity to the shared agent directory so peers — co-resident
@@ -391,7 +399,13 @@ export class AgentHost {
    *  each connect; content-addressed ⇒ idempotent, and a changed label/rooms supersedes by LWW. */
   private async publishIdentity(): Promise<void> {
     const userId = this.messaging.botUserId
-    if (!userId) return // platform id not resolved (e.g. poll adapters without a self id)
+    if (!userId) {
+      // No self id ⇒ this bot can't enter the shared directory, so peers can't address
+      // it, it isn't recognized as a peer bot, and mesh provenance for its events fails.
+      // Adapters must resolve botUserId during connect() (Discord waits for clientReady).
+      this.ui.error(this.key, 'identity not published: messaging adapter has no botUserId after connect')
+      return
+    }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     await admit(this.store, {
       actor: this.key,

@@ -223,6 +223,11 @@ laptop — can work together. Normally that needs a shared database both of you 
 to (Postgres), which means hosting a server, often in the cloud. That breaks the
 "runs on my own machine" promise.
 
+This is **only** for bots on *different* machines. Two bots running in the same relay on
+one machine already share a notebook — they need no mesh, and turning it on just makes
+them shout coordination notes at each other through the chat channel for no reason. So
+the mesh stays quiet unless it can actually see a bot from *another* relay to talk to.
+
 So there's a second way that needs **no shared database at all** (turn it on with
 `KNOCK_KNOCK_MESH=1`). The trick: the chat channel you're *already both in* is the
 shared notebook. When a bot writes a coordination note — "I'm taking this", "task B is
