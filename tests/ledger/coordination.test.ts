@@ -638,6 +638,39 @@ test('completion guard: a foreign/forged turn.replied cannot complete another ag
   store.close()
 })
 
+test('co-resident multi-bot: two bots in one room can each claim their own tasks independently', async () => {
+  // Regression: the old single-context resolveSchedule returned d-bot (first host in array
+  // order), so cc's tasks were always claimed by d-bot — cc could never own its own work.
+  // The fix: resolveSchedule returns ALL local agents; scheduleScope runs once per context.
+  // Use the reconcile-tick pattern (explicit scheduleScope) rather than the live synchronizer,
+  // matching how other multi-agent tests (fan-out, failover) work deterministically.
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(taskDagFold)
+  // Use push-assign so tasks are only claimable by their explicit assignee.
+  const cfg: ChannelConfig = { allocation: 'push-assign' }
+  const opts: TaskSchedulerOpts = {
+    // Array of contexts — simulates relay returning both co-resident bots.
+    // With a single context (the old bug), only d-bot would ever claim.
+    resolveSchedule: () => [
+      { agentKey: 'd-bot', cfg, relayId: 'relay1', isTurnLive: () => true },
+      { agentKey: 'cc', cfg, relayId: 'relay1', isTurnLive: () => true },
+    ],
+  }
+
+  // Admit both tasks, THEN drive scheduling explicitly — same as the reconcile tick.
+  // This avoids the fire-and-forget timing sensitivity of the live synchronizer.
+  await admit(store, taskOp('chan1', 'task.created', { id: 'A', assignee: 'cc' }))
+  await admit(store, taskOp('chan1', 'task.created', { id: 'B', assignee: 'd-bot' }))
+  await scheduleScope({ store, engine, admit: p => admit(store, p), opts, scope: 'chan1' })
+
+  // Both tasks claimed by the correct owner.
+  const state = engine.get<import('../../src/ledger/concepts/task-dag.ts').TaskDagFoldState>(taskDagFold.name)
+  expect(tasksFor(state, 'chan1').get('A')?.owner).toBe('cc')
+  expect(tasksFor(state, 'chan1').get('B')?.owner).toBe('d-bot')
+  store.close()
+})
+
 test('fan-out: per-pass cap bounds wakes; reconcile drains all ready tasks (no permanent drop)', async () => {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)

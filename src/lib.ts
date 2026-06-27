@@ -2071,13 +2071,34 @@ function orderByTime<T extends { createdAt: string; hash: string }>(records: Rea
   )
 }
 
+// Verb application order: created (0) < bid (1) < claimed (2) < completed (3).
+// Ensures a task.claimed never processes before task.created for the same id even
+// when both ops share the same millisecond timestamp (e.g., in fast unit tests).
+// Within each verb tier, (createdAt, hash) keeps cross-replica determinism.
+const TASK_VERB_ORDER: Record<string, number> = {
+  'task.created': 0,
+  'task.bid': 1,
+  'task.claimed': 2,
+  'task.completed': 3,
+}
+
+function orderTaskRecords(records: ReadonlyArray<TaskRecord>): TaskRecord[] {
+  return [...records].sort((a, b) => {
+    const va = TASK_VERB_ORDER[a.verb] ?? 1
+    const vb = TASK_VERB_ORDER[b.verb] ?? 1
+    if (va !== vb) return va - vb
+    return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : a.hash < b.hash ? -1 : a.hash > b.hash ? 1 : 0
+  })
+}
+
 /** Pure projection of the task-op set into the current task map. Deterministic:
- *  ops applied in (createdAt, hash) order, so every replica derives the identical
- *  board. Op-derived status ONLY (open/claimed/done) — claim *liveness* (a lapsed
- *  external_claim) is the reconcile's concern, never folded in here. */
+ *  ops applied in (verb-tier, createdAt, hash) order so every replica derives the
+ *  identical board. Verb-tier ordering guarantees task.created always precedes
+ *  task.claimed even when both share a millisecond timestamp. Op-derived status
+ *  ONLY — claim liveness (lapsed external_claim) is the reconcile's concern. */
 export function projectTaskDag(records: ReadonlyArray<TaskRecord>): TaskBoard {
   const tasks = new Map<string, Task>()
-  for (const r of orderByTime(records)) {
+  for (const r of orderTaskRecords(records)) {
     const d = r.data
     if (r.verb === 'task.created') {
       if (!tasks.has(d.id)) {

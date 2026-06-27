@@ -73,7 +73,11 @@ export type ScheduleContext = {
 }
 
 export type TaskSchedulerOpts = {
-  resolveSchedule: (scope: ChannelId) => ScheduleContext | undefined
+  /** Return ALL local agents that serve `scope` — with co-resident bots in one room,
+   *  returning only the first would let d-bot claim cc's tasks (the same-class bug as
+   *  "@cc → d-bot answers"). Each context is scheduled independently; external_claim
+   *  prevents double-claiming. */
+  resolveSchedule: (scope: ChannelId) => ScheduleContext | ScheduleContext[] | undefined
   claimTtlMs?: number
   /** Mesh mode only: deterministic pull-claim election (no shared lock). */
   election?: MeshTaskElection
@@ -107,9 +111,28 @@ export async function scheduleScope(deps: {
    *  pull when no bids arrived. Ignored by pull/push. */
   allowBidClaim?: boolean
 }): Promise<void> {
-  const sched = deps.opts.resolveSchedule(deps.scope)
-  if (!sched) return // no local agent serves this scope
+  const resolved = deps.opts.resolveSchedule(deps.scope)
+  // Normalize single/array/undefined to an array — supports both the common single-bot
+  // case and co-resident multi-bot (each bot needs its own scheduling pass so it can
+  // independently claim tasks; only the first would ever claim under the old shape).
+  const scheds: ScheduleContext[] = !resolved ? [] : Array.isArray(resolved) ? resolved : [resolved]
+  if (scheds.length === 0) return // no local agent serves this scope
+  // Run a scheduling pass for each local agent independently.
+  for (const sched of scheds) {
+    await scheduleScopeForAgent({ ...deps, sched })
+  }
+}
 
+async function scheduleScopeForAgent(deps: {
+  store: Store
+  engine: FoldEngine
+  admit: Admit
+  opts: TaskSchedulerOpts
+  scope: ChannelId
+  sched: ScheduleContext
+  allowBidClaim?: boolean
+}): Promise<void> {
+  const { sched } = deps
   let state: TaskDagFoldState
   try {
     state = deps.engine.get<TaskDagFoldState>(TASK_DAG_FOLD)

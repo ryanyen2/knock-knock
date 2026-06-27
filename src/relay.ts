@@ -431,13 +431,20 @@ synchronizer.register(
 synchronizer.register(capturePresence())
 // Task scheduler: claim/assign ready tasks (pull/push/bid), wake the owner, fail over.
 const schedulerOpts: TaskSchedulerOpts = {
+  // Return ALL co-resident bots that serve the scope — each bot must be able to claim
+  // its own tasks independently. With a single context, only the first bot in array
+  // order could ever claim (the same "first-serving-host" bug as "@cc → d-bot answers").
   resolveSchedule: scope => {
-    const host = hosts.find(h => h.getAgentForChannel(scope))
-    const info = host?.getAgentForChannel(scope)
-    const roomId = host?.roomForScope(scope)
-    if (!host || !info || !roomId) return undefined
-    const cfg = resolveConfigFor(engine.get<ConfigFoldState>(CONFIG_FOLD), roomId, scope)
-    return { agentKey: info.agentKey, cfg, relayId, isTurnLive: () => host.isTurnLive(scope) }
+    const ctxs = []
+    for (const h of hosts) {
+      const info = h.getAgentForChannel(scope)
+      if (!info) continue
+      const roomId = h.roomForScope(scope)
+      if (!roomId) continue
+      const cfg = resolveConfigFor(engine.get<ConfigFoldState>(CONFIG_FOLD), roomId, scope)
+      ctxs.push({ agentKey: info.agentKey, cfg, relayId, isTurnLive: () => h.isTurnLive(scope) })
+    }
+    return ctxs.length ? ctxs : undefined
   },
   // Mesh mode only: deterministic pull-claim allocation over the shared directory
   // (bid/push converge on their own once task.* events bridge).
