@@ -364,16 +364,28 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
   private buildPayload(
     text: string,
     opts?: SendOpts,
-  ): { content: string; components?: any[]; files?: AttachmentBuilder[]; allowedMentions?: { parse: [] } } {
+  ): {
+    content: string
+    components?: any[]
+    files?: AttachmentBuilder[]
+    allowedMentions?: { parse: []; users?: string[] }
+  } {
     const mention = opts?.mentionUser ? `<@${opts.mentionUser}> ` : ''
     const full = mention + text
     const trimmed = full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
-    const payload: { content: string; components?: any[]; files?: AttachmentBuilder[]; allowedMentions?: { parse: [] } } = {
+    const payload: {
+      content: string
+      components?: any[]
+      files?: AttachmentBuilder[]
+      allowedMentions?: { parse: []; users?: string[] }
+    } = {
       content: trimmed,
     }
     // Suppress pings on status surfaces: the echoed prompt's `<@id>` markup stays in the
     // text but Discord won't parse it as a mention, so peer bots aren't re-triggered.
-    if (opts?.suppressMentions) payload.allowedMentions = { parse: [] }
+    // `mentionOnly` is the same suppression but whitelists one user (the approver).
+    if (opts?.mentionOnly) payload.allowedMentions = { parse: [], users: [opts.mentionOnly] }
+    else if (opts?.suppressMentions) payload.allowedMentions = { parse: [] }
     if (opts?.choices && opts.choices.length > 0) payload.components = rowsFor(opts.choices)
     if (opts?.files && opts.files.length > 0) {
       payload.files = opts.files.map(f => {

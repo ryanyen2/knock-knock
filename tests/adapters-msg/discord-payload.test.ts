@@ -13,7 +13,7 @@ import { DiscordMessagingAdapter } from '../../src/adapters-msg/discord.ts'
 // instance via a structural cast — no connect() / gateway needed.
 const payloadOf = (text: string, opts?: object) =>
   (new DiscordMessagingAdapter() as unknown as {
-    buildPayload(t: string, o?: object): { content: string; allowedMentions?: { parse: string[] } }
+    buildPayload(t: string, o?: object): { content: string; allowedMentions?: { parse: string[]; users?: string[] } }
   }).buildPayload(text, opts)
 
 test('buildPayload: suppressMentions sets allowedMentions:{parse:[]} so echoed <@id> never pings', () => {
@@ -25,4 +25,11 @@ test('buildPayload: suppressMentions sets allowedMentions:{parse:[]} so echoed <
 test('buildPayload: a normal send still pings (directed handoff @next-bot must work)', () => {
   const p = payloadOf('over to you <@123456>')
   expect(p.allowedMentions).toBeUndefined()
+})
+
+test('buildPayload: mentionOnly pings just the approver, suppressing other <@id> in the body', () => {
+  // An approval prompt's tool-input preview can contain <@id> markup; only the approver
+  // should be pinged, never a peer bot named in the preview.
+  const p = payloadOf('🔐 Permission request for <@999>', { mentionOnly: 'U_owner' })
+  expect(p.allowedMentions).toEqual({ parse: [], users: ['U_owner'] })
 })

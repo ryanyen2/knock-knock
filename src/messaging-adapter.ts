@@ -41,6 +41,10 @@ export type SendOpts = {
    *  named bots (the cross-machine status cascade). Real replies leave this off so a
    *  directed handoff (`@next-bot do X`) still pings. */
   suppressMentions?: boolean
+  /** Ping only this user id and suppress every other mention. For prompts that must reach
+   *  one person (approvals → the approver) while their body may contain other `<@id>` markup
+   *  (e.g. a tool-input preview) that must not re-trigger peer bots. */
+  mentionOnly?: string
   /** Files to attach. Honored only where `Capabilities.files.outbound`; otherwise the host posts a text notice. */
   files?: OutgoingFile[]
 }
