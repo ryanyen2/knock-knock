@@ -99,6 +99,11 @@ export type AgentIdentity = {
   blurb?: string
   /** Channel ids this bot is a member of (so the directory is scoped per room). */
   rooms: string[]
+  /** Platform role ids this bot holds (Discord). A bot whose name collides with its
+   *  managed role is addressed via a ROLE mention (`<@&roleId>`), not a user mention, so
+   *  directed routing must map role ids back to the bot. Empty/absent on platforms with
+   *  no role concept (Slack/Telegram/…). */
+  roleIds?: string[]
 }
 
 /** Payload for the task.* verbs (decentralized allocation DAG). The verb is the

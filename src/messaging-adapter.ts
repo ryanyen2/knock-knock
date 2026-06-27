@@ -164,6 +164,10 @@ export interface MessagingAdapter {
   readonly botUserId: string | undefined
   /** Human-readable bot account label for the console line; falls back to botUserId. */
   readonly botLabel?: string | undefined
+  /** Platform role ids this bot holds, if the platform has roles (Discord). Published in
+   *  the agent directory so a ROLE mention (`<@&roleId>`) can be routed to this bot —
+   *  `@cc` resolves to the bot's managed role, not its user. Absent ⇒ no role concept. */
+  readonly botRoleIds?: string[] | undefined
   capabilities(): Capabilities
 
   // ─── inbound (host registers handlers; adapter normalizes platform events) ──

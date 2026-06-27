@@ -69,6 +69,7 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
   private readonly client: Client
   private _botUserId: string | undefined
   private _botLabel: string | undefined
+  private _botRoleIds: string[] | undefined
 
   private onMessageHandler?: (m: IncomingMessage) => void
   private onActionHandler?: (a: IncomingAction) => void
@@ -90,6 +91,17 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
     this.client.once('clientReady', c => {
       this._botUserId = c.user.id
       this._botLabel = c.user.tag
+      // Collect this bot's role ids across the guilds it's in. A bot whose name collides
+      // with its managed role gets addressed via that role's mention (`<@&roleId>`), so the
+      // directory must know which roles map back to this bot for directed routing.
+      const roles = new Set<string>()
+      for (const g of c.guilds.cache.values()) {
+        const me = g.members.me
+        if (!me) continue
+        // Skip @everyone (its role id == the guild id) — it's never an explicit mention.
+        for (const id of me.roles.cache.keys()) if (id !== g.id) roles.add(id)
+      }
+      this._botRoleIds = [...roles]
     })
 
     this.client.on('messageCreate', (msg: Message) => {
@@ -148,6 +160,10 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
 
   get botUserId(): string | undefined {
     return this._botUserId
+  }
+
+  get botRoleIds(): string[] | undefined {
+    return this._botRoleIds
   }
 
   /** The bot's display label (`name#1234`) once connected. */

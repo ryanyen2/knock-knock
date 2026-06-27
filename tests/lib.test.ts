@@ -519,6 +519,14 @@ test('threadNameFromPrompt: caps at 80 chars with an ellipsis', () => {
   expect(out.length).toBe(81) // 80 chars + ellipsis
 })
 
+test('threadNameFromPrompt: strips role and channel mentions too', () => {
+  // The user's "@cc work with @d-bot" arrives as role mentions; without stripping them the
+  // thread title was raw "<@&1508…> work with <@&1520…>".
+  expect(threadNameFromPrompt('<@&1508101528827727968> work with <@&1520107340685377732> on docs'))
+    .toBe('work with on docs')
+  expect(threadNameFromPrompt('check <#999> channel')).toBe('check channel')
+})
+
 test('threadNameFromPrompt: empty after stripping falls back to "task"', () => {
   expect(threadNameFromPrompt('<@!123>')).toBe('task')
 })
@@ -1637,4 +1645,26 @@ test('addressedAgentKeys: detects only bots named by @mention markup (directed v
   expect(addressedAgentKeys(dir, 'room1', 'discord', 'hey <@U_cc> and <@U_db> split this').sort()).toEqual(['cc', 'd-bot'])
   expect(addressedAgentKeys(dir, 'room1', 'discord', 'just <@U_cc> please')).toEqual(['cc'])
   expect(addressedAgentKeys(dir, 'room1', 'discord', 'no mentions here')).toEqual([]) // broadcast
+})
+
+test('addressedAgentKeys: a ROLE mention (<@&id>) resolves to the role-owning bot', () => {
+  // Discord inserts a role mention for a bot whose name collides with its managed role —
+  // `@cc` becomes `<@&R_cc>`, not `<@U_cc>`. Directed routing must still resolve it, or it
+  // collapses to a broadcast and an unaddressed bot answers (the d-bot-hijacks-@cc bug).
+  const dir = [
+    { agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: ['room1'], roleIds: ['R_cc'] },
+    { agentKey: 'd-bot', platform: 'discord', userId: 'U_db', rooms: ['room1'], roleIds: ['R_db'] },
+  ]
+  expect(addressedAgentKeys(dir, 'room1', 'discord', '<@&R_cc> only u reply me')).toEqual(['cc'])
+  expect(addressedAgentKeys(dir, 'room1', 'discord', '<@&R_cc> work with <@&R_db>').sort()).toEqual(['cc', 'd-bot'])
+  // Mixed user + role markup also works.
+  expect(addressedAgentKeys(dir, 'room1', 'discord', '<@U_cc> and <@&R_db> go').sort()).toEqual(['cc', 'd-bot'])
+})
+
+test('responderElection: a role mention narrows the eligible set like a user mention', () => {
+  const dir = [
+    { agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: ['room1'], roleIds: ['R_cc'] },
+    { agentKey: 'd-bot', platform: 'discord', userId: 'U_db', rooms: ['room1'], roleIds: ['R_db'] },
+  ]
+  expect(responderElection(dir, 'room1', 'discord', '<@&R_cc> reply to me', 'm1')).toEqual(['cc'])
 })

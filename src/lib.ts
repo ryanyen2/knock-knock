@@ -1430,7 +1430,9 @@ export function parseWatchCommand(text: string): ParsedWatchCommand {
 
 /** Derive a Discord thread name from message text: strip @mentions, cap at 80 chars. */
 export function threadNameFromPrompt(text: string): string {
-  const stripped = text.replace(/<@!?\d+>/g, '').replace(/\s+/g, ' ').trim()
+  // Strip user (`<@id>`/`<@!id>`), role (`<@&id>`), and channel (`<#id>`) mention markup —
+  // a bot addressed by its managed role would otherwise leave `<@&123…>` in the title.
+  const stripped = text.replace(/<(@[!&]?|#)\d+>/g, '').replace(/\s+/g, ' ').trim()
   const trimmed = stripped.slice(0, 80) || 'task'
   return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
 }
@@ -1606,6 +1608,14 @@ function textMentionsUser(text: string, userId: string): boolean {
   return text.includes(`<@${userId}>`) || text.includes(`<@!${userId}>`) || text.includes(userId)
 }
 
+/** Does `text` address this bot — by a user mention (above) OR a Discord ROLE mention
+ *  (`<@&roleId>`) of any role the bot holds? `@cc` resolves to the bot's managed role,
+ *  not its user, so role mentions must count as addressing the bot. */
+function textAddressesIdentity(text: string, id: AgentIdentity): boolean {
+  if (textMentionsUser(text, id.userId)) return true
+  return (id.roleIds ?? []).some(roleId => text.includes(`<@&${roleId}>`))
+}
+
 /** Rank-ordered agentKeys eligible to answer `messageId` in `roomId`, computed purely
  *  from the shared directory + the message text. If the message @mentions known bots,
  *  only those contend; otherwise every directory bot in the room does (broadcast).
@@ -1620,15 +1630,17 @@ export function responderElection(
   const inRoom = identities.filter(
     id => id.platform === platform && id.rooms.includes(roomId) && id.userId,
   )
-  const mentioned = inRoom.filter(id => textMentionsUser(text, id.userId))
+  const mentioned = inRoom.filter(id => textAddressesIdentity(text, id))
   const universe = (mentioned.length ? mentioned : inRoom).map(id => id.agentKey)
   return electOrder(universe, messageId)
 }
 
-/** Known bots EXPLICITLY addressed in `text` by native @mention markup (`<@id>` / `<@!id>`).
+/** Known bots EXPLICITLY addressed in `text` by native mention markup: a user mention
+ *  (`<@id>` / `<@!id>`) OR a Discord ROLE mention (`<@&roleId>`) of a role the bot holds —
+ *  `@cc` resolves to the bot's managed role, not its user, so role mentions must count.
  *  Stricter than eligibility (no bare-id fallback) so a "directed" message — one that names
  *  specific bots — is detected precisely: each named bot then answers its own part instead
- *  of the agents racing for a single reply. Platforms without `<@id>` markup (text-mention)
+ *  of the agents racing for a single reply. Platforms without mention markup (text-mention)
  *  yield none → treated as a broadcast. Pure. */
 export function addressedAgentKeys(
   identities: ReadonlyArray<AgentIdentity>,
@@ -1638,7 +1650,12 @@ export function addressedAgentKeys(
 ): string[] {
   return identities
     .filter(id => id.platform === platform && id.rooms.includes(roomId) && id.userId)
-    .filter(id => text.includes(`<@${id.userId}>`) || text.includes(`<@!${id.userId}>`))
+    .filter(
+      id =>
+        text.includes(`<@${id.userId}>`) ||
+        text.includes(`<@!${id.userId}>`) ||
+        (id.roleIds ?? []).some(roleId => text.includes(`<@&${roleId}>`)),
+    )
     .map(id => id.agentKey)
 }
 

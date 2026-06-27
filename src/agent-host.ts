@@ -422,6 +422,7 @@ export class AgentHost {
           ...(this.messaging.botLabel ? { label: this.messaging.botLabel } : {}),
           ...(liveAgent.blurb ? { blurb: liveAgent.blurb } : {}),
           rooms: Object.keys(this.agent.rooms),
+          ...(this.messaging.botRoleIds?.length ? { roleIds: this.messaging.botRoleIds } : {}),
         },
       },
       effect: 'pure',
