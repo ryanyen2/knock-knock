@@ -1625,6 +1625,23 @@ export function responderElection(
   return electOrder(universe, messageId)
 }
 
+/** Known bots EXPLICITLY addressed in `text` by native @mention markup (`<@id>` / `<@!id>`).
+ *  Stricter than eligibility (no bare-id fallback) so a "directed" message — one that names
+ *  specific bots — is detected precisely: each named bot then answers its own part instead
+ *  of the agents racing for a single reply. Platforms without `<@id>` markup (text-mention)
+ *  yield none → treated as a broadcast. Pure. */
+export function addressedAgentKeys(
+  identities: ReadonlyArray<AgentIdentity>,
+  roomId: string,
+  platform: string,
+  text: string,
+): string[] {
+  return identities
+    .filter(id => id.platform === platform && id.rooms.includes(roomId) && id.userId)
+    .filter(id => text.includes(`<@${id.userId}>`) || text.includes(`<@!${id.userId}>`))
+    .map(id => id.agentKey)
+}
+
 // ─── Mesh transport codec (the no-Postgres NOTIFY substitute) ─────────────────────
 // Cross-machine, each relay keeps its own local ledger; the messaging channel everyone
 // already shares is the bus. A relay encodes each locally-authored COORDINATION

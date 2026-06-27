@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
-import { resolveLedgerConfig, responderElection } from './lib.ts'
+import { resolveLedgerConfig, responderElection, addressedAgentKeys } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import type { RelayUI } from './console-ui.ts'
@@ -387,6 +387,16 @@ synchronizer.register(
       // on their own owners' relays); role-priority bites across relays.
       const isOwnerBot = !!access.agents[info.agentKey]?.ownerUserId
       return { agentKey: info.agentKey, loopGuardOpts: info.loopGuardOpts, isOwnerBot, cfg, relayId }
+    },
+    // Directed-message routing (every backend, not mesh-only): the bots EXPLICITLY
+    // @mentioned in this message, from the shared directory. When a user names specific
+    // bots ("@cc and @d-bot, one does X one does Y"), each answers its own part and an
+    // unnamed bot stays out — instead of all named bots racing for one reply.
+    resolveAddressing: (channel, _messageId, text) => {
+      const host = hosts.find(h => h.roomForScope(channel))
+      const roomId = host?.roomForScope(channel)
+      if (!host || !roomId) return []
+      return addressedAgentKeys(directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD)), roomId, host.platform, text)
     },
     // Mesh mode only: deterministic election over the shared directory replaces the
     // same-machine-only atomic reply claim, so two laptops take turns without Postgres.

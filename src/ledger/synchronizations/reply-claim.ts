@@ -59,6 +59,14 @@ export type ReplyClaimOpts = {
    *  When provided, the rank-based delay + designation stand-down replace the atomic
    *  reply claim cross-machine (the local claim is kept as a co-resident backstop). */
   election?: MeshElection
+  /** The known bots EXPLICITLY @mentioned in this message (from the shared directory).
+   *  A message that names specific bots is "directed": EACH addressed bot answers its own
+   *  part (per-agent claim, so two bots asked to split work both engage), and a bot that
+   *  isn't named stays out — fixing "@cc and @d-bot, one does X one does Y" (only one ever
+   *  replied) and "@cc" (a different bot grabbed it). Empty/absent ⇒ a broadcast, which
+   *  still elects exactly one responder. Provided on every backend (the directory exists
+   *  co-resident too), so this is not mesh-only. */
+  resolveAddressing?: (channel: ChannelId, messageId: string, text: string) => string[]
 }
 
 function messageArgs(i: Interaction): { messageId?: string; targetAgent?: string; text: string } {
@@ -118,29 +126,38 @@ export function replyClaim(opts: ReplyClaimOpts): Synchronization {
       const lg = ctx.engine.get<LoopGuardFoldState>(LOOP_GUARD_FOLD)
       if (!decideLoopGuard(lg, i.channel, i.role, now(), coord.loopGuardOpts).allow) return
 
+      // Directed vs broadcast. A message that explicitly @mentions specific bots is
+      // DIRECTED: each named bot answers its own part (per-agent claim), and a bot that
+      // isn't named stays out. Only a true broadcast (no bot named) elects one responder.
+      const addressed = opts.resolveAddressing?.(i.channel, messageId, text) ?? []
+      const directed = addressed.length > 0
+      if (directed && !addressed.includes(coord.agentKey)) return // named someone else, not me
+
       const policy = resolveResponderPolicy(coord.cfg)
       const self: ResponderSelf = { agentKey: coord.agentKey, isOwnerBot: coord.isOwnerBot }
-      let deferMs = preferredResponderDelayMs(policy, self, coord.cfg)
+      // Directed → answer now (no election: each named bot is its own winner). Broadcast →
+      // the policy/mesh-election delay biases WHO wins the single reply.
+      let deferMs = directed ? 0 : preferredResponderDelayMs(policy, self, coord.cfg)
 
-      // Mesh mode: deterministic election decides WHO answers cross-machine (no atomic
+      // Mesh broadcast: deterministic election decides WHO answers cross-machine (no atomic
       // lock). The rank sets the failover delay; an ineligible agent stands down.
-      if (opts.election) {
+      if (opts.election && !directed) {
         const rank = opts.election.rankFor(i.channel, messageId, text, coord.agentKey)
         if (rank === undefined) return // not eligible to answer this message
         deferMs = rank * (opts.election.stepMs ?? MESH_FAILOVER_STEP_MS)
       }
 
       const attempt = async () => {
-        // Mesh stand-down: a peer already took this message (its designation reached us
-        // over the mesh) → yield. This is the cross-machine exactly-one guarantee; the
-        // rank delay ensures the winner posts its designation before a loser's timer fires.
-        if (opts.election?.alreadyDesignated(i.channel, messageId, coord.agentKey)) return
-        // 1) Reply election — which AGENT answers (holder = agentKey).
-        const reply = await ctx.store.acquireClaim(
-          replyClaimKey(i.channel, messageId),
-          coord.agentKey,
-          ttl,
-        )
+        // Mesh broadcast stand-down: a peer already took this message (its designation
+        // reached us over the mesh) → yield. Skipped when directed (each named bot answers).
+        if (!directed && opts.election?.alreadyDesignated(i.channel, messageId, coord.agentKey)) return
+        // 1) Reply election. Broadcast → ONE shared key, so distinct agents contend to a
+        // single winner. Directed → a per-AGENT key, so each named bot wins its own and
+        // both engage (the fix for two bots asked to split one task).
+        const replyKey = directed
+          ? `${replyClaimKey(i.channel, messageId)}/${coord.agentKey}`
+          : replyClaimKey(i.channel, messageId)
+        const reply = await ctx.store.acquireClaim(replyKey, coord.agentKey, ttl)
         if (!reply.acquired) return // another agent already won the reply
         // 2) Drive election — which RELAY drives this agent's turn (holder = relayId).
         const drive = await ctx.store.acquireClaim(

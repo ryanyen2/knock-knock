@@ -72,6 +72,7 @@ import {
   meshProvenanceOk,
   meshTaskClaimant,
   renderBillboard,
+  addressedAgentKeys,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -1626,4 +1627,14 @@ test('meshTaskClaimant: window 0 = elected winner; later windows walk the failov
   expect(new Set([w0, w1, w2]).size).toBe(3) // ladder advances through distinct ranks
   expect(meshTaskClaimant(elig, 'T1', 999999, 1000)).toBe(w2) // clamps at the last rank
   expect(meshTaskClaimant([], 'T1', 0, 1000)).toBeUndefined()
+})
+
+test('addressedAgentKeys: detects only bots named by @mention markup (directed vs broadcast)', () => {
+  const dir = [
+    { agentKey: 'cc', platform: 'discord', userId: 'U_cc', rooms: ['room1'] },
+    { agentKey: 'd-bot', platform: 'discord', userId: 'U_db', rooms: ['room1'] },
+  ]
+  expect(addressedAgentKeys(dir, 'room1', 'discord', 'hey <@U_cc> and <@U_db> split this').sort()).toEqual(['cc', 'd-bot'])
+  expect(addressedAgentKeys(dir, 'room1', 'discord', 'just <@U_cc> please')).toEqual(['cc'])
+  expect(addressedAgentKeys(dir, 'room1', 'discord', 'no mentions here')).toEqual([]) // broadcast
 })

@@ -139,3 +139,42 @@ test('claim is row-lock atomic, not NOTIFY-dependent: a live claim refuses a dif
   expect(second.currentHolder).toBe('bot002') // contention resolved by the store, no event needed
   store.close()
 })
+
+test('directed: two bots BOTH @mentioned each answer their own part (not a single winner)', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sA = new Synchronizer(store, engine)
+  const sB = new Synchronizer(store, engine)
+  const addressing = () => ['bot002', 'bot101'] // the user named both
+  sA.register(replyClaim({ resolveCoord: coordResolver('bot002', 'relayA'), resolveAddressing: addressing }))
+  sB.register(replyClaim({ resolveCoord: coordResolver('bot101', 'relayB'), resolveAddressing: addressing }))
+  sA.start()
+  sB.start()
+  await admit(store, channelMessage('chan1', 'msgM', 'bot002'))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101'))
+  await flush()
+  expect((await store.listByVerb('turn.prompted')).length).toBe(2) // BOTH engage — split the work
+  store.close()
+})
+
+test('directed: a message naming only ONE bot is not grabbed by the other', async () => {
+  const store = new SqliteStore(':memory:')
+  const engine = new FoldEngine(store)
+  await engine.register(loopGuardFold)
+  const sA = new Synchronizer(store, engine)
+  const sB = new Synchronizer(store, engine)
+  const addressing = () => ['bot002'] // only bot002 named
+  sA.register(replyClaim({ resolveCoord: coordResolver('bot002', 'relayA'), resolveAddressing: addressing }))
+  sB.register(replyClaim({ resolveCoord: coordResolver('bot101', 'relayB'), resolveAddressing: addressing }))
+  sA.start()
+  sB.start()
+  // require-mention OFF: bot101 also admits its copy, but must stand down (not named).
+  await admit(store, channelMessage('chan1', 'msgM', 'bot002'))
+  await admit(store, channelMessage('chan1', 'msgM', 'bot101'))
+  await flush()
+  const prompted = await store.listByVerb('turn.prompted')
+  expect(prompted.length).toBe(1) // only the named bot answers
+  expect(prompted[0]!.actor).toBe('bot002')
+  store.close()
+})
