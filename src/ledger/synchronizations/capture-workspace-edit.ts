@@ -19,9 +19,11 @@ import {
 } from '../artifacts/versionable.ts'
 
 export type CaptureWorkspaceEditDeps = {
-  /** `absFilePath` relative to `scope`'s workspace, or undefined when outside the
-   *  workspace / scope unserved. Workspace-relative keeps the artifact id stable. */
-  relativize: (scope: string, absFilePath: string) => string | undefined
+  /** `absFilePath` relative to the EDITING agent's workspace, or undefined when outside the
+   *  workspace / scope unserved. Workspace-relative keeps the artifact id stable. `agentKey`
+   *  is the editing bot — with co-resident bots on different workspaces in one room, the path
+   *  MUST relativize against the editor's own workspace, not the first sibling's. */
+  relativize: (scope: string, absFilePath: string, agentKey: string) => string | undefined
 }
 
 export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchronization {
@@ -43,7 +45,7 @@ export function captureWorkspaceEdit(deps: CaptureWorkspaceEditDeps): Synchroniz
 
       const intent = parseEditIntent(parent.patch.intent.op, parent.patch.intent.args)
       if (!intent) return
-      const relPath = deps.relativize(i.channel, intent.filePath)
+      const relPath = deps.relativize(i.channel, intent.filePath, i.actor)
       if (!relPath) return // containment: outside the workspace / scope unserved
 
       const artifactId = versionableArtifactId(i.channel, relPath)

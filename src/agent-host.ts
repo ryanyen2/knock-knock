@@ -911,8 +911,14 @@ export class AgentHost {
   auditProfileForScope(agentKey: string, scopeId: ChannelId): PermissionProfile | undefined {
     const roomId = this.roomForScope(scopeId)
     if (!roomId) return undefined
+    // Resolve the profile of the REQUESTED agent, not this host's own — with co-resident
+    // bots in one room, the relay's readPolicy iterates hosts, so a sibling must classify
+    // the tool request against the actor's profile, never its own (the same-class bug as
+    // "@cc → d-bot answers": first-host routing returning the wrong bot's state). The access
+    // map carries every agent, so any host can resolve any agent's room profile.
+    const liveAgent = this.getAccess().agents[agentKey] ?? (agentKey === this.key ? this.agent : undefined)
+    if (!liveAgent) return undefined
     // Inline profile + re-unioned DENY_FLOOR — same resolution the enforced profile uses.
-    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     const base = resolveRoomProfile(liveAgent.rooms[roomId]?.profile)
     const mode = this.channelConfigFor(scopeId).permissionPreset
     return mode ? applyModeToProfile(base, mode) : base

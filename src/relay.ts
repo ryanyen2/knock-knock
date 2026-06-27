@@ -525,12 +525,11 @@ synchronizer.register(applySupersession())
 // Capture Edit/Write tool runs as workspace.edit, then write the merged file back.
 synchronizer.register(
   captureWorkspaceEdit({
-    relativize: (scope, absPath) => {
-      for (const h of hosts) {
-        const rel = h.relativizeWorkspacePath(scope, absPath)
-        if (rel) return rel
-      }
-      return undefined
+    relativize: (scope, absPath, agentKey) => {
+      // Relativize against the EDITING bot's workspace — co-resident bots can have different
+      // workspaces in one room, so the first sibling's would yield the wrong (or no) relpath.
+      const host = selectActorHost(hosts, agentKey, h => !!h.relativizeWorkspacePath(scope, absPath))
+      return host?.relativizeWorkspacePath(scope, absPath)
     },
   }),
 )
