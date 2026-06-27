@@ -95,6 +95,11 @@ export type AgentIdentity = {
   userId: string
   /** Human-readable account label, for the roster line. */
   label?: string
+  /** Platform mention handle for text addressing where the platform names bots by handle
+   *  rather than `<@id>` markup (Telegram `@username`). The directory's `userId` is a numeric
+   *  id absent from message text there, so directed routing must match the handle. Absent on
+   *  platforms whose mentions carry the user id (Discord `<@id>`, Slack `<@U…>`). */
+  handle?: string
   /** One-line capability blurb, for the roster line. */
   blurb?: string
   /** Channel ids this bot is a member of (so the directory is scoped per room). */

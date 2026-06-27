@@ -35,6 +35,12 @@ export type SendOpts = {
   mentionUser?: string
   /** Prefer a private/ephemeral delivery if the platform has one. */
   ephemeral?: boolean
+  /** Suppress all pings from this message where supported. Bot-authored status surfaces
+   *  (Workbench, billboard) echo the prompt verbatim, which contains live `<@id>` markup;
+   *  without suppression the platform re-parses those as real mentions and re-triggers the
+   *  named bots (the cross-machine status cascade). Real replies leave this off so a
+   *  directed handoff (`@next-bot do X`) still pings. */
+  suppressMentions?: boolean
   /** Files to attach. Honored only where `Capabilities.files.outbound`; otherwise the host posts a text notice. */
   files?: OutgoingFile[]
 }
@@ -164,6 +170,10 @@ export interface MessagingAdapter {
   readonly botUserId: string | undefined
   /** Human-readable bot account label for the console line; falls back to botUserId. */
   readonly botLabel?: string | undefined
+  /** Platform mention handle, where the platform addresses bots by handle rather than
+   *  `<@id>` markup (Telegram `@username`). Published in the directory so directed routing
+   *  can match the handle in message text. Absent ⇒ mentions carry the user id. */
+  readonly botHandle?: string | undefined
   /** Platform role ids this bot holds, if the platform has roles (Discord). Published in
    *  the agent directory so a ROLE mention (`<@&roleId>`) can be routed to this bot —
    *  `@cc` resolves to the bot's managed role, not its user. Absent ⇒ no role concept. */

@@ -423,6 +423,7 @@ export class AgentHost {
           platform: this.platform,
           userId,
           ...(this.messaging.botLabel ? { label: this.messaging.botLabel } : {}),
+          ...(this.messaging.botHandle ? { handle: this.messaging.botHandle } : {}),
           ...(liveAgent.blurb ? { blurb: liveAgent.blurb } : {}),
           rooms: Object.keys(this.agent.rooms),
           ...(this.messaging.botRoleIds?.length ? { roleIds: this.messaging.botRoleIds } : {}),

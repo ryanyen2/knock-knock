@@ -110,7 +110,9 @@ export class Billboard {
     const caps = this.ctx.messaging.capabilities()
     const existing = this.msgByScope.get(scopeId)
     if (existing && caps.edit) {
-      const ok = await this.ctx.messaging.edit({ id: existing, scope: scopeId }, text).catch(() => false)
+      const ok = await this.ctx.messaging
+        .edit({ id: existing, scope: scopeId }, text, { suppressMentions: true })
+        .catch(() => false)
       if (ok) {
         this.editFailures.delete(scopeId)
         return
@@ -124,7 +126,7 @@ export class Billboard {
       this.msgByScope.delete(scopeId)
     }
     if (this.stopped) return
-    const ref = await this.ctx.messaging.send(scopeId, text).catch(() => undefined)
+    const ref = await this.ctx.messaging.send(scopeId, text, { suppressMentions: true }).catch(() => undefined)
     if (!ref) return
     this.msgByScope.set(scopeId, ref.id)
     this.ctx.noteBotMsg(ref.id)

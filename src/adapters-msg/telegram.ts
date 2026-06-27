@@ -152,6 +152,10 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     return this._botLabel
   }
 
+  get botHandle(): string | undefined {
+    return this._botUsername
+  }
+
   capabilities(): Capabilities {
     return {
       reactions: 'whitelist',

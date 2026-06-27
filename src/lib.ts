@@ -1608,11 +1608,27 @@ function textMentionsUser(text: string, userId: string): boolean {
   return text.includes(`<@${userId}>`) || text.includes(`<@!${userId}>`) || text.includes(userId)
 }
 
-/** Does `text` address this bot — by a user mention (above) OR a Discord ROLE mention
- *  (`<@&roleId>`) of any role the bot holds? `@cc` resolves to the bot's managed role,
- *  not its user, so role mentions must count as addressing the bot. */
+/** Does `text` address the bot by its platform handle (`@username`)? For platforms that
+ *  name bots by handle rather than `<@id>` markup (Telegram). The trailing-char guard stops
+ *  a handle that is a prefix of another (`@tele_3` vs `@tele_35_bot`) from false-matching —
+ *  Telegram usernames are `[A-Za-z0-9_]`. */
+function textMentionsHandle(text: string, handle: string | undefined): boolean {
+  if (!handle) return false
+  const at = `@${handle}`
+  for (let i = text.indexOf(at); i >= 0; i = text.indexOf(at, i + 1)) {
+    const after = text[i + at.length]
+    if (after === undefined || !/[A-Za-z0-9_]/.test(after)) return true
+  }
+  return false
+}
+
+/** Does `text` address this bot — by a user mention (above), a platform handle
+ *  (`@username`, Telegram), OR a Discord ROLE mention (`<@&roleId>`) of any role the bot
+ *  holds? `@cc` resolves to the bot's managed role, not its user, so role mentions must
+ *  count as addressing the bot. */
 function textAddressesIdentity(text: string, id: AgentIdentity): boolean {
   if (textMentionsUser(text, id.userId)) return true
+  if (textMentionsHandle(text, id.handle)) return true
   return (id.roleIds ?? []).some(roleId => text.includes(`<@&${roleId}>`))
 }
 
@@ -1654,6 +1670,7 @@ export function addressedAgentKeys(
       id =>
         text.includes(`<@${id.userId}>`) ||
         text.includes(`<@!${id.userId}>`) ||
+        textMentionsHandle(text, id.handle) ||
         (id.roleIds ?? []).some(roleId => text.includes(`<@&${roleId}>`)),
     )
     .map(id => id.agentKey)

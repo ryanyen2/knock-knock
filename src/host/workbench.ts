@@ -113,11 +113,13 @@ export class Workbench {
     const existing = this.msgByTurn.get(promptHash)
     // Edit in place where supported; fall through to re-post if the edit can't land.
     if (existing && caps.edit) {
-      const ok = await this.ctx.messaging.edit({ id: existing, scope: scopeId }, text).catch(() => false)
+      const ok = await this.ctx.messaging
+        .edit({ id: existing, scope: scopeId }, text, { suppressMentions: true })
+        .catch(() => false)
       if (ok) return
     }
     if (this.stopped) return // shut down while awaiting
-    const ref = await this.ctx.messaging.send(scopeId, text).catch(() => undefined)
+    const ref = await this.ctx.messaging.send(scopeId, text, { suppressMentions: true }).catch(() => undefined)
     if (!ref) return
     this.track(promptHash, ref.id)
     this.ctx.noteBotMsg(ref.id)

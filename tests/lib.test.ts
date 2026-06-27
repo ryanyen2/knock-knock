@@ -1664,6 +1664,38 @@ test('addressedAgentKeys: a ROLE mention (<@&id>) resolves to the role-owning bo
   expect(addressedAgentKeys(dir, 'room1', 'discord', '<@U_cc> and <@&R_db> go').sort()).toEqual(['cc', 'd-bot'])
 })
 
+test('addressedAgentKeys: Telegram @username handles resolve to the addressed bots', () => {
+  // Telegram addresses bots by @username, not <@id> markup, and the directory's userId is a
+  // numeric id absent from the text. Without handle matching, a message naming two bots
+  // collapses to a broadcast and only one is elected — the "second named bot never responds" bug.
+  const dir = [
+    { agentKey: 'a', platform: 'telegram', userId: '111', rooms: ['room1'], handle: 'KnockKnockTestBot' },
+    { agentKey: 'b', platform: 'telegram', userId: '222', rooms: ['room1'], handle: 'tele_35_bot' },
+  ]
+  expect(
+    addressedAgentKeys(dir, 'room1', 'telegram', '@KnockKnockTestBot summarize then @tele_35_bot refine').sort(),
+  ).toEqual(['a', 'b'])
+  expect(addressedAgentKeys(dir, 'room1', 'telegram', 'just @tele_35_bot please')).toEqual(['b'])
+  expect(addressedAgentKeys(dir, 'room1', 'telegram', 'no mentions here')).toEqual([]) // broadcast
+})
+
+test('addressedAgentKeys: a handle that is a prefix of another does not false-match', () => {
+  // @tele_3 must not match @tele_35_bot (username chars run on); guards prefix collisions.
+  const dir = [
+    { agentKey: 'short', platform: 'telegram', userId: '1', rooms: ['room1'], handle: 'tele_3' },
+    { agentKey: 'long', platform: 'telegram', userId: '2', rooms: ['room1'], handle: 'tele_35_bot' },
+  ]
+  expect(addressedAgentKeys(dir, 'room1', 'telegram', 'hey @tele_35_bot')).toEqual(['long'])
+})
+
+test('responderElection: a Telegram @username narrows the eligible set (directed, not broadcast)', () => {
+  const dir = [
+    { agentKey: 'a', platform: 'telegram', userId: '111', rooms: ['room1'], handle: 'abot' },
+    { agentKey: 'b', platform: 'telegram', userId: '222', rooms: ['room1'], handle: 'bbot' },
+  ]
+  expect(responderElection(dir, 'room1', 'telegram', 'hey @bbot take this', 'm1')).toEqual(['b'])
+})
+
 test('botEngagedInScope: only THIS bot\'s own footprint counts as engagement', () => {
   const ccTurn = { actor: 'cc', verb: 'turn.replied', patch: { kind: 'none' } } as unknown as Parameters<typeof botEngagedInScope>[0][number]
   const humanMsgForCc = {
