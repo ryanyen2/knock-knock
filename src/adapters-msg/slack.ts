@@ -207,11 +207,21 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   private handleMessageEvent(event: any, isMention: boolean): void {
     const h = this.onMessageHandler
     if (!h || !event) return
-    // Ignore bot-authored + non-user message subtypes (edits, joins, bot posts).
-    // Self-filter is the host's job, but message_changed/etc. carry no usable
-    // shape; surface only plain user messages + their thread replies.
-    if (event.bot_id) return
-    if (event.subtype && event.subtype !== 'thread_broadcast' && event.subtype !== 'file_share') return
+    // Admit human messages AND attributable peer-bot posts — the latter is how a peer
+    // agent's handoff ("@other refine this") and the mesh coordination lines reach this
+    // bot on Slack. A peer app message carries `bot_id` + `user` (its Slack user id, which
+    // equals its directory `userId`); without a `user` we can't attribute it, and the host
+    // can't gate/route it, so drop. Self-filter + allowlist stay the host's job.
+    if (event.bot_id && !event.user) return
+    // Drop system subtypes (edits, joins, channel events) that carry no usable shape; allow
+    // plain posts, thread broadcasts, file shares, and bot posts.
+    if (
+      event.subtype &&
+      event.subtype !== 'thread_broadcast' &&
+      event.subtype !== 'file_share' &&
+      event.subtype !== 'bot_message'
+    )
+      return
 
     const channel: string = event.channel
     const ts: string = event.ts
