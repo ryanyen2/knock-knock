@@ -53,6 +53,7 @@ import {
   isDirectoryBot,
   addressedAgentKeys,
   standDownForDirected,
+  botEngagedInScope,
   isMeshLine,
   extractKeywords,
   type RetrievalCandidate,
@@ -1052,6 +1053,14 @@ export class AgentHost {
     // reliable roomId (computed above), not reply-claim's scope re-resolution, which can
     // miss a freshly-spawned thread and fall back to a broadcast that elects the wrong bot.
     const addressedKeys = addressedAgentKeys(this.directoryIdentities(), roomId, this.platform, m.text)
+    if (process.env.KNOCK_KNOCK_DEBUG === '1') {
+      const dir = this.directoryIdentities().map(d => `${d.agentKey}:${d.userId}:[${d.rooms.join(',')}]:roles[${(d.roleIds ?? []).join(',')}]`)
+      this.ui.note(
+        this.key,
+        `gate room=${roomId} isThread=${m.isThread} addressedMe=${addressedMe} requireMention=${requireMention} ` +
+          `addressedKeys=[${addressedKeys.join(',')}] text=${JSON.stringify(m.text.slice(0, 60))} dir=${JSON.stringify(dir)}`,
+      )
+    }
     if (standDownForDirected(addressedKeys, this.key, addressedMe)) return
     if ((requireMention || senderIsPeerBot) && !mentioned) return
 
@@ -1792,7 +1801,10 @@ export class AgentHost {
   private async isEngagedThread(scope: ChannelId): Promise<boolean> {
     if (this.sessions.has(scope)) return true
     try {
-      return Boolean(await this.store.latestInChannel(scope))
+      // Engagement is THIS bot's own footprint in the thread, not just any history — a
+      // sibling bot's thread (e.g. cc's) must NOT count, or the follow-up waiver pulls this
+      // bot into another bot's task on every non-mention message.
+      return botEngagedInScope(await this.store.listByChannel(scope), this.key)
     } catch {
       return false
     }

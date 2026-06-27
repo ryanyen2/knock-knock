@@ -1659,6 +1659,21 @@ export function addressedAgentKeys(
     .map(id => id.agentKey)
 }
 
+/** Has THIS bot actually participated in `scope` (a thread)? True only if the scope's
+ *  history contains its own footprint — a turn/tool/reply it authored (`actor === selfKey`)
+ *  or a `channel.message` routed to it (`targetAgent === selfKey`). A sibling bot's activity
+ *  is NOT engagement: counting any history would pull this bot into another bot's thread via
+ *  the follow-up waiver (the "d-bot answers in cc's thread" bug). Pure. */
+export function botEngagedInScope(history: ReadonlyArray<Interaction>, selfKey: string): boolean {
+  return history.some(i => {
+    if (i.actor === selfKey) return true
+    if (i.verb === 'channel.message' && i.patch.kind === 'external') {
+      return (i.patch.intent.args as { targetAgent?: unknown } | undefined)?.targetAgent === selfKey
+    }
+    return false
+  })
+}
+
 /** Should this bot stay out of a message entirely? True when the message explicitly
  *  addresses specific OTHER bots (a non-empty `addressedKeys` set that doesn't include
  *  `selfKey`) and this bot isn't otherwise addressed (`addressedMe`). Lets the inbound

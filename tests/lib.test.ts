@@ -74,6 +74,7 @@ import {
   renderBillboard,
   addressedAgentKeys,
   standDownForDirected,
+  botEngagedInScope,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -1660,6 +1661,21 @@ test('addressedAgentKeys: a ROLE mention (<@&id>) resolves to the role-owning bo
   expect(addressedAgentKeys(dir, 'room1', 'discord', '<@&R_cc> work with <@&R_db>').sort()).toEqual(['cc', 'd-bot'])
   // Mixed user + role markup also works.
   expect(addressedAgentKeys(dir, 'room1', 'discord', '<@U_cc> and <@&R_db> go').sort()).toEqual(['cc', 'd-bot'])
+})
+
+test('botEngagedInScope: only THIS bot\'s own footprint counts as engagement', () => {
+  const ccTurn = { actor: 'cc', verb: 'turn.replied', patch: { kind: 'none' } } as unknown as Parameters<typeof botEngagedInScope>[0][number]
+  const humanMsgForCc = {
+    actor: 'human1', verb: 'channel.message',
+    patch: { kind: 'external', intent: { channel: 'discord', op: 'received', args: { targetAgent: 'cc' } } },
+  } as unknown as Parameters<typeof botEngagedInScope>[0][number]
+  // A thread full of cc's activity is NOT engagement for d-bot — it must not get waived in.
+  expect(botEngagedInScope([ccTurn, humanMsgForCc], 'd-bot')).toBe(false)
+  expect(botEngagedInScope([ccTurn, humanMsgForCc], 'cc')).toBe(true)
+  // Once d-bot has its own turn (or a message routed to it), it IS engaged.
+  const dbotTurn = { actor: 'd-bot', verb: 'turn.replied', patch: { kind: 'none' } } as unknown as Parameters<typeof botEngagedInScope>[0][number]
+  expect(botEngagedInScope([ccTurn, dbotTurn], 'd-bot')).toBe(true)
+  expect(botEngagedInScope([], 'd-bot')).toBe(false)
 })
 
 test('standDownForDirected: a bot stays out when only OTHER bots are addressed', () => {
