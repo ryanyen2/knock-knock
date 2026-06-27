@@ -1021,6 +1021,35 @@ a { color: inherit; text-decoration: none; }
   .dot-work, .spin { animation: none; }
 }
 
+/* ─────────────  HERO AGENT ROTATION  ───────────── */
+.hero-rotate-wrap {
+  display: inline-block;
+  perspective: 500px;
+  vertical-align: baseline;
+}
+.hero-rotate {
+  display: inline-block;
+  color: var(--accent);
+  font-style: italic;
+  will-change: transform, opacity;
+}
+.hero-knock {
+  display: inline-block;
+  background: var(--ink);
+  color: var(--canvas);
+  padding: 0.02em 0.38em 0.1em;
+  border-radius: var(--r-md);
+  font-family: var(--mono);
+  font-size: 0.78em;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  vertical-align: 0.1em;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hero-rotate { will-change: auto; }
+}
+
 /* setup-page responsive */
 @media (max-width: 760px) {
   .defs { grid-template-columns: 1fr; }

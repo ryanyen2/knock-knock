@@ -712,6 +712,34 @@
     });
   })();
 
+  /* ─────────────  HERO AGENT NAME ROTATION  ───────────── */
+  (function initHeroRotation() {
+    const el = document.getElementById('heroRotate');
+    if (!el || typeof anime === 'undefined' || reduced) return;
+    const names = ['Claude', 'Codex', 'Gemini', 'OpenCode'];
+    let idx = 0;
+    setInterval(function () {
+      idx = (idx + 1) % names.length;
+      anime({
+        targets: el,
+        rotateX: [0, -90],
+        opacity: [1, 0],
+        duration: 220,
+        easing: 'easeInCubic',
+        complete: function () {
+          el.textContent = names[idx];
+          anime({
+            targets: el,
+            rotateX: [90, 0],
+            opacity: [0, 1],
+            duration: 260,
+            easing: 'easeOutCubic',
+          });
+        },
+      });
+    }, 2400);
+  })();
+
   if (location.hash && location.hash.length > 1) {
     const target = document.querySelector(location.hash);
     if (target) window.addEventListener('load', () => {

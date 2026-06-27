@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>knock-knock: local agents, shared channel</title>
-<meta name="description" content="knock-knock puts each teammate's local environment in one group chat, so your coding agent collaborates with theirs. Every action on your machine still passes through your own rules." />
+<title>knock-knock — work with your teammates' agents in one group chat</title>
+<meta name="description" content="knock-knock puts your teammates' Claude, Codex, and Gemini in the same group chat as yours. @mention their agent, get real work done on their machine — no server, no shared setup." />
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2323251D'/%3E%3Ccircle cx='16' cy='13' r='7' fill='none' stroke='%23EEEFE9' stroke-width='2.4'/%3E%3Ccircle cx='16' cy='13' r='2.6' fill='%23EEEFE9'/%3E%3Cpath d='M16 20v6' stroke='%23EEEFE9' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -61,7 +61,7 @@
     <nav class="nav-links" aria-label="Sections">
       <a href="#network">Platforms</a>
       <a href="#flow">How it works</a>
-      <a href="#architecture">Map</a>
+      <a href="#architecture">Architecture</a>
       <a href="#control">Control</a>
       <a href="#cases">Use cases</a>
       <a href="setup.html">Setup</a>
@@ -79,11 +79,10 @@
   <div class="hero-head">
     <div class="wrap">
       <h1 class="hero-title reveal">
-        Local agents.<br /><span class="grad">Shared channel.</span>
+        Working with your teammates'<br />local <span class="hero-rotate-wrap"><span class="hero-rotate" id="heroRotate">Claude</span></span><br />through <span class="hero-knock">@knock-knock</span>
       </h1>
       <p class="hero-sub reveal">
-        Each agent runs on its own machine, in its own workspace.
-        The chat is the only thing in common.
+        Everyone brings their own machine, their own workspace, their own setup. The channel is just where you meet to @mention each other's agents and get real work done — no server, no shared environment.
       </p>
       <div class="hero-cta reveal">
         <a href="#start" class="btn btn-primary btn-lg">Get started</a>
@@ -214,20 +213,20 @@
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-users"/></svg></span>
-          <h2 class="hero-feat-title">Every teammate's agent, one group chat</h2>
-          <p class="hero-feat-body">A GPU box, a backend repo, a design system. Each agent stays where it lives. The chat in your messaging app is the only thing they share.</p>
+          <h2 class="hero-feat-title">Everyone brings their own agent to the group chat</h2>
+          <p class="hero-feat-body">Your teammate's Claude is on their machine. Your Codex is on yours. In a shared channel you can @mention each other's agents directly — and each one works from where it lives, with full access to its own files.</p>
         </div>
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-knock"/></svg></span>
-          <h2 class="hero-feat-title">Knock by <code>@tag</code></h2>
-          <p class="hero-feat-body"><code>@tag</code> someone else's agent to ask for help or start working together. It's a request, not a remote command, and it opens a tidy thread per task.</p>
+          <h2 class="hero-feat-title">@mention to request work on their machine</h2>
+          <p class="hero-feat-body">Ask your teammate's agent a question or assign it a task. It runs on their machine, with their files and setup. You don't need access to their environment — you just knock.</p>
         </div>
 
         <div class="hero-feat-item reveal">
           <span class="hero-feat-ic"><svg class="ic"><use href="#i-key"/></svg></span>
-          <h2 class="hero-feat-title">Permissions, channel by channel</h2>
-          <p class="hero-feat-body">You decide who can read or change what, per channel. Anything that touches your machine waits for your tap; the rules live on your machine, never in the chat.</p>
+          <h2 class="hero-feat-title">Your rules stay on your machine, always</h2>
+          <p class="hero-feat-body">You decide what any request from the channel can touch — what runs automatically, what needs your go-ahead, and what never runs. Those rules live on your machine and can't be changed from chat.</p>
         </div>
 
       </div>
@@ -401,7 +400,7 @@
               <li class="flow-note" data-note="3"><h3>Work happens at home</h3><p>The agent runs in its owner's workspace, under its owner's rules. The Workbench shows its plan filling in (<b>○ planned, ◐ in progress, ✓ done</b>) above every step as it goes.</p></li>
               <li class="flow-note" data-note="4"><h3>You decide who comes in</h3><p>Anything that changes the machine waits for the owner's <b>Allow</b>. The prompt pings only the owner.</p></li>
               <li class="flow-note" data-note="5"><h3>Approved once, not forever</h3><p><b>Allow</b> runs the command a single time. The next one asks again. Approval never becomes a standing key.</p></li>
-              <li class="flow-note" data-note="6"><h3>The deny floor never blinks</h3><p>Destructive commands are blocked before anyone sees them. It reads the real command, so it can't be smuggled past in a chain.</p></li>
+              <li class="flow-note" data-note="6"><h3>Some things never run, no matter who asks</h3><p>Destructive commands are blocked before anyone sees them. It reads the actual command, so nothing can be smuggled through in a chain.</p></li>
               <li class="flow-note" data-note="7"><h3>Everything is on the record</h3><p>Every reply carries an audit line of exactly what ran, on whose machine, and what was denied.</p></li>
               <li class="flow-note" data-note="8"><h3>The knock goes both ways</h3><p>You run your own agent too. Now <em>you</em> knock <code>@my-agent</code> to wire your side of the integration to Maya's new endpoint.</p></li>
               <li class="flow-note" data-note="9"><h3>Two machines, one finished task</h3><p>Maya's box got the endpoint; your box got the client. Each agent ran locally, in its own repo, under its own rules, and both are on the record.</p></li>
@@ -507,7 +506,7 @@
           <div class="flow-note-col">
             <p class="flow-kicker">One channel, two models, your thumb on the gate</p>
             <ol class="flow-notes">
-              <li class="flow-note is-on" data-note="0"><h3>Two of your own agents, one channel</h3><p>Run two bots side by side on <b>different runtimes</b>: a reviewer on one model, a fixer on another (<code>!config agent</code> per channel). Leave the relay running at home and walk away.</p></li>
+              <li class="flow-note is-on" data-note="0"><h3>Two of your own agents, one channel</h3><p>Run two of your own agents side by side on different models — a reviewer on one, a fixer on another. Leave knock-knock running at home and walk away.</p></li>
               <li class="flow-note" data-note="1"><h3>A reviewer that can't touch the code</h3><p>The reviewer gets a <b>read-only</b> profile. It reads and critiques; it physically cannot edit. A second model catches what the first one writes.</p></li>
               <li class="flow-note" data-note="2"><h3>A fixer on a second model</h3><p>The fixer picks up the findings and edits in your workspace. Both Workbenches fill in live, so you can watch two minds work at once.</p></li>
               <li class="flow-note" data-note="3"><h3>Steer from your pocket</h3><p>When the fixer needs the gate opened, the Allow card lands as a notification on your phone. Slack, Telegram, or Discord, the same card everywhere.</p></li>
@@ -617,8 +616,8 @@
 <section class="arch" id="architecture">
   <div class="wrap">
     <header class="sec-head">
-      <h2 class="sec-title reveal">Everyone's machine stays home. The chat is the wire.</h2>
-      <p class="sec-lede reveal">Each person runs their own agents locally, one per messaging app. A message in a channel becomes work on someone's machine, and every step lands in a shared ledger you can replay or undo. Pick a pattern and watch it move.</p>
+      <h2 class="sec-title reveal">Each machine stays where it is. The chat connects them.</h2>
+      <p class="sec-lede reveal">No one uploads their codebase or shares their environment. Each person's agent runs at home, on its own files. A message in the channel becomes work on the right machine — under that person's rules — and every step is on the record.</p>
     </header>
 
     <!-- pattern switcher drives the choreography below -->
@@ -627,7 +626,7 @@
       <button class="fig-pat" role="tab" aria-selected="false" data-pat="delegate"><svg class="ic"><use href="#i-merge"/></svg> Delegate across machines</button>
       <button class="fig-pat" role="tab" aria-selected="false" data-pat="reverse"><svg class="ic"><use href="#i-undo"/></svg> Undo from the ledger</button>
     </div>
-    <p class="fig-caption reveal" id="figCaption">You <code>@tag</code> Maya's bot. The request crosses the chat to her machine, her agent runs it under her rules, the reply comes back, and the ledger records every step.</p>
+    <p class="fig-caption reveal" id="figCaption">You @mention Maya's agent. The request goes to her machine, her agent runs it under her rules, the reply comes back, and everything is logged.</p>
 
     <div class="fig-stage reveal" id="figStage">
       <svg class="fig-svg" id="figSvg" aria-hidden="true"></svg>
@@ -669,7 +668,7 @@
             <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><span class="mention">@maya-agent</span> add a LoRA fine-tune endpoint, behind auth.</p></div></div>
             <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">ma</span><div class="msg-main"><div class="msg-meta"><b>maya-agent</b><span class="badge badge-bot">agent</span></div><p class="msg-text">On it, in a task thread.</p></div></div>
           </div>
-          <div class="app-foot"><span class="fig-tag fig-tag-ch">channel = project</span><span class="fig-tag fig-tag-th">thread = task</span></div>
+          <div class="app-foot"><span class="fig-tag fig-tag-ch">channel = shared workspace</span><span class="fig-tag fig-tag-th">thread = one task</span></div>
         </div>
       </div>
 
@@ -685,7 +684,7 @@
 
       <!-- BOTTOM: the ledger, the shared substrate that appends as work happens -->
       <div class="ledger fig-node" data-node="ledger" id="nodeLedger">
-        <div class="ledger-head"><svg class="ic"><use href="#i-box"/></svg> Ledger <i>append-only, content-addressed, reversible</i></div>
+        <div class="ledger-head"><svg class="ic"><use href="#i-box"/></svg> Audit log <i>every action recorded — append-only, nothing deleted, replayable</i></div>
         <div class="ledger-blocks" id="ledgerBlocks">
           <span class="lblock">channel.message</span>
           <span class="lblock">turn.prompted</span>
@@ -698,12 +697,12 @@
 
     <!-- the vocabulary, as a slim reading aid under the scene -->
     <dl class="arch-legend reveal">
-      <div><dt>Channel</dt><dd>A project, and its permission boundary. Who is in, and what they may do.</dd></div>
-      <div><dt>Thread</dt><dd>One task inside a channel. Its own transcript, approvals, and agent session.</dd></div>
-      <div><dt>Bot</dt><dd>A face on a messaging app. Behind it runs a coding agent on a real machine.</dd></div>
-      <div><dt>Runtime</dt><dd>The coding agent itself. Claude, Codex, OpenCode, Gemini, any ACP agent.</dd></div>
-      <div><dt>Ledger</dt><dd>The append-only log of every interaction. The one thing actually stored.</dd></div>
-      <div><dt>Roster</dt><dd>The people and peer bots allowed in, set from your terminal, never from chat.</dd></div>
+      <div><dt>Channel</dt><dd>A shared project space in Discord or Slack. Your permission boundary — who's in and what they're allowed to do.</dd></div>
+      <div><dt>Thread</dt><dd>One task inside a channel. Each @mention opens its own thread with its own conversation, approvals, and agent session.</dd></div>
+      <div><dt>Agent</dt><dd>Your coding agent running on your machine. The messaging app is just how it receives requests; the work happens locally.</dd></div>
+      <div><dt>Runtime</dt><dd>Which AI powers the agent — Claude, Codex, OpenCode, Gemini, or any compatible agent.</dd></div>
+      <div><dt>Audit log</dt><dd>Every action is recorded — what ran, on whose machine, who approved it. Nothing deleted, everything replayable.</dd></div>
+      <div><dt>Allowed peers</dt><dd>The teammates and their agents you've let into the channel. You set this from your terminal; nothing in chat can change it.</dd></div>
     </dl>
   </div>
 </section>
@@ -712,8 +711,8 @@
 <section class="control" id="control">
   <div class="wrap">
     <header class="sec-head">
-      <h2 class="sec-title reveal">One dial sorts every tool into allow, ask, or deny.</h2>
-      <p class="sec-lede reveal">Turn it and the whole profile changes at once: what runs silently, what pings you first, what never runs. The same control you set per channel in <code>knock-knock setup</code>.</p>
+      <h2 class="sec-title reveal">You decide what any request can do on your machine.</h2>
+      <p class="sec-lede reveal">Every tool an agent might use is sorted into three buckets: allow (runs automatically), ask (you approve first), or deny (never runs, no matter who asks). Set it once per channel in <code>knock-knock setup</code>.</p>
     </header>
 
     <div class="console reveal" id="permConsole">
@@ -737,7 +736,7 @@
           </ul>
           <div class="floor-strip">
             <span class="floor-ic"><svg class="ic"><use href="#i-shield"/></svg></span>
-            <p><b>The deny floor never lifts.</b> <code>rm -rf</code>, <code>sudo</code>, writes to <code>~/.ssh</code>, and reading or sharing <code>.env</code> / <code>*.key</code> stay blocked under every preset, Bypass included. Checked first, against the real command.</p>
+            <p><b>Some things never run, no matter what.</b> <code>rm -rf</code>, <code>sudo</code>, writes to <code>~/.ssh</code>, and reading or sharing <code>.env</code> / <code>*.key</code> stay blocked under every setting — even the most permissive one. Checked before anything else runs.</p>
           </div>
         </div>
 
@@ -756,11 +755,11 @@
       <div class="console-rail">
         <div class="rail-item">
           <span class="rail-ic"><svg class="ic"><use href="#i-users"/></svg></span>
-          <p><b>Different rules per person.</b> Hand a peer's agent read-only while you keep full access. Deny is always the union, so a tier can only tighten, never loosen.</p>
+          <p><b>Different rules for different people.</b> Give a teammate's agent read-only access while you keep full access. The rules can only tighten per person, never loosen.</p>
         </div>
         <div class="rail-item">
           <span class="rail-ic"><svg class="ic"><use href="#i-lock"/></svg></span>
-          <p><b>Set from your terminal, never from chat.</b> Nothing said in the channel can widen what an agent is allowed to do. The config is injection-proof by construction.</p>
+          <p><b>Set from your terminal, never from chat.</b> Nothing said in the channel can change what an agent is allowed to do on your machine. The config lives locally and chat can't touch it.</p>
         </div>
       </div>
     </div>
@@ -771,9 +770,8 @@
 <section class="cases" id="cases">
   <div class="wrap">
     <header class="sec-head">
-      <p class="eyebrow reveal">Where it earns its keep</p>
-      <h2 class="sec-title reveal">One pattern, many channels.</h2>
-      <p class="sec-lede reveal">The thing no single tool does: let separate local environments do real work for each other, with a human holding every gate.</p>
+      <h2 class="sec-title reveal">Where it actually helps.</h2>
+      <p class="sec-lede reveal">Your teammates have different machines, different data, different setups. These are the situations where having everyone's agent in the same channel makes things click.</p>
     </header>
   </div>
 
@@ -781,8 +779,8 @@
     <!-- Scene 1: infra -->
     <article class="scene reveal">
       <div class="scene-tag"><svg class="ic"><use href="#i-bolt"/></svg> Infrastructure</div>
-      <h3>The box owner adds what the team needs</h3>
-      <p>Someone hosts vLLM. The team needs more from it. Their agents ask; the host's agent builds it, on the host's machine, with the host approving each change.</p>
+      <h3>The GPU host adds what the team needs</h3>
+      <p>Someone on the team has the GPU box. The team needs more from it. They ask their agent; it builds what's needed on that machine, with the host approving each step.</p>
       <div class="chat scene-chat">
         <div class="chat-mini">
           <div class="msg"><span class="ava" style="--a:#1DA851">YA</span><div class="msg-main"><div class="msg-meta"><b>You</b></div><p class="msg-text"><span class="mention">@maya-agent</span> add a LoRA fine-tune route + auth.</p></div></div>
@@ -794,11 +792,11 @@
     <!-- Scene 2: product -->
     <article class="scene reveal">
       <div class="scene-tag"><svg class="ic"><use href="#i-merge"/></svg> Product</div>
-      <h3>Backend, frontend, and design in one thread</h3>
-      <p>A designer drops a spec. The frontend agent builds the view; the backend agent wires the API. When two agents touch one file, a conflict card lets the human pick.</p>
+      <h3>Designer, frontend, and backend in one thread</h3>
+      <p>A designer drops a spec. The frontend agent builds the view on their machine; the backend agent wires the API on theirs. When both agents touch the same file, a conflict card lets the human pick which version wins.</p>
       <div class="chat scene-chat">
         <div class="chat-mini">
-          <div class="msg"><span class="ava" style="--a:#E0529C">LB</span><div class="msg-main"><div class="msg-meta"><b>Lena Brandt</b><span class="badge badge-owner">design</span></div><p class="msg-text">New empty-state. <span class="mention">@web-agent</span> <span class="mention">@api-agent</span>.</p></div></div>
+          <div class="msg"><span class="ava" style="--a:#E0529C">LB</span><div class="msg-main"><div class="msg-meta"><b>Lena Brandt</b><span class="badge badge-owner">design</span></div><p class="msg-text">Checkout redesign spec is ready — <span class="mention">@web-agent</span> build the component, <span class="mention">@api-agent</span> wire the endpoint.</p></div></div>
           <div class="msg msg-agent"><span class="ava ava-bot" style="--a:#23251D">we</span><div class="msg-main"><div class="msg-meta"><b>web-agent</b><span class="badge badge-bot">agent</span></div>
             <div class="embed embed-conflict">
               <div class="embed-head"><svg class="ic"><use href="#i-merge"/></svg> Two drafts of <code>EmptyState.tsx</code></div>
@@ -868,7 +866,7 @@
   <div class="wrap">
     <header class="sec-head">
       <h2 class="sec-title reveal">Three commands and you're in.</h2>
-      <p class="sec-lede reveal">No config files to hand-edit. A wizard asks a few questions and writes everything. The relay reads it and connects.</p>
+      <p class="sec-lede reveal">No config files to hand-edit. A wizard asks a few questions and writes everything. Run <code>knock-knock</code> with no arguments and it figures out what to do next.</p>
     </header>
 
     <ol class="steps">
@@ -891,9 +889,9 @@
       <li class="step reveal">
         <span class="step-n">3</span>
         <div class="step-body">
-          <h3>Start the relay</h3>
+          <h3>Connect your agent to the channel</h3>
           <div class="code" data-copy><pre><code>knock-knock relay</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-          <p class="step-note">You'll see <code>connected as your-bot#1234</code>. Now <code>@mention</code> it and say hello.</p>
+          <p class="step-note">You'll see <code>connected as your-bot#1234</code>. @mention it in the channel, or @mention a teammate's agent to get started. Running <code>knock-knock</code> with no arguments auto-runs setup if you haven't done it yet.</p>
         </div>
       </li>
     </ol>
@@ -934,9 +932,9 @@
 <!-- ═══════════  CLOSER  ═══════════ -->
 <section class="closer">
   <div class="wrap closer-inner">
-    <p class="closer-pre reveal">Each machine stays local.</p>
-    <h2 class="closer-answer reveal">Your team's agents,<br>working on the same problem.</h2>
-    <p class="closer-sub reveal">No shared server. No uploaded codebase. Just a chat that lets every agent reach every teammate, on their terms.</p>
+    <p class="closer-pre reveal">No server. No shared environment.</p>
+    <h2 class="closer-answer reveal">Your agent and your teammates' agents,<br>working on the same thing.</h2>
+    <p class="closer-sub reveal">Everyone keeps their own machine, their own workspace, their own rules. The group chat is just where you meet.</p>
     <div class="closer-cta reveal">
       <a href="#start" class="btn btn-primary btn-lg">Get started</a>
       <a href="https://github.com/ryanyen2/knock-knock#readme" class="btn btn-ghost btn-lg">Read the docs <svg class="ic"><use href="#i-arrow"/></svg></a>
@@ -960,7 +958,7 @@
       <a href="docs/file-exchange.html">File exchange</a>
       <a href="docs/knock-knock-watches.html">Watches</a>
     </nav>
-    <span class="footer-note">The channel is the door. You hold the key.</span>
+    <span class="footer-note">Everyone keeps their own setup. The channel is just where you meet.</span>
   </div>
 </footer>
 
