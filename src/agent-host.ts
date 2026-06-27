@@ -98,7 +98,6 @@ import {
 } from './sessions/index.ts'
 import type { HostContext } from './host/context.ts'
 import { Workbench } from './host/workbench.ts'
-import { ConfigCard } from './host/config-card.ts'
 import { ConflictUI } from './host/conflict-ui.ts'
 import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
@@ -198,8 +197,6 @@ export class AgentHost {
   /** Per-scope set of related-context blocks already injected (once-only). */
   private readonly relatedDelivered = new Map<ChannelId, Set<string>>()
   private readonly workbench: Workbench
-  /** Pinned per-thread config/setup card. */
-  private readonly configCard: ConfigCard
   /** Pinned shared coordination billboard (mesh mode; maintained by the elected scribe). */
   private readonly billboard: Billboard
   private storeUnsub?: () => void
@@ -256,13 +253,11 @@ export class AgentHost {
       getOwnerForChannel: id => this.getOwnerForChannel(id),
       discordSend: (id, text) => this.discordSend(id, text),
       noteBotMsg: id => this.noteBotMsg(id),
-      refreshConfigCard: id => this.configCard.refresh(id),
       registerChoicePrompt: (scope, messageId, choices) =>
         this.pendingChoicePrompts.add(scope, messageId, choices),
       clearChoicePrompt: (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
     }
     this.workbench = new Workbench(ctx)
-    this.configCard = new ConfigCard(ctx)
     this.billboard = new Billboard(ctx)
     this.conflictUI = new ConflictUI(ctx)
     this.watchControl = new WatchControl(ctx, this.approvals)
@@ -453,7 +448,6 @@ export class AgentHost {
     this.storeUnsub?.()
     this.mesh?.stop()
     this.workbench.stop()
-    this.configCard.stop()
     this.billboard.stop()
     await this.messaging.disconnect()
   }
@@ -1136,8 +1130,6 @@ export class AgentHost {
     // scope; everything else runs in the channel.
     const scopeId: ChannelId = m.scope
     this.scopeToRoom.set(scopeId, roomId)
-    // Surface the thread's pinned setup card (no-op for a plain-channel scope).
-    this.configCard.refresh(scopeId)
 
     // Admit channel.message — all handleInbound does. URL-free descriptors persist
     // so the ingest sync knows files rode along; the real handles stay in-process.

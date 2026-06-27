@@ -17,7 +17,6 @@ import {
   workbenchEntries,
   workbenchEntryForTurn,
   renderResolvedConfig,
-  renderConfigCard,
   renderContextList,
   type WorkbenchEntry,
 } from '../../../src/ledger/render/surface.ts'
@@ -144,20 +143,6 @@ test('renderResolvedConfig: labels each value thread vs room; suppressed at top 
   // a plain channel (not a thread) renders the flat view with no source labels
   const flat = renderResolvedConfig(ROOM, ROOM, false)
   expect(flat).not.toContain('(thread)')
-})
-
-test('renderConfigCard: shows resolved knobs with source + context count', () => {
-  const card = renderConfigCard(ROOM, SCOPE, 2)
-  expect(card).toContain('Thread setup')
-  expect(card).toContain('thread persona')       // role (thread)
-  expect(card).toContain('`claude-room`')        // model (room) rendered as token
-  expect(card).toContain('bypass')               // mode (thread)
-  expect(card).toContain('2 context notes')
-})
-
-test('renderConfigCard: pluralizes context note count', () => {
-  expect(renderConfigCard({}, {}, 1)).toContain('1 context note ')
-  expect(renderConfigCard({}, {}, 0)).toContain('0 context notes')
 })
 
 // ─── workbenchEntryForTurn (per-turn board) ───────────────────────────────────

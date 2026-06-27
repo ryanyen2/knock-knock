@@ -529,44 +529,6 @@ export function renderConfigReset(keys: string[]): string {
   ].join('\n')
 }
 
-// ─── pinned per-thread config card ────────────────────────────────────────────
-
-/** The pinned card showing a thread's resolved (thread ⊕ room) setup + context-note count. */
-export function renderConfigCard(
-  roomCfg: ChannelConfig,
-  scopeCfg: ChannelConfig,
-  contextCount: number,
-): string {
-  const resolve = (field: keyof ChannelConfig): { v: unknown; src: 'thread' | 'room' } | undefined => {
-    const sv = (scopeCfg as Record<string, unknown>)[field]
-    const rv = (roomCfg as Record<string, unknown>)[field]
-    if (sv !== undefined) return { v: sv, src: 'thread' }
-    if (rv !== undefined) return { v: rv, src: 'room' }
-    return undefined
-  }
-  const lines = [`${GLYPHS.config} **Thread setup**`]
-  // Persona + objective as quoted blocks (free text).
-  for (const field of ['role', 'endGoal'] as const) {
-    const r = resolve(field)
-    if (!r) continue
-    const spec = configFieldSpec(field)
-    lines.push(`> ${spec?.chatKey ?? field}: ${spec ? formatConfigValue(spec, r.v) : String(r.v)} (${r.src})`)
-  }
-  // Compact knob line: coding agent / model / thinking / effort / mode.
-  const knobs: string[] = []
-  for (const field of ['runtime', 'model', 'thinking', 'effort', 'permissionPreset'] as const) {
-    const r = resolve(field)
-    if (!r) continue
-    const spec = configFieldSpec(field)
-    knobs.push(`${spec?.chatKey ?? field} ${spec ? formatConfigValue(spec, r.v) : String(r.v)} (${r.src})`)
-  }
-  if (knobs.length) lines.push(`-# ${knobs.join(' · ')}`)
-  lines.push(
-    `-# ${contextCount} context note${contextCount === 1 ? '' : 's'} · \`!config\` to tune · \`!context\` to manage`,
-  )
-  return lines.join('\n')
-}
-
 // ─── per-thread context surface (!context) ───────────────────────────────────
 
 export type ContextEntry = {

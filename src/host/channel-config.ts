@@ -91,6 +91,5 @@ export class ChannelConfigControl {
         renderConfigSet(field, (parsed.delta as Record<string, unknown>)[field], where),
       )
     }
-    this.ctx.refreshConfigCard(scopeId)
   }
 }

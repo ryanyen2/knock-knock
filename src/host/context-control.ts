@@ -74,7 +74,6 @@ export class ContextControl {
         caused_by: [],
       })
       await this.ctx.discordSend(scopeId, renderContextAdded())
-      this.ctx.refreshConfigCard(scopeId)
       return
     }
 
@@ -97,7 +96,6 @@ export class ContextControl {
     })
     // Echo what was removed so the owner can catch an index-shift mis-hit.
     await this.ctx.discordSend(scopeId, renderContextRemoved(parsed.index, toEntry(target)))
-    this.ctx.refreshConfigCard(scopeId)
   }
 }
 
