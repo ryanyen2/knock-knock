@@ -120,10 +120,12 @@
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your <code>DISCORD_BOT_TOKEN</code>.</p></div></li>
         <li class="gstep"><div><h4>Enable the message-content intent</h4><p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> The only privileged toggle you need. Without it the bot connects but reads empty message text.</p></div></li>
-        <li class="gstep"><div><h4>Invite the bot to your server</h4><p><b>OAuth2 → URL Generator</b> → scope <b>bot</b> → enable these permissions, then open the generated URL:</p><div class="perm-chips"><span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span></div></div></li>
+        <li class="gstep"><div><h4>Invite the bot to your server</h4><p><b>OAuth2 → URL Generator</b> → scope <b>bot</b> → enable these permissions, then let the <b>server owner</b> open the generated URL.</p><div class="perm-chips"><span>View Channels</span><span>Send Messages</span><span>Send Messages in Threads</span><span>Create Public Threads</span><span>Read Message History</span><span>Add Reactions</span><span>Manage Messages</span></div></div></li>
         <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — right-click the channel → Copy Channel ID (a 17–20 digit snowflake). <b>Owner id</b> — right-click yourself → Copy User ID (asked once per platform).</p></div></li>
       </ul>
-      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Discord</b>, paste the channel id, and save <code>DISCORD_BOT_TOKEN</code>. A top-level <code>@mention</code> spawns a task thread; status is quiet emoji reactions; approvals and conflicts are buttons; the owner gets a DM when a draft is overridden.</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a new bot</code> -> choose <b>Discord</b>; <code>Add to a channel</code> -> paste the channel id; then <code>save/update token</code> -> paste <code>DISCORD_BOT_TOKEN</code>. 
+        <!-- A top-level <code>@mention</code> spawns a task thread; status is quiet emoji reactions; approvals and conflicts are buttons; the owner gets a DM when a draft is overridden. -->
+      </p>
     </div>
 
     <!-- SLACK -->
@@ -131,12 +133,14 @@
       <div class="ppanel-h"><h3>Slack</h3><span class="tag ready">full · live</span></div>
       <p>Full fidelity over <b>Socket Mode</b> — an outbound WebSocket, no public server. Needs <b>two</b> tokens. (Inbound files work; outbound upload is pending.)</p>
       <ul class="gsteps">
-        <li class="gstep"><div><h4>Create the app &amp; enable Socket Mode</h4><p>Create a Slack app for your workspace, then <b>Socket Mode → on</b> — this generates the App-Level Token <code>SLACK_APP_TOKEN</code> (<code>xapp-…</code>, scope <code>connections:write</code>).</p></div></li>
-        <li class="gstep"><div><h4>Subscribe to events &amp; turn on interactivity</h4><p><b>Event Subscriptions → on</b>, bot events:</p><div class="perm-chips"><span>message.channels</span><span>message.groups</span><span>message.im</span><span>message.mpim</span><span>app_mention</span><span>reaction_added</span></div><p style="margin-top:10px"><b>Interactivity &amp; Shortcuts → on</b> (so Block Kit buttons fire).</p></div></li>
-        <li class="gstep"><div><h4>Add bot token scopes, then install</h4><p>OAuth &amp; Permissions → Bot Token Scopes:</p><div class="perm-chips"><span>app_mentions:read</span><span>channels:history</span><span>groups:history</span><span>im:history</span><span>mpim:history</span><span>chat:write</span><span>reactions:read</span><span>reactions:write</span><span>pins:write</span><span>files:read</span><span>files:write</span></div><p style="margin-top:10px"><b>Install to Workspace</b> (this yields <code>SLACK_BOT_TOKEN</code>, <code>xoxb-…</code>), then <code>/invite</code> the bot to each channel.</p></div></li>
+        <li class="gstep"><div><h4>Create the app from scratch &amp; enable Socket Mode</h4><p>Create a Slack app for your workspace, then <b>Socket Mode → on</b> — this generates the App-Level Token <code>SLACK_APP_TOKEN</code> (<code>xapp-…</code>, scope <code>connections:write</code>).</p></div></li>
+        <li class="gstep"><div><h4>Subscribe to events &amp; turn on interactivity</h4><p><b>Event Subscriptions → on</b>, subscribe to bot events:</p><div class="perm-chips"><span>message.channels</span><span>message.groups</span><span>message.im</span><span>message.mpim</span><span>app_mention</span><span>reaction_added</span></div><p style="margin-top:10px"><b>Interactivity &amp; Shortcuts → on</b> (so Block Kit buttons fire).</p></div></li>
+        <li class="gstep"><div><h4>Add bot token scopes, then install</h4><p>OAuth &amp; Permissions → Bot Token Scopes:</p><div class="perm-chips"><span>app_mentions:read</span><span>channels:history</span><span>groups:history</span><span>im:history</span><span>mpim:history</span><span>chat:write</span><span>reactions:read</span><span>reactions:write</span><span>pins:write</span><span>files:read</span><span>files:write</span></div><p style="margin-top:10px"><b>Install to Workspace</b> (this yields <code>SLACK_BOT_TOKEN</code>, <code>xoxb-…</code>), then <code>/invite</code> the bot App to each channel.</p></div></li>
         <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — channel name → About → Channel ID (<code>C0123ABCD</code>). <b>Owner id</b> — your avatar → Profile → ⋯ → Copy member ID (<code>U0123ABCD</code>).</p></div></li>
       </ul>
-      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Slack</b>, paste the channel id, and save <b>both</b> tokens (<code>SLACK_BOT_TOKEN</code> + <code>SLACK_APP_TOKEN</code>, stored as the bot's app-token secret). Gotcha: <b>re-install after adding scopes</b>, and both tokens must be saved or connect fails fast.</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a new bot</code> -> choose <b>Slack</b>; <code>Add to a channel</code> -> paste the channel id; then <code>save/update token</code> -> paste <b>both</b> tokens (<code>SLACK_BOT_TOKEN</code> + <code>SLACK_APP_TOKEN</code>, stored as the bot's app-token secret). 
+        <!-- Gotcha: <b>re-install after adding scopes</b>, and both tokens must be saved or connect fails fast. -->
+      </p>
     </div>
 
     <!-- TELEGRAM -->
@@ -148,7 +152,7 @@
         <li class="gstep"><div><h4>Disable Group Privacy &amp; make it admin</h4><p><b>BotFather → /mybots → Bot Settings → Group Privacy → Turn off</b> (else the bot sees only @mentions and looks "deaf"). Make the bot a <b>group admin</b> to receive reactions. Forum topics (the thread analogue) need a <b>supergroup with Topics enabled</b>.</p></div></li>
         <li class="gstep"><div><h4>Collect the chat id and your owner id</h4><p><b>Chat id</b> — via <a href="https://t.me/userinfobot" target="_blank" rel="noopener">@userinfobot</a> or <code>getUpdates</code>; groups are <b>negative</b>, supergroups <code>-100…</code>. <b>Owner id</b> — DM @userinfobot for your numeric user id.</p></div></li>
       </ul>
-      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Telegram</b>, paste the chat id, and save <code>TELEGRAM_BOT_TOKEN</code>. Gotcha: the bot can only DM users who have <code>/start</code>ed it — <code>/start</code> your own bot so approval DMs reach you.</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a new bot</code> -> choose <b>Telegram</b>, paste your user id; <code>Add to a channel</code> -> paste the chat id; then <code>save/update token</code> -> paste <code>TELEGRAM_BOT_TOKEN</code>. Gotcha: the bot can only DM users who have <code>/start</code>ed it — <code>/start</code> your own bot so approval DMs reach you.</p>
     </div>
 
     <!-- GITHUB -->
@@ -160,7 +164,7 @@
         <li class="gstep"><div><h4>Add the machine-user to the repo</h4><p>The machine-user must be a <b>collaborator / org member</b> of the repo so @mentions notify it and it can comment.</p></div></li>
         <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is the repo — <code>owner/repo</code> (each task scope <code>owner/repo#issue</code> is derived automatically). <b>Owner id</b> is your GitHub login.</p></div></li>
       </ul>
-      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>GitHub</b>, paste <code>owner/repo</code>, and save <code>GITHUB_BOT_TOKEN</code>. Gotchas: <b>~60 s latency</b>; <b>public repos are an injection surface</b> — restrict to allowed authors; approvals arrive as a numbered text reply (host wiring is a known pending item).</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a bot</code> -> choose <b>GitHub</b>, paste <code>login</code>; <code>Add to a channel</code> -> paste <code>owner/repo</code>; then <code>save/update token</code> -> paste <code>GITHUB_BOT_TOKEN</code>. Gotchas: <b>~60 s latency</b>; <b>public repos are an injection surface</b> — restrict to allowed authors; approvals arrive as a numbered text reply (host wiring is a known pending item).</p>
     </div>
 
     <!-- NOTION -->
@@ -168,11 +172,11 @@
       <div class="ppanel-h"><h3>Notion</h3><span class="tag exp">async · heavily degraded</span></div>
       <p>Async over comment/page polling (~seconds, no reactions/buttons/DM/edit/inline files). Honest verdict: <b>often better used as an MCP tool than a chat transport</b>.</p>
       <ul class="gsteps">
-        <li class="gstep"><div><h4>Create the integration</h4><p>At <a href="https://www.notion.so/my-integrations" target="_blank" rel="noopener">notion.so/my-integrations</a> create an internal integration with capabilities <b>Read content</b>, <b>Insert content</b>, <b>Read comments</b>, <b>Insert comments</b>, <b>Read user information</b>. It yields the secret <code>NOTION_TOKEN</code> (<code>ntn_…</code>). No extra secret.</p></div></li>
-        <li class="gstep"><div><h4>Share each page/database with it (required)</h4><p>Open the page or database → <b>••• → Connections → add your integration</b>. <b>Without sharing, the integration sees nothing</b> — the token alone grants no access. This is the single most common failure.</p></div></li>
-        <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is a page or database id — 32 hex chars from the page link's trailing id. <b>Owner id</b> is your Notion user id (find it via <code>GET /v1/users</code> with the token).</p></div></li>
+        <li class="gstep"><div><h4>Create the integration</h4><p>At <a href="https://app.notion.com/developers/connections" target="_blank" rel="noopener">notion.com/developers/connections</a> create a connection with access token and capabilities of <b>Read content</b>, <b>Insert content</b>, <b>Read comments</b>, <b>Insert comments</b>, <b>Read user information</b>. It yields the secret <code>NOTION_TOKEN</code> (<code>ntn_…</code>). No extra secret.</p></div></li>
+        <li class="gstep"><div><h4>Share each page/database with it (might be automatically by Notion)</h4><p>Open the page or database → <b>••• → Connections → manage connections → add your integration</b>. <b>Without sharing, the integration sees nothing</b> — the token alone grants no access. This is the single most common failure.</p></div></li>
+        <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is a page or database id — 32 hex chars from the page link's trailing id. <b>Owner id</b> is your Notion user id (find it via <code>settings</code> -> <code>profile</code> -> <code>user id</code>).</p></div></li>
       </ul>
-      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <b>Notion</b>, paste the page/database id, and save <code>NOTION_TOKEN</code>. Gotcha: cold-start ignores the pre-existing comment backlog; the Workers/External-Agents bridge needs Business/Enterprise and is a future option.</p>
+      <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a bot</code> -> choose <b>Notion</b>; <code>Add to a channel</code> -> paste the page/database id and owner id; then <code>save/update token</code> -> paste <code>NOTION_TOKEN</code>. Gotcha: cold-start ignores the pre-existing comment backlog; the Workers/External-Agents bridge needs Business/Enterprise and is a future option.</p>
     </div>
   </section>
 

@@ -193,6 +193,7 @@ type PlatformSpec = {
   tokenHowto: string // where to get the primary token
   secrets: SecretSpec[] // extra secrets → bot.secretEnv (logical name → env var)
   idLabel: string // channel/scope id prompt
+  idHowto?: string // optional multi-line "how to find this id" help, printed before the prompt
   idPlaceholder: string
   idValidate: (v?: string) => string | undefined
   ownerLabel: string // owner/me id prompt
@@ -247,6 +248,14 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     tokenHowto: '@BotFather → /newbot → copy the HTTP API token',
     secrets: [],
     idLabel: 'Telegram chat ID (negative for groups; -100… for supergroups)',
+    idHowto: [
+      'Finding the chat ID:',
+      '  • DM / private chat: message @userinfobot — it replies with your numeric id (the chat id, positive).',
+      '  • Group / supergroup: add @RawDataBot (or @getidsbot) to the group; it posts the chat id (negative,',
+      '    supergroups start with -100). Remove it afterwards.',
+      '  • Or, after the bot has its token: send any message in the chat, then open',
+      '    https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates and read result[].message.chat.id.',
+    ].join('\n'),
     idPlaceholder: '-1001234567890',
     idValidate: mkValidate(/^-?\d{5,}$/, 'Telegram chat IDs are integers (often negative).'),
     ownerLabel: 'Your Telegram user ID (DM @userinfobot)',
@@ -638,6 +647,7 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
         options: botPlatforms.map(pl => ({ value: pl, label: PLATFORMS[pl].label })),
       })) as Platform)
   const spec = PLATFORMS[platform]
+  if (spec.idHowto) p.log.message(color.dim(spec.idHowto))
   const channelId = orCancel(await p.text({
     message: spec.idLabel,
     placeholder: spec.idPlaceholder,
@@ -884,6 +894,7 @@ async function addBotToChannel(a: AuthoringAccess, key: string): Promise<void> {
 
   let ch: Channel
   if (ck === NEW) {
+    if (spec.idHowto) p.log.message(color.dim(spec.idHowto))
     const channelId = orCancel(await p.text({
       message: spec.idLabel,
       placeholder: spec.idPlaceholder,
