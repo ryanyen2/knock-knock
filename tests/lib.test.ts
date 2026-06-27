@@ -73,6 +73,7 @@ import {
   meshTaskClaimant,
   renderBillboard,
   addressedAgentKeys,
+  standDownForDirected,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -1659,6 +1660,16 @@ test('addressedAgentKeys: a ROLE mention (<@&id>) resolves to the role-owning bo
   expect(addressedAgentKeys(dir, 'room1', 'discord', '<@&R_cc> work with <@&R_db>').sort()).toEqual(['cc', 'd-bot'])
   // Mixed user + role markup also works.
   expect(addressedAgentKeys(dir, 'room1', 'discord', '<@U_cc> and <@&R_db> go').sort()).toEqual(['cc', 'd-bot'])
+})
+
+test('standDownForDirected: a bot stays out when only OTHER bots are addressed', () => {
+  // "@cc hey" → addressed=['cc']. d-bot is not named and not otherwise addressed → stand down
+  // at the gate (don't run a turn just to decline). cc itself proceeds.
+  expect(standDownForDirected(['cc'], 'd-bot', false)).toBe(true)
+  expect(standDownForDirected(['cc'], 'cc', false)).toBe(false) // I'm the addressed one
+  expect(standDownForDirected(['cc', 'd-bot'], 'd-bot', false)).toBe(false) // both named → I'm in
+  expect(standDownForDirected([], 'd-bot', false)).toBe(false) // broadcast → don't pre-empt
+  expect(standDownForDirected(['cc'], 'd-bot', true)).toBe(false) // I'm addressed another way (reply/pattern)
 })
 
 test('responderElection: a role mention narrows the eligible set like a user mention', () => {

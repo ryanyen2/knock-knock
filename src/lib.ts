@@ -1659,6 +1659,19 @@ export function addressedAgentKeys(
     .map(id => id.agentKey)
 }
 
+/** Should this bot stay out of a message entirely? True when the message explicitly
+ *  addresses specific OTHER bots (a non-empty `addressedKeys` set that doesn't include
+ *  `selfKey`) and this bot isn't otherwise addressed (`addressedMe`). Lets the inbound
+ *  gate drop a directed-elsewhere message before running any turn, instead of electing a
+ *  bystander that then has to decline. Pure. */
+export function standDownForDirected(
+  addressedKeys: ReadonlyArray<string>,
+  selfKey: string,
+  addressedMe: boolean,
+): boolean {
+  return addressedKeys.length > 0 && !addressedKeys.includes(selfKey) && !addressedMe
+}
+
 // ─── Mesh transport codec (the no-Postgres NOTIFY substitute) ─────────────────────
 // Cross-machine, each relay keeps its own local ledger; the messaging channel everyone
 // already shares is the bus. A relay encodes each locally-authored COORDINATION

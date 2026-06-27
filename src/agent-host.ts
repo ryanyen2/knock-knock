@@ -51,6 +51,8 @@ import {
   wrapThreadRecap,
   peerDirectoryParticipants,
   isDirectoryBot,
+  addressedAgentKeys,
+  standDownForDirected,
   isMeshLine,
   extractKeywords,
   type RetrievalCandidate,
@@ -1043,6 +1045,14 @@ export class AgentHost {
     if (!mentioned && !senderIsPeerBot && m.isThread && (await this.isEngagedThread(m.scope))) {
       mentioned = true
     }
+    // Directed stand-down: if the message explicitly addresses specific bots (a user OR
+    // role mention) and none of them is me — and I'm not otherwise addressed — stay out
+    // entirely. Without this, an un-addressed bot in a no-require-mention channel runs a
+    // whole turn just to say "that's not for me". This decides at the gate using the
+    // reliable roomId (computed above), not reply-claim's scope re-resolution, which can
+    // miss a freshly-spawned thread and fall back to a broadcast that elects the wrong bot.
+    const addressedKeys = addressedAgentKeys(this.directoryIdentities(), roomId, this.platform, m.text)
+    if (standDownForDirected(addressedKeys, this.key, addressedMe)) return
     if ((requireMention || senderIsPeerBot) && !mentioned) return
 
     this.messaging.typing(m.scope)
