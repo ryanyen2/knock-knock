@@ -180,7 +180,15 @@ per-agent reply-claim key (`replyClaimKey/<agentKey>`), and an unnamed bot stand
 d-bot. A message naming no bot is a **broadcast**: exactly one responder is elected.
 `reply-claim` reads the explicitly-addressed set via `resolveAddressing`
 (`addressedAgentKeys` in `lib.ts`, from the shared agent-directory — present co-resident
-too, so this is not mesh-only).
+too, so this is not mesh-only). The precedence is: (1) **@mention markup** `<@id>` (global —
+every bot sees the same named set; Discord + Slack), (2) **reply pointer** (a reply is
+directed at the bot whose message it answers; that bot answers, others stand down — Discord +
+Telegram expose `replyToMessageId`; Slack models replies as threads), (3) **name pattern**
+(per-bot), (4) none ⇒ **broadcast** (one elected). On Telegram, `@username` mentions are
+detected per-bot (`mentionsBot`), not globally, so directed-multi relies on require-mention
+(default on) to keep unaddressed bots out; the addressed bots still each answer. The raw
+addressing signal (`addressedMe`) is captured BEFORE the engaged-thread waiver, so a thread
+follow-up that doesn't name a bot is a broadcast among the engaged, not a directed grab.
 
 **No-Postgres mesh (`KNOCK_KNOCK_MESH=1`, SQLite only).** Local-first cross-machine
 coordination with no shared DB: the messaging channel everyone shares is the interaction
