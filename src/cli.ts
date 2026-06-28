@@ -15,6 +15,7 @@ Usage:
   knock-knock relay [key…] [flags]   Start the relay (default: every configured bot)
        flags: --pick choose active bots · --config quick per-bot setup
               --tui multi-pane view · --daemon idle bots wake on message
+  knock-knock doctor                 Diagnose config/connectivity + list pending discoveries (read-only)
   knock-knock                        Setup if nothing is configured yet, else relay
   knock-knock --version              Print the version
   knock-knock --help                 Print this help
@@ -41,6 +42,12 @@ async function dispatch(): Promise<void> {
       process.argv.splice(2, 1)
       await import('./relay.ts')
       return
+    case 'doctor': {
+      process.argv.splice(2, 1)
+      const { runDoctor } = await import('./doctor.ts')
+      await runDoctor()
+      return
+    }
   }
 
   // No subcommand or bare flag → relay when configured, else setup; unknown subcommand errors.
