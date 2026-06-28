@@ -316,14 +316,42 @@
     });
   });
 
-  /* ─────────────  FLOATING TOC: highlight the section in view (setup page)  ───────────── */
+  /* ─────────────  TABLE OF CONTENTS (setup page)  ─────────────
+     Wide screens get the fixed gutter rail; narrow screens get a floating
+     button + slide-in drawer built from the same list. Scroll-spy highlights
+     the section in view across both. */
   (function initTocRail() {
-    const railLinks = document.querySelectorAll('.toc-rail a');
-    if (!railLinks.length || !('IntersectionObserver' in window)) return;
+    const rail = document.querySelector('.toc-rail');
+    if (!rail || !('IntersectionObserver' in window)) return;
+
+    // Build the narrow-screen drawer from the rail's list (single source of truth).
+    const drawer = document.getElementById('tocDrawer');
+    const fab = document.querySelector('.toc-fab');
+    const backdrop = document.querySelector('.toc-backdrop');
+    if (drawer && fab && backdrop) {
+      const list = rail.querySelector('ol');
+      if (list) drawer.appendChild(list.cloneNode(true));
+
+      const setOpen = (open) => {
+        drawer.classList.toggle('is-open', open);
+        backdrop.classList.toggle('is-open', open);
+        fab.setAttribute('aria-expanded', open ? 'true' : 'false');
+        drawer.setAttribute('aria-hidden', open ? 'false' : 'true');
+      };
+      fab.addEventListener('click', () => setOpen(true));
+      backdrop.addEventListener('click', () => setOpen(false));
+      const closeBtn = drawer.querySelector('.toc-drawer-close');
+      if (closeBtn) closeBtn.addEventListener('click', () => setOpen(false));
+      drawer.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+      document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setOpen(false); });
+    }
+
+    // Scroll-spy: highlight the active section across rail + drawer links.
+    const links = document.querySelectorAll('.toc-rail a, .toc-drawer a');
     const tocIO = new IntersectionObserver((entries) => {
       entries.forEach((e) => {
         if (!e.isIntersecting) return;
-        railLinks.forEach((l) => {
+        links.forEach((l) => {
           if (l.getAttribute('href') === '#' + e.target.id) l.setAttribute('aria-current', 'true');
           else l.removeAttribute('aria-current');
         });

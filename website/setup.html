@@ -25,6 +25,8 @@
   <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 21.5s7.5-3.6 7.5-9.5V6L12 3 4.5 6v6c0 5.9 7.5 9.5 7.5 9.5z"/><path d="m8.8 11.8 2.2 2.2 4.2-4.2"/></symbol>
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20.5v-1.5a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4v1.5"/><circle cx="9.2" cy="7.8" r="3.6"/><path d="M21.5 20.5v-1.5a4 4 0 0 0-3-3.8"/><path d="M16.6 4.3a3.6 3.6 0 0 1 0 7"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></symbol>
 </defs></svg>
 
 <!-- ───────────  NAV  ─────────── -->
@@ -38,9 +40,10 @@
     </a>
     <nav class="nav-links" aria-label="Sections">
       <a href="index.html#flow">How it works</a>
+      <a href="index.html#architecture">Architecture</a>
       <a href="index.html#control">Control</a>
       <a href="index.html#cases">Use cases</a>
-      <a href="index.html#levels">Levels</a>
+      <!-- <a href="index.html#levels">Levels</a> -->
       <a href="setup.html" aria-current="true">Setup</a>
     </nav>
     <a href="#quickstart" class="btn btn-primary btn-sm nav-cta">Quickstart</a>
@@ -64,6 +67,19 @@
     <li><a href="#deeper"><span class="tr-n">09</span> Go deeper</a></li>
   </ol>
 </nav>
+
+<!-- ───────────  NARROW-SCREEN TOC: floating button + drawer  ─────────── -->
+<button class="toc-fab" aria-label="Table of contents" aria-expanded="false" aria-controls="tocDrawer">
+  <svg class="ic"><use href="#i-list"/></svg> Contents
+</button>
+<div class="toc-backdrop"></div>
+<aside class="toc-drawer" id="tocDrawer" aria-label="On this page" aria-hidden="true">
+  <div class="toc-drawer-head">
+    <p class="toc-rail-title">On this page</p>
+    <button class="toc-drawer-close" aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+  </div>
+  <!-- list cloned from .toc-rail by main.js (single source of truth) -->
+</aside>
 
 <!-- ───────────  HEADER  ─────────── -->
 <section class="subhero">
