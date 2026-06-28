@@ -30,7 +30,21 @@ import {
   TASK_DAG_FOLD,
   type TaskDagFoldState,
 } from '../../src/ledger/concepts/task-dag.ts'
-import { isMeshLine, encodeMeshEvent, meshTaskClaimant, projectTaskDag, readyTasks } from '../../src/lib.ts'
+import {
+  isMeshLine,
+  encodeMeshEvent,
+  meshTaskClaimant,
+  projectTaskDag,
+  readyTasks,
+  encodeWant,
+  decodeWant,
+  decodeFrontier,
+  encodeFrontier,
+  meshLineVerb,
+  WANT_PREFIX,
+  isWantLine,
+  type AgentIdentity,
+} from '../../src/lib.ts'
 
 type Recent = { authorId: string; text: string }
 
@@ -69,6 +83,7 @@ async function harness(
   transportScope?: string,
   resolveRoom: (scope: string) => string | undefined = () => ROOM,
   fetchRecent?: (scope: string, limit: number) => Promise<Recent[]>,
+  now?: () => number,
 ) {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
@@ -84,6 +99,7 @@ async function harness(
     allRooms: () => [ROOM],
     ...(transportScope ? { transportScope: () => transportScope } : {}),
     ...(fetchRecent ? { fetchRecent } : {}),
+    ...(now ? { now } : {}),
     send: async (scope, text) => { sent.push({ scope, text }); return { id: `m${sent.length}`, scope } },
     noteBotMsg: () => {},
     log: () => {},
@@ -382,4 +398,111 @@ test('idempotent + backward-compat: replaying an already-held window adds nothin
   const after2 = (await store.listByChannel(ROOM)).length + (await store.listByChannel('agent-directory')).length
   expect(after2).toBe(after1) // content-addressed ⇒ re-ingest is a no-op
   store.close()
+})
+
+// ─── Phase 2: causal-gap backfill (want / frontier) ─────────────────────────────────────
+
+const dir = (agentKey: string, userId: string, rooms: ChannelId[]): AgentIdentity => ({
+  agentKey, platform: 'discord', userId, rooms,
+})
+
+test('decodeWant: filters by sender membership, hex format, and list length', () => {
+  const idents = [dir('aa', 'U_A', [ROOM])]
+  const goodHash = 'a'.repeat(64)
+  // Happy path: a known sender, one valid hash.
+  expect(decodeWant(encodeWant([goodHash]), 'U_A', idents)).toEqual([goodHash])
+  // Unknown sender ⇒ rejected (no anonymous want).
+  expect(decodeWant(encodeWant([goodHash]), 'U_stranger', idents)).toBeNull()
+  // Non-hex / wrong-length entries are filtered; an all-invalid list ⇒ null.
+  expect(decodeWant(encodeWant(['nope', 'XYZ']), 'U_A', idents)).toBeNull()
+  // Over-long raw list ⇒ rejected outright (hand-crafted past encodeWant's cap).
+  const overLong = WANT_PREFIX + Buffer.from(JSON.stringify(Array(101).fill(goodHash))).toString('base64')
+  expect(decodeWant(overLong, 'U_A', idents)).toBeNull()
+})
+
+test('decodeFrontier: sender-gated and head-validated', () => {
+  const idents = [dir('aa', 'U_A', [ROOM])]
+  const h = 'b'.repeat(64)
+  expect(decodeFrontier(encodeFrontier({ [ROOM]: [h] }), 'U_A', idents)).toEqual({ [ROOM]: [h] })
+  expect(decodeFrontier(encodeFrontier({ [ROOM]: [h] }), 'U_stranger', idents)).toBeNull()
+  expect(decodeFrontier(encodeFrontier({ [ROOM]: ['bad'] }), 'U_A', idents)).toBeNull() // no valid heads
+})
+
+/** Set up a HOLDER relay (with an injectable clock) that knows peer A (the future requester)
+ *  and peer eve (the actor), and holds one of eve's coordination events — ready to answer a
+ *  Want from A. The clock lets the suppression window be exercised deterministically. */
+async function holderHoldingEveNote(resolveRoom: (s: string) => string | undefined, clock?: () => number) {
+  const h = await harness(['cc'], TRANSPORT, resolveRoom, undefined, clock)
+  await h.mesh.ingest(await wireLineFrom(identity('aa', 'U_A')), 'U_A') // requester A in directory (serves ROOM)
+  await h.mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev') // actor eve in directory
+  return h
+}
+
+test('want round-trip: a holder re-posts the missing event (identity-first) when a peer asks', async () => {
+  let t = 1000
+  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined), () => t)
+  const noteLine = await wireLineFrom(coordNote('eve', ROOM))
+  await h.mesh.ingest(noteLine, 'U_ev') // holder held the event at t=1000 (before the want)
+  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
+  h.sent.length = 0 // ignore anything emitted during setup
+
+  t = 2000 // the want arrives later — the held event is genuinely old, so we answer
+  await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A')
+
+  const mesh = h.sent.filter(s => isMeshLine(s.text))
+  expect(mesh.some(s => s.text === noteLine)).toBe(true) // the wanted event re-posted
+  expect(mesh.some(s => meshLineVerb(s.text) === 'agent.identity')).toBe(true) // identity-first
+  expect(mesh.every(s => s.scope === TRANSPORT)).toBe(true) // only ever on the transport channel
+  h.store.close()
+})
+
+test('want suppression: a holder stands down if the hash was (re-)broadcast since the want arrived', async () => {
+  let t = 2000
+  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined), () => t)
+  const noteLine = await wireLineFrom(coordNote('eve', ROOM))
+  await h.mesh.ingest(noteLine, 'U_ev') // observed at t=2000 (recentlySeen = 2000)
+  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
+  h.sent.length = 0
+
+  // The want arrives at the SAME instant the hash was last observed ⇒ a peer is answering it.
+  await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A')
+  expect(h.sent.some(s => s.text === noteLine)).toBe(false) // suppressed, no duplicate re-post
+  h.store.close()
+})
+
+test('want rejection: an unknown sender gets no answer', async () => {
+  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined))
+  await h.mesh.ingest(await wireLineFrom(coordNote('eve', ROOM)), 'U_ev')
+  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
+  h.sent.length = 0
+  await h.mesh.handleControl(encodeWant([wantedHash]), 'U_stranger') // not in directory
+  expect(h.sent.filter(s => isWantLine(s.text) || isMeshLine(s.text))).toHaveLength(0)
+  h.store.close()
+})
+
+test('want scope guard: a holder does NOT re-post an event for a channel the requester does not serve', async () => {
+  // Holder serves BOTH ROOM and H2; requester A serves only ROOM. A asks for an H2 event the
+  // holder holds — it must be withheld (cross-channel exfiltration guard).
+  let t = 1000
+  // Holder serves ROOM and H2 (each as itself, so H2 ingests); A's directory rooms are [ROOM].
+  const h = await holderHoldingEveNote(scope => (scope === ROOM || scope === H2 ? scope : undefined), () => t)
+  const h2Note = await wireLineFrom(coordNote('eve', H2))
+  await h.mesh.ingest(h2Note, 'U_ev')
+  const wantedHash = (await h.store.listByChannel(H2))[0]!.hash
+  h.sent.length = 0
+
+  t = 2000
+  await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A') // A serves only ROOM, not H2
+  expect(h.sent.some(s => s.text === h2Note)).toBe(false)
+  h.store.close()
+})
+
+test('control lines no-op without a configured transport channel', async () => {
+  // No transportScope ⇒ Phase 2 is dormant: handleControl returns false and emits nothing.
+  const h = await harness(['cc'])
+  await h.mesh.ingest(await wireLineFrom(identity('aa', 'U_A')), 'U_A')
+  const handled = await h.mesh.handleControl(encodeWant(['c'.repeat(64)]), 'U_A')
+  expect(handled).toBe(false)
+  expect(h.sent.filter(s => isMeshLine(s.text) || isWantLine(s.text))).toHaveLength(0)
+  h.store.close()
 })

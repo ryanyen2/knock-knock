@@ -1894,6 +1894,99 @@ export function decodeMeshEvent(
   return { ...proposed, hash: recomputed, lifecycle: wire.lc, createdAt: wire.ts }
 }
 
+// ─── Phase 2 anti-entropy line types (causal-gap backfill) ────────────────────────
+// Two NEW line types, siblings of MESH_PREFIX, each with its OWN explicit decode filter
+// (the MESH_PREFIX filter above is untouched). They carry NO interaction and can never be
+// folded — a Want asks for hashes; a Frontier advertises heads. The backfill RESPONSE is an
+// ordinary ⟦kk-mesh⟧ line that goes back through decodeMeshEvent, so the trust boundary for
+// state is unchanged. These only ever flow on a configured transport channel.
+
+/** "I am missing these hashes." */
+export const WANT_PREFIX = '⟦kk-want⟧'
+/** "Here are my per-channel heads." */
+export const FRONTIER_PREFIX = '⟦kk-frontier⟧'
+
+/** A content hash is sha256-hex (canonical.ts) — 64 lowercase hex chars. Validated on every
+ *  inbound hash BEFORE any getByHash, so a malformed/oversized payload can't probe the store. */
+const MESH_HASH_RE = /^[0-9a-f]{64}$/
+const WANT_MAX_HASHES = 100
+const FRONTIER_MAX_CHANNELS = 50
+const FRONTIER_MAX_HEADS = 50
+
+export function isWantLine(text: string): boolean {
+  return text.startsWith(WANT_PREFIX)
+}
+export function isFrontierLine(text: string): boolean {
+  return text.startsWith(FRONTIER_PREFIX)
+}
+
+/** Per-channel heads a relay advertises / a peer is missing. */
+export type MeshFrontier = Record<string, string[]>
+
+export function encodeWant(hashes: ReadonlyArray<string>): string {
+  return WANT_PREFIX + Buffer.from(JSON.stringify(hashes.slice(0, WANT_MAX_HASHES))).toString('base64')
+}
+
+/** Decode + validate a Want into a deduped hash list, or null. Hard filter (any failure ⇒ drop):
+ *   - sender must be a known directory bot (no anonymous want)
+ *   - the raw list must be ≤ WANT_MAX_HASHES (reject an oversized payload outright)
+ *   - every entry must be a strict 64-char lowercase hex hash, checked before any store probe. */
+export function decodeWant(
+  line: string,
+  senderUserId: string,
+  identities: ReadonlyArray<AgentIdentity>,
+): string[] | null {
+  if (!line.startsWith(WANT_PREFIX)) return null
+  if (!identities.some(id => id.userId === senderUserId)) return null
+  let arr: unknown
+  try {
+    arr = JSON.parse(Buffer.from(line.slice(WANT_PREFIX.length), 'base64').toString('utf8'))
+  } catch {
+    return null
+  }
+  if (!Array.isArray(arr) || arr.length === 0 || arr.length > WANT_MAX_HASHES) return null
+  const hashes = arr.filter((h): h is string => typeof h === 'string' && MESH_HASH_RE.test(h))
+  if (hashes.length === 0) return null
+  return [...new Set(hashes)]
+}
+
+export function encodeFrontier(frontier: MeshFrontier): string {
+  const capped: MeshFrontier = {}
+  for (const [ch, heads] of Object.entries(frontier).slice(0, FRONTIER_MAX_CHANNELS)) {
+    capped[ch] = heads.slice(0, FRONTIER_MAX_HEADS)
+  }
+  return FRONTIER_PREFIX + Buffer.from(JSON.stringify(capped)).toString('base64')
+}
+
+/** Decode + validate a Frontier digest into a per-channel head map, or null. Same sender gate
+ *  as Want; channels and heads are capped, and every head is hex-validated. */
+export function decodeFrontier(
+  line: string,
+  senderUserId: string,
+  identities: ReadonlyArray<AgentIdentity>,
+): MeshFrontier | null {
+  if (!line.startsWith(FRONTIER_PREFIX)) return null
+  if (!identities.some(id => id.userId === senderUserId)) return null
+  let obj: unknown
+  try {
+    obj = JSON.parse(Buffer.from(line.slice(FRONTIER_PREFIX.length), 'base64').toString('utf8'))
+  } catch {
+    return null
+  }
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null
+  const out: MeshFrontier = {}
+  let channels = 0
+  for (const [ch, heads] of Object.entries(obj as Record<string, unknown>)) {
+    if (channels++ >= FRONTIER_MAX_CHANNELS) break
+    if (!Array.isArray(heads)) continue
+    const valid = heads
+      .filter((h): h is string => typeof h === 'string' && MESH_HASH_RE.test(h))
+      .slice(0, FRONTIER_MAX_HEADS)
+    if (valid.length) out[ch] = valid
+  }
+  return Object.keys(out).length ? out : null
+}
+
 // ─── Coordination board (Problem B: shared awareness) ────────────────────────
 
 /** One coord note tagged with immutable provenance for deterministic ordering. */

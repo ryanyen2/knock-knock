@@ -37,9 +37,17 @@ import {
   decodeMeshEvent,
   meshLineVerb,
   isMeshLine,
+  isWantLine,
+  isFrontierLine,
+  encodeWant,
+  decodeWant,
+  encodeFrontier,
+  decodeFrontier,
   MESH_VERB_ALLOWLIST,
   type AgentIdentity,
+  type MeshFrontier,
 } from '../lib.ts'
+import { dirArtifact } from '../ledger/concepts/agent-directory.ts'
 
 /** How often a relay re-broadcasts its own identity to rooms with a remote peer, so a
  *  later-joining peer's directory converges even if it missed the connect beacon. Only
@@ -57,6 +65,18 @@ export const MESH_REPLAY_WINDOW = 200
  *  duck-types it off the adapter and passes it here only when present, keeping that interface
  *  thin. Absent ⇒ replay is a no-op and the mesh behaves exactly as before (fire-and-forget). */
 export type FetchRecent = (scope: string, limit: number) => Promise<{ authorId: string; text: string }[]>
+
+// ─── Phase 2 — causal-gap backfill (gated on a configured transport channel) ─────────
+/** Most hashes a single Want answer re-posts (a second Want picks up the rest). */
+const WANT_REPOST_CAP = 50
+/** Per-sender Want-answer rate limit: at most WANT_RATE_CAP answers per window. */
+const WANT_RATE_WINDOW_MS = 30_000
+const WANT_RATE_CAP = 3
+/** Largest jitter before answering a Want, so peers don't reply in lockstep. */
+const WANT_ANSWER_JITTER_MS = 250
+/** How often a relay broadcasts its per-channel frontier so peers notice divergence
+ *  proactively. Slow + peer-gated like the identity heartbeat. */
+export const MESH_FRONTIER_DIGEST_MS = 5 * 60_000
 
 export type MeshSyncDeps = {
   store: Store
@@ -83,6 +103,8 @@ export type MeshSyncDeps = {
   /** Tag a posted message id as bot-authored (so it's never treated as inbound chat). */
   noteBotMsg: (id: string) => void
   log: (msg: string) => void
+  /** Injectable clock for Phase 2 timing (suppression / rate-limit). Defaults to Date.now. */
+  now?: () => number
 }
 
 export class MeshSync {
@@ -99,7 +121,26 @@ export class MeshSync {
    *  tells you whether gaps survive Phase 1b, and Phase 2's backfill trigger signal. */
   private gapsDetected = 0
 
+  // ─── Phase 2 state (causal-gap backfill) ──────────────────────────────────────
+  private frontierTimer?: ReturnType<typeof setInterval>
+  /** hash → last time we saw it (re-)broadcast on the channel, for re-post suppression. */
+  private readonly recentlySeen = new Map<string, number>()
+  /** senderUserId → recent Want-answer timestamps, for per-sender rate limiting. */
+  private readonly wantAnswers = new Map<string, number[]>()
+  /** hash → last time we emitted a Want for it, so a gap doesn't re-want on every ingest. */
+  private readonly recentlyWanted = new Map<string, number>()
+
   constructor(private readonly deps: MeshSyncDeps) {}
+
+  /** Phase 2 is active only when a dedicated transport channel is configured — anti-entropy
+   *  traffic must never reach human rooms (a Non-goal). All want/frontier paths gate on this. */
+  private phase2On(): boolean {
+    return !!this.deps.transportScope?.()
+  }
+
+  private now(): number {
+    return this.deps.now?.() ?? Date.now()
+  }
 
   /** Begin publishing locally-authored coordination events. Call AFTER connect (so
    *  `send` works) — the bot's own `agent.identity` admit then broadcasts over the mesh. */
@@ -123,6 +164,12 @@ export class MeshSync {
     })
     this.heartbeat = setInterval(() => void this.pulse(), MESH_IDENTITY_HEARTBEAT_MS)
     this.heartbeat.unref?.()
+    // Phase 2: a slow, peer-gated frontier digest so peers notice divergence proactively.
+    // Only when a transport channel is configured (never to human rooms).
+    if (this.phase2On()) {
+      this.frontierTimer = setInterval(() => void this.broadcastFrontier(), MESH_FRONTIER_DIGEST_MS)
+      this.frontierTimer.unref?.()
+    }
   }
 
   stop(): void {
@@ -130,6 +177,8 @@ export class MeshSync {
     this.unsub = undefined
     if (this.heartbeat) clearInterval(this.heartbeat)
     this.heartbeat = undefined
+    if (this.frontierTimer) clearInterval(this.frontierTimer)
+    this.frontierTimer = undefined
   }
 
   /** Ingest a peer's coordination line into the local ledger (or ignore a non-mesh
@@ -154,10 +203,15 @@ export class MeshSync {
       this.dbg(`dropped foreign-channel ${i.verb} for ${i.channel}`)
       return false
     }
-    // Phase 0 — causal-gap detection. A `caused_by` parent we don't hold is an event we
-    // missed; counting it is the empirical signal for whether gaps survive Phase 1b, and the
-    // trigger Phase 2's backfill responder acts on. (Counter now; responder is Phase 2.)
-    await this.detectGap(i)
+    // Observing this line on the channel — record WHEN, so a Want answer can tell a fresh
+    // (re-)broadcast since the want arrived (a peer is already handling it ⇒ stand down) from
+    // an event we merely hold from before. Cheap; bounded by pruneRecent.
+    this.recentlySeen.set(i.hash, this.now())
+    // Phase 0/2 — causal-gap detection. A `caused_by` parent we don't hold is an event we
+    // missed; the count is the empirical signal for whether gaps survive Phase 1b. When a
+    // transport channel is configured (Phase 2), the same missing set drives a backfill Want.
+    const missing = await this.detectGap(i)
+    if (missing.length > 0) await this.maybeEmitWant(missing)
     let inserted: boolean
     try {
       const r = await this.deps.store.append(i) // verbatim createdAt; content-addressed ⇒ idempotent
@@ -244,6 +298,172 @@ export class MeshSync {
           `mesh: replay window on ${scope} saturated at ${MESH_REPLAY_WINDOW} messages — the ` +
             `offline gap may exceed the window; divergence possible until a peer re-broadcasts.`,
         )
+      }
+    }
+  }
+
+  // ─── Phase 2 — causal-gap backfill (want / frontier) ──────────────────────────
+  // Gated on a configured transport channel. The chat channel stays the bus; this adds a
+  // precise self-heal for gaps that survive replay (retention/pagination truncation) without
+  // any set-reconciliation machinery (no Merkle range / IBLT) — at a few bots and thousands
+  // of events, causal-gap Want + a slow bounded digest converge and stay debuggable.
+
+  /** Route an inbound control line (Want / Frontier). Returns true iff handled. No-op (returns
+   *  false) unless a transport channel is configured, so these never act in human rooms. */
+  async handleControl(text: string, senderUserId: string): Promise<boolean> {
+    if (!this.phase2On()) return false
+    if (isWantLine(text)) {
+      await this.onWant(text, senderUserId)
+      return true
+    }
+    if (isFrontierLine(text)) {
+      await this.onFrontier(text, senderUserId)
+      return true
+    }
+    return false
+  }
+
+  /** Backfill responder: for each requested hash we hold WHOSE CHANNEL THE REQUESTER SERVES,
+   *  re-post it as an ordinary ⟦kk-mesh⟧ line (identity-first). Suppressed if a peer already
+   *  answered within the window; per-sender rate-limited; jittered. Duplicate bound: at most
+   *  one re-post per holding peer per hash per suppression window — in practice ~1, since the
+   *  first answer we observe suppresses the rest. */
+  private async onWant(text: string, senderUserId: string): Promise<void> {
+    const hashes = decodeWant(text, senderUserId, this.deps.directory())
+    if (!hashes) {
+      this.dbg(`dropped invalid want from ${senderUserId}`)
+      return
+    }
+    if (!this.allowWantAnswer(senderUserId)) {
+      this.dbg(`want from ${senderUserId} rate-limited`)
+      return
+    }
+    const t = this.deps.transportScope?.()
+    if (!t) return
+    const wantAt = this.now() // anything (re-)broadcast at/after this means a peer is answering
+    await this.jitter()
+    const identitiesPosted = new Set<string>()
+    let reposted = 0
+    for (const h of hashes.slice(0, WANT_REPOST_CAP)) {
+      const i = await this.deps.store.getByHash(h)
+      if (!i) continue // we don't hold it
+      // Scope guard: only re-post events for a channel the REQUESTER serves — else a transport
+      // member could enumerate another project's event graph (cross-channel exfiltration).
+      if (i.channel !== 'agent-directory' && !this.requesterServes(senderUserId, i.channel)) continue
+      // Suppression: if this hash was (re-)broadcast on the channel since the Want arrived (e.g.
+      // a peer answered during my jitter), stand down — the same observe-the-channel pattern the
+      // identity heartbeat uses. An event we merely held from before (seen < wantAt) is answered.
+      const seen = this.recentlySeen.get(h)
+      if (seen !== undefined && seen >= wantAt) {
+        this.dbg(`skip re-post ${h.slice(0, 8)} (a peer answered it since the want)`)
+        continue
+      }
+      // Identity-first: the requester must be able to validate the event's provenance.
+      await this.repostIdentity(i.actor, identitiesPosted, t)
+      await this.sendLine(t, encodeMeshEvent(i))
+      this.recentlySeen.set(h, this.now()) // so a co-resident sibling suppresses its own answer
+      reposted++
+    }
+    if (reposted) this.dbg(`answered want from ${senderUserId}: re-posted ${reposted} event(s)`)
+  }
+
+  /** Re-post `actor`'s latest identity beacon once per answer batch, so a backfilled
+   *  coordination event can pass provenance even if the requester never saw the actor before. */
+  private async repostIdentity(actor: string, posted: Set<string>, transport: string): Promise<void> {
+    if (posted.has(actor)) return
+    posted.add(actor)
+    const identities = await this.deps.store.listByArtifact(dirArtifact(actor))
+    const latest = identities
+      .filter(x => x.verb === 'agent.identity')
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
+    if (latest) await this.sendLine(transport, encodeMeshEvent(latest))
+  }
+
+  /** On a peer's frontier digest: for any head WE serve and lack, emit a Want. Scope-bounded —
+   *  a channel we don't serve is ignored (we never backfill another project's graph). */
+  private async onFrontier(text: string, senderUserId: string): Promise<void> {
+    const frontier = decodeFrontier(text, senderUserId, this.deps.directory())
+    if (!frontier) {
+      this.dbg(`dropped invalid frontier from ${senderUserId}`)
+      return
+    }
+    const missing: string[] = []
+    for (const [channel, heads] of Object.entries(frontier)) {
+      if (channel !== 'agent-directory' && !this.deps.resolveRoom(channel)) continue // not ours
+      for (const h of heads) if (!(await this.deps.store.getByHash(h))) missing.push(h)
+    }
+    if (missing.length > 0) {
+      this.dbg(`frontier from ${senderUserId}: missing ${missing.length} head(s)`)
+      await this.maybeEmitWant(missing)
+    }
+  }
+
+  /** Broadcast this relay's per-channel frontier to the transport channel — peer-gated and
+   *  scoped to channels we serve, so we never advertise another project's graph. */
+  private async broadcastFrontier(): Promise<void> {
+    const t = this.deps.transportScope?.()
+    if (!t || !this.hasRemotePeerInRoom(t)) return
+    const frontier: MeshFrontier = {}
+    for (const room of this.deps.allRooms()) {
+      const heads = await this.deps.store.channelFrontier(room)
+      if (heads.length) frontier[room] = heads
+    }
+    if (Object.keys(frontier).length > 0) await this.sendLine(t, encodeFrontier(frontier))
+  }
+
+  /** Emit a Want for hashes we're missing, deduped against recent wants so a persistent gap
+   *  doesn't re-want on every ingest. No-op without a transport channel. */
+  private async maybeEmitWant(hashes: string[]): Promise<void> {
+    const t = this.deps.transportScope?.()
+    if (!t) return
+    const now = this.now()
+    const fresh = [...new Set(hashes)].filter(h => {
+      const last = this.recentlyWanted.get(h)
+      return !last || now - last > WANT_RATE_WINDOW_MS
+    })
+    if (fresh.length === 0) return
+    for (const h of fresh) this.recentlyWanted.set(h, now)
+    this.pruneRecent()
+    this.dbg(`→ want ${fresh.length} hash(es)`)
+    await this.sendLine(t, encodeWant(fresh))
+  }
+
+  /** Does the bot behind `senderUserId` serve `channel` (per the shared directory)? Bounds
+   *  Want answers to the requester's own channels. */
+  private requesterServes(senderUserId: string, channel: string): boolean {
+    const room = this.deps.resolveRoom(channel) ?? channel
+    return this.deps
+      .directory()
+      .some(id => id.userId === senderUserId && (id.rooms.includes(channel) || id.rooms.includes(room)))
+  }
+
+  /** Per-sender Want-answer rate limit (sliding window). */
+  private allowWantAnswer(senderUserId: string): boolean {
+    const now = this.now()
+    const recent = (this.wantAnswers.get(senderUserId) ?? []).filter(t => now - t < WANT_RATE_WINDOW_MS)
+    if (recent.length >= WANT_RATE_CAP) {
+      this.wantAnswers.set(senderUserId, recent)
+      return false
+    }
+    recent.push(now)
+    this.wantAnswers.set(senderUserId, recent)
+    return true
+  }
+
+  private jitter(): Promise<void> {
+    return new Promise(r => setTimeout(r, Math.floor(Math.random() * WANT_ANSWER_JITTER_MS)))
+  }
+
+  /** Keep the suppression/want maps bounded — coordination volume is low, so a simple cap
+   *  on the oldest entries is enough (no LRU machinery). */
+  private pruneRecent(): void {
+    for (const map of [this.recentlySeen, this.recentlyWanted]) {
+      if (map.size <= 4000) continue
+      const cutoff = map.size - 2000
+      let n = 0
+      for (const k of map.keys()) {
+        if (n++ >= cutoff) break
+        map.delete(k)
       }
     }
   }

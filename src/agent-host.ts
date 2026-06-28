@@ -57,6 +57,8 @@ import {
   peerBotStandsDownAtChannel,
   botEngagedInScope,
   isMeshLine,
+  isWantLine,
+  isFrontierLine,
   extractKeywords,
   type RetrievalCandidate,
   type RecapSource,
@@ -1025,6 +1027,14 @@ export class AgentHost {
     // the peer (provenance) and rejects anything outside the coordination allowlist.
     if (this.mesh && isMeshLine(m.text)) {
       await this.mesh.ingest(m.text, m.authorId)
+      return
+    }
+
+    // Phase 2 anti-entropy control lines (⟦kk-want⟧ / ⟦kk-frontier⟧) — backfill negotiation,
+    // never a chat turn. Only meaningful on a configured transport channel (handleControl
+    // no-ops otherwise). Like ingest above, returns before any engagement gating.
+    if (this.mesh && (isWantLine(m.text) || isFrontierLine(m.text))) {
+      await this.mesh.handleControl(m.text, m.authorId)
       return
     }
 

@@ -293,6 +293,16 @@ enough that the gap is larger than the window — or the platform aged the messa
 relay logs a loud warning that the replay *may not* have covered everything, rather than
 quietly pretending it caught up.
 
+For those rarer gaps that outlast the window, a relay can ask for exactly the pieces it's
+missing: when it notices an entry that refers to one it doesn't have, it posts a small
+"I'm missing these" request on the transport channel, and any peer that holds them re-posts
+them (the original author's identity first, so the pieces can be trusted). Peers also
+occasionally post a short summary of what they have so a lagging relay can notice the gap on
+its own. This back-and-forth only happens on a configured transport channel — never in a
+human room — and a peer only ever serves up entries for projects the asker already works on,
+so one project can't fish for another's history. Holders hold back if they see someone else
+already answered, so a request gets about one reply, not a pile-up.
+
 When you *do* have a shared Postgres, knock-knock uses that instead — it's strictly
 better (a real shared source of truth). The no-server mode is for when you'd rather not
 run one.
