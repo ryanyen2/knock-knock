@@ -73,6 +73,29 @@ export type Capabilities = {
   files?: { inbound: boolean; outbound: boolean; maxBytes: number }
 }
 
+/** What a platform supports for discovery-driven onboarding (the gap-resolver's fill
+ *  ladder). Declared per adapter and branched on by capability, never platform name —
+ *  same discipline as `Capabilities`. A declared capability is the STATIC claim; an
+ *  actual enumeration/creation call may still degrade at runtime (a revoked Discord
+ *  privileged intent, Telegram privacy mode), which the duck-typed calls surface as a
+ *  three-valued outcome — the descriptor alone cannot tell "no members" from "not
+ *  allowed to see members". */
+export type DiscoveryCapabilities = {
+  /** Self bot-ID is derivable on every platform (resolved on connect), so this is always
+   *  true; carried for fidelity to the capability matrix and so the resolver never prompts it. */
+  selfId: boolean
+  /** Can enumerate the channels/conversations this bot can see (Discord guild channels,
+   *  Slack `conversations.list`). False ⇒ channel binding is captured/entered manually. */
+  channelEnumeration: boolean
+  /** Can enumerate a channel's members (Discord guild members [privileged intent], Slack
+   *  `conversations.members`, GitHub repo collaborators, Notion users). False ⇒ collaborators
+   *  and owner-ID fall through to manual / nonce capture. */
+  memberEnumeration: boolean
+  /** Can create a new channel for mesh transport (Discord/Slack). False ⇒ the resolver guides
+   *  the owner to designate an existing channel rather than auto-create one. */
+  channelCreation: boolean
+}
+
 /** A file on an inbound message. All fields uploader-controlled and untrusted. `url` fetches bytes (may be signed/expiring/auth'd); `ref` is an opaque handle when the URL isn't enough. */
 export type IncomingAttachment = {
   name: string
@@ -183,6 +206,10 @@ export interface MessagingAdapter {
    *  `@cc` resolves to the bot's managed role, not its user. Absent ⇒ no role concept. */
   readonly botRoleIds?: string[] | undefined
   capabilities(): Capabilities
+  /** Static discovery-capability claim for the gap-resolver's fill ladder. Readable
+   *  WITHOUT connecting (a pure declaration, like `capabilities()`); the resolver uses it
+   *  to pick a need's fill rung before any network call. */
+  discoveryCapabilities(): DiscoveryCapabilities
 
   // ─── inbound (host registers handlers; adapter normalizes platform events) ──
   onMessage(handler: (m: IncomingMessage) => void): void

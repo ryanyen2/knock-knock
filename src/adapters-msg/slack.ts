@@ -25,6 +25,7 @@ import { WebClient } from '@slack/web-api'
 import type {
   MessagingAdapter,
   Capabilities,
+  DiscoveryCapabilities,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -143,6 +144,12 @@ export class SlackMessagingAdapter implements MessagingAdapter {
 
   get botLabel(): string | undefined {
     return this._botLabel
+  }
+
+  discoveryCapabilities(): DiscoveryCapabilities {
+    // conversations.list enumerates channels; conversations.members enumerates members;
+    // conversations.create makes a transport channel.
+    return { selfId: true, channelEnumeration: true, memberEnumeration: true, channelCreation: true }
   }
 
   capabilities(): Capabilities {

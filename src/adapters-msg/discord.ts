@@ -20,6 +20,7 @@ import {
 import type {
   MessagingAdapter,
   Capabilities,
+  DiscoveryCapabilities,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -169,6 +170,13 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
   /** The bot's display label (`name#1234`) once connected. */
   get botLabel(): string | undefined {
     return this._botLabel
+  }
+
+  discoveryCapabilities(): DiscoveryCapabilities {
+    // Guild channels and members are both enumerable (members need the privileged
+    // guild-members intent — if it's been revoked the runtime call degrades), and the
+    // bot can create a channel for transport.
+    return { selfId: true, channelEnumeration: true, memberEnumeration: true, channelCreation: true }
   }
 
   capabilities(): Capabilities {
