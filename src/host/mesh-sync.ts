@@ -75,6 +75,14 @@ export class MeshSync {
   /** The last identity line this bot published — re-sent by the heartbeat. */
   private ownIdentityLine?: string
 
+  // ─── Phase 0 instrumentation (miss classification) ───────────────────────────
+  /** Publishes that failed while we were connected — a live drop the chat platform
+   *  rejected/rate-limited, NOT an offline gap. If this dominates, replay won't help. */
+  private onlineDrops = 0
+  /** Ingested events whose `caused_by` referenced a hash we don't hold — the metric that
+   *  tells you whether gaps survive Phase 1b, and Phase 2's backfill trigger signal. */
+  private gapsDetected = 0
+
   constructor(private readonly deps: MeshSyncDeps) {}
 
   /** Begin publishing locally-authored coordination events. Call AFTER connect (so
@@ -109,7 +117,10 @@ export class MeshSync {
   }
 
   /** Ingest a peer's coordination line into the local ledger (or ignore a non-mesh
-   *  or invalid line). Returns true iff a valid event was appended/seen. */
+   *  or invalid line). Returns true iff a valid event was NEWLY appended (false if it
+   *  was dropped, unverifiable, foreign-channel, or already held — content-addressed,
+   *  so a re-delivery is a no-op). The newly-appended signal is what `reconcileOnConnect`
+   *  sums into its "ingested M new" count. */
   async ingest(text: string, senderUserId: string): Promise<boolean> {
     if (!isMeshLine(text)) return false
     const i = decodeMeshEvent(text, senderUserId, this.deps.directory())
@@ -117,14 +128,48 @@ export class MeshSync {
       this.deps.log(`mesh: dropped an unverifiable coordination line from ${senderUserId}`)
       return false
     }
+    // Phase 1a — scope isolation. A relay's ledger must only ever hold channels it serves.
+    // Without this, a dedicated transport channel that multiplexes several projects' events
+    // makes every relay fold every other project's coordination state (cross-channel
+    // pollution), and history replay amplifies it from a trickle to a full flood. Identity
+    // beacons (channel `agent-directory`) are exempt: they carry no turn and MUST always be
+    // ingested so the directory converges and provenance for coordination verbs can resolve.
+    if (i.channel !== 'agent-directory' && !this.deps.resolveRoom(i.channel)) {
+      this.dbg(`dropped foreign-channel ${i.verb} for ${i.channel}`)
+      return false
+    }
+    // Phase 0 — causal-gap detection. A `caused_by` parent we don't hold is an event we
+    // missed; counting it is the empirical signal for whether gaps survive Phase 1b, and the
+    // trigger Phase 2's backfill responder acts on. (Counter now; responder is Phase 2.)
+    await this.detectGap(i)
+    let inserted: boolean
     try {
-      await this.deps.store.append(i) // verbatim createdAt; content-addressed ⇒ idempotent
+      const r = await this.deps.store.append(i) // verbatim createdAt; content-addressed ⇒ idempotent
+      inserted = r.inserted
     } catch (err) {
       this.deps.log(`mesh: ingest append failed: ${err}`)
       return false
     }
-    this.dbg(`✓ ingested ${i.verb} from ${senderUserId} (actor=${i.actor})`)
-    return true
+    this.dbg(`✓ ingested ${i.verb} from ${senderUserId} (actor=${i.actor}, new=${inserted})`)
+    return inserted
+  }
+
+  /** Count + log any `caused_by` parent this relay does not hold locally. Pure metric in
+   *  Phase 0; Phase 2 reuses the same missing-hash set to emit a backfill Want. */
+  private async detectGap(i: Interaction): Promise<string[]> {
+    if (i.caused_by.length === 0) return []
+    const missing: string[] = []
+    for (const parent of i.caused_by) {
+      if (!(await this.deps.store.getByHash(parent))) missing.push(parent)
+    }
+    if (missing.length > 0) {
+      this.gapsDetected += missing.length
+      this.dbg(
+        `gap-detected: ${i.verb} (${i.channel}) references ${missing.length} unheld parent(s) ` +
+          `[${missing.map(h => h.slice(0, 8)).join(', ')}] (gaps=${this.gapsDetected})`,
+      )
+    }
+    return missing
   }
 
   /** Verbose mesh tracing, gated on KNOCK_KNOCK_DEBUG. Routed through the host UI (deps.log)
@@ -201,7 +246,12 @@ export class MeshSync {
       const ref = await this.deps.send(scope, line)
       if (ref) this.deps.noteBotMsg(ref.id)
     } catch (err) {
-      this.deps.log(`mesh: publish to ${scope} failed: ${err}`)
+      // Phase 0: a failed send while we're connected is an `online-drop` — the chat platform
+      // rejected/rate-limited the line, so the peer never sees it AND replay-on-reconnect
+      // can't recover it (replay only closes offline gaps). If this counter dominates,
+      // Phase 2's frontier digest — not replay — is the real fix.
+      this.onlineDrops++
+      this.deps.log(`mesh: publish to ${scope} failed [online-drop #${this.onlineDrops}]: ${err}`)
     }
   }
 }

@@ -266,6 +266,33 @@ cut is to hand-edit the channel entry in your config; a `knock-knock setup` togg
 fast-follow. Leave the flag off and behavior is exactly as described above — transport
 rides the human channel, gated by remote-peer presence.
 
+### Each relay only keeps the channels it actually serves
+
+A dedicated transport channel can carry lines for *several* projects at once — relay A
+works on project H1 and H2, relay B only on H1, and both share the one transport channel.
+When a line arrives, a relay now checks whether it serves that line's channel before
+folding it in: a note for H2 arriving at relay B (which doesn't serve H2) is **dropped on
+the spot**, so B's notebook never fills with another project's coordination. Discovery
+beacons (how bots find each other) are the one exception — those are always kept, because
+that's how a relay learns a peer exists in the first place. (This is also why reading the
+channel back on reconnect — below — is safe: a relay can replay a busy shared channel
+without inheriting projects it has no business tracking.)
+
+### Catching up on what you missed while you were away
+
+The chat channel the bots share is itself a durable log — the platform keeps the messages
+even while a bot is offline. So when a relay reconnects, it reads the recent history of its
+channels back and re-ingests any coordination lines it missed while it was down. Because
+the notebook is content-addressed, replaying a line a relay already has is a harmless no-op,
+and lines it missed simply fill in — the two relays' notebooks converge again with no new
+message sent. Identity beacons are replayed first so the coordination lines that depend on
+them (a note is only trusted once its author is known) aren't dropped.
+
+This window is bounded (the most recent couple hundred lines). If a relay was offline long
+enough that the gap is larger than the window — or the platform aged the messages out — the
+relay logs a loud warning that the replay *may not* have covered everything, rather than
+quietly pretending it caught up.
+
 When you *do* have a shared Postgres, knock-knock uses that instead — it's strictly
 better (a real shared source of truth). The no-server mode is for when you'd rather not
 run one.

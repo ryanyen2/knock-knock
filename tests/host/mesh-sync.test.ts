@@ -23,7 +23,7 @@ import {
   type AgentDirectoryFoldState,
 } from '../../src/ledger/concepts/agent-directory.ts'
 import { coordArtifact } from '../../src/ledger/concepts/coordination-board.ts'
-import { isMeshLine } from '../../src/lib.ts'
+import { isMeshLine, encodeMeshEvent } from '../../src/lib.ts'
 
 const ROOM: ChannelId = 'room1'
 const TRANSPORT: ChannelId = 'transport1'
@@ -45,17 +45,21 @@ function identityInRooms(key: string, userId: string, rooms: ChannelId[]) {
   return { ...identity(key, userId), patch: { kind: 'identity' as const, data: { agentKey: key, platform: 'discord', userId, rooms } } }
 }
 
-function coordNote(key: string) {
+function coordNote(key: string, channel: ChannelId = ROOM) {
   return {
-    actor: key, role: 'agent' as Role, channel: ROOM,
-    target: { artifactId: coordArtifact(ROOM), anchor: { kind: 'none' as const } },
+    actor: key, role: 'agent' as Role, channel,
+    target: { artifactId: coordArtifact(channel), anchor: { kind: 'none' as const } },
     verb: 'coord.note' as const,
     patch: { kind: 'coord' as const, note: { type: 'designation' as const, agentKey: key, ref: 'msgX' } },
     effect: 'pure' as const, caused_by: [] as string[],
   }
 }
 
-async function harness(coResident: string[], transportScope?: string) {
+async function harness(
+  coResident: string[],
+  transportScope?: string,
+  resolveRoom: (scope: string) => string | undefined = () => ROOM,
+) {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
   await engine.register(agentDirectoryFold)
@@ -65,7 +69,7 @@ async function harness(coResident: string[], transportScope?: string) {
     ownKey: 'cc',
     directory: () => directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD)),
     coResidentKeys: () => new Set(coResident),
-    resolveRoom: () => ROOM,
+    resolveRoom,
     allRooms: () => [ROOM],
     ...(transportScope ? { transportScope: () => transportScope } : {}),
     send: async (scope, text) => { sent.push({ scope, text }); return { id: `m${sent.length}`, scope } },
@@ -74,6 +78,20 @@ async function harness(coResident: string[], transportScope?: string) {
   })
   mesh.start()
   return { store, engine, sent, mesh }
+}
+
+/** Author an interaction on a SEPARATE sender store and return its wire line — mirrors a
+ *  peer relay encoding a locally-authored event for the channel. The sender's userId is the
+ *  provenance the receiver checks, so ingest must be called with the same `senderUserId`. */
+async function wireLineFrom(proposal: Parameters<typeof admit>[1]): Promise<string> {
+  const sender = new SqliteStore(':memory:')
+  try {
+    const r = await admit(sender, proposal)
+    if (r.kind !== 'admitted') throw new Error(`could not author wire line: ${r.kind}`)
+    return encodeMeshEvent(r.interaction)
+  } finally {
+    sender.close()
+  }
 }
 
 /** Admit an identity AND announce it over the mesh, mirroring what AgentHost.publishIdentity
@@ -158,5 +176,39 @@ test('identity beacon is announced on every connect, even when the admit is idem
   const r2 = await admit(store, identity('cc', 'U_cc')) // reconnect: still idempotent
   if (r2.kind === 'admitted') await mesh.announceIdentity(r2.interaction)
   expect(sent.filter(s => isMeshLine(s.text)).length).toBe(2) // and again on the next connect
+  store.close()
+})
+
+// ─── Phase 1a: scope-isolated ingest (no cross-channel / cross-project pollution) ───────
+
+const H2: ChannelId = 'h2-other-project'
+
+test('ingest drops a foreign-channel coordination event but keeps a served-channel one', async () => {
+  // cc serves ROOM only; H2 is another project sharing the same transport channel.
+  const { store, mesh } = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined))
+  // eve is a real peer; its identity beacon (agent-directory) must always be ingested so
+  // provenance for its coordination resolves — even though cc doesn't "serve" agent-directory.
+  expect(await mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev')).toBe(true)
+
+  // A coord.note on H2 (a project cc does NOT serve) rides the shared transport channel and
+  // must be DROPPED — folding it would pollute cc's ledger with another project's state.
+  const foreign = await mesh.ingest(await wireLineFrom(coordNote('eve', H2)), 'U_ev')
+  expect(foreign).toBe(false)
+  expect(await store.listByChannel(H2)).toHaveLength(0)
+
+  // A coord.note on ROOM (which cc serves) is ingested normally.
+  const served = await mesh.ingest(await wireLineFrom(coordNote('eve', ROOM)), 'U_ev')
+  expect(served).toBe(true)
+  expect(await store.listByChannel(ROOM)).toHaveLength(1)
+  store.close()
+})
+
+test('ingest always keeps an agent.identity beacon, even though agent-directory is not a served room', async () => {
+  // resolveRoom returns undefined for everything — the only thing that survives is the
+  // agent-directory exemption. Without it, a relay could never learn about peers.
+  const { store, mesh } = await harness(['cc'], TRANSPORT, () => undefined)
+  const ok = await mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev')
+  expect(ok).toBe(true)
+  expect(await store.listByChannel('agent-directory')).toHaveLength(1)
   store.close()
 })
