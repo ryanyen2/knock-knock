@@ -7,13 +7,22 @@
 import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
-import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
+import {
+  STATE_DIR,
+  readAccessFile,
+  readSettings,
+  readAuthoringAccess,
+  readTrustAnchors,
+  appendPending,
+  reconcilePending,
+} from './state.ts'
 import {
   resolveLedgerConfig,
   responderElection,
   addressedAgentKeys,
   selectActorHost,
   declaresPeerCollaborators,
+  discoveryProposals,
 } from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
@@ -678,6 +687,36 @@ const reconcileTasks = async () => {
 }
 const taskReconcileTimer = setInterval(() => void reconcileTasks(), TASK_RECONCILE_MS)
 ;(taskReconcileTimer as unknown as { unref?: () => void }).unref?.()
+
+// ─── Discovery proposals (propose-only; KTD5) ─────────────────────────────────
+// The relay alone holds the live cross-machine directory, so it is the sole writer of
+// pending.json: each pass records claimed/unverified remote peers + just-in-time transport the
+// owner hasn't confirmed yet, then reconciles away ones now confirmed and stamps a lastScanAt
+// heartbeat (so `kk doctor` can tell "relay offline" from "no peers"). It NEVER writes access.json
+// and adds no beacon. Only meaningful when mesh is on (a single-machine relay has no remote peers).
+if (meshEnabled) {
+  const DISCOVERY_PASS_MS = 30_000
+  const runDiscoveryPass = (): void => {
+    try {
+      const directory = directoryFor(engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
+      const coRes = new Set(hosts.map(h => h.botKey))
+      const authoring = readAuthoringAccess()
+      const tombstones = readTrustAnchors().tombstones
+      const now = new Date().toISOString()
+      // Read access first, append only un-confirmed/un-tombstoned, then reconcile — so a peer
+      // confirmed during the pass is never left as a transient confirmed+proposed duplicate.
+      for (const prop of discoveryProposals(directory, coRes, authoring, tombstones, now)) appendPending(prop)
+      reconcilePending(now)
+    } catch (err) {
+      process.stderr.write(`relay: discovery pass: ${err}\n`)
+    }
+  }
+  const discoveryTimer = setInterval(runDiscoveryPass, DISCOVERY_PASS_MS)
+  ;(discoveryTimer as unknown as { unref?: () => void }).unref?.()
+  // Run once shortly after boot so a fresh peer surfaces without waiting a full interval.
+  const discoveryKickoff = setTimeout(runDiscoveryPass, 5_000)
+  ;(discoveryKickoff as unknown as { unref?: () => void }).unref?.()
+}
 
 // WatchSupervisor — owns the OS processes behind armed watches and admits a
 // watch.fired when an output gate matches. Reconciles against the watch fold,

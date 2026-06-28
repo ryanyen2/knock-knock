@@ -100,6 +100,27 @@ test('trust anchors survive a save/read round-trip and are terminal-owned', () =
   expect(readTrustAnchors().tombstones).toHaveLength(1)
 })
 
+test('U9: a relay discovery pass (append + reconcile) records proposals without touching access.json', () => {
+  // Seed a confirming access.json the relay must NOT overwrite.
+  const a = defaultAuthoringAccess()
+  a.bots.cc = { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' }
+  saveAuthoringAccess(a)
+  const accessBefore = require('fs').readFileSync(ACCESS_FILE, 'utf8')
+
+  appendPending(prop({ kind: 'peer', targetId: 'U_remote', claimed: { agentKey: 'rk', userId: 'U_remote' } }))
+  reconcilePending('2026-06-28T00:00:00.000Z')
+  expect(readPending().proposals.map(p => p.targetId)).toEqual(['U_remote'])
+  // access.json is byte-for-byte unchanged — the relay is not its writer.
+  expect(require('fs').readFileSync(ACCESS_FILE, 'utf8')).toBe(accessBefore)
+
+  // Once the owner confirms the peer into the roster, the next reconcile drops it.
+  const a2 = readAuthoringAccess()
+  a2.roster.peers.remote = { platform: 'discord', userId: 'U_remote', blurb: 'b', agentKey: 'rk' }
+  saveAuthoringAccess(a2)
+  reconcilePending('2026-06-28T00:05:00.000Z')
+  expect(readPending().proposals).toHaveLength(0)
+})
+
 test('parseAuthoringAccess preserves trust across a raw read (not stripped)', () => {
   writeFileSync(
     ACCESS_FILE,

@@ -814,6 +814,67 @@ export function confirmedIdentitiesFor(a: AuthoringAccess, platform: Platform): 
   }
 }
 
+/** The discovery proposals a relay pass should record (R18/F5). For each REMOTE directory peer
+ *  (agent-key NOT hosted locally) that is neither already confirmed in the roster nor tombstoned,
+ *  emit a claimed/unverified 'peer' proposal anchored to a channel both serve. When a confirmed
+ *  cross-machine peer is rostered as a collaborator but no mesh-transport channel exists, emit a
+ *  per-platform 'transport' proposal so the owner sets one up before ⟦kk-mesh⟧ traffic posts to a
+ *  human room (AE5). Co-resident siblings are auto-heard (the U7 gate) and never proposed. Pure —
+ *  the relay does the I/O, dedupe, and tombstone-suppression via appendPending. */
+export function discoveryProposals(
+  directory: ReadonlyArray<AgentIdentity>,
+  coResidentKeys: ReadonlySet<string>,
+  authoring: AuthoringAccess,
+  tombstones: ReadonlyArray<Tombstone>,
+  now: string,
+): Proposal[] {
+  const out: Proposal[] = []
+  for (const id of directory) {
+    if (!id.userId) continue
+    if (coResidentKeys.has(id.agentKey)) continue // co-resident: auto-heard, never proposed
+    const platform = id.platform as Platform
+    const alreadyConfirmed = Object.values(authoring.roster.peers).some(
+      pp => pp.platform === platform && pp.userId === id.userId,
+    )
+    if (alreadyConfirmed) continue
+    if (isTombstoned(tombstones, id.agentKey, id.userId)) continue
+    // Anchor to a channel this machine serves that the peer is also in, so confirm can attach it
+    // as a collaborator there.
+    const sharedChannelKey = Object.entries(authoring.channels).find(
+      ([, ch]) => ch.platform === platform && id.rooms.includes(ch.channelId),
+    )?.[0]
+    out.push({
+      kind: 'peer',
+      platform,
+      ...(sharedChannelKey ? { channelKey: sharedChannelKey } : {}),
+      targetId: id.userId,
+      claimed: {
+        agentKey: id.agentKey,
+        userId: id.userId,
+        ...(id.label ? { label: id.label } : {}),
+        ...(id.blurb ? { blurb: id.blurb } : {}),
+        ...(id.handle ? { handle: id.handle } : {}),
+      },
+      discoveredAt: now,
+      status: 'proposed',
+    })
+  }
+  // JIT transport: a confirmed cross-machine peer (rostered as a collaborator) exists, but no
+  // channel is flagged meshTransport → propose designating one, once per affected platform.
+  const hasTransport = Object.values(authoring.channels).some(ch => ch.meshTransport)
+  if (!hasTransport) {
+    const peerPlatforms = new Set(
+      Object.values(authoring.channels)
+        .filter(ch => ch.collaborators.some(c => c.kind === 'peer'))
+        .map(ch => ch.platform),
+    )
+    for (const platform of peerPlatforms) {
+      out.push({ kind: 'transport', platform, targetId: platform, claimed: {}, discoveredAt: now, status: 'proposed' })
+    }
+  }
+  return out
+}
+
 // ─── Confirmation: apply a reviewed proposal, nonce capture, drift (pure; U8) ─
 // The terminal is the sole writer of decisions. These pure helpers are the confirm flow's core:
 // turn a confirmed proposal into the AuthoringAccess mutation, resolve an owner-ID nonce capture,

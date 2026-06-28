@@ -1515,8 +1515,20 @@ async function confirmPendingDiscoveries(a: AuthoringAccess): Promise<void> {
     if (prop.kind === 'peer' || prop.kind === 'collaborator') {
       a = await confirmDiscoveredPeer(a, prop)
     } else if (prop.kind === 'transport') {
-      const ok = orCancel(await p.confirm({ message: `Designate ${color.cyan(`#${prop.targetId}`)} as the mesh-transport channel?`, initialValue: true }))
-      if (ok && prop.channelKey) { a = applyConfirmedProposal(a, prop, undefined); saveAuthoringAccess(a) }
+      // A relay transport proposal carries the platform (targetId) but no channel yet — the owner
+      // designates one now, before ⟦kk-mesh⟧ traffic would post to a human room (R19/AE5).
+      const platform = prop.platform
+      p.log.message(color.yellow('A cross-machine peer is configured but no transport channel exists.\n') +
+        color.dim('⟦kk-mesh⟧ coordination traffic is posting to your human rooms until you set one.'))
+      const designate = orCancel(await p.confirm({ message: 'Designate a dedicated mesh-transport channel now?', initialValue: true }))
+      if (designate) {
+        const id = orCancel(await p.text({ message: 'Channel id to use as transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
+        const ck = channelKey(platform, id)
+        a.channels[ck] = a.channels[ck] ?? { platform, channelId: id, members: [], collaborators: [] }
+        a.channels[ck]!.meshTransport = true
+        saveAuthoringAccess(a)
+        p.log.success(`Designated ${color.cyan(`#${id}`)} as mesh transport. Add the SAME channel on every machine, then restart the relay.`)
+      }
     }
   }
   // Drop every now-handled proposal from pending (relay re-reconciles on its next pass too).
