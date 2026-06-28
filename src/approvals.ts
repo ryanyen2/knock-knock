@@ -71,12 +71,12 @@ export class Approvals {
     ]
 
     // Post the prompt in the task's own channel so it lives where the work is (not a DM).
-    // The approver is pinged via `mentionOnly` so any `<@id>` in the input preview can't
-    // re-trigger a peer bot. Anyone can see it; only the approver's click resolves it
-    // (enforced in resolve()/resolveReaction()).
+    // `mentionUser` pings the approver so they're notified the moment it's posted; `mentionOnly`
+    // whitelists ONLY them, so any `<@id>` in the input preview can't re-trigger a peer bot.
+    // Anyone can see it; only the approver's click resolves it (enforced in resolve()/resolveReaction()).
     const ref = await this.messaging.send(opts.channelId, body, {
       choices,
-      ...(approverId ? { mentionOnly: approverId } : {}),
+      ...(approverId ? { mentionUser: approverId, mentionOnly: approverId } : {}),
     })
     if (!ref) {
       // Can't reach the channel — emit a `tool.denied` so the awaiter resolves.
@@ -110,7 +110,9 @@ export class Approvals {
     const agent = this.getAgent()
     const approverId = approverForAgent(agent, posted.originChannelId)
     if (!approverId || action.userId !== approverId) {
-      await action.respond('Not authorized.', { ephemeral: true })
+      // Only the bot's owner/approver can decide. Warn the clicker (ephemeral); the owner
+      // was already pinged on the prompt itself, so no re-ping here.
+      await action.respond('⚠️ Only this bot’s owner can approve or deny this request.', { ephemeral: true })
       return
     }
 
@@ -132,6 +134,8 @@ export class Approvals {
     if (!posted) return
     const agent = this.getAgent()
     const approverId = approverForAgent(agent, posted.originChannelId)
+    // Non-owner reaction: ignore silently — a reaction has no ephemeral reply channel to
+    // surface a warning (unlike a button click, which warns in resolve()).
     if (!approverId || userId !== approverId) return
 
     const label = emoji === '✅' ? '✅ Allowed' : '❌ Denied'
