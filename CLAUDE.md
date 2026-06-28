@@ -18,6 +18,10 @@ Before writing anything:
 
 - Look at the test files. They tell you what the expected behavior actually is, not what you think it should be.
 
+- Check `docs/solutions/` for documented solutions to past problems (bugs, integration issues, conventions), organized by category with YAML frontmatter (`module`, `tags`, `problem_type`). Relevant when implementing or debugging in an area someone already worked through.
+
+- Skim `CONCEPTS.md` (repo root) for the project's shared domain vocabulary — the words that carry a specific meaning here. Useful when orienting or discussing domain concepts.
+
 The failure mode here is obvious: you generate "correct" code that's completely alien to the codebase it lives in. It works but looks like a different person wrote it (because a different entity did). The human then has to either rewrite it to match the project style or live with inconsistent forever. Both are bad.
 
 If you're not sure how something is done in this project, say so. "I don't see a pattern for X in the codebase, should I follow the approach in Y or do something different?" It's always better than guessing.
