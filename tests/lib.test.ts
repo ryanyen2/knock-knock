@@ -50,6 +50,7 @@ import {
   looksLikeSecret,
   formatAttachedFilesBlock,
   parseShareCommand,
+  stripLeadingSelfMention,
   FILE_INGEST_LIMITS,
   channelKey,
   projectToRuntime,
@@ -1081,6 +1082,20 @@ test('parseShareCommand: parses the relpath, strips quotes, rejects non-commands
   expect(parseShareCommand('!share   ')).toBeNull()
   expect(parseShareCommand('share session')).toBeNull()
   expect(parseShareCommand('hello')).toBeNull()
+})
+
+test('stripLeadingSelfMention: removes a leading self/role mention so @bot !share x matches', () => {
+  // Slack and Discord mention forms for THIS bot are stripped.
+  expect(stripLeadingSelfMention('<@U_BOT> !share README.md', 'U_BOT')).toBe('!share README.md')
+  expect(stripLeadingSelfMention('<@123> !config require-mention on', '123')).toBe('!config require-mention on')
+  expect(stripLeadingSelfMention('<@!123> !stop', '123')).toBe('!stop') // Discord nickname mention
+  expect(stripLeadingSelfMention('<@U_BOT|ryans-bot> !share x', 'U_BOT')).toBe('!share x') // Slack labeled
+  expect(stripLeadingSelfMention('<@&ROLE1> !watch', undefined, ['ROLE1'])).toBe('!watch') // role mention
+  // A mention of someone ELSE is left in place (don't hijack a peer handoff).
+  expect(stripLeadingSelfMention('<@OTHER> !share x', 'U_BOT')).toBe('<@OTHER> !share x')
+  // No leading mention, or no ids known → unchanged.
+  expect(stripLeadingSelfMention('!share x', 'U_BOT')).toBe('!share x')
+  expect(stripLeadingSelfMention('<@U_BOT> hi')).toBe('<@U_BOT> hi')
 })
 
 // ─── Coordination: turn-taking eligibility + claim keys (U1) ───────────────────

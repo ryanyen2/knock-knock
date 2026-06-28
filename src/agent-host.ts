@@ -65,6 +65,7 @@ import {
   type RecapSource,
   formatAttachedFilesBlock,
   parseShareCommand,
+  stripLeadingSelfMention,
   looksLikeSecret,
   classifyTool,
   applyModeToProfile,
@@ -1238,11 +1239,17 @@ export class AgentHost {
     // Owner control commands act at the scope they're TYPED in and never spawn a thread.
     const controlScope = m.isThread ? m.scope : roomId
 
+    // Command text with a leading self-mention removed, so `@bot !share x` matches the
+    // `!`-command checks below (on Slack the bot is usually addressed with an @mention, so
+    // the raw text starts with `<@id>` not `!`). Used ONLY for owner-command dispatch; the
+    // admitted turn prompt still uses the original m.text.
+    const controlText = stripLeadingSelfMention(m.text, botId, this.messaging.botRoleIds).trim()
+
     // Owner share/resume-session — short-circuit before any admit. NOT admitted as a
     // channel.message, so the agent is never prompted with it (prompt-injection invariant).
-    if (kind === 'owner' && (isShareSessionCommand(m.text) || isResumeSessionCommand(m.text))) {
+    if (kind === 'owner' && (isShareSessionCommand(controlText) || isResumeSessionCommand(controlText))) {
       this.scopeToRoom.set(controlScope, roomId)
-      const mode = isResumeSessionCommand(m.text) ? 'resume' : 'import'
+      const mode = isResumeSessionCommand(controlText) ? 'resume' : 'import'
       await this.sessionSharing.offer(controlScope, mode).catch(e =>
         this.ui.error(this.key, `offer session ${mode}: ${e}`),
       )
@@ -1251,9 +1258,9 @@ export class AgentHost {
 
     // Owner watch control (!watch / !unwatch) — short-circuit before admit. NOT
     // admitted, so a watch can't be armed by a peer talking (prompt-injection invariant).
-    if (kind === 'owner' && (m.text.startsWith('!watch') || m.text.startsWith('!unwatch'))) {
+    if (kind === 'owner' && (controlText.startsWith('!watch') || controlText.startsWith('!unwatch'))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.watchControl.handleCommand(controlScope, m.text).catch(e =>
+      await this.watchControl.handleCommand(controlScope, controlText).catch(e =>
         this.ui.error(this.key, `watch command: ${e}`),
       )
       return
@@ -1262,9 +1269,9 @@ export class AgentHost {
     // Owner per-channel config (!config) — short-circuit before any admit. NOT admitted,
     // so a peer/injection can't reach the config write path. Tunes the behavioral
     // overlay only — identity/allowlist/permissions stay terminal-managed.
-    if (kind === 'owner' && (m.text === '!config' || m.text.startsWith('!config '))) {
+    if (kind === 'owner' && (controlText === '!config' || controlText.startsWith('!config '))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.channelConfig.handleCommand(controlScope, m.text).catch(e =>
+      await this.channelConfig.handleCommand(controlScope, controlText).catch(e =>
         this.ui.error(this.key, `config command: ${e}`),
       )
       return
@@ -1272,9 +1279,9 @@ export class AgentHost {
 
     // Owner per-thread context surface (!context) — short-circuit before admit. NOT
     // admitted, so a peer can't curate context. View/add/remove shared-context notes.
-    if (kind === 'owner' && (m.text === '!context' || m.text.startsWith('!context '))) {
+    if (kind === 'owner' && (controlText === '!context' || controlText.startsWith('!context '))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.contextControl.handleCommand(controlScope, m.text).catch(e =>
+      await this.contextControl.handleCommand(controlScope, controlText).catch(e =>
         this.ui.error(this.key, `context command: ${e}`),
       )
       return
@@ -1283,9 +1290,9 @@ export class AgentHost {
     // Owner file share (!share <relpath>) — short-circuit before any admit. The owner
     // curates what leaves the machine (the consent); the share-file sync still refuses
     // a credential path/content (secret floor holds even for the owner).
-    if (kind === 'owner' && (m.text === '!share' || m.text.startsWith('!share '))) {
+    if (kind === 'owner' && (controlText === '!share' || controlText.startsWith('!share '))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.handleShareCommand(controlScope, m.text, m.authorId).catch(e =>
+      await this.handleShareCommand(controlScope, controlText, m.authorId).catch(e =>
         this.ui.error(this.key, `share command: ${e}`),
       )
       return
@@ -1293,9 +1300,9 @@ export class AgentHost {
 
     // Owner task delegation (!delegate) — short-circuit before any admit. NOT admitted
     // as a channel.message, so only the owner (never a peer/injection) can seed tasks.
-    if (kind === 'owner' && (m.text === '!delegate' || m.text.startsWith('!delegate'))) {
+    if (kind === 'owner' && (controlText === '!delegate' || controlText.startsWith('!delegate'))) {
       this.scopeToRoom.set(controlScope, roomId)
-      await this.handleDelegateCommand(controlScope, m.text).catch(e =>
+      await this.handleDelegateCommand(controlScope, controlText).catch(e =>
         this.ui.error(this.key, `delegate command: ${e}`),
       )
       return
@@ -1305,7 +1312,7 @@ export class AgentHost {
     // reactions, so stop/retry/rewind/checkpoint work where reactions are absent or
     // restricted (GitHub, Notion). Owner-gated + short-circuited before admit, like the
     // commands above. They act in the scope they're typed in (a thread for a task).
-    const control = m.text.trim()
+    const control = controlText
     if (kind === 'owner' && control === '!stop') {
       this.scopeToRoom.set(controlScope, roomId)
       await this.handleStop(controlScope, m.authorId).catch(e => this.ui.error(this.key, `stop command: ${e}`))

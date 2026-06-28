@@ -3246,6 +3246,21 @@ export function withinBudget(
   return { ok: true }
 }
 
+/** Strip a single leading self-mention from `text` so an owner control command works when
+ *  the bot was @mentioned (`<@bot> !share x` → `!share x`). Handles Discord `<@id>` / `<@!id>`
+ *  / role `<@&roleId>` and Slack `<@U…>` / `<@U…|name>`; only removes the FIRST token, and
+ *  only when its id matches `botId` or a `roleId` (a mention of someone else is left in
+ *  place). Returns `text` unchanged when there's no leading self-mention. Pure. */
+export function stripLeadingSelfMention(text: string, botId?: string, roleIds?: string[]): string {
+  const ids = new Set([botId, ...(roleIds ?? [])].filter(Boolean) as string[])
+  if (ids.size === 0) return text
+  // `<@id>` / `<@!id>` / `<@&roleId>`, with an optional Slack `|label`. Capture the id up to
+  // the label separator or close bracket so any platform id shape (Slack alnum, Discord digits) works.
+  const m = /^\s*<@[!&]?([^|>\s]+)(?:\|[^>]*)?>\s*/.exec(text)
+  if (!m) return text
+  return ids.has(m[1]!) ? text.slice(m[0].length) : text
+}
+
 /** Parse an owner `!share <relpath>` into the relative path, or null. Path taken
  *  verbatim; containment + secret floor are enforced downstream. Pure. */
 export function parseShareCommand(text: string): { relpath: string } | null {
