@@ -33,6 +33,9 @@ export type RoomConfig = {
   profile?: RoomProfile
   /** The coding agent driving this bot in THIS channel; falls back to the agent's default. */
   runtime?: string
+  /** This channel is the bots' dedicated mesh-transport channel: the mesh posts ⟦kk-mesh⟧
+   *  lines here, and it never carries chat or tasks. */
+  meshTransport?: boolean
 }
 
 /** A single coding-agent identity. */
@@ -125,6 +128,10 @@ export type Channel = {
   collaborators: Collaborator[] // humans + peer bots, by roster id
   requireMention?: boolean
   approvalActorId?: string // override; defaults to the owner of the bot
+  /** This channel is the bots' dedicated mesh-transport channel: the mesh posts ⟦kk-mesh⟧
+   *  lines here, and it never carries chat or tasks. Channel-wide — applies to every bot
+   *  that joins it. */
+  meshTransport?: boolean
 }
 
 /** The normalized, channel-centric config written ONLY by setup.ts (prompt-injection
@@ -203,6 +210,7 @@ export function projectToRuntime(a: AuthoringAccess): Access {
         workspace: membership.workspace,
         ...(membership.profile ? { profile: membership.profile } : {}),
         ...(membership.runtime ? { runtime: membership.runtime } : {}),
+        ...(ch.meshTransport ? { meshTransport: true } : {}),
       }
     }
 

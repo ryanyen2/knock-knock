@@ -351,6 +351,7 @@ export class AgentHost {
         coResidentKeys: () => this.coResidentKeys(),
         resolveRoom: scope => this.roomForScope(scope),
         allRooms: () => Object.keys((this.getAccess().agents[this.key] ?? this.agent).rooms),
+        transportScope: () => this.meshTransportRoom(),
         send: (scope, text) => this.messaging.send(scope, text),
         noteBotMsg: id => this.noteBotMsg(id),
         log: msg => this.ui.note(this.key, msg),
@@ -474,6 +475,16 @@ export class AgentHost {
     return roomId
   }
 
+  /** The room this bot serves that is marked as the dedicated mesh-transport channel, or
+   *  undefined when none is configured. The mesh posts ALL ⟦kk-mesh⟧ lines here, and both
+   *  receive guards treat it as transport-only (never a chat/task turn). Undefined ⇒ the
+   *  legacy behavior: transport rides the human rooms. */
+  private meshTransportRoom(): string | undefined {
+    const rooms = (this.getAccess().agents[this.key] ?? this.agent).rooms
+    for (const [id, cfg] of Object.entries(rooms)) if (cfg.meshTransport) return id
+    return undefined
+  }
+
   /** Async cache-warming variant of `roomForScope`: on a cold-cache miss (e.g. a
    *  synced conflict card for an unseen thread) pay the async parentOf probe once,
    *  then declare unserved. Keeps the hot sync path untouched. */
@@ -498,6 +509,9 @@ export class AgentHost {
   getAgentForChannel(scopeId: ChannelId): { agentKey: string; loopGuardOpts: LoopGuardOpts } | undefined {
     const roomId = this.roomForScope(scopeId)
     if (!roomId) return undefined
+    // The transport channel is never elected to drive a turn (reply-claim, post-on-reply,
+    // workbench, …) — it carries mesh lines only.
+    if (roomId === this.meshTransportRoom()) return undefined
     const cfg = this.channelConfigFor(scopeId)
     return {
       agentKey: this.key,
@@ -982,6 +996,11 @@ export class AgentHost {
       await this.mesh.ingest(m.text, m.authorId)
       return
     }
+
+    // The dedicated transport channel carries mesh lines ONLY (ingested just above). Any
+    // other message here — a human typing in it — dies before allowlist/mention/admit, so
+    // the transport channel never drives a turn.
+    if (roomId === this.meshTransportRoom()) return
 
     // Dedup net: drop a duplicate DELIVERY of the same message (Slack's double
     // event, poll/webhook retries, offset overlap) before it can spawn a 2nd turn.

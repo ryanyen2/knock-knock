@@ -250,6 +250,22 @@ reactions); GitHub and Notion are slower (they poll) so it degrades to a simpler
 one-bot-answers mode. And right after a teammate first joins there's a brief moment where
 two bots might both answer once, until everyone's seen everyone — it settles itself.
 
+### Keeping the tagged lines out of your human channels
+
+By default those tiny tagged lines (`⟦kk-mesh⟧…`) post to the human channel the bots
+share — fine when it's quiet, but a busy room fills with base64. To hide them, give the
+bots a **dedicated transport channel**: a real channel both relays join, marked
+`meshTransport: true`. The mesh then posts *all* its lines (discovery beacons and
+coordination notes alike) there instead of the human rooms. The transport channel is
+still tracked — its lines are read and ingested — but it never carries chat or tasks: a
+human typing in it gets no reply, and it's never elected to answer.
+
+It must be a real channel with the **same platform channel id on every machine** (the
+bots post and read by that id), and every relay must mark it `meshTransport: true`. First
+cut is to hand-edit the channel entry in your config; a `knock-knock setup` toggle is a
+fast-follow. Leave the flag off and behavior is exactly as described above — transport
+rides the human channel, gated by remote-peer presence.
+
 When you *do* have a shared Postgres, knock-knock uses that instead — it's strictly
 better (a real shared source of truth). The no-server mode is for when you'd rather not
 run one.

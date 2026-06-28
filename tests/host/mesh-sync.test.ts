@@ -26,6 +26,7 @@ import { coordArtifact } from '../../src/ledger/concepts/coordination-board.ts'
 import { isMeshLine } from '../../src/lib.ts'
 
 const ROOM: ChannelId = 'room1'
+const TRANSPORT: ChannelId = 'transport1'
 const flush = (ms = 60) => new Promise(r => setTimeout(r, ms))
 
 function identity(key: string, userId: string) {
@@ -38,6 +39,12 @@ function identity(key: string, userId: string) {
   }
 }
 
+/** Like `identity` but advertises a specific room set — mirrors a peer whose beacon lists
+ *  the dedicated transport channel (every relay puts it in its agent.rooms). */
+function identityInRooms(key: string, userId: string, rooms: ChannelId[]) {
+  return { ...identity(key, userId), patch: { kind: 'identity' as const, data: { agentKey: key, platform: 'discord', userId, rooms } } }
+}
+
 function coordNote(key: string) {
   return {
     actor: key, role: 'agent' as Role, channel: ROOM,
@@ -48,7 +55,7 @@ function coordNote(key: string) {
   }
 }
 
-async function harness(coResident: string[]) {
+async function harness(coResident: string[], transportScope?: string) {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
   await engine.register(agentDirectoryFold)
@@ -60,6 +67,7 @@ async function harness(coResident: string[]) {
     coResidentKeys: () => new Set(coResident),
     resolveRoom: () => ROOM,
     allRooms: () => [ROOM],
+    ...(transportScope ? { transportScope: () => transportScope } : {}),
     send: async (scope, text) => { sent.push({ scope, text }); return { id: `m${sent.length}`, scope } },
     noteBotMsg: () => {},
     log: () => {},
@@ -101,6 +109,36 @@ test('remote peer present: coordination events ARE broadcast', async () => {
 
   // The identity beacon AND the coordination event both go out (a real peer needs them).
   expect(sent.filter(s => isMeshLine(s.text)).length).toBeGreaterThanOrEqual(2)
+  store.close()
+})
+
+test('transport set: identity + coordination post to the transport scope, not the human room', async () => {
+  // cc is the only co-resident; eve is a remote peer whose beacon lists the transport channel.
+  const { store, sent, mesh } = await harness(['cc'], TRANSPORT)
+  await publishIdentity(store, mesh, 'cc', 'U_cc')
+  await admit(store, identityInRooms('eve', 'U_ev', [ROOM, TRANSPORT]))
+  await flush()
+  await admit(store, coordNote('cc'))
+  await flush()
+
+  const lines = sent.filter(s => isMeshLine(s.text))
+  // Both the beacon and the coordination event went out (a real peer needs them)...
+  expect(lines.length).toBeGreaterThanOrEqual(2)
+  // ...and every mesh line landed on the transport channel, never the human room.
+  expect(lines.every(s => s.scope === TRANSPORT)).toBe(true)
+  expect(lines.some(s => s.scope === ROOM)).toBe(false)
+  store.close()
+})
+
+test('transport bootstrap: the first beacon goes to transport with no peer known', async () => {
+  // No remote peer yet — announceIdentity is unconditional, so bootstrap still reaches transport.
+  const { store, sent, mesh } = await harness(['cc'], TRANSPORT)
+  await publishIdentity(store, mesh, 'cc', 'U_cc')
+  await flush()
+
+  const lines = sent.filter(s => isMeshLine(s.text))
+  expect(lines.length).toBe(1)
+  expect(lines[0]!.scope).toBe(TRANSPORT)
   store.close()
 })
 

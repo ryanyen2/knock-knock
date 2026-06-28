@@ -191,6 +191,16 @@ if (meshEnabled) {
   process.stderr.write(
     'relay: mesh = ON (no-Postgres cross-machine coordination over the messaging channel)\n',
   )
+  const hasTransportChannel = Object.values(access.agents).some(a =>
+    Object.values(a.rooms).some(r => r.meshTransport),
+  )
+  if (!hasTransportChannel) {
+    process.stderr.write(
+      'relay: no mesh-transport channel configured — ⟦kk-mesh⟧ lines post to the human channels\n' +
+        '  (gated by remote-peer presence). To keep them out of view, mark a shared channel both\n' +
+        "  relays join with meshTransport: true. See docs/how-coordination-works.md.\n",
+    )
+  }
 } else if (ledgerConfig.backend === 'sqlite' && declaresPeerCollaborators(access.agents)) {
   // SQLite + mesh off, yet peer-bot collaborators (another machine's bots) are configured.
   // Co-resident bots still coordinate via the shared ledger, but there is NO cross-machine

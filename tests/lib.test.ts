@@ -300,6 +300,20 @@ test('projectToRuntime: a per-channel runtime override is carried onto the room 
   expect(rt.agents.rev!.rooms.B!.runtime).toBeUndefined() // falls back to the bot default
 })
 
+test('projectToRuntime: meshTransport on a channel folds onto every member room; absent ⇒ key absent', () => {
+  const a: AuthoringAccess = {
+    bots: { rev: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {
+      'discord:X': { platform: 'discord', channelId: 'X', members: [{ bot: 'rev', workspace: '/x' }], collaborators: [], meshTransport: true },
+      'discord:H': { platform: 'discord', channelId: 'H', members: [{ bot: 'rev', workspace: '/h' }], collaborators: [] },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  const rt = projectToRuntime(a)
+  expect(rt.agents.rev!.rooms.X!.meshTransport).toBe(true) // transport channel folds through
+  expect('meshTransport' in rt.agents.rev!.rooms.H!).toBe(false) // absent ⇒ key absent
+})
+
 test('channelKey: namespaces a channel id by platform', () => {
   expect(channelKey('discord', 'C1')).toBe('discord:C1')
   expect(channelKey('slack', 'C1')).not.toBe(channelKey('discord', 'C1'))

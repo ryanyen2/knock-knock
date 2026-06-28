@@ -58,6 +58,10 @@ export type MeshSyncDeps = {
   resolveRoom: (scope: string) => string | undefined
   /** Every room this bot serves (where identity broadcasts and unresolved scopes go). */
   allRooms: () => string[]
+  /** The dedicated transport room id to post ALL mesh lines to, or undefined ⇒ post to
+   *  the human rooms as before. When set, beacons + coordination go here instead, so the
+   *  human channels never see ⟦kk-mesh⟧ base64. */
+  transportScope?: () => string | undefined
   /** Post a coordination line to a scope. */
   send: (scope: string, text: string) => Promise<MessageRef | undefined>
   /** Tag a posted message id as bot-authored (so it's never treated as inbound chat). */
@@ -77,7 +81,10 @@ export class MeshSync {
    *  `send` works) — the bot's own `agent.identity` admit then broadcasts over the mesh. */
   start(): void {
     if (this.unsub) return
-    this.dbg(`started (ownKey=${this.deps.ownKey}, rooms=[${this.deps.allRooms().join(', ')}])`)
+    this.dbg(
+      `started (ownKey=${this.deps.ownKey}, rooms=[${this.deps.allRooms().join(', ')}], ` +
+        `transport=${this.deps.transportScope?.() ?? '(none)'})`,
+    )
     this.unsub = this.deps.store.subscribe(i => {
       if (i.actor !== this.deps.ownKey) return // publish only my own events (no echo)
       if (i.lifecycle !== 'applied' && i.lifecycle !== 'admitted') return
@@ -140,6 +147,8 @@ export class MeshSync {
    *  event's logical `channel` are independent — ingest preserves the original channel,
    *  so posting to the parent room (not a thread) reaches all peers reliably. */
   private targetScopes(i: Interaction): string[] {
+    const t = this.deps.transportScope?.()
+    if (t) return [t] // all transport rides the one dedicated room; ingest restores i.channel
     if (i.channel === 'agent-directory') return this.deps.allRooms()
     const room = this.deps.resolveRoom(i.channel)
     return room ? [room] : this.deps.allRooms()
@@ -155,7 +164,8 @@ export class MeshSync {
     if (i.verb !== 'agent.identity') return
     const line = encodeMeshEvent(i)
     this.ownIdentityLine = line
-    const scopes = this.deps.allRooms()
+    const t = this.deps.transportScope?.()
+    const scopes = t ? [t] : this.deps.allRooms()
     this.dbg(`→ identity beacon to [${scopes.join(', ')}] (announce)`)
     for (const scope of scopes) await this.sendLine(scope, line)
   }
@@ -179,7 +189,9 @@ export class MeshSync {
    *  rooms that have a remote peer. Silent when no remote peer is known (lone relay). */
   private async pulse(): Promise<void> {
     if (!this.ownIdentityLine) return
-    for (const room of this.deps.allRooms()) {
+    const t = this.deps.transportScope?.()
+    const rooms = t ? [t] : this.deps.allRooms()
+    for (const room of rooms) {
       if (this.hasRemotePeerInRoom(room)) await this.sendLine(room, this.ownIdentityLine)
     }
   }
