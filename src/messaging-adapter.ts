@@ -96,6 +96,20 @@ export type DiscoveryCapabilities = {
   channelCreation: boolean
 }
 
+/** A normalized enumerated entity from a discovery call — a channel or a member. `id` is the
+ *  platform id (channel id / user id / login); `label` is a human-readable name for the pick-list. */
+export type DiscoveredEntity = { id: string; label: string }
+
+/** Three-valued result of a duck-typed discovery enumeration/creation call. Lets the snapshot
+ *  assembler distinguish "no members" (`results` with an empty list) from "not allowed to see
+ *  members" (`degraded`, e.g. a revoked Discord intent or Telegram privacy mode) from "the
+ *  platform has no such call" (`unsupported`) — a static capability boolean cannot. `reason`
+ *  on `degraded` is shown to the owner so the fallthrough to manual/nonce is signposted (R15/R21). */
+export type EnumerationOutcome<T = DiscoveredEntity> =
+  | { kind: 'results'; items: T[] }
+  | { kind: 'degraded'; reason: string }
+  | { kind: 'unsupported' }
+
 /** A file on an inbound message. All fields uploader-controlled and untrusted. `url` fetches bytes (may be signed/expiring/auth'd); `ref` is an opaque handle when the URL isn't enough. */
 export type IncomingAttachment = {
   name: string
