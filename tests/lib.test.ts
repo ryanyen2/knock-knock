@@ -1710,12 +1710,15 @@ test('botEngagedInScope: only THIS bot\'s own footprint counts as engagement', (
   expect(botEngagedInScope([], 'd-bot')).toBe(false)
 })
 
-test('peerBotStandsDownAtChannel: a peer bot only engages inside a thread, never at channel scope', () => {
-  // A peer bot's channel-scope message (e.g. an echoed status surface) must not start a task —
-  // this is what stops a stray thread spawning off another bot's Workbench echo.
-  expect(peerBotStandsDownAtChannel(true, false)).toBe(true) // peer bot, channel → stand down
-  expect(peerBotStandsDownAtChannel(true, true)).toBe(false) // peer bot, in-thread handoff → engage
-  expect(peerBotStandsDownAtChannel(false, false)).toBe(false) // a human at channel scope → engage
+test('peerBotStandsDownAtChannel: an UNADDRESSED peer channel message stands down; a directed handoff engages', () => {
+  // A peer bot's channel-scope status echo (no live mention left — suppressed) must not start a
+  // task: this is what stops a stray turn spawning off another bot's Workbench echo. But a peer
+  // that explicitly addresses THIS bot at channel scope is a genuine handoff and must engage —
+  // on threadless surfaces (a plain Telegram group) the channel IS the task scope.
+  expect(peerBotStandsDownAtChannel(true, false, false)).toBe(true) // peer, channel, not addressed → stand down
+  expect(peerBotStandsDownAtChannel(true, false, true)).toBe(false) // peer, channel, addressed handoff → engage
+  expect(peerBotStandsDownAtChannel(true, true, false)).toBe(false) // peer, in-thread handoff → engage
+  expect(peerBotStandsDownAtChannel(false, false, false)).toBe(false) // a human at channel scope → engage
 })
 
 test('selectActorHost: an interaction routes to the host whose botKey IS its actor', () => {

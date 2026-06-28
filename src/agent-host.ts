@@ -1039,11 +1039,12 @@ export class AgentHost {
           `addressedKeys=[${addressedKeys.join(',')}] text=${JSON.stringify(m.text.slice(0, 60))} dir=${JSON.stringify(dir)}`,
       )
     }
-    // A peer bot never starts a top-level task: collaboration happens inside the task thread.
-    // A peer-bot message at channel scope is a status-surface echo (or noise) and must never
-    // spawn a thread / start a turn — even if it appears to mention this bot (a peer running
-    // older code may echo the prompt's mention and re-ping us). Handoffs in-thread still work.
-    if (peerBotStandsDownAtChannel(senderIsPeerBot, m.isThread)) return
+    // An UNADDRESSED peer-bot message at channel scope is a status-surface echo (or noise) and
+    // must never start a turn — that's the status cascade. A peer that explicitly addresses THIS
+    // bot is a genuine handoff and engages even at channel scope, which is where handoffs land on
+    // threadless surfaces (a plain Telegram group). Status surfaces are sent suppressed, so their
+    // echoed mention is inert and never reads as `addressedMe` here. Handoffs in-thread still work.
+    if (peerBotStandsDownAtChannel(senderIsPeerBot, m.isThread, addressedMe)) return
     if (standDownForDirected(addressedKeys, this.key, addressedMe)) return
     if ((requireMention || senderIsPeerBot) && !mentioned) return
 

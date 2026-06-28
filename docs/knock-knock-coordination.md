@@ -182,5 +182,4 @@ operations alone. The ship gate is the property battery
 - Embedding relevance for retrieval.
 - Finer stall detection (progress heartbeat) — v1 fails over on crash/turn-end via active-turn liveness.
 - Loop-guard fold exemption for scheduler/reply-synthesized turns (shared with the watches follow-up).
-- A second messaging platform adapter — the layer is platform-*neutral*, but Discord is the only live surface today.
 - **Designated-responder failure fallback.** Under `responder=designated`/`role-priority`, the non-preferred agent makes a single deferred claim attempt; if the preferred agent *wins the reply claim and then its turn fails* (no `turn.replied`), the message is unanswered until the reply claim's TTL lapses. A release-on-failure + fallback-retry is the planned fix; the default `race` policy is unaffected.
