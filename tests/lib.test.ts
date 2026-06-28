@@ -2161,3 +2161,70 @@ test('U6: confirmedIdentitiesFor reads owner + humans + agent-key-bound peers fo
     peers: [{ userId: 'U_peer', agentKey: 'keyA' }],
   })
 })
+
+// ─── Confirmation flow core (U8) ──────────────────────────────────────────────
+import { applyConfirmedProposal, nonceMatch, makeNonce, driftedSincePropose, renderClaimedPeer } from '../src/lib.ts'
+import type { Proposal as Prop8 } from '../src/lib.ts'
+
+const baseAuthoring = (): AuthoringAccess => ({
+  bots: {},
+  channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [] } },
+  roster: { people: {}, peers: {} },
+})
+
+test('U8: applyConfirmedProposal(owner) sets me[platform]', () => {
+  const out = applyConfirmedProposal(baseAuthoring(), { kind: 'owner', platform: 'discord', targetId: 'U_owner', claimed: {}, discoveredAt: 't', status: 'proposed' })
+  expect(out.me?.discord).toBe('U_owner')
+})
+
+test('U8: applyConfirmedProposal(peer) adds an agent-key-bound roster peer AND a channel collaborator', () => {
+  const p: Prop8 = { kind: 'peer', platform: 'discord', channelKey: 'discord:C1', targetId: 'U_peer', claimed: { agentKey: 'keyA', userId: 'U_peer', label: 'deploy', blurb: 'deploys' }, discoveredAt: 't', status: 'proposed' }
+  const out = applyConfirmedProposal(baseAuthoring(), p, 'deploy')
+  expect(out.roster.peers.deploy).toEqual({ platform: 'discord', userId: 'U_peer', blurb: 'deploys', label: 'deploy', agentKey: 'keyA' })
+  expect(out.channels['discord:C1']!.collaborators).toEqual([{ kind: 'peer', id: 'deploy' }])
+})
+
+test('U8: applyConfirmedProposal(collaborator) adds a person + a human collaborator', () => {
+  const p: Prop8 = { kind: 'collaborator', platform: 'discord', channelKey: 'discord:C1', targetId: 'U_alice', claimed: { label: 'alice' }, discoveredAt: 't', status: 'proposed' }
+  const out = applyConfirmedProposal(baseAuthoring(), p, 'alice')
+  expect(out.roster.people.alice).toEqual({ platform: 'discord', userId: 'U_alice', label: 'alice' })
+  expect(out.channels['discord:C1']!.collaborators).toEqual([{ kind: 'human', id: 'alice' }])
+})
+
+test('U8: applyConfirmedProposal(transport) flags the channel meshTransport without mutating input', () => {
+  const a = baseAuthoring()
+  const out = applyConfirmedProposal(a, { kind: 'transport', platform: 'discord', channelKey: 'discord:C1', targetId: 'C1', claimed: {}, discoveredAt: 't', status: 'proposed' })
+  expect(out.channels['discord:C1']!.meshTransport).toBe(true)
+  expect(a.channels['discord:C1']!.meshTransport).toBeUndefined() // input not mutated
+})
+
+test('U8/R22: nonceMatch returns the single eligible sender; ignores non-matching; aborts on 2+', () => {
+  const nonce = 'kk-amber-basil-cobalt'
+  expect(nonceMatch([{ userId: 'U1', text: 'hi' }, { userId: 'U_owner', text: '  kk-amber-basil-cobalt ' }], nonce)).toEqual({ kind: 'matched', userId: 'U_owner' })
+  expect(nonceMatch([{ userId: 'U1', text: 'unrelated' }], nonce)).toEqual({ kind: 'none' })
+  expect(nonceMatch([{ userId: 'U1', text: nonce }, { userId: 'U2', text: nonce }], nonce)).toEqual({ kind: 'multiple' })
+  // the same sender posting twice is still a single match
+  expect(nonceMatch([{ userId: 'U1', text: nonce }, { userId: 'U1', text: nonce }], nonce)).toEqual({ kind: 'matched', userId: 'U1' })
+})
+
+test('U8: makeNonce is deterministic under an injected rand and is a single whitespace-free phrase', () => {
+  expect(makeNonce(() => 0)).toBe('kk-amber-amber-amber')
+  expect(makeNonce(() => 0.999)).toBe('kk-tundra-tundra-tundra')
+  expect(/\s/.test(makeNonce(() => 0.5))).toBe(false)
+})
+
+test('U8/R20: driftedSincePropose flags a changed userId or a vanished beacon, not cosmetic churn', () => {
+  const p: Prop8 = { kind: 'peer', platform: 'discord', targetId: 'U_peer', claimed: { agentKey: 'keyA', userId: 'U_peer' }, discoveredAt: 't', status: 'proposed' }
+  expect(driftedSincePropose(p, { agentKey: 'keyA', platform: 'discord', userId: 'U_peer', rooms: ['C1'], label: 'renamed' })).toBe(false) // cosmetic
+  expect(driftedSincePropose(p, { agentKey: 'keyA', platform: 'discord', userId: 'U_DIFFERENT', rooms: ['C1'] })).toBe(true) // userId drift
+  expect(driftedSincePropose(p, undefined)).toBe(true) // vanished
+  // a manual fill (no agentKey anchor) never "drifts"
+  expect(driftedSincePropose({ ...p, claimed: { userId: 'U_peer' } }, undefined)).toBe(false)
+})
+
+test('U8/R26: renderClaimedPeer sanitizes the label, shows the raw userId verbatim', () => {
+  const line = renderClaimedPeer({ agentKey: 'k', userId: 'U_raw', label: 'evil\nname', blurb: 'does\tthings' })
+  expect(line).toContain('U_raw') // raw id shown for confirmation
+  expect(line).toContain('evil name') // newline stripped
+  expect(line).not.toContain('\n')
+})

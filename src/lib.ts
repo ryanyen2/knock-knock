@@ -814,6 +814,118 @@ export function confirmedIdentitiesFor(a: AuthoringAccess, platform: Platform): 
   }
 }
 
+// ─── Confirmation: apply a reviewed proposal, nonce capture, drift (pure; U8) ─
+// The terminal is the sole writer of decisions. These pure helpers are the confirm flow's core:
+// turn a confirmed proposal into the AuthoringAccess mutation, resolve an owner-ID nonce capture,
+// and detect identity drift between propose and confirm. The interactive @clack glue in setup.ts
+// is thin around these.
+
+/** Write a confirmed proposal into authoring config, returning a NEW AuthoringAccess (pure). The
+ *  caller supplies `rosterId` (its slug) for peer/collaborator kinds; owner/transport ignore it.
+ *  The result is indistinguishable from a hand-entered roster entry, so it flows into
+ *  `projectToRuntime` and the sender gate exactly like one. `channel` creation is left to the setup
+ *  flow (it needs the live channelId + membership). */
+export function applyConfirmedProposal(a: AuthoringAccess, p: Proposal, rosterId?: string): AuthoringAccess {
+  const next: AuthoringAccess = {
+    ...a,
+    bots: { ...a.bots },
+    channels: { ...a.channels },
+    roster: { people: { ...a.roster.people }, peers: { ...a.roster.peers } },
+    ...(a.me ? { me: { ...a.me } } : {}),
+  }
+  const addCollaborator = (channelKey: string | undefined, c: Collaborator): void => {
+    if (!channelKey) return
+    const ch = next.channels[channelKey]
+    if (!ch) return
+    const dup = ch.collaborators.some(x => x.kind === c.kind && x.id === c.id)
+    if (!dup) next.channels[channelKey] = { ...ch, collaborators: [...ch.collaborators, c] }
+  }
+  switch (p.kind) {
+    case 'owner':
+      next.me = { ...(next.me ?? {}), [p.platform]: p.targetId }
+      break
+    case 'peer': {
+      const id = rosterId ?? p.targetId
+      next.roster.peers[id] = {
+        platform: p.platform,
+        userId: p.targetId,
+        blurb: p.claimed.blurb ?? '',
+        ...(p.claimed.label ? { label: p.claimed.label } : {}),
+        ...(p.claimed.agentKey ? { agentKey: p.claimed.agentKey } : {}),
+      }
+      addCollaborator(p.channelKey, { kind: 'peer', id })
+      break
+    }
+    case 'collaborator': {
+      const id = rosterId ?? p.targetId
+      next.roster.people[id] = {
+        platform: p.platform,
+        userId: p.targetId,
+        ...(p.claimed.label ? { label: p.claimed.label } : {}),
+      }
+      addCollaborator(p.channelKey, { kind: 'human', id })
+      break
+    }
+    case 'transport':
+      if (p.channelKey && next.channels[p.channelKey]) {
+        next.channels[p.channelKey] = { ...next.channels[p.channelKey]!, meshTransport: true }
+      }
+      break
+    case 'channel':
+      break // synthesized by the setup flow, which has the live channelId + membership
+  }
+  return next
+}
+
+/** Resolve an owner-ID nonce capture (R22). Given the candidate inbound messages seen during the
+ *  window and the issued nonce, return the single eligible sender, or 'none' (nothing matched) or
+ *  'multiple' (2+ distinct senders matched → abort and re-issue a fresh nonce). Match is exact on
+ *  trimmed text — the nonce is a single-use random phrase. Pure. */
+export function nonceMatch(
+  messages: ReadonlyArray<{ userId: string; text: string }>,
+  nonce: string,
+): { kind: 'matched'; userId: string } | { kind: 'none' } | { kind: 'multiple' } {
+  const want = nonce.trim()
+  if (!want) return { kind: 'none' }
+  const matched = [...new Set(messages.filter(m => m.text.trim() === want).map(m => m.userId))]
+  if (matched.length === 0) return { kind: 'none' }
+  if (matched.length > 1) return { kind: 'multiple' }
+  return { kind: 'matched', userId: matched[0]! }
+}
+
+/** A short, unguessable, human-typable nonce phrase (R22). `rand` is injectable for deterministic
+ *  tests; defaults to Math.random. The phrase is whitespace-free per word so an exact-match capture
+ *  is unambiguous. */
+const NONCE_WORDS = [
+  'amber', 'basil', 'cobalt', 'dune', 'ember', 'fjord', 'gust', 'harbor', 'ivory', 'jade',
+  'kelp', 'lunar', 'maple', 'nimbus', 'onyx', 'pebble', 'quartz', 'reef', 'slate', 'tundra',
+]
+export function makeNonce(rand: () => number = Math.random): string {
+  const pick = (): string => NONCE_WORDS[Math.floor(rand() * NONCE_WORDS.length)] ?? 'amber'
+  return `kk-${pick()}-${pick()}-${pick()}`
+}
+
+/** Has the claimed identity drifted between propose time and confirm time (R20)? Compares the
+ *  proposal's snapshotted claim against the live directory entry for the same agent-key: a changed
+ *  userId, or a vanished beacon, is drift; cosmetic label/blurb changes are NOT. When the proposal
+ *  has no agent-key anchor (a hand-entered/manual fill) there is nothing to drift. Pure. */
+export function driftedSincePropose(p: Proposal, live: AgentIdentity | undefined): boolean {
+  if (!p.claimed.agentKey) return false
+  if (!live) return true
+  return live.userId !== p.claimed.userId
+}
+
+/** Render a peer's claimed identity as a clearly-delimited "claimed by peer" line for the confirm
+ *  prompt (R26). All beacon strings are sanitized; the raw immutable userId is shown verbatim
+ *  beside the self-set name so the owner confirms against the id, not the spoofable label. The
+ *  action/trust framing around this line is knock-knock's, never the beacon's. Pure. */
+export function renderClaimedPeer(claimed: ClaimedIdentity): string {
+  const name = sanitizeBeaconString(claimed.label) ?? '(no name)'
+  const blurb = sanitizeBeaconString(claimed.blurb)
+  const id = claimed.userId ?? '(unknown id)'
+  return `claimed name: "${name}" · user-id: ${id}${blurb ? ` · "${blurb}"` : ''}`
+}
+
 // ─── Policy classification for adapters without native pattern matching ───────
 // Maps an ACP permission request onto the room's allow/ask/deny profile using
 // Claude Code-style "Tool(arg)" patterns. Precedence: deny > ask > allow; unmatched
