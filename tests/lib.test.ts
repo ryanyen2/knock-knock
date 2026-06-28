@@ -1402,7 +1402,7 @@ test('wrapThreadRecap: empty in, empty out; non-empty framed as context not inst
 
 // ─── Peer directory (multi-bot mesh visibility) ──────────────────────────────
 
-import { peerDirectoryParticipants, isDirectoryBot, type AgentIdentity } from '../src/lib.ts'
+import { peerDirectoryParticipants, isDirectoryBot, actorDisplayName, type AgentIdentity } from '../src/lib.ts'
 
 const ident = (over: Partial<AgentIdentity>): AgentIdentity => ({
   agentKey: 'cc', platform: 'discord', userId: 'U_CC', rooms: ['chan1'], ...over,
@@ -1437,6 +1437,18 @@ test('isDirectoryBot: true only for a known directory userId', () => {
   const dir = [ident({ userId: 'U_CC' })]
   expect(isDirectoryBot(dir, 'U_CC')).toBe(true)
   expect(isDirectoryBot(dir, 'U_HUMAN')).toBe(false)
+})
+
+test('actorDisplayName: resolves a peer id to its non-pinging label, falls back to the raw id', () => {
+  const dir = [ident({ agentKey: 'assistant', userId: 'U0B7JR6UBML', label: 'knock-knock', handle: 'kk' })]
+  // A platform id resolves to the label — plain text, so it never re-parses into a live @mention.
+  expect(actorDisplayName(dir, 'U0B7JR6UBML')).toBe('knock-knock')
+  // Matches by agentKey too.
+  expect(actorDisplayName(dir, 'assistant')).toBe('knock-knock')
+  // Unknown id (e.g. a human not in the directory) → returned verbatim.
+  expect(actorDisplayName(dir, 'U_HUMAN')).toBe('U_HUMAN')
+  // No label → handle.
+  expect(actorDisplayName([ident({ userId: 'U_X', label: undefined, handle: 'h' })], 'U_X')).toBe('h')
 })
 
 // ─── Selecting collaboration / allocation policy from chat (!config) ──────────

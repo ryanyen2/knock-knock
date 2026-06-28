@@ -500,6 +500,16 @@ synchronizer.register(
 )
 synchronizer.register(
   postOnReply({
+    // Name the attribution author by directory label, NOT a raw id — a raw platform id in
+    // the "traced from …" subtext gets re-parsed into a live mention (Slack @Uxxx → <@Uxxx>)
+    // and re-triggers the named bot, an endless peer-to-peer ack loop. A label is plain text.
+    resolveActorName: actorId => {
+      for (const h of hosts) {
+        const name = h.displayNameForActor(actorId)
+        if (name !== actorId) return name
+      }
+      return actorId
+    },
     discordSend: async (channelId, text, agentKey) => {
       // Post via the replying agent's own host, not the first sibling serving the room —
       // otherwise the wrong bot posts the reply (the "@cc → d-bot answers" bug).

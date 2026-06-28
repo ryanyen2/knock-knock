@@ -51,6 +51,7 @@ import {
   wrapThreadRecap,
   peerDirectoryParticipants,
   isDirectoryBot,
+  actorDisplayName,
   addressedAgentKeys,
   standDownForDirected,
   peerBotStandsDownAtChannel,
@@ -1419,6 +1420,13 @@ export class AgentHost {
     } catch {
       return []
     }
+  }
+
+  /** Display name for an actor id (platform userId or agentKey) from this host's directory —
+   *  label/handle, else the raw id. Used by post-on-reply's attribution so the "traced from"
+   *  subtext names a peer without a live @mention that would re-trigger it. */
+  displayNameForActor(actorId: string): string {
+    return actorDisplayName(this.directoryIdentities(), actorId)
   }
 
   /** Peer bots (others) that serve `roomId` on this platform, as participant entries to

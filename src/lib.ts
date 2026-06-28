@@ -347,6 +347,17 @@ export function isDirectoryBot(identities: ReadonlyArray<AgentIdentity>, userId:
   return identities.some(id => id.userId === userId)
 }
 
+/** A human-readable, NON-pinging display name for an actor (matched by platform userId or
+ *  agentKey) from the directory — its label, else handle, else the raw id. Used for the
+ *  "traced from …" attribution subtext, which must NAME the author without emitting a live
+ *  `@mention`: a raw platform id there gets re-parsed into a real ping (Slack `@Uxxx` →
+ *  `<@Uxxx>`), re-triggering the named bot and driving an endless ack loop between peers.
+ *  A label (`knock-knock`) is plain text on every platform. Pure. */
+export function actorDisplayName(identities: ReadonlyArray<AgentIdentity>, actorId: string): string {
+  const id = identities.find(d => d.userId === actorId || d.agentKey === actorId)
+  return id?.label ?? id?.handle ?? actorId
+}
+
 /** Does the config declare any peer-bot collaborator — another machine's bot rostered into a
  *  room's `participants`? Used at startup to decide whether a missing cross-machine transport
  *  (SQLite + mesh off) is worth warning about: a single-machine relay has no peers and stays
