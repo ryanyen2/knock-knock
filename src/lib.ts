@@ -271,7 +271,10 @@ export function projectToRuntime(a: AuthoringAccess): Access {
       }
 
       rooms[ch.channelId] = {
-        requireMention: ch.requireMention ?? false,
+        // Default-ON: in a shared channel a bot must be @mentioned to engage, so it
+        // doesn't reply to (and accumulate context from) every passing message. Matches
+        // the host's `?? true` intent; opt out per channel with `!config require-mention off`.
+        requireMention: ch.requireMention ?? true,
         participants,
         humans,
         ...(ch.approvalActorId ? { approvalActorId: ch.approvalActorId } : {}),

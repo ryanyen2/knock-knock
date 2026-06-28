@@ -278,6 +278,14 @@ test('projectToRuntime: collaborators resolve from the roster into participants/
   expect(infra.requireMention).toBe(true)
 })
 
+test('projectToRuntime: requireMention defaults ON when a channel does not set it', () => {
+  const rt = projectToRuntime(AUTHORING)
+  // C_WEB and C_Z have no requireMention — they must default to true so a bot in a
+  // shared channel only engages when @mentioned (no reply-to-everything pollution).
+  expect(rt.agents.reviewer!.rooms.C_WEB!.requireMention).toBe(true)
+  expect(rt.agents.builder!.rooms.C_Z!.requireMention).toBe(true)
+})
+
 test('projectToRuntime: inline membership profile is carried onto the room', () => {
   const rt = projectToRuntime(AUTHORING)
   expect(rt.agents.reviewer!.rooms.C_INFRA!.profile).toEqual({ allow: ['Read(**)'], ask: [], deny: ['Bash(*)'] })
