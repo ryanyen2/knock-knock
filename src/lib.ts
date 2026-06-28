@@ -1704,13 +1704,19 @@ export function standDownForDirected(
 }
 
 /** Should a peer bot's message be ignored because it arrived at channel (non-thread) scope?
- *  Tasks are started by humans and run inside a single task thread; multi-bot collaboration
- *  (handoffs) happens INSIDE that thread. A peer bot talking at the channel top-level is a
- *  status-surface echo or noise — acting on it spawns a stray thread / re-triggers a turn,
- *  even when the peer runs older code that doesn't suppress an echoed mention. So a peer bot
- *  never starts a top-level task; it only engages this bot within an existing thread. Pure. */
-export function peerBotStandsDownAtChannel(senderIsPeerBot: boolean, isThread: boolean): boolean {
-  return senderIsPeerBot && !isThread
+ *  An UNADDRESSED peer message at the channel top-level is a status-surface echo or noise —
+ *  acting on it re-triggers a turn (the status cascade). But a peer that explicitly addresses
+ *  THIS bot is a genuine handoff (`@next-bot refine?`) and must engage even at channel scope:
+ *  on threadless surfaces (a plain Telegram group, where `startThread` can't open a topic) the
+ *  channel IS the task scope, so handoffs have nowhere else to land. Status surfaces don't
+ *  reach here addressed — they're sent with `suppressMentions`, so the echoed mention is inert
+ *  (Discord `allowedMentions`) or defanged (Telegram) and no longer reads as addressing. Pure. */
+export function peerBotStandsDownAtChannel(
+  senderIsPeerBot: boolean,
+  isThread: boolean,
+  addressedMe: boolean,
+): boolean {
+  return senderIsPeerBot && !isThread && !addressedMe
 }
 
 /** Pick the host that should ACT for an interaction — drive its turn, post its reply,

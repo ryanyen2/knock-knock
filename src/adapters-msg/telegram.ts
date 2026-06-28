@@ -50,6 +50,15 @@ const REACTION_WHITELIST: Glyph[] = [
  *  we normalize an incoming Telegram reaction by membership in CONTROL_REACTIONS. */
 const CONTROL_SET = new Set<string>(CONTROL_REACTIONS)
 
+/** Telegram parses `@handle` mentions from message text (no `allowedMentions` to opt out).
+ *  To honor `SendOpts.suppressMentions`, insert a zero-width WORD JOINER (U+2060) after each
+ *  `@`: it breaks the mention so Telegram won't ping the user AND a peer's inbound
+ *  `text.includes('@handle')` check no longer matches — while the joiner is invisible, so the
+ *  message still reads as `@handle`. Mirrors Discord's `allowedMentions: { parse: [] }`. Pure. */
+export function defangMentions(text: string): string {
+  return text.replace(/@(?=[A-Za-z0-9_])/g, '@⁠')
+}
+
 /** ScopeId encoding for forum topics: a bare `chatId` is the group/room; a
  *  `"${chatId}:${message_thread_id}"` is a forum topic (a sub-scope). */
 function splitScope(scope: ScopeId): { chatId: string; threadId?: number } {
@@ -488,7 +497,11 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     // username. We send WITHOUT parse_mode, so `toTelegramText` unwraps every
     // markdown marker to bare text — otherwise the render layer's `**`/`-#` would
     // show literally. The host's mention policy stays platform-agnostic.
-    const full = toTelegramText(text)
+    const unwrapped = toTelegramText(text)
+    // Honor SendOpts.suppressMentions: Telegram has no `allowedMentions`, so neutralize
+    // the `@handle`s in text (status surfaces echo the prompt verbatim — without this the
+    // echoed mentions stay live and re-ping the named bots, the cross-machine cascade).
+    const full = opts?.suppressMentions ? defangMentions(unwrapped) : unwrapped
     return full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
   }
 
