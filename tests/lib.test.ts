@@ -2228,3 +2228,50 @@ test('U8/R26: renderClaimedPeer sanitizes the label, shows the raw userId verbat
   expect(line).toContain('evil name') // newline stripped
   expect(line).not.toContain('\n')
 })
+
+// ─── Relay discovery proposals (U9) ───────────────────────────────────────────
+import { discoveryProposals } from '../src/lib.ts'
+import type { AgentIdentity as AID9, Channel } from '../src/lib.ts'
+
+const authoringWithPeerChannel = (over: Partial<Channel> = {}): AuthoringAccess => ({
+  bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+  channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [], ...over } },
+  roster: { people: {}, peers: {} },
+})
+
+test('U9/F5: a converged remote peer with no confirmed entry yields a claimed/unverified peer proposal', () => {
+  const dir: AID9[] = [{ agentKey: 'remoteKey', platform: 'discord', userId: 'U_remote', rooms: ['C1'], label: 'deploy', blurb: 'deploys' }]
+  const props = discoveryProposals(dir, new Set(['cc']), authoringWithPeerChannel(), [], 'now')
+  const peer = props.find(p => p.kind === 'peer')!
+  expect(peer.targetId).toBe('U_remote')
+  expect(peer.claimed.agentKey).toBe('remoteKey')
+  expect(peer.channelKey).toBe('discord:C1') // anchored to the shared channel
+  expect(peer.status).toBe('proposed')
+})
+
+test('U9: a co-resident sibling is never proposed (auto-heard via the gate)', () => {
+  const dir: AID9[] = [{ agentKey: 'sibling', platform: 'discord', userId: 'U_sib', rooms: ['C1'], label: 'sib' }]
+  expect(discoveryProposals(dir, new Set(['cc', 'sibling']), authoringWithPeerChannel(), [], 'now').filter(p => p.kind === 'peer')).toHaveLength(0)
+})
+
+test('U9: an already-confirmed peer and a tombstoned pair both produce no peer proposal (idempotent re-runs)', () => {
+  const dir: AID9[] = [{ agentKey: 'remoteKey', platform: 'discord', userId: 'U_remote', rooms: ['C1'] }]
+  const confirmed: AuthoringAccess = { ...authoringWithPeerChannel(), roster: { people: {}, peers: { p: { platform: 'discord', userId: 'U_remote', blurb: 'b', agentKey: 'remoteKey' } } } }
+  expect(discoveryProposals(dir, new Set(['cc']), confirmed, [], 'now').filter(p => p.kind === 'peer')).toHaveLength(0)
+  expect(discoveryProposals(dir, new Set(['cc']), authoringWithPeerChannel(), [{ agentKey: 'remoteKey', userId: 'U_remote', declinedAt: 't' }], 'now').filter(p => p.kind === 'peer')).toHaveLength(0)
+})
+
+test('U9/AE5: a confirmed cross-machine peer with no transport channel yields a transport proposal', () => {
+  // A roster peer rostered as a collaborator, but no channel flagged meshTransport.
+  const a: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [{ kind: 'peer', id: 'remote' }] } },
+    roster: { people: {}, peers: { remote: { platform: 'discord', userId: 'U_remote', blurb: 'b', agentKey: 'remoteKey' } } },
+  }
+  const props = discoveryProposals([], new Set(['cc']), a, [], 'now')
+  const transport = props.find(p => p.kind === 'transport')!
+  expect(transport.platform).toBe('discord')
+  // once a transport channel exists, no transport proposal
+  a.channels['discord:T'] = { platform: 'discord', channelId: 'T', members: [], collaborators: [], meshTransport: true }
+  expect(discoveryProposals([], new Set(['cc']), a, [], 'now').some(p => p.kind === 'transport')).toBe(false)
+})
