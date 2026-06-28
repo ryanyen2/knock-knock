@@ -74,6 +74,7 @@ import {
   renderBillboard,
   addressedAgentKeys,
   standDownForDirected,
+  peerBotStandsDownAtChannel,
   botEngagedInScope,
   selectActorHost,
   type ConfigDeltaRecord,
@@ -1707,6 +1708,14 @@ test('botEngagedInScope: only THIS bot\'s own footprint counts as engagement', (
   const dbotTurn = { actor: 'd-bot', verb: 'turn.replied', patch: { kind: 'none' } } as unknown as Parameters<typeof botEngagedInScope>[0][number]
   expect(botEngagedInScope([ccTurn, dbotTurn], 'd-bot')).toBe(true)
   expect(botEngagedInScope([], 'd-bot')).toBe(false)
+})
+
+test('peerBotStandsDownAtChannel: a peer bot only engages inside a thread, never at channel scope', () => {
+  // A peer bot's channel-scope message (e.g. an echoed status surface) must not start a task —
+  // this is what stops a stray thread spawning off another bot's Workbench echo.
+  expect(peerBotStandsDownAtChannel(true, false)).toBe(true) // peer bot, channel → stand down
+  expect(peerBotStandsDownAtChannel(true, true)).toBe(false) // peer bot, in-thread handoff → engage
+  expect(peerBotStandsDownAtChannel(false, false)).toBe(false) // a human at channel scope → engage
 })
 
 test('selectActorHost: an interaction routes to the host whose botKey IS its actor', () => {

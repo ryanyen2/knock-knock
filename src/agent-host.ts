@@ -53,6 +53,7 @@ import {
   isDirectoryBot,
   addressedAgentKeys,
   standDownForDirected,
+  peerBotStandsDownAtChannel,
   botEngagedInScope,
   isMeshLine,
   extractKeywords,
@@ -1038,6 +1039,11 @@ export class AgentHost {
           `addressedKeys=[${addressedKeys.join(',')}] text=${JSON.stringify(m.text.slice(0, 60))} dir=${JSON.stringify(dir)}`,
       )
     }
+    // A peer bot never starts a top-level task: collaboration happens inside the task thread.
+    // A peer-bot message at channel scope is a status-surface echo (or noise) and must never
+    // spawn a thread / start a turn — even if it appears to mention this bot (a peer running
+    // older code may echo the prompt's mention and re-ping us). Handoffs in-thread still work.
+    if (peerBotStandsDownAtChannel(senderIsPeerBot, m.isThread)) return
     if (standDownForDirected(addressedKeys, this.key, addressedMe)) return
     if ((requireMention || senderIsPeerBot) && !mentioned) return
 

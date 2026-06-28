@@ -1703,6 +1703,16 @@ export function standDownForDirected(
   return addressedKeys.length > 0 && !addressedKeys.includes(selfKey) && !addressedMe
 }
 
+/** Should a peer bot's message be ignored because it arrived at channel (non-thread) scope?
+ *  Tasks are started by humans and run inside a single task thread; multi-bot collaboration
+ *  (handoffs) happens INSIDE that thread. A peer bot talking at the channel top-level is a
+ *  status-surface echo or noise — acting on it spawns a stray thread / re-triggers a turn,
+ *  even when the peer runs older code that doesn't suppress an echoed mention. So a peer bot
+ *  never starts a top-level task; it only engages this bot within an existing thread. Pure. */
+export function peerBotStandsDownAtChannel(senderIsPeerBot: boolean, isThread: boolean): boolean {
+  return senderIsPeerBot && !isThread
+}
+
 /** Pick the host that should ACT for an interaction — drive its turn, post its reply,
  *  refresh its workbench. With co-resident bots in one room, routing by "first host that
  *  serves the channel" let the earliest bot in array order hijack another bot's turn: a
