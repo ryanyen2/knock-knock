@@ -34,6 +34,7 @@ import { Client } from '@notionhq/client'
 import type {
   MessagingAdapter,
   Capabilities,
+  DiscoveryCapabilities,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -171,6 +172,12 @@ export class NotionMessagingAdapter implements MessagingAdapter {
 
   get botLabel(): string | undefined {
     return this._botLabel
+  }
+
+  discoveryCapabilities(): DiscoveryCapabilities {
+    // The channel is the page ID the operator names (no enumerable page list); the workspace
+    // user list IS enumerable (member enumeration), but a bot cannot create a page as transport.
+    return { selfId: true, channelEnumeration: false, memberEnumeration: true, channelCreation: false }
   }
 
   capabilities(): Capabilities {

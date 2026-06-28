@@ -16,6 +16,7 @@ import type { ReactionType } from '@grammyjs/types'
 import type {
   MessagingAdapter,
   Capabilities,
+  DiscoveryCapabilities,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -163,6 +164,13 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
 
   get botHandle(): string | undefined {
     return this._botUsername
+  }
+
+  discoveryCapabilities(): DiscoveryCapabilities {
+    // The Bot API exposes no channel list and no member roster (member enumeration is
+    // admin-only and blocked under privacy mode), and a bot cannot create a group — so
+    // channel binding and owner/collaborators fall through to nonce capture / manual entry.
+    return { selfId: true, channelEnumeration: false, memberEnumeration: false, channelCreation: false }
   }
 
   capabilities(): Capabilities {

@@ -31,6 +31,7 @@ import { Octokit } from '@octokit/rest'
 import type {
   MessagingAdapter,
   Capabilities,
+  DiscoveryCapabilities,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -193,6 +194,12 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
 
   get botLabel(): string | undefined {
     return this._botLabel
+  }
+
+  discoveryCapabilities(): DiscoveryCapabilities {
+    // The channel is the `owner/repo` the operator names (no enumerable channel list);
+    // repo collaborators ARE enumerable (member enumeration), but a bot cannot create a repo.
+    return { selfId: true, channelEnumeration: false, memberEnumeration: true, channelCreation: false }
   }
 
   capabilities(): Capabilities {
