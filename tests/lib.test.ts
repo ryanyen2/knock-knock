@@ -1804,3 +1804,132 @@ test('responderElection: a role mention narrows the eligible set like a user men
   ]
   expect(responderElection(dir, 'room1', 'discord', '<@&R_cc> reply to me', 'm1')).toEqual(['cc'])
 })
+
+// ─── Proposal lifecycle (U2 — inert-store decision rules) ─────────────────────
+import {
+  sanitizeBeaconString,
+  sanitizeClaimedIdentity,
+  isTombstoned,
+  isTrustedPair,
+  tombstoneForProposal,
+  addProposal,
+  isProposalConfirmed,
+  reconcilePendingAgainst,
+  MAX_PROPOSALS_PER_AGENT_KEY,
+} from '../src/lib.ts'
+import type { Proposal, Tombstone } from '../src/lib.ts'
+
+const prop = (over: Partial<Proposal> = {}): Proposal => ({
+  kind: 'peer',
+  platform: 'discord',
+  targetId: 'U_peer',
+  claimed: { agentKey: 'k1', userId: 'U_peer', label: 'peer', blurb: 'does things' },
+  discoveredAt: '2026-06-28T00:00:00.000Z',
+  status: 'proposed',
+  ...over,
+})
+
+test('sanitizeBeaconString: strips control chars (incl. newlines), collapses ws, length-caps', () => {
+  expect(sanitizeBeaconString('hi\nthere\tyou')).toBe('hi there you')
+  expect(sanitizeBeaconString('  spaced   out  ')).toBe('spaced out')
+  expect(sanitizeBeaconString('x'.repeat(500))!.length).toBe(200)
+  expect(sanitizeBeaconString('   ')).toBeUndefined()
+  expect(sanitizeBeaconString(undefined)).toBeUndefined()
+})
+
+test('sanitizeClaimedIdentity: sanitizes display strings, keeps identity keys verbatim', () => {
+  const c = sanitizeClaimedIdentity({ agentKey: 'k\n1', userId: 'U\n1', label: 'a\nb', blurb: '', handle: 'h' })
+  expect(c.agentKey).toBe('k\n1') // identity key untouched (matched, not rendered)
+  expect(c.userId).toBe('U\n1')
+  expect(c.label).toBe('a b')
+  expect(c.blurb).toBeUndefined() // empty after strip → dropped
+  expect(c.handle).toBe('h')
+})
+
+test('addProposal: round-trips a proposal incl discoveredAt, sanitizing claimed strings', () => {
+  const out = addProposal([], prop({ claimed: { agentKey: 'k1', userId: 'U_peer', label: 'pe\ner', blurb: 'b' } }))
+  expect(out).toHaveLength(1)
+  expect(out[0]!.discoveredAt).toBe('2026-06-28T00:00:00.000Z')
+  expect(out[0]!.claimed.label).toBe('pe er') // sanitized on store
+})
+
+test('addProposal: a tombstoned pair is suppressed (cosmetic churn too); a changed userId re-proposes', () => {
+  const tombstones: Tombstone[] = [{ agentKey: 'k1', userId: 'U_peer', declinedAt: '2026-06-28T00:00:00.000Z' }]
+  const cosmetic = addProposal([], prop({ claimed: { agentKey: 'k1', userId: 'U_peer', label: 'NEW NAME' } }), tombstones)
+  expect(cosmetic).toHaveLength(0)
+  const changed = addProposal([], prop({ targetId: 'U_other', claimed: { agentKey: 'k1', userId: 'U_other' } }), tombstones)
+  expect(changed).toHaveLength(1)
+})
+
+test('addProposal: dedupes by kind+targetId+channelKey', () => {
+  const first = addProposal([], prop())
+  const second = addProposal(first, prop({ claimed: { agentKey: 'k1', userId: 'U_peer', label: 'different' } }))
+  expect(second).toHaveLength(1)
+})
+
+test('addProposal: bounds proposals per claimed agentKey, dropping the oldest (R26)', () => {
+  let pending: Proposal[] = []
+  for (let i = 0; i < MAX_PROPOSALS_PER_AGENT_KEY + 5; i++) {
+    pending = addProposal(
+      pending,
+      prop({
+        kind: 'collaborator',
+        targetId: `U_${i}`,
+        claimed: { agentKey: 'flood', userId: `U_${i}` },
+        discoveredAt: `2026-06-28T00:00:${String(i).padStart(2, '0')}.000Z`,
+      }),
+    )
+  }
+  const forKey = pending.filter(p => p.claimed.agentKey === 'flood')
+  expect(forKey).toHaveLength(MAX_PROPOSALS_PER_AGENT_KEY)
+  expect(forKey.some(p => p.targetId === 'U_0')).toBe(false) // oldest dropped
+  expect(forKey.some(p => p.targetId === `U_${MAX_PROPOSALS_PER_AGENT_KEY + 4}`)).toBe(true)
+})
+
+test('tombstoneForProposal: a pair-less proposal yields no tombstone', () => {
+  expect(tombstoneForProposal(prop({ kind: 'transport', claimed: {} }), 'now')).toBeUndefined()
+  expect(tombstoneForProposal(prop(), 'now')).toEqual({ agentKey: 'k1', userId: 'U_peer', declinedAt: 'now' })
+})
+
+test('isTombstoned / isTrustedPair match by exact pair', () => {
+  expect(isTombstoned([{ agentKey: 'k', userId: 'u', declinedAt: 't' }], 'k', 'u')).toBe(true)
+  expect(isTombstoned([{ agentKey: 'k', userId: 'u', declinedAt: 't' }], 'k', 'OTHER')).toBe(false)
+  expect(isTrustedPair([{ agentKey: 'k', userId: 'u', trustedAt: 't' }], 'k', 'u')).toBe(true)
+})
+
+test('isProposalConfirmed: owner / peer / transport recognized once present in authoring', () => {
+  const a: AuthoringAccess = {
+    bots: {},
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [], collaborators: [], meshTransport: true } },
+    roster: { people: {}, peers: { p1: { platform: 'discord', userId: 'U_peer', blurb: 'b' } } },
+    me: { discord: 'U_owner' },
+  }
+  expect(isProposalConfirmed(prop({ kind: 'owner', targetId: 'U_owner' }), a)).toBe(true)
+  expect(isProposalConfirmed(prop({ kind: 'peer', targetId: 'U_peer' }), a)).toBe(true)
+  expect(isProposalConfirmed(prop({ kind: 'peer', targetId: 'U_absent' }), a)).toBe(false)
+  expect(isProposalConfirmed(prop({ kind: 'transport', targetId: 'C1', channelKey: 'discord:C1' }), a)).toBe(true)
+  expect(isProposalConfirmed(prop({ kind: 'transport', targetId: 'C2', channelKey: 'discord:C2' }), a)).toBe(false)
+})
+
+test('reconcilePendingAgainst: drops only the now-confirmed entries', () => {
+  const a: AuthoringAccess = {
+    bots: {},
+    channels: {},
+    roster: { people: {}, peers: { p1: { platform: 'discord', userId: 'U_peer', blurb: 'b' } } },
+  }
+  const pending = [prop({ targetId: 'U_peer' }), prop({ targetId: 'U_still', claimed: { agentKey: 'k2', userId: 'U_still' } })]
+  expect(reconcilePendingAgainst(pending, a).map(p => p.targetId)).toEqual(['U_still'])
+})
+
+test('projectToRuntime ignores trust anchors (inertness)', () => {
+  const base: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {},
+    roster: { people: {}, peers: {} },
+  }
+  const withTrust: AuthoringAccess = {
+    ...base,
+    trust: { tombstones: [{ agentKey: 'k', userId: 'u', declinedAt: 't' }], trustedPairs: [{ agentKey: 'k', userId: 'u', trustedAt: 't' }] },
+  }
+  expect(JSON.stringify(projectToRuntime(withTrust))).toBe(JSON.stringify(projectToRuntime(base)))
+})
