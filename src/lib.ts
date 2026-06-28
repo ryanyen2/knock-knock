@@ -1795,6 +1795,20 @@ export function isMeshLine(text: string): boolean {
   return text.startsWith(MESH_PREFIX)
 }
 
+/** Best-effort peek at a wire line's verb WITHOUT validating it — used ONLY to order a
+ *  two-pass replay (identity beacons before the coordination lines that depend on them).
+ *  This never authorizes anything: `decodeMeshEvent` remains the sole trust gate. Returns
+ *  undefined on any parse failure or a non-mesh line. */
+export function meshLineVerb(line: string): string | undefined {
+  if (!line.startsWith(MESH_PREFIX)) return undefined
+  try {
+    const wire = JSON.parse(Buffer.from(line.slice(MESH_PREFIX.length), 'base64').toString('utf8'))
+    return wire && typeof wire.v === 'string' ? wire.v : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Encode a coordination interaction for the wire — the hashed fields PLUS createdAt
  *  (NOT in the content hash, but every fold orders by it, so it must travel) and the
  *  lifecycle. */

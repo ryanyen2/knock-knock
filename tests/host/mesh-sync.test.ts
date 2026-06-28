@@ -23,7 +23,16 @@ import {
   type AgentDirectoryFoldState,
 } from '../../src/ledger/concepts/agent-directory.ts'
 import { coordArtifact } from '../../src/ledger/concepts/coordination-board.ts'
-import { isMeshLine, encodeMeshEvent } from '../../src/lib.ts'
+import {
+  taskDagFold,
+  taskArtifact,
+  taskRecordsFor,
+  TASK_DAG_FOLD,
+  type TaskDagFoldState,
+} from '../../src/ledger/concepts/task-dag.ts'
+import { isMeshLine, encodeMeshEvent, meshTaskClaimant, projectTaskDag, readyTasks } from '../../src/lib.ts'
+
+type Recent = { authorId: string; text: string }
 
 const ROOM: ChannelId = 'room1'
 const TRANSPORT: ChannelId = 'transport1'
@@ -59,10 +68,12 @@ async function harness(
   coResident: string[],
   transportScope?: string,
   resolveRoom: (scope: string) => string | undefined = () => ROOM,
+  fetchRecent?: (scope: string, limit: number) => Promise<Recent[]>,
 ) {
   const store = new SqliteStore(':memory:')
   const engine = new FoldEngine(store)
   await engine.register(agentDirectoryFold)
+  await engine.register(taskDagFold)
   const sent: { scope: string; text: string }[] = []
   const mesh = new MeshSync({
     store,
@@ -72,6 +83,7 @@ async function harness(
     resolveRoom,
     allRooms: () => [ROOM],
     ...(transportScope ? { transportScope: () => transportScope } : {}),
+    ...(fetchRecent ? { fetchRecent } : {}),
     send: async (scope, text) => { sent.push({ scope, text }); return { id: `m${sent.length}`, scope } },
     noteBotMsg: () => {},
     log: () => {},
@@ -80,15 +92,50 @@ async function harness(
   return { store, engine, sent, mesh }
 }
 
+/** Task-op proposal builders for replay windows (verbs in MESH_VERB_ALLOWLIST). */
+function taskCreated(key: string, id: string, channel: ChannelId = ROOM) {
+  return {
+    actor: key, role: 'agent' as Role, channel,
+    target: { artifactId: taskArtifact(channel), anchor: { kind: 'none' as const } },
+    verb: 'task.created' as const,
+    patch: { kind: 'task' as const, data: { id, label: id } },
+    effect: 'pure' as const, caused_by: [] as string[],
+  }
+}
+function taskClaimed(key: string, id: string, owner: string, channel: ChannelId = ROOM) {
+  return {
+    actor: key, role: 'agent' as Role, channel,
+    target: { artifactId: taskArtifact(channel), anchor: { kind: 'none' as const } },
+    verb: 'task.claimed' as const,
+    patch: { kind: 'task' as const, data: { id, owner } },
+    effect: 'pure' as const, caused_by: [] as string[],
+  }
+}
+function taskCompleted(key: string, id: string, channel: ChannelId = ROOM) {
+  return {
+    actor: key, role: 'agent' as Role, channel,
+    target: { artifactId: taskArtifact(channel), anchor: { kind: 'none' as const } },
+    verb: 'task.completed' as const,
+    patch: { kind: 'task' as const, data: { id } },
+    effect: 'pure' as const, caused_by: [] as string[],
+  }
+}
+
 /** Author an interaction on a SEPARATE sender store and return its wire line — mirrors a
  *  peer relay encoding a locally-authored event for the channel. The sender's userId is the
- *  provenance the receiver checks, so ingest must be called with the same `senderUserId`. */
-async function wireLineFrom(proposal: Parameters<typeof admit>[1]): Promise<string> {
+ *  provenance the receiver checks, so ingest must be called with the same `senderUserId`.
+ *  `createdAtOverride` back-dates the event (createdAt is NOT in the content hash, so the hash
+ *  still validates) — used to prove replay preserves the ORIGINAL post time, not ingest time. */
+async function wireLineFrom(
+  proposal: Parameters<typeof admit>[1],
+  createdAtOverride?: string,
+): Promise<string> {
   const sender = new SqliteStore(':memory:')
   try {
     const r = await admit(sender, proposal)
     if (r.kind !== 'admitted') throw new Error(`could not author wire line: ${r.kind}`)
-    return encodeMeshEvent(r.interaction)
+    const i = createdAtOverride ? { ...r.interaction, createdAt: createdAtOverride } : r.interaction
+    return encodeMeshEvent(i)
   } finally {
     sender.close()
   }
@@ -210,5 +257,129 @@ test('ingest always keeps an agent.identity beacon, even though agent-directory 
   const ok = await mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev')
   expect(ok).toBe(true)
   expect(await store.listByChannel('agent-directory')).toHaveLength(1)
+  store.close()
+})
+
+// ─── Phase 1b: history replay on reconnect (recovers the offline gap) ───────────────────
+
+test('regression-first: a coord event missed while offline never appears WITHOUT replay, and DOES after', async () => {
+  // eve (a remote peer) posted an identity beacon + a coord.note to the transport channel
+  // while cc was offline. Both sit in the channel history fetchRecent reads back.
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const note = await wireLineFrom(coordNote('eve', ROOM))
+  const window: Recent[] = [
+    { authorId: 'U_ev', text: beacon },
+    { authorId: 'U_ev', text: note },
+  ]
+
+  // No fetchRecent dep ⇒ reconcile is a no-op; the missed note never lands (today's behavior).
+  const a = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined))
+  await a.mesh.reconcileOnConnect()
+  expect(await a.store.listByChannel(ROOM)).toHaveLength(0)
+  a.store.close()
+
+  // With fetchRecent, reconcile reads the window back and the missed note converges — no new
+  // live message needed.
+  const b = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+  await b.mesh.reconcileOnConnect()
+  expect(await b.store.listByChannel(ROOM)).toHaveLength(1)
+  b.store.close()
+})
+
+test('identity-first: a window with a fresh peer beacon AND its coord.note ingests BOTH', async () => {
+  // The coord.note depends on eve's identity for provenance. The window is ordered note-FIRST
+  // to prove the two-pass reorders it: pass 1 lands the beacon, pass 2 then accepts the note.
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const note = await wireLineFrom(coordNote('eve', ROOM))
+  const window: Recent[] = [
+    { authorId: 'U_ev', text: note }, // out of order on purpose
+    { authorId: 'U_ev', text: beacon },
+  ]
+  const { store, mesh } = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+  await mesh.reconcileOnConnect()
+  expect(await store.listByChannel(ROOM)).toHaveLength(1) // note NOT dropped for an unknown actor
+  expect(await store.listByChannel('agent-directory')).toHaveLength(1)
+  store.close()
+})
+
+test('task-fold terminality: replaying created+claimed WITHOUT completed does not resurrect a claimable task', async () => {
+  // The dangerous case (plan Critical detail 2): the terminal task.completed lies OUTSIDE the
+  // window, so replay sees only created+claimed. The task must settle as `claimed` (owned) —
+  // never bounce back to `open`/ready where a fresh peer could re-claim and re-drive it.
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const created = await wireLineFrom(taskCreated('eve', 'T1'))
+  const claimed = await wireLineFrom(taskClaimed('eve', 'T1', 'eve'))
+  const window: Recent[] = [beacon, created, claimed].map(text => ({ authorId: 'U_ev', text }))
+
+  const { store, engine, mesh } = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+  await mesh.reconcileOnConnect()
+
+  const records = taskRecordsFor(engine.get<TaskDagFoldState>(TASK_DAG_FOLD), ROOM)
+  const board = projectTaskDag(records)
+  expect(board.get('T1')?.status).toBe('claimed')
+  expect(readyTasks(board).some(t => t.id === 'T1')).toBe(false) // not claimable
+  store.close()
+})
+
+test('election agreement: replay preserves the original createdAt, so two relays elect the same claimant', async () => {
+  // Two eligible claimants. A task.created authored 10 minutes ago (back-dated) is replayed
+  // into two independent relays. Each must derive the SAME claimant slot at the same wall
+  // clock — which only holds if replay keeps the ORIGINAL createdAt (age from post time, not
+  // ingest time; plan Critical detail 3).
+  const oldCreatedAt = '2026-06-28T12:00:00.000Z'
+  const now = Date.parse('2026-06-28T12:10:00.000Z') // 10 min later
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const created = await wireLineFrom(taskCreated('eve', 'T9'), oldCreatedAt)
+  const window: Recent[] = [beacon, created].map(text => ({ authorId: 'U_ev', text }))
+  const eligible = ['cc', 'eve']
+  const windowMs = 45_000
+
+  const replayInto = async () => {
+    const h = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+    await h.mesh.reconcileOnConnect()
+    const rec = taskRecordsFor(h.engine.get<TaskDagFoldState>(TASK_DAG_FOLD), ROOM).find(r => r.verb === 'task.created' && r.data.id === 'T9')
+    h.store.close()
+    return rec!.createdAt
+  }
+
+  const createdAtA = await replayInto()
+  const createdAtB = await replayInto()
+  expect(createdAtA).toBe(oldCreatedAt) // preserved, not re-stamped to ingest time
+  expect(createdAtB).toBe(oldCreatedAt)
+
+  const ageMs = now - Date.parse(createdAtA)
+  const claimantA = meshTaskClaimant(eligible, 'T9', ageMs, windowMs)
+  const claimantB = meshTaskClaimant(eligible, 'T9', now - Date.parse(createdAtB), windowMs)
+  expect(claimantA).toBe(claimantB) // both relays agree on the single claimant — no double-claim
+  expect(claimantA).toBeDefined()
+})
+
+test('sender parity: a replayed coord line whose author does not own the actor is rejected', async () => {
+  // eve's identity is in the directory under U_ev. A coord.note for actor eve arriving from a
+  // DIFFERENT platform account (U_imposter) fails decodeMeshEvent provenance — exactly as it
+  // would on the live path. Replay applies the identical gate (it routes through ingest()).
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const note = await wireLineFrom(coordNote('eve', ROOM))
+  const window: Recent[] = [
+    { authorId: 'U_ev', text: beacon },
+    { authorId: 'U_imposter', text: note }, // wrong sender for actor eve
+  ]
+  const { store, mesh } = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+  await mesh.reconcileOnConnect()
+  expect(await store.listByChannel(ROOM)).toHaveLength(0) // spoofed note rejected
+  store.close()
+})
+
+test('idempotent + backward-compat: replaying an already-held window adds nothing; absent fetchRecent is a no-op', async () => {
+  const beacon = await wireLineFrom(identity('eve', 'U_ev'))
+  const note = await wireLineFrom(coordNote('eve', ROOM))
+  const window: Recent[] = [beacon, note].map(text => ({ authorId: 'U_ev', text }))
+  const { store, mesh } = await harness(['cc'], TRANSPORT, scope => (scope === ROOM ? ROOM : undefined), async () => window)
+
+  await mesh.reconcileOnConnect()
+  const after1 = (await store.listByChannel(ROOM)).length + (await store.listByChannel('agent-directory')).length
+  await mesh.reconcileOnConnect() // replay the SAME window again
+  const after2 = (await store.listByChannel(ROOM)).length + (await store.listByChannel('agent-directory')).length
+  expect(after2).toBe(after1) // content-addressed ⇒ re-ingest is a no-op
   store.close()
 })

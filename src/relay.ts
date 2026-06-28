@@ -488,6 +488,10 @@ const schedulerOpts: TaskSchedulerOpts = {
               .map(id => id.agentKey)
           },
         },
+        // Hold off per-insert scheduling while ANY host replays channel history on reconnect:
+        // each replayed task.* insert would otherwise fire the scheduler against a half-built
+        // board. The settle pass below runs once the last host finishes.
+        suppressed: () => hosts.some(h => h.isReplaying),
       }
     : {}),
 }
@@ -644,6 +648,10 @@ synchronizer.start()
 // (the watches §7 lesson: failover can't rely on an event). A no-op when idle.
 const TASK_RECONCILE_MS = 15_000
 const reconcileTasks = async () => {
+  // Skip while any host is replaying channel history on reconnect — scheduling must wait for
+  // the converged ledger. Doubles as the post-replay settle: a host calls this after its
+  // replay (its own flag cleared), and it runs once the LAST host finishes, on the full set.
+  if (hosts.some(h => h.isReplaying)) return
   let state: TaskDagFoldState
   try {
     state = engine.get<TaskDagFoldState>(TASK_DAG_FOLD)
@@ -710,6 +718,10 @@ for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
   const host = hosts[n]!
   const token = process.env[access.agents[entry.key]!.tokenEnv] ?? ''
+  // After a host finishes replaying channel history on reconnect, settle the task board once
+  // on the converged ledger (no-op while any host still replays — so it lands once, on the
+  // full set). Mesh-only; non-mesh hosts never set replaying, so this never fires for them.
+  host.onReplaySettle = reconcileTasks
   void host.start(token).catch(err => {
     ui.error(entry.key, `login failed: ${err}`)
   })

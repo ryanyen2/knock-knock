@@ -106,7 +106,7 @@ import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
-import { MeshSync } from './host/mesh-sync.ts'
+import { MeshSync, type FetchRecent } from './host/mesh-sync.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
@@ -167,6 +167,18 @@ export class AgentHost {
   /** Called the first time an idle host admits an inbound message (it wakes). The relay
    *  uses this to allocate a TUI pane / promote the bot. Set by the relay; no-op otherwise. */
   onWake?: (key: string) => void
+  /** Run one task-scheduler settle pass over the converged ledger AFTER reconnect replay.
+   *  Set by the relay to its `reconcileTasks` (which skips while any host `isReplaying`), so
+   *  the board is scheduled once on the settled set instead of per replayed insert. No-op
+   *  otherwise. */
+  onReplaySettle?: () => Promise<void>
+  /** True while this host is replaying channel history on reconnect. The relay's task
+   *  scheduler suppresses per-insert + timer scheduling for the duration so a half-built
+   *  board can't spuriously claim/drive tasks mid-replay (plan Critical detail 3). */
+  private replaying = false
+  get isReplaying(): boolean {
+    return this.replaying
+  }
   private readonly sessions = new Map<ChannelId, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
@@ -344,6 +356,9 @@ export class AgentHost {
     // Start the mesh transport BEFORE publishing identity, so this bot's own
     // `agent.identity` admit is broadcast over the mesh and peers' directories converge.
     if (this.meshEnabled && !this.mesh) {
+      // Reconnect-replay source: duck-typed off the adapter (Discord/Slack export it), kept
+      // off the MessagingAdapter interface for thinness. Absent ⇒ replay is a no-op.
+      const fr = (this.messaging as { fetchRecent?: FetchRecent }).fetchRecent
       this.mesh = new MeshSync({
         store: this.store,
         ownKey: this.key,
@@ -352,6 +367,7 @@ export class AgentHost {
         resolveRoom: scope => this.roomForScope(scope),
         allRooms: () => Object.keys((this.getAccess().agents[this.key] ?? this.agent).rooms),
         transportScope: () => this.meshTransportRoom(),
+        ...(fr ? { fetchRecent: fr.bind(this.messaging) } : {}),
         send: (scope, text) => this.messaging.send(scope, text),
         noteBotMsg: id => this.noteBotMsg(id),
         log: msg => this.ui.note(this.key, msg),
@@ -359,6 +375,21 @@ export class AgentHost {
       this.mesh.start()
     }
     await this.publishIdentity().catch(err => this.ui.error(this.key, `publish identity: ${err}`))
+    // Recover the offline gap: read the channel(s) back and re-ingest missed coordination.
+    // Scheduling is suppressed for the duration (replaying flag, honored by the relay's task
+    // scheduler), then a single settle pass runs on the converged ledger — so a fresh peer
+    // with a large task age can't claim a task whose terminal event is later in the window.
+    if (this.mesh) {
+      this.replaying = true
+      try {
+        await this.mesh.reconcileOnConnect()
+      } catch (err) {
+        this.ui.error(this.key, `mesh reconcile on connect: ${err}`)
+      } finally {
+        this.replaying = false
+      }
+      await this.onReplaySettle?.().catch(err => this.ui.error(this.key, `mesh replay settle: ${err}`))
+    }
   }
 
   /** Enable the no-Postgres cross-machine mesh transport for this host. Set by the

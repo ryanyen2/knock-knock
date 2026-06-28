@@ -35,6 +35,7 @@ import type { MessageRef } from '../messaging-adapter.ts'
 import {
   encodeMeshEvent,
   decodeMeshEvent,
+  meshLineVerb,
   isMeshLine,
   MESH_VERB_ALLOWLIST,
   type AgentIdentity,
@@ -44,6 +45,18 @@ import {
  *  later-joining peer's directory converges even if it missed the connect beacon. Only
  *  fires once a remote peer is known, so a lone co-resident relay never heartbeats. */
 export const MESH_IDENTITY_HEARTBEAT_MS = 4 * 60_000
+
+/** How many recent channel messages reconcile-on-reconnect reads back. A const, not config
+ *  (CLAUDE.md §3): the chat platform is the durable log, and a relay offline long enough to
+ *  exceed ~200 coordination lines is past what a bounded replay should silently claim to
+ *  cover — the warn-on-saturation log fires there, and Phase 2 backfill is the real proof. */
+export const MESH_REPLAY_WINDOW = 200
+
+/** Page back recent messages in a scope, OLDEST-first (createdAt rides in-band in each mesh
+ *  line, so no separate timestamp). Deliberately NOT a `MessagingAdapter` method — the host
+ *  duck-types it off the adapter and passes it here only when present, keeping that interface
+ *  thin. Absent ⇒ replay is a no-op and the mesh behaves exactly as before (fire-and-forget). */
+export type FetchRecent = (scope: string, limit: number) => Promise<{ authorId: string; text: string }[]>
 
 export type MeshSyncDeps = {
   store: Store
@@ -62,6 +75,9 @@ export type MeshSyncDeps = {
    *  the human rooms as before. When set, beacons + coordination go here instead, so the
    *  human channels never see ⟦kk-mesh⟧ base64. */
   transportScope?: () => string | undefined
+  /** Read recent channel history for reconnect replay. Optional — absent ⇒ no replay
+   *  (today's fire-and-forget behavior; the change is purely additive). */
+  fetchRecent?: FetchRecent
   /** Post a coordination line to a scope. */
   send: (scope: string, text: string) => Promise<MessageRef | undefined>
   /** Tag a posted message id as bot-authored (so it's never treated as inbound chat). */
@@ -170,6 +186,66 @@ export class MeshSync {
       )
     }
     return missing
+  }
+
+  /** Reconnect replay: the chat channel is a durable, ordered log the platform retains while
+   *  a bot is offline, so the offline gap is recoverable by reading it back and re-ingesting
+   *  each ⟦kk-mesh⟧ line through the (scope-guarded, provenance-checked) `ingest()`. Idempotent
+   *  append + (createdAt, hash) fold ordering make dup/reorder non-issues.
+   *
+   *  Identity-first two-pass: a coord/task line is dropped unless its actor is already in the
+   *  directory, so every `agent.identity` beacon in the window is ingested BEFORE the lines
+   *  that depend on it. The verb peek (`meshLineVerb`) only decides ORDER — `ingest()` re-runs
+   *  the full trust gate (decode + scope + provenance), so the replay path is no weaker than
+   *  the live path.
+   *
+   *  Trust parity note: the live mesh path (agent-host handleInbound) gates an inbound mesh
+   *  line ONLY by `decodeMeshEvent` provenance — it ingests before the `guildSenderAllowed`
+   *  check, which never runs for a mesh line. Replay routes through the same `ingest()`, so it
+   *  applies the identical gate. We deliberately do NOT add a stricter sender allowlist here:
+   *  it would reject a freshly-discovered peer's beacon (its author isn't a known participant
+   *  until that very beacon lands), silently dropping that peer's coordination on replay — the
+   *  exact divergence this method exists to prevent. The self-inflation vector is a pre-existing
+   *  property of the live path (replay only re-ingests what online peers already accepted); its
+   *  real fix is signed beacons (Phase 3), not an asymmetric replay gate.
+   *
+   *  Caller (host) suppresses the task scheduler for the duration and runs ONE settle pass on
+   *  the converged ledger afterward, so a half-built board can't spuriously claim/drive tasks
+   *  mid-replay (the "replay storm"; see plan Critical detail 3). */
+  async reconcileOnConnect(): Promise<void> {
+    const fetchRecent = this.deps.fetchRecent
+    if (!fetchRecent) return // capability absent ⇒ no replay; behavior identical to before
+
+    const t = this.deps.transportScope?.()
+    const scopes = t ? [t] : this.deps.allRooms()
+    for (const scope of scopes) {
+      let fetched: { authorId: string; text: string }[]
+      try {
+        fetched = await fetchRecent(scope, MESH_REPLAY_WINDOW)
+      } catch (err) {
+        this.deps.log(`mesh: replay fetch for ${scope} failed: ${err}`)
+        continue
+      }
+      const lines = fetched.filter(f => isMeshLine(f.text))
+      const identities = lines.filter(l => meshLineVerb(l.text) === 'agent.identity')
+      const rest = lines.filter(l => meshLineVerb(l.text) !== 'agent.identity')
+      let ingested = 0
+      for (const l of identities) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 1
+      for (const l of rest) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 2
+
+      const saturated = fetched.length >= MESH_REPLAY_WINDOW
+      this.dbg(
+        `replayed ${lines.length} mesh line(s) of ${fetched.length} fetched on ${scope}, ` +
+          `ingested ${ingested} new, window-saturated=${saturated}`,
+      )
+      // A bounded replay must never report success without flagging it may have under-covered.
+      if (saturated) {
+        this.deps.log(
+          `mesh: replay window on ${scope} saturated at ${MESH_REPLAY_WINDOW} messages — the ` +
+            `offline gap may exceed the window; divergence possible until a peer re-broadcasts.`,
+        )
+      }
+    }
   }
 
   /** Verbose mesh tracing, gated on KNOCK_KNOCK_DEBUG. Routed through the host UI (deps.log)
