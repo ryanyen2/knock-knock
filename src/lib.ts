@@ -5,6 +5,11 @@
 
 import type { PermissionProfile } from './agent-adapter.ts'
 import type {
+  DiscoveryCapabilities,
+  DiscoveredEntity,
+  EnumerationOutcome,
+} from './messaging-adapter.ts'
+import type {
   CoordNote,
   TaskPatchData,
   AgentIdentity,
@@ -544,6 +549,146 @@ export function isProposalConfirmed(p: Proposal, a: AuthoringAccess): boolean {
 /** Drop the pending proposals whose claimed identity is now confirmed in `a`. Pure. */
 export function reconcilePendingAgainst(pending: ReadonlyArray<Proposal>, a: AuthoringAccess): Proposal[] {
   return pending.filter(p => !isProposalConfirmed(p, a))
+}
+
+// ─── Gap-resolver core (pure; the heart of auto-configuring onboarding) ───────
+// Given on-disk authoring config + a live DiscoverySnapshot, compute the unmet pieces of the
+// complete-config target for ONE (bot, channel) pairing, each tagged with the cheapest legal fill
+// rung. No I/O — the snapshot is the only window onto live state, so this is unit-tested without
+// mocks (KTD1). The five flows differ only in the snapshot they feed in.
+
+/** Normalized live facts for a (bot, channel), produced by the impure assembler in discovery.ts
+ *  and consumed ONLY through this pure type — so the resolver never touches an adapter or the
+ *  directory directly. Degraded/unsupported enumeration outcomes are carried, not swallowed. */
+export type DiscoverySnapshot = {
+  platform: Platform
+  /** Live self bot-id from the connected adapter (the auto-derive source for self-ID). */
+  selfId?: string
+  selfLabel?: string
+  /** Channels the bot can enumerate (or degraded/unsupported). */
+  channels: EnumerationOutcome
+  /** Members of the focus channel (or degraded/unsupported when no channel / not capable). */
+  members: EnumerationOutcome
+  /** Claimed (unverified) peer identities visible to this snapshot, scoped to `platform`. */
+  directoryPeers: AgentIdentity[]
+  /** Did the live directory reflect a connected relay? Offline doctor → false. */
+  directoryAvailable: boolean
+  /** Is a mesh-transport channel already configured on this platform? */
+  transportConfigured: boolean
+  /** The capability descriptor this snapshot was assembled under. */
+  capabilities: DiscoveryCapabilities
+}
+
+/** A field the complete-config target (R1) requires for a (bot, channel) pairing. */
+export type NeedKind = 'token' | 'self-id' | 'channel-binding' | 'collaborators' | 'owner-id' | 'transport'
+
+/** The rung that fills a need: auto-derive (no prompt) → pick (from a discovered list) → manual
+ *  (guided entry, or nonce capture for owner-id). Chosen by capability, then runtime outcome. */
+export type FillRung = 'auto-derive' | 'pick' | 'manual'
+
+/** One unmet need with its chosen fill rung. `options` carries the pick-list when `rung === 'pick'`;
+ *  `reason` explains a fall-through to manual (degraded/unsupported) so the UX can signpost it (R15). */
+export type Need = {
+  kind: NeedKind
+  rung: FillRung
+  reason?: string
+  options?: DiscoveredEntity[]
+}
+
+/** Inputs to the pure resolver: the on-disk config, which (bot, channel) is being resolved, the
+ *  assembled live snapshot, and whether a confirmed cross-machine peer makes transport a need. */
+export type ResolveInput = {
+  authoring: AuthoringAccess
+  botKey: string
+  /** `${platform}:${channelId}` of the channel being configured; absent pre-channel-pick. */
+  channelKey?: string
+  snapshot: DiscoverySnapshot
+  /** A confirmed cross-machine peer exists for this channel ⇒ transport is needed when unconfigured
+   *  (R1/R18). The caller computes this from trust classification (U6). */
+  crossMachinePeer?: boolean
+}
+
+/** Choose the fill rung for an enumeration-backed need (channel-binding / collaborators / owner-id)
+ *  from the capability flag and the runtime outcome (R14/R21): capable + non-empty results → pick;
+ *  capable but degraded, unsupported-at-runtime, or empty → manual with a stated reason. Pure. */
+function rungForEnumeration(
+  capable: boolean,
+  outcome: EnumerationOutcome,
+  emptyReason: string,
+): { rung: FillRung; reason?: string; options?: DiscoveredEntity[] } {
+  if (!capable) return { rung: 'manual', reason: 'not supported on this platform' }
+  if (outcome.kind === 'results') {
+    if (outcome.items.length > 0) return { rung: 'pick', options: outcome.items }
+    return { rung: 'manual', reason: emptyReason }
+  }
+  if (outcome.kind === 'degraded') return { rung: 'manual', reason: outcome.reason }
+  return { rung: 'manual', reason: 'enumeration unavailable' }
+}
+
+/** Compute the ordered unmet needs for a (bot, channel), each with its fill rung. Pure.
+ *  Order mirrors the onboarding flow: self-ID → channel binding → collaborators → owner-ID →
+ *  transport. A missing/invalid token short-circuits everything (nothing can be derived without
+ *  a working token). */
+export function resolveGaps(input: ResolveInput): Need[] {
+  const { authoring, botKey, channelKey, snapshot, crossMachinePeer } = input
+  const platform = snapshot.platform
+  const bot = authoring.bots[botKey]
+  const channel = channelKey ? authoring.channels[channelKey] : undefined
+
+  // Token is met iff self-ID resolved (we connected with a working token). If not, the only
+  // actionable need is fixing the token — enumeration/derivation can't proceed without it.
+  if (!snapshot.selfId) {
+    return [{ kind: 'token', rung: 'manual', reason: 'token missing or invalid (self-ID did not resolve)' }]
+  }
+
+  const needs: Need[] = []
+
+  // Self-ID: always auto-derived from the token, never prompted (R5). A cached identity
+  // (`displayName`, written on a prior connect) is the evidence it's already been derived.
+  if (!bot?.displayName) needs.push({ kind: 'self-id', rung: 'auto-derive' })
+
+  // Channel binding: met iff the channel is bound AND this bot is a member of it.
+  const channelBound = !!channel && channel.members.some(m => m.bot === botKey)
+  if (!channelBound) {
+    needs.push({
+      kind: 'channel-binding',
+      ...rungForEnumeration(snapshot.capabilities.channelEnumeration, snapshot.channels, 'no channels visible'),
+    })
+  }
+
+  // Collaborators: met iff the channel already lists at least one collaborator.
+  const hasCollaborators = !!channel && channel.collaborators.length > 0
+  if (!hasCollaborators) {
+    needs.push({
+      kind: 'collaborators',
+      ...rungForEnumeration(snapshot.capabilities.memberEnumeration, snapshot.members, 'no members visible'),
+    })
+  }
+
+  // Owner-ID: met iff `me[platform]` is set. Pick from members when available, else nonce capture
+  // (R7/R22) — the manual rung for owner-id is the guided nonce flow, not free typing.
+  const ownerSet = !!authoring.me?.[platform]
+  if (!ownerSet) {
+    const r = rungForEnumeration(snapshot.capabilities.memberEnumeration, snapshot.members, 'no members visible')
+    needs.push({
+      kind: 'owner-id',
+      rung: r.rung,
+      ...(r.options ? { options: r.options } : {}),
+      ...(r.rung === 'manual' ? { reason: `${r.reason ?? 'unavailable'} — capture owner-ID via a single-use nonce` } : {}),
+    })
+  }
+
+  // Transport: only when a confirmed cross-machine peer exists and none is configured yet (R18).
+  // Create where the platform allows it (pick), else guide the owner to designate one (manual).
+  if (crossMachinePeer && !snapshot.transportConfigured) {
+    needs.push(
+      snapshot.capabilities.channelCreation
+        ? { kind: 'transport', rung: 'pick', reason: 'create a dedicated mesh-transport channel' }
+        : { kind: 'transport', rung: 'manual', reason: 'designate an existing channel as mesh transport' },
+    )
+  }
+
+  return needs
 }
 
 // ─── Policy classification for adapters without native pattern matching ───────

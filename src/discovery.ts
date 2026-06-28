@@ -15,7 +15,8 @@ import type {
   EnumerationOutcome,
   MessagingAdapter,
 } from './messaging-adapter.ts'
-import type { AgentIdentity, Bot, Platform } from './lib.ts'
+import type { AgentIdentity, Bot, Platform, DiscoverySnapshot } from './lib.ts'
+export type { DiscoverySnapshot } from './lib.ts'
 
 /** The subset of a MessagingAdapter the assembler touches — self-id plus the duck-typed
  *  discovery calls (off the core interface, present only where capable). A real adapter satisfies
@@ -27,28 +28,6 @@ export type DiscoveryAdapter = {
   listChannels?(): Promise<EnumerationOutcome>
   listMembers?(channelId: string): Promise<EnumerationOutcome>
   createChannel?(name: string): Promise<EnumerationOutcome>
-}
-
-/** Normalized live facts for a `(bot, channel)` pairing. The resolver reads only this — never an
- *  adapter or the directory directly. Degraded/unsupported outcomes are carried, not swallowed. */
-export type DiscoverySnapshot = {
-  platform: Platform
-  /** Live self bot-id from the connected adapter (the auto-derive source for self-ID). */
-  selfId?: string
-  selfLabel?: string
-  /** Channels the bot can enumerate (or degraded/unsupported). */
-  channels: EnumerationOutcome
-  /** Members of the focus channel (or degraded/unsupported when no channel / not capable). */
-  members: EnumerationOutcome
-  /** Claimed (unverified) peer identities visible to this snapshot, scoped to `platform`. */
-  directoryPeers: AgentIdentity[]
-  /** Did the live directory reflect a connected relay? Offline doctor → false (so cross-machine
-   *  discovery reports "unavailable", not "none"). */
-  directoryAvailable: boolean
-  /** Is a mesh-transport channel already configured on this platform? */
-  transportConfigured: boolean
-  /** The capability descriptor this snapshot was assembled under. */
-  capabilities: DiscoveryCapabilities
 }
 
 /** Sources a caller can supply. The relay has all of them; doctor has an adapter + a
