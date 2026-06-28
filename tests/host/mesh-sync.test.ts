@@ -428,72 +428,88 @@ test('decodeFrontier: sender-gated and head-validated', () => {
   expect(decodeFrontier(encodeFrontier({ [ROOM]: ['bad'] }), 'U_A', idents)).toBeNull() // no valid heads
 })
 
-/** Set up a HOLDER relay (with an injectable clock) that knows peer A (the future requester)
- *  and peer eve (the actor), and holds one of eve's coordination events — ready to answer a
- *  Want from A. The clock lets the suppression window be exercised deterministically. */
-async function holderHoldingEveNote(resolveRoom: (s: string) => string | undefined, clock?: () => number) {
+/** Set up cc as the AUTHOR-relay ready to answer a Want: cc's own identity is published (so its
+ *  beacon line is cached for identity-first re-post and cc is in the directory), and peer A — the
+ *  future requester, serving ROOM — is in the directory. The clock is injectable so the
+ *  suppression window can be exercised deterministically. Provenance binds the poster to the
+ *  actor, so ONLY the author (cc) can validly re-post its own events. */
+async function authorReadyToAnswer(resolveRoom: (s: string) => string | undefined, clock?: () => number) {
   const h = await harness(['cc'], TRANSPORT, resolveRoom, undefined, clock)
+  await publishIdentity(h.store, h.mesh, 'cc', 'U_cc') // cc in directory + ownIdentityLine cached
   await h.mesh.ingest(await wireLineFrom(identity('aa', 'U_A')), 'U_A') // requester A in directory (serves ROOM)
-  await h.mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev') // actor eve in directory
+  h.sent.length = 0
   return h
 }
 
-test('want round-trip: a holder re-posts the missing event (identity-first) when a peer asks', async () => {
+const hashOf = async (store: SqliteStore, mesh: MeshSync, p: Parameters<typeof admit>[1]) => {
+  const r = await admit(store, p)
+  return r.kind === 'admitted' ? r.interaction.hash : ''
+}
+
+test("want round-trip: the AUTHOR re-posts its own missing event (identity-first) when a peer asks", async () => {
   let t = 1000
-  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined), () => t)
-  const noteLine = await wireLineFrom(coordNote('eve', ROOM))
-  await h.mesh.ingest(noteLine, 'U_ev') // holder held the event at t=1000 (before the want)
-  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
-  h.sent.length = 0 // ignore anything emitted during setup
+  const h = await authorReadyToAnswer(scope => (scope === ROOM ? ROOM : undefined), () => t)
+  const wantedHash = await hashOf(h.store, h.mesh, coordNote('cc', ROOM)) // cc authored + holds it
+  h.sent.length = 0
 
   t = 2000 // the want arrives later — the held event is genuinely old, so we answer
   await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A')
 
   const mesh = h.sent.filter(s => isMeshLine(s.text))
-  expect(mesh.some(s => s.text === noteLine)).toBe(true) // the wanted event re-posted
+  expect(mesh.some(s => meshLineVerb(s.text) === 'coord.note')).toBe(true) // own event re-posted
   expect(mesh.some(s => meshLineVerb(s.text) === 'agent.identity')).toBe(true) // identity-first
   expect(mesh.every(s => s.scope === TRANSPORT)).toBe(true) // only ever on the transport channel
   h.store.close()
 })
 
-test('want suppression: a holder stands down if the hash was (re-)broadcast since the want arrived', async () => {
+test("want: a holder does NOT re-post a peer's event it cannot vouch for (provenance binds poster→actor)", async () => {
+  // cc holds eve's note (ingested), but cc is NOT eve — re-posting it would be rejected at the
+  // requester. So cc stays silent; only eve's own relay can answer for eve's events.
+  const h = await authorReadyToAnswer(scope => (scope === ROOM ? ROOM : undefined))
+  await h.mesh.ingest(await wireLineFrom(identity('eve', 'U_ev')), 'U_ev')
+  await h.mesh.ingest(await wireLineFrom(coordNote('eve', ROOM)), 'U_ev')
+  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
+  h.sent.length = 0
+  await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A')
+  expect(h.sent.filter(s => isMeshLine(s.text))).toHaveLength(0) // not ours to vouch for
+  h.store.close()
+})
+
+test('want suppression: the author stands down if its event was (re-)broadcast since the want arrived', async () => {
   let t = 2000
-  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined), () => t)
-  const noteLine = await wireLineFrom(coordNote('eve', ROOM))
-  await h.mesh.ingest(noteLine, 'U_ev') // observed at t=2000 (recentlySeen = 2000)
+  const h = await authorReadyToAnswer(scope => (scope === ROOM ? ROOM : undefined), () => t)
+  // cc holds its own note AND we mark it "just observed on the channel" at t=2000 via ingest.
+  const line = await wireLineFrom(coordNote('cc', ROOM))
+  await h.mesh.ingest(line, 'U_cc') // records recentlySeen[hash] = 2000
   const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
   h.sent.length = 0
 
   // The want arrives at the SAME instant the hash was last observed ⇒ a peer is answering it.
   await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A')
-  expect(h.sent.some(s => s.text === noteLine)).toBe(false) // suppressed, no duplicate re-post
+  expect(h.sent.some(s => meshLineVerb(s.text) === 'coord.note')).toBe(false) // suppressed
   h.store.close()
 })
 
 test('want rejection: an unknown sender gets no answer', async () => {
-  const h = await holderHoldingEveNote(scope => (scope === ROOM ? ROOM : undefined))
-  await h.mesh.ingest(await wireLineFrom(coordNote('eve', ROOM)), 'U_ev')
-  const wantedHash = (await h.store.listByChannel(ROOM))[0]!.hash
+  const h = await authorReadyToAnswer(scope => (scope === ROOM ? ROOM : undefined))
+  const wantedHash = await hashOf(h.store, h.mesh, coordNote('cc', ROOM))
   h.sent.length = 0
   await h.mesh.handleControl(encodeWant([wantedHash]), 'U_stranger') // not in directory
   expect(h.sent.filter(s => isWantLine(s.text) || isMeshLine(s.text))).toHaveLength(0)
   h.store.close()
 })
 
-test('want scope guard: a holder does NOT re-post an event for a channel the requester does not serve', async () => {
-  // Holder serves BOTH ROOM and H2; requester A serves only ROOM. A asks for an H2 event the
-  // holder holds — it must be withheld (cross-channel exfiltration guard).
+test('want scope guard: the author does NOT re-post its own event for a channel the requester does not serve', async () => {
+  // cc serves ROOM and H2 and authored a note on H2; requester A serves only ROOM. Even though cc
+  // can vouch for it, A doesn't serve H2 → withheld (cross-channel exfiltration guard).
   let t = 1000
-  // Holder serves ROOM and H2 (each as itself, so H2 ingests); A's directory rooms are [ROOM].
-  const h = await holderHoldingEveNote(scope => (scope === ROOM || scope === H2 ? scope : undefined), () => t)
-  const h2Note = await wireLineFrom(coordNote('eve', H2))
-  await h.mesh.ingest(h2Note, 'U_ev')
-  const wantedHash = (await h.store.listByChannel(H2))[0]!.hash
+  const h = await authorReadyToAnswer(scope => (scope === ROOM || scope === H2 ? scope : undefined), () => t)
+  const wantedHash = await hashOf(h.store, h.mesh, coordNote('cc', H2))
   h.sent.length = 0
 
   t = 2000
   await h.mesh.handleControl(encodeWant([wantedHash]), 'U_A') // A serves only ROOM, not H2
-  expect(h.sent.some(s => s.text === h2Note)).toBe(false)
+  expect(h.sent.some(s => meshLineVerb(s.text) === 'coord.note')).toBe(false)
   h.store.close()
 })
 

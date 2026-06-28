@@ -492,20 +492,33 @@ export class SlackMessagingAdapter implements MessagingAdapter {
     // Mesh lines live at the channel root (the transport channel / room), not in threads, so a
     // thread scope still replays its channel's history.
     const { channel } = this.splitScope(scope)
+    // conversations.history may return fewer than `limit` per page even when more history
+    // exists, so page with next_cursor up to `limit` — else replay silently under-covers and
+    // the mesh's saturation warning never fires (Discord pages the same way).
+    const collected: Array<{ user?: string; text?: string }> = []
+    let cursor: string | undefined
     try {
-      const res = await this.web.conversations.history({ channel, limit })
-      const msgs =
-        (res.messages as Array<{ user?: string; text?: string }> | undefined) ?? []
-      const out: { authorId: string; text: string }[] = []
-      for (const m of [...msgs].reverse()) {
-        // newest-first → oldest-first
-        if (!m.user) continue // unattributable (bot_id only) — provenance would fail
-        out.push({ authorId: m.user, text: m.text ?? '' })
+      while (collected.length < limit) {
+        const res = await this.web.conversations.history({
+          channel,
+          limit: Math.min(200, limit - collected.length),
+          ...(cursor ? { cursor } : {}),
+        })
+        const page = (res.messages as Array<{ user?: string; text?: string }> | undefined) ?? []
+        collected.push(...page) // newest-first within and across pages
+        cursor = (res.response_metadata as { next_cursor?: string } | undefined)?.next_cursor || undefined
+        if (!cursor || page.length === 0) break // no more history
       }
-      return out
     } catch {
       return []
     }
+    const out: { authorId: string; text: string }[] = []
+    for (const m of collected.reverse()) {
+      // newest-first → oldest-first
+      if (!m.user) continue // unattributable (bot_id only) — provenance would fail
+      out.push({ authorId: m.user, text: m.text ?? '' })
+    }
+    return out
   }
 
   // ─── Slack-specific helpers ───────────────────────────────────────────────────

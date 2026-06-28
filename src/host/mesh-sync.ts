@@ -10,7 +10,14 @@
  *   • ingest — decodes a peer's coordination line and `store.append`s it VERBATIM
  *     (createdAt preserved — folds order by it; `append` not `admit`, which would
  *     re-stamp). Content-addressed ⇒ idempotent. The local synchronizer + folds then
- *     light up exactly as a NOTIFY delivery would have driven them.
+ *     light up exactly as a NOTIFY delivery would have driven them. Scope-isolated: a
+ *     line whose channel this relay does not serve is dropped (no cross-project pollution).
+ *   • reconcileOnConnect (self-heal) — the chat channel is a durable log the platform
+ *     keeps while a bot is offline, so on reconnect we read it back and re-ingest missed
+ *     lines (two-pass, identity-first). Idempotent append makes dup/reorder harmless.
+ *   • want/frontier (Phase 2, transport-channel only) — for gaps beyond the replay window,
+ *     a relay asks peers for specific missing hashes; a holder re-posts them. Anti-entropy
+ *     traffic never reaches human rooms.
  *
  * Co-resident is NOT mesh's job. Two bots in one relay share one ledger, so they
  * already coordinate through it — broadcasting base64 to the human channel would be
@@ -47,7 +54,6 @@ import {
   type AgentIdentity,
   type MeshFrontier,
 } from '../lib.ts'
-import { dirArtifact } from '../ledger/concepts/agent-directory.ts'
 
 /** How often a relay re-broadcasts its own identity to rooms with a remote peer, so a
  *  later-joining peer's directory converges even if it missed the connect beacon. Only
@@ -59,6 +65,10 @@ export const MESH_IDENTITY_HEARTBEAT_MS = 4 * 60_000
  *  exceed ~200 coordination lines is past what a bounded replay should silently claim to
  *  cover — the warn-on-saturation log fires there, and Phase 2 backfill is the real proof. */
 export const MESH_REPLAY_WINDOW = 200
+
+/** Per-scope cap on a reconnect history fetch — a hung platform call must never wedge replay
+ *  (the host suppresses task scheduling until reconcile returns). */
+const MESH_REPLAY_FETCH_TIMEOUT_MS = 15_000
 
 /** Page back recent messages in a scope, OLDEST-first (createdAt rides in-band in each mesh
  *  line, so no separate timestamp). Deliberately NOT a `MessagingAdapter` method — the host
@@ -123,6 +133,9 @@ export class MeshSync {
 
   // ─── Phase 2 state (causal-gap backfill) ──────────────────────────────────────
   private frontierTimer?: ReturnType<typeof setInterval>
+  /** True while reconnect replay is running — suppresses inline Want emission so a parent that
+   *  is merely later in the replay window doesn't trigger premature anti-entropy chatter. */
+  private inReplay = false
   /** hash → last time we saw it (re-)broadcast on the channel, for re-post suppression. */
   private readonly recentlySeen = new Map<string, number>()
   /** senderUserId → recent Want-answer timestamps, for per-sender rate limiting. */
@@ -270,36 +283,55 @@ export class MeshSync {
     const fetchRecent = this.deps.fetchRecent
     if (!fetchRecent) return // capability absent ⇒ no replay; behavior identical to before
 
-    const t = this.deps.transportScope?.()
-    const scopes = t ? [t] : this.deps.allRooms()
-    for (const scope of scopes) {
-      let fetched: { authorId: string; text: string }[]
-      try {
-        fetched = await fetchRecent(scope, MESH_REPLAY_WINDOW)
-      } catch (err) {
-        this.deps.log(`mesh: replay fetch for ${scope} failed: ${err}`)
-        continue
-      }
-      const lines = fetched.filter(f => isMeshLine(f.text))
-      const identities = lines.filter(l => meshLineVerb(l.text) === 'agent.identity')
-      const rest = lines.filter(l => meshLineVerb(l.text) !== 'agent.identity')
-      let ingested = 0
-      for (const l of identities) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 1
-      for (const l of rest) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 2
+    // Suppress inline Want emission for the duration: a parent missing mid-replay is often just
+    // later in the window, and the caller already suppresses scheduling — replay must settle
+    // quietly, not chatter anti-entropy. Post-replay gaps surface via the frontier digest or a
+    // live reference. (The host clears its own scheduler-suppression flag separately.)
+    this.inReplay = true
+    try {
+      const t = this.deps.transportScope?.()
+      const scopes = t ? [t] : this.deps.allRooms()
+      for (const scope of scopes) {
+        let fetched: { authorId: string; text: string }[]
+        try {
+          // Bound the fetch: a hung platform call must never wedge replay (the host holds its
+          // scheduler-suppression flag until reconcile returns).
+          fetched = await this.withTimeout(fetchRecent(scope, MESH_REPLAY_WINDOW), MESH_REPLAY_FETCH_TIMEOUT_MS)
+        } catch (err) {
+          this.deps.log(`mesh: replay fetch for ${scope} failed: ${err}`)
+          continue
+        }
+        const lines = fetched.filter(f => isMeshLine(f.text))
+        const identities = lines.filter(l => meshLineVerb(l.text) === 'agent.identity')
+        const rest = lines.filter(l => meshLineVerb(l.text) !== 'agent.identity')
+        let ingested = 0
+        for (const l of identities) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 1
+        for (const l of rest) if (await this.ingest(l.text, l.authorId)) ingested++ // pass 2
 
-      const saturated = fetched.length >= MESH_REPLAY_WINDOW
-      this.dbg(
-        `replayed ${lines.length} mesh line(s) of ${fetched.length} fetched on ${scope}, ` +
-          `ingested ${ingested} new, window-saturated=${saturated}`,
-      )
-      // A bounded replay must never report success without flagging it may have under-covered.
-      if (saturated) {
-        this.deps.log(
-          `mesh: replay window on ${scope} saturated at ${MESH_REPLAY_WINDOW} messages — the ` +
-            `offline gap may exceed the window; divergence possible until a peer re-broadcasts.`,
+        const saturated = fetched.length >= MESH_REPLAY_WINDOW
+        this.dbg(
+          `replayed ${lines.length} mesh line(s) of ${fetched.length} fetched on ${scope}, ` +
+            `ingested ${ingested} new, window-saturated=${saturated}`,
         )
+        // A bounded replay must never report success without flagging it may have under-covered.
+        if (saturated) {
+          this.deps.log(
+            `mesh: replay window on ${scope} saturated at ${MESH_REPLAY_WINDOW} messages — the ` +
+              `offline gap may exceed the window; divergence possible until a peer re-broadcasts.`,
+          )
+        }
       }
+    } finally {
+      this.inReplay = false
     }
+  }
+
+  /** Resolve `p`, or reject after `ms` — bounds a platform fetch so replay can't hang. */
+  private withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+    return Promise.race([
+      p,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`timed out after ${ms}ms`)), ms)),
+    ])
   }
 
   // ─── Phase 2 — causal-gap backfill (want / frontier) ──────────────────────────
@@ -323,11 +355,15 @@ export class MeshSync {
     return false
   }
 
-  /** Backfill responder: for each requested hash we hold WHOSE CHANNEL THE REQUESTER SERVES,
-   *  re-post it as an ordinary ⟦kk-mesh⟧ line (identity-first). Suppressed if a peer already
-   *  answered within the window; per-sender rate-limited; jittered. Duplicate bound: at most
-   *  one re-post per holding peer per hash per suppression window — in practice ~1, since the
-   *  first answer we observe suppresses the rest. */
+  /** Backfill responder: re-post requested hashes we AUTHORED (identity-first). Only our own
+   *  events, because provenance binds the posting account to the `actor` (`meshProvenanceOk`):
+   *  a relay re-posting a peer's event would be rejected at the requester (poster ≠ actor), and
+   *  the re-posted beacon likewise. So each author answers for its OWN events — the same invariant
+   *  the publish path already enforces (`actor === ownKey`). An author offline ⇒ its events stay
+   *  unrecoverable until it returns; that's a provenance limit only Phase 3 signing removes.
+   *  Suppressed if it was re-broadcast since the Want arrived; per-sender rate-limited; jittered.
+   *  Duplicate bound: ~1 re-post per hash (the single author answers; siblings share its ledger
+   *  but the first re-post they observe suppresses the rest). */
   private async onWant(text: string, senderUserId: string): Promise<void> {
     const hashes = decodeWant(text, senderUserId, this.deps.directory())
     if (!hashes) {
@@ -342,41 +378,33 @@ export class MeshSync {
     if (!t) return
     const wantAt = this.now() // anything (re-)broadcast at/after this means a peer is answering
     await this.jitter()
-    const identitiesPosted = new Set<string>()
+    let identityPosted = false
     let reposted = 0
     for (const h of hashes.slice(0, WANT_REPOST_CAP)) {
       const i = await this.deps.store.getByHash(h)
       if (!i) continue // we don't hold it
+      if (i.actor !== this.deps.ownKey) continue // only WE can vouch for our own events (provenance)
       // Scope guard: only re-post events for a channel the REQUESTER serves — else a transport
       // member could enumerate another project's event graph (cross-channel exfiltration).
       if (i.channel !== 'agent-directory' && !this.requesterServes(senderUserId, i.channel)) continue
       // Suppression: if this hash was (re-)broadcast on the channel since the Want arrived (e.g.
-      // a peer answered during my jitter), stand down — the same observe-the-channel pattern the
-      // identity heartbeat uses. An event we merely held from before (seen < wantAt) is answered.
+      // a co-resident sibling answered during my jitter), stand down — the same observe-the-channel
+      // pattern the identity heartbeat uses. An event held from before (seen < wantAt) is answered.
       const seen = this.recentlySeen.get(h)
       if (seen !== undefined && seen >= wantAt) {
         this.dbg(`skip re-post ${h.slice(0, 8)} (a peer answered it since the want)`)
         continue
       }
-      // Identity-first: the requester must be able to validate the event's provenance.
-      await this.repostIdentity(i.actor, identitiesPosted, t)
+      // Identity-first: re-broadcast our own beacon once so the requester can validate provenance.
+      if (!identityPosted && this.ownIdentityLine) {
+        await this.sendLine(t, this.ownIdentityLine)
+        identityPosted = true
+      }
       await this.sendLine(t, encodeMeshEvent(i))
       this.recentlySeen.set(h, this.now()) // so a co-resident sibling suppresses its own answer
       reposted++
     }
-    if (reposted) this.dbg(`answered want from ${senderUserId}: re-posted ${reposted} event(s)`)
-  }
-
-  /** Re-post `actor`'s latest identity beacon once per answer batch, so a backfilled
-   *  coordination event can pass provenance even if the requester never saw the actor before. */
-  private async repostIdentity(actor: string, posted: Set<string>, transport: string): Promise<void> {
-    if (posted.has(actor)) return
-    posted.add(actor)
-    const identities = await this.deps.store.listByArtifact(dirArtifact(actor))
-    const latest = identities
-      .filter(x => x.verb === 'agent.identity')
-      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0]
-    if (latest) await this.sendLine(transport, encodeMeshEvent(latest))
+    if (reposted) this.dbg(`answered want from ${senderUserId}: re-posted ${reposted} own event(s)`)
   }
 
   /** On a peer's frontier digest: for any head WE serve and lack, emit a Want. Scope-bounded —
@@ -405,6 +433,10 @@ export class MeshSync {
     if (!t || !this.hasRemotePeerInRoom(t)) return
     const frontier: MeshFrontier = {}
     for (const room of this.deps.allRooms()) {
+      // Only digest a room a remote peer actually serves: advertising a room only we serve
+      // would leak its head hashes to transport members who can never (and should never) hold
+      // it — and is pointless noise, since no peer would Want from it.
+      if (!this.hasRemotePeerInRoom(room)) continue
       const heads = await this.deps.store.channelFrontier(room)
       if (heads.length) frontier[room] = heads
     }
@@ -414,6 +446,7 @@ export class MeshSync {
   /** Emit a Want for hashes we're missing, deduped against recent wants so a persistent gap
    *  doesn't re-want on every ingest. No-op without a transport channel. */
   private async maybeEmitWant(hashes: string[]): Promise<void> {
+    if (this.inReplay) return // replay settles quietly; post-replay gaps surface via the digest
     const t = this.deps.transportScope?.()
     if (!t) return
     const now = this.now()
@@ -454,17 +487,15 @@ export class MeshSync {
     return new Promise(r => setTimeout(r, Math.floor(Math.random() * WANT_ANSWER_JITTER_MS)))
   }
 
-  /** Keep the suppression/want maps bounded — coordination volume is low, so a simple cap
-   *  on the oldest entries is enough (no LRU machinery). */
+  /** Keep the suppression/want maps bounded. Entries are (hash → timestamp); a `.set` on an
+   *  existing key does NOT change Map iteration order, so evicting by insertion order could drop
+   *  a hot, recently-touched hash. Evict by VALUE (age) instead — anything older than the rate
+   *  window is useless to suppression anyway. Coordination volume is low, so this is rare. */
   private pruneRecent(): void {
+    const cutoff = this.now() - WANT_RATE_WINDOW_MS
     for (const map of [this.recentlySeen, this.recentlyWanted]) {
       if (map.size <= 4000) continue
-      const cutoff = map.size - 2000
-      let n = 0
-      for (const k of map.keys()) {
-        if (n++ >= cutoff) break
-        map.delete(k)
-      }
+      for (const [k, ts] of map) if (ts < cutoff) map.delete(k)
     }
   }
 
