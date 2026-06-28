@@ -968,11 +968,19 @@ a { color: inherit; text-decoration: none; }
 .ppanel-h .tag.exp { background: #FFF6E6; color: var(--amber); }
 .ppanel > p { font-size: 14.5px; color: var(--muted); line-height: 1.5; max-width: 62ch; }
 
+/* quick-link: jump straight to a platform's developer console */
+.ppanel-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+.quick-link { display: inline-flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; color: var(--accent); background: var(--surface); border: 1px solid var(--hairline-2); padding: 8px 14px; border-radius: 980px; transition: border-color .15s, color .15s, background .15s; }
+.quick-link:hover { border-color: var(--accent); color: var(--accent-press); background: var(--surface-2); }
+.quick-link .ic { font-size: 15px; }
+.quick-link .ic-ext { font-size: 13px; color: var(--faint); margin-left: -2px; }
+
 /* guide steps (lighter than landing steps) */
 .gsteps { list-style: none; counter-reset: g; margin-top: 22px; display: flex; flex-direction: column; gap: 22px; }
 .gstep { display: grid; grid-template-columns: 30px 1fr; gap: 16px; align-items: start; }
 .gstep::before { counter-increment: g; content: counter(g); display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); color: var(--ink); font-size: 13px; font-weight: 600; }
 .gstep h4 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 5px; }
+.step-fast { display: inline-block; margin-left: 8px; font-size: 11px; font-weight: 600; letter-spacing: 0; vertical-align: middle; color: var(--green); background: var(--green-wash); padding: 2px 9px; border-radius: 980px; }
 .gstep p { font-size: 14.5px; color: var(--muted); line-height: 1.5; }
 .gstep .code { margin-top: 12px; }
 .gstep .perm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
