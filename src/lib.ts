@@ -134,6 +134,56 @@ export type Channel = {
   meshTransport?: boolean
 }
 
+// ─── Discovery proposals & trust anchors (inert stores) ──────────────────────
+// Discovery state lives OUTSIDE the runtime Access, in two single-writer stores:
+//   • pending.json (relay-owned)        — Proposal[] the relay discovers + a scan heartbeat.
+//   • access.json `trust` (terminal-owned) — decline Tombstones + trusted (agentKey,userId) pairs.
+// `projectToRuntime` reads NEITHER; only the terminal-owned `trust` rides in AuthoringAccess
+// (preserved by `parseAuthoringAccess`, ignored by the projection). The careful default holds:
+// a discovered item is inert until confirmed in the terminal.
+
+export type ProposalKind = 'peer' | 'collaborator' | 'owner' | 'channel' | 'transport'
+
+/** Beacon-derived identity a proposal claims, sanitized for display ("claimed by peer").
+ *  Snapshotted at propose time so confirmation can detect drift against the live directory.
+ *  `agentKey`/`userId` are identity keys (compared, not prose) and kept verbatim; the display
+ *  strings are sanitized (R26). */
+export type ClaimedIdentity = {
+  agentKey?: string
+  userId?: string
+  label?: string
+  blurb?: string
+  handle?: string
+}
+
+/** A discovered-but-unconfirmed item awaiting terminal confirmation. Lives ONLY in the
+ *  relay-written pending.json — never in AuthoringAccess, never an input to `projectToRuntime`. */
+export type Proposal = {
+  kind: ProposalKind
+  platform: Platform
+  /** The channel this pertains to (`${platform}:${channelId}`), when channel-scoped. */
+  channelKey?: string
+  /** Platform user-id (peer/collaborator/owner) or channel-id (channel/transport). */
+  targetId: string
+  /** Sanitized claimed identity — the drift baseline for confirmation. */
+  claimed: ClaimedIdentity
+  discoveredAt: string // ISO-8601
+  status: 'proposed' | 'confirmed' | 'declined' | 'stale'
+}
+
+/** A declined proposal, keyed by (agentKey,userId). Suppresses re-proposing until that PAIR
+ *  publishes a materially new identity — a changed userId is a NEW pair, so it re-proposes;
+ *  cosmetic churn (label/blurb) does not lift it. Terminal-owned. */
+export type Tombstone = { agentKey: string; userId: string; declinedAt: string }
+
+/** An (agentKey,userId) pair the owner marked trusted once — a remote peer matching BOTH
+ *  fields auto-adopts without a fresh confirm (R10). Terminal-owned. */
+export type TrustedPair = { agentKey: string; userId: string; trustedAt: string }
+
+/** The terminal-owned trust anchors carried in access.json. Read by the relay to gate
+ *  re-proposing and auto-adopt; NEVER an input to `projectToRuntime`. */
+export type TrustAnchors = { tombstones: Tombstone[]; trustedPairs: TrustedPair[] }
+
 /** The normalized, channel-centric config written ONLY by setup.ts (prompt-injection
  *  invariant). Keyed `${platform}:${channelId}`. */
 export type AuthoringAccess = {
@@ -143,6 +193,9 @@ export type AuthoringAccess = {
   roster: { people: Record<string, Person>; peers: Record<string, Peer> }
   mentionPatterns?: string[]
   ackReaction?: string
+  /** Terminal-owned trust decisions (decline tombstones + trusted pairs). Absent ⇒ none.
+   *  Preserved across read/save but never folded into the runtime `Access`. */
+  trust?: TrustAnchors
 }
 
 export function defaultAuthoringAccess(): AuthoringAccess {
@@ -374,6 +427,123 @@ export function declaresPeerCollaborators(agents: Record<string, AgentConfig>): 
   return Object.values(agents).some(a =>
     Object.values(a.rooms).some(r => Object.keys(r.participants).length > 0),
   )
+}
+
+// ─── Proposal lifecycle (pure; the inert-store decision rules) ────────────────
+// These turn discovered beacons into bounded, sanitized, tombstone-aware proposals and
+// decide when a proposal is confirmed or should be tombstoned. The I/O wrappers live in
+// state.ts; the rules live here so they're tested without disk (tests/lib.test.ts).
+
+/** Per-claimed-agentKey cap on stored proposals (R26): a beacon flood can't bury a real one. */
+export const MAX_PROPOSALS_PER_AGENT_KEY = 20
+/** Length cap for any beacon-authored display string. */
+export const BEACON_STRING_MAX_LEN = 200
+
+/** Sanitize a beacon-authored display string (R26): strip control chars — including the
+ *  newlines/escapes a peer could use to spoof the confirm prompt's framing — collapse runs of
+ *  whitespace, and length-cap. Returns undefined for an absent/empty-after-strip value. Pure. */
+export function sanitizeBeaconString(s: string | undefined, max = BEACON_STRING_MAX_LEN): string | undefined {
+  if (s == null) return undefined
+  // eslint-disable-next-line no-control-regex
+  const cleaned = s.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim()
+  if (!cleaned) return undefined
+  return cleaned.length > max ? cleaned.slice(0, max) : cleaned
+}
+
+/** Sanitize the display strings of a claimed identity (label/blurb/handle); identity keys
+ *  (agentKey/userId) are matched not rendered, so they pass through verbatim. Pure. */
+export function sanitizeClaimedIdentity(c: ClaimedIdentity): ClaimedIdentity {
+  const label = sanitizeBeaconString(c.label)
+  const blurb = sanitizeBeaconString(c.blurb)
+  const handle = sanitizeBeaconString(c.handle)
+  return {
+    ...(c.agentKey ? { agentKey: c.agentKey } : {}),
+    ...(c.userId ? { userId: c.userId } : {}),
+    ...(label ? { label } : {}),
+    ...(blurb ? { blurb } : {}),
+    ...(handle ? { handle } : {}),
+  }
+}
+
+/** Return a copy of the proposal with its claimed display strings sanitized on store. Pure. */
+export function sanitizeProposal(p: Proposal): Proposal {
+  return { ...p, claimed: sanitizeClaimedIdentity(p.claimed) }
+}
+
+/** Is this (agentKey,userId) pair tombstoned (declined and not yet re-proposable)? Pure. */
+export function isTombstoned(tombstones: ReadonlyArray<Tombstone>, agentKey: string, userId: string): boolean {
+  return tombstones.some(t => t.agentKey === agentKey && t.userId === userId)
+}
+
+/** Is this exact (agentKey,userId) pair on the trusted list (auto-adopt without confirm)? Pure. */
+export function isTrustedPair(pairs: ReadonlyArray<TrustedPair>, agentKey: string, userId: string): boolean {
+  return pairs.some(t => t.agentKey === agentKey && t.userId === userId)
+}
+
+/** The tombstone a declined proposal produces, keyed by its claimed (agentKey,userId) pair.
+ *  Undefined for a proposal without a pair (a channel/transport proposal isn't pair-tombstoned). Pure. */
+export function tombstoneForProposal(p: Proposal, declinedAt: string): Tombstone | undefined {
+  const { agentKey, userId } = p.claimed
+  if (!agentKey || !userId) return undefined
+  return { agentKey, userId, declinedAt }
+}
+
+/** Append a proposal to the pending list, unless it duplicates an existing entry
+ *  (same kind+targetId+channelKey) or is tombstoned by its (agentKey,userId) pair. Bounds the
+ *  count per claimed agentKey (R26) by dropping that key's OLDEST proposals (by `discoveredAt`)
+ *  once the cap is exceeded. The proposal's claimed strings are sanitized on store. Pure —
+ *  returns a new array. */
+export function addProposal(
+  pending: ReadonlyArray<Proposal>,
+  proposal: Proposal,
+  tombstones: ReadonlyArray<Tombstone> = [],
+  maxPerAgentKey = MAX_PROPOSALS_PER_AGENT_KEY,
+): Proposal[] {
+  const p = sanitizeProposal(proposal)
+  const { agentKey, userId } = p.claimed
+  if (agentKey && userId && isTombstoned(tombstones, agentKey, userId)) return [...pending]
+  const dup = pending.some(
+    e => e.kind === p.kind && e.targetId === p.targetId && e.channelKey === p.channelKey,
+  )
+  if (dup) return [...pending]
+  let next = [...pending, p]
+  if (agentKey) {
+    const sameKey = next.filter(e => e.claimed.agentKey === agentKey)
+    if (sameKey.length > maxPerAgentKey) {
+      const oldestFirst = [...sameKey].sort((a, b) => a.discoveredAt.localeCompare(b.discoveredAt))
+      const drop = new Set(oldestFirst.slice(0, sameKey.length - maxPerAgentKey))
+      next = next.filter(e => !drop.has(e))
+    }
+  }
+  return next
+}
+
+/** Does the live authoring config already hold the identity this proposal claims — so the relay
+ *  should reconcile (drop) it from pending? Owner: `me[platform]` matches. Peer/collaborator: a
+ *  roster peer or person with that userId on that platform. Channel/transport: the channel exists
+ *  (and, for transport, is flagged `meshTransport`). Pure. */
+export function isProposalConfirmed(p: Proposal, a: AuthoringAccess): boolean {
+  switch (p.kind) {
+    case 'owner':
+      return a.me?.[p.platform] === p.targetId
+    case 'peer':
+    case 'collaborator':
+      return (
+        Object.values(a.roster.peers).some(x => x.platform === p.platform && x.userId === p.targetId) ||
+        Object.values(a.roster.people).some(x => x.platform === p.platform && x.userId === p.targetId)
+      )
+    case 'channel':
+    case 'transport': {
+      const ch = p.channelKey ? a.channels[p.channelKey] : undefined
+      if (!ch) return false
+      return p.kind === 'transport' ? ch.meshTransport === true : true
+    }
+  }
+}
+
+/** Drop the pending proposals whose claimed identity is now confirmed in `a`. Pure. */
+export function reconcilePendingAgainst(pending: ReadonlyArray<Proposal>, a: AuthoringAccess): Proposal[] {
+  return pending.filter(p => !isProposalConfirmed(p, a))
 }
 
 // ─── Policy classification for adapters without native pattern matching ───────
