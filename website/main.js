@@ -316,6 +316,22 @@
     });
   });
 
+  /* ─────────────  FLOATING TOC: highlight the section in view (setup page)  ───────────── */
+  (function initTocRail() {
+    const railLinks = document.querySelectorAll('.toc-rail a');
+    if (!railLinks.length || !('IntersectionObserver' in window)) return;
+    const tocIO = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        railLinks.forEach((l) => {
+          if (l.getAttribute('href') === '#' + e.target.id) l.setAttribute('aria-current', 'true');
+          else l.removeAttribute('aria-current');
+        });
+      });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    document.querySelectorAll('.gsec[id]').forEach((s) => tocIO.observe(s));
+  })();
+
   /* ─────────────  NAV: frosted-on-scroll (sentinel, no scroll listener)  ───────────── */
   const nav = document.getElementById('nav');
   const sentinel = document.createElement('div');
