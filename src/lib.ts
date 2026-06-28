@@ -2196,7 +2196,7 @@ export function renderBillboard(
   if (roster.length === 0 && tasks.length === 0) return ''
   const statusOf = new Map(presence.map(p => [p.agentKey, p]))
   const glyph: Record<string, string> = { open: '○', claimed: '◐', done: '✓' }
-  const lines: string[] = ['🤝 **Coordination**']
+  const lines: string[] = ['']
   if (roster.length) {
     lines.push('', '__Who__')
     for (const r of [...roster].sort((a, b) => (a.agentKey < b.agentKey ? -1 : 1))) {
