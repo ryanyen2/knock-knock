@@ -62,6 +62,12 @@ const TTL_MS = 30_000
 type CacheEntry = { at: number; outcome: EnumerationOutcome }
 const enumCache = new Map<string, CacheEntry>()
 
+/** Hard ceiling on a single enumeration call. A platform call can HANG, not just reject — e.g.
+ *  Discord's `guild.members.fetch()` waits forever for member chunks when the privileged Guild
+ *  Members intent isn't granted. A hang is indistinguishable from "forbidden" to us, so it must
+ *  degrade (→ the resolver falls to manual/nonce, R21) rather than freeze setup/doctor. */
+const ENUM_TIMEOUT_MS = 8_000
+
 /** Clear the enumeration cache (test seam; also lets a caller force a fresh pass). */
 export function clearSnapshotCache(): void {
   enumCache.clear()
@@ -71,10 +77,19 @@ async function cachedEnum(key: string, run: () => Promise<EnumerationOutcome>): 
   const hit = enumCache.get(key)
   if (hit && Date.now() - hit.at < TTL_MS) return hit.outcome
   let outcome: EnumerationOutcome
+  let timer: ReturnType<typeof setTimeout> | undefined
   try {
-    outcome = await run()
+    outcome = await Promise.race([
+      run(),
+      new Promise<EnumerationOutcome>(resolve => {
+        timer = setTimeout(() => resolve({ kind: 'degraded', reason: 'enumeration timed out (the platform did not respond — a privileged intent may be required)' }), ENUM_TIMEOUT_MS)
+        ;(timer as unknown as { unref?: () => void }).unref?.()
+      }),
+    ])
   } catch {
     outcome = { kind: 'degraded', reason: 'enumeration call threw' }
+  } finally {
+    if (timer) clearTimeout(timer)
   }
   enumCache.set(key, { at: Date.now(), outcome })
   return outcome
