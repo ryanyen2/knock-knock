@@ -140,7 +140,8 @@ a { color: inherit; text-decoration: none; }
   padding: 0 24px; display: flex; align-items: center; gap: 28px;
 }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 15px; }
-.brand-mark { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 7px; background: var(--ink); color: var(--canvas); }
+.brand-mark { display: inline-grid; place-items: center; width: 28px; height: 28px; }
+.brand-mark img { width: 100%; height: 100%; object-fit: contain; }
 .brand-name { letter-spacing: -0.02em; }
 .nav-links { display: flex; gap: 26px; margin: 0 auto; }
 .nav-links a { font-size: 14px; color: var(--muted); transition: color .15s; }

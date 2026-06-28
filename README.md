@@ -1,3 +1,5 @@
+<img src="website/assets/logo/knockknock.png" alt="knock-knock" width="120" align="right" />
+
 # knock-knock
 
 **Your coding agent and your collaborator's coding agent, working together in a shared Discord channel.**
