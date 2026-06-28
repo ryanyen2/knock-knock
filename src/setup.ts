@@ -15,6 +15,10 @@ import {
   saveAuthoringAccess,
   readSettings,
   saveSettings,
+  readPending,
+  writePending,
+  readTrustAnchors,
+  addTombstone,
 } from './state.ts'
 import type {
   AuthoringAccess,
@@ -25,6 +29,8 @@ import type {
   Peer,
   Platform,
   RoomProfile,
+  Proposal,
+  Need,
 } from './lib.ts'
 import {
   channelKey,
@@ -34,7 +40,18 @@ import {
   PRESET_HINTS,
   DEFAULT_PRESET,
   resolveLedgerConfig,
+  resolveGaps,
+  applyConfirmedProposal,
+  confirmedIdentitiesFor,
+  detectCollision,
+  driftedSincePropose,
+  makeNonce,
+  nonceMatch,
+  renderClaimedPeer,
+  tombstoneForProposal,
 } from './lib.ts'
+import { assembleSnapshot, connectDiscoveryAdapter, itemsOf } from './discovery.ts'
+import type { MessagingAdapter } from './messaging-adapter.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1273,21 +1290,268 @@ function finishWithNextSteps(a: AuthoringAccess): void {
   p.outro(color.green('All done.'))
 }
 
+// ─── Resolver-driven onboarding (auto-configure; coexists with the wizard) ─────
+// Connects the bot, discovers what it can see, and fills each gap by the cheapest legal rung —
+// auto-derive (silent) → pick-list → guided manual / nonce. Nothing is auto-trusted: every
+// discovered identity is shown claimed/unverified and confirmed in the terminal before it is
+// written to access.json (R8/R9). The pure decision logic lives in lib.ts; this is the @clack glue.
+
+/** Ensure `channelId` exists as a channel with `botKey` as a member (prompting for a workspace on a
+ *  new membership). Returns the channelKey. Mutates + saves `a`. */
+async function ensureChannelMembership(a: AuthoringAccess, botKey: string, platform: Platform, channelId: string): Promise<string> {
+  const ck = channelKey(platform, channelId)
+  const ch: Channel = a.channels[ck] ?? { platform, channelId, members: [], collaborators: [] }
+  if (!ch.members.some(m => m.bot === botKey)) {
+    const workspace = orCancel(await p.text({
+      message: `Workspace folder for ${botKey} in this channel (absolute)`,
+      placeholder: process.cwd(),
+      initialValue: process.cwd(),
+      validate: validateAbsPath,
+    })).trim()
+    if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
+    const preset = await pickPreset(DEFAULT_PRESET)
+    ch.members.push({ bot: botKey, workspace, preset, profile: profileFromPreset(preset) })
+  }
+  a.channels[ck] = ch
+  saveAuthoringAccess(a)
+  return ck
+}
+
+/** Owner-ID nonce capture (R22): print a single-use phrase, listen on the live channel for a
+ *  message whose text matches it within a short window, and return the raw immutable userId of the
+ *  single matching sender. 2+ matches abort (re-issue); none → undefined (caller falls to manual). */
+async function captureOwnerViaNonce(adapter: MessagingAdapter, channelId: string, windowMs = 60_000): Promise<string | undefined> {
+  const nonce = makeNonce()
+  const seen: Array<{ userId: string; text: string }> = []
+  adapter.onMessage(m => {
+    if (m.scope === channelId || m.scope.startsWith(channelId)) seen.push({ userId: m.authorId, text: m.text })
+  })
+  p.log.message(
+    `In ${color.cyan(`#${channelId}`)}, send EXACTLY this phrase from your own account:\n\n   ${color.bgBlack(color.white(` ${nonce} `))}\n\n` +
+      color.dim('(this is how we capture your owner user-id without you copying any opaque platform id)'),
+  )
+  const s = p.spinner()
+  s.start('Waiting for your message…')
+  await new Promise(resolve => setTimeout(resolve, windowMs))
+  s.stop('Capture window closed.')
+  const result = nonceMatch(seen, nonce)
+  if (result.kind === 'matched') return result.userId
+  if (result.kind === 'multiple') p.log.warn('More than one message matched the phrase — aborting capture. Re-run to get a fresh phrase.')
+  else p.log.warn('No message matched the phrase in time.')
+  return undefined
+}
+
+/** Confirm a single discovered (claimed/unverified) peer into the roster — with sanitized framing,
+ *  a live collision re-check (R25), and the trust-consequence text supplied by knock-knock (R26).
+ *  Returns the mutated authoring (peer written) or the input unchanged on decline. */
+async function confirmDiscoveredPeer(a: AuthoringAccess, prop: Proposal): Promise<AuthoringAccess> {
+  const collision = prop.claimed.agentKey && prop.claimed.userId
+    ? detectCollision({ agentKey: prop.claimed.agentKey, userId: prop.claimed.userId }, confirmedIdentitiesFor(a, prop.platform))
+    : undefined
+  const header = collision
+    ? color.red(`⚠ CONFLICT: this user-id is already your ${collision.kind}. Confirming would let a different key act as them.`)
+    : color.yellow('This identity is CLAIMED by the peer and is NOT cryptographically verified.')
+  p.log.message(`${header}\n  ${renderClaimedPeer(prop.claimed)}`)
+  const ok = orCancel(await p.confirm({
+    message: collision ? 'Confirm anyway? (you are overriding a flagged conflict)' : 'Add this peer as an addressable collaborator?',
+    initialValue: false, // careful default: declined / conflict defaults to no
+  }))
+  if (!ok) {
+    const t = tombstoneForProposal(prop, new Date().toISOString())
+    if (t) addTombstone(t) // a decline is durable: don't re-surface this pair on cosmetic churn
+    return a
+  }
+  const id = slugify(prop.claimed.label || prop.targetId, new Set(Object.keys(a.roster.peers)))
+  const next = applyConfirmedProposal(a, prop, id)
+  saveAuthoringAccess(next)
+  p.log.success(`Confirmed peer ${color.cyan(prop.claimed.label ?? prop.targetId)}.`)
+  return next
+}
+
+/** Auto-configure one (bot, channel): connect, discover, and fill each gap by its rung. */
+async function resolveAndFill(a: AuthoringAccess): Promise<void> {
+  const botKeys = Object.keys(a.bots)
+  if (botKeys.length === 0) { p.log.error('Add a bot first.'); return }
+  const botKey = botKeys.length === 1 ? botKeys[0]! : (orCancel(await p.select({ message: 'Auto-configure which bot?', options: botKeys.map(k => ({ value: k, label: k })) })) as string)
+  const bot = a.bots[botKey]!
+  if (!botFullyTokened(bot)) { p.log.error(`Save ${botKey}'s token first (Manage a bot → token).`); return }
+  const platform = bot.platform
+
+  const spin = p.spinner()
+  spin.start('Connecting to discover what this bot can see…')
+  const adapter = await connectDiscoveryAdapter(bot, process.env as Record<string, string | undefined>)
+  if (!adapter) { spin.stop(color.red('Could not connect — check the token.')); return }
+  spin.stop('Connected.')
+
+  try {
+    // Self-ID is auto-derived from the token, never prompted (R5). Cache it as the bot's
+    // displayName so the resolver counts it as met thereafter.
+    const self = adapter.botLabel ?? adapter.botUserId
+    if (self && !bot.displayName) {
+      bot.displayName = self
+      a.bots[botKey] = bot
+      saveAuthoringAccess(a)
+      p.log.info(`Self-ID derived: ${color.cyan(self)} (never typed by you).`)
+    }
+
+    // Channel binding: pick from the enumerated list where capable, else enter manually.
+    const pre = await assembleSnapshot({ platform, adapter })
+    const chans = itemsOf(pre.channels)
+    let channelId: string
+    if (chans.length > 0) {
+      const ENTER = ' enter'
+      const picked = orCancel(await p.select({
+        message: 'Which channel should this bot work in?',
+        options: [...chans.map(c => ({ value: c.id, label: c.label, hint: c.id })), { value: ENTER, label: color.dim('+ enter a channel id manually') }],
+      })) as string
+      channelId = picked === ENTER ? orCancel(await p.text({ message: PLATFORMS[platform].idLabel, validate: PLATFORMS[platform].idValidate })).trim() : picked
+    } else {
+      if (pre.channels.kind === 'degraded') p.log.warn(`Channel list unavailable (${pre.channels.reason}); enter the id manually.`)
+      channelId = orCancel(await p.text({ message: PLATFORMS[platform].idLabel, validate: PLATFORMS[platform].idValidate })).trim()
+    }
+    const ck = await ensureChannelMembership(a, botKey, platform, channelId)
+    a = readAuthoringAccess()
+
+    // Re-assemble with the chosen channel so member enumeration + directory peers are in scope.
+    const snapshot = await assembleSnapshot({ platform, adapter, channelId, transportConfigured: Object.values(a.channels).some(c => c.platform === platform && c.meshTransport) })
+    const crossMachinePeer = snapshot.directoryPeers.length > 0
+    const needs: Need[] = resolveGaps({ authoring: a, botKey, channelKey: ck, snapshot, crossMachinePeer })
+
+    for (const need of needs) {
+      if (need.kind === 'self-id') continue // already cached above
+      if (need.kind === 'collaborators') {
+        if (need.rung === 'pick' && need.options?.length) {
+          const picks = orCancel(await p.multiselect({
+            message: 'Collaborators in this channel (humans who may drive this bot)',
+            options: need.options.filter(o => o.id !== adapter.botUserId).map(o => ({ value: o.id, label: o.label, hint: o.id })),
+            required: false,
+          })) as string[]
+          for (const userId of picks) {
+            const label = need.options.find(o => o.id === userId)?.label
+            const id = slugify(label || userId, new Set(Object.keys(a.roster.people)))
+            a = applyConfirmedProposal(a, { kind: 'collaborator', platform, channelKey: ck, targetId: userId, claimed: { userId, ...(label ? { label } : {}) }, discoveredAt: new Date().toISOString(), status: 'confirmed' }, id)
+            saveAuthoringAccess(a)
+          }
+        } else {
+          p.log.info(`Collaborator pick unavailable${need.reason ? ` (${need.reason})` : ''} — add people later via "Add a person to the roster."`)
+        }
+      } else if (need.kind === 'owner-id') {
+        let ownerId: string | undefined
+        if (need.rung === 'pick' && need.options?.length) {
+          ownerId = orCancel(await p.select({
+            message: 'Which of these is YOU (the owner)?',
+            options: need.options.map(o => ({ value: o.id, label: o.label, hint: o.id })),
+          })) as string
+        } else {
+          p.log.info(`Owner pick unavailable${need.reason ? ` (${need.reason})` : ''} — capturing via a one-time phrase instead.`)
+          ownerId = await captureOwnerViaNonce(adapter, channelId)
+        }
+        if (ownerId) {
+          // Show the raw immutable id for a final confirm before writing (R22).
+          const ok = orCancel(await p.confirm({ message: `Set owner user-id to ${color.cyan(ownerId)}?`, initialValue: true }))
+          if (ok) { a = applyConfirmedProposal(a, { kind: 'owner', platform, targetId: ownerId, claimed: { userId: ownerId }, discoveredAt: new Date().toISOString(), status: 'confirmed' }); saveAuthoringAccess(a) }
+        }
+      } else if (need.kind === 'transport') {
+        await offerTransport(a, platform, adapter, need)
+        a = readAuthoringAccess()
+      }
+    }
+
+    // Cross-machine peers discovered in the directory are claimed/unverified — confirm each
+    // explicitly (they are addressable but not auto-heard until confirmed, per the U7 gate).
+    for (const peer of snapshot.directoryPeers) {
+      if (!peer.userId) continue
+      if (Object.values(a.roster.peers).some(x => x.platform === platform && x.userId === peer.userId)) continue
+      const prop: Proposal = { kind: 'peer', platform, channelKey: ck, targetId: peer.userId, claimed: { agentKey: peer.agentKey, userId: peer.userId, ...(peer.label ? { label: peer.label } : {}), ...(peer.blurb ? { blurb: peer.blurb } : {}) }, discoveredAt: new Date().toISOString(), status: 'proposed' }
+      // Drift is moot here (this IS the live directory), but a collision re-check still applies.
+      a = await confirmDiscoveredPeer(a, prop)
+    }
+
+    p.log.success(`${color.cyan(botKey)} is configured for ${color.cyan(`#${channelId}`)}.`)
+  } finally {
+    await adapter.disconnect().catch(() => {})
+  }
+}
+
+/** Offer to create (where capable) or designate a dedicated mesh-transport channel just-in-time —
+ *  before any ⟦kk-mesh⟧ line would post to a human channel (R18/R19/AE5). */
+async function offerTransport(a: AuthoringAccess, platform: Platform, adapter: MessagingAdapter, need: Need): Promise<void> {
+  p.log.message(color.yellow('A cross-machine peer was discovered, but no transport channel is configured.\n') +
+    color.dim('Without one, ⟦kk-mesh⟧ coordination traffic posts to your human rooms.'))
+  const create = (adapter as { createChannel?: (n: string) => Promise<unknown> }).createChannel
+  if (need.rung === 'pick' && create) {
+    const make = orCancel(await p.confirm({ message: 'Create a dedicated transport channel now?', initialValue: true }))
+    if (make) {
+      const name = orCancel(await p.text({ message: 'Name for the transport channel', placeholder: 'kk-mesh', initialValue: 'kk-mesh' })).trim()
+      const res = (await create(name)) as { kind: string; items?: Array<{ id: string }>; reason?: string }
+      if (res.kind === 'results' && res.items?.[0]) {
+        const ck = channelKey(platform, res.items[0].id)
+        a.channels[ck] = a.channels[ck] ?? { platform, channelId: res.items[0].id, members: [], collaborators: [] }
+        a.channels[ck]!.meshTransport = true
+        saveAuthoringAccess(a)
+        p.log.success(`Created transport channel ${color.cyan(name)}. Add the SAME channel id on every machine, then restart the relay.`)
+        return
+      }
+      p.log.warn(`Could not create the channel${res.reason ? ` (${res.reason})` : ''} — designate one instead.`)
+    }
+  }
+  const id = orCancel(await p.text({ message: 'Channel id to DESIGNATE as mesh transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
+  const ck = channelKey(platform, id)
+  a.channels[ck] = a.channels[ck] ?? { platform, channelId: id, members: [], collaborators: [] }
+  a.channels[ck]!.meshTransport = true
+  saveAuthoringAccess(a)
+  p.log.success(`Designated ${color.cyan(`#${id}`)} as mesh transport. Add the SAME channel on every machine, then restart the relay.`)
+}
+
+/** Confirm (or decline) the proposals the relay discovered into pending.json (F4/F5 surface). This
+ *  is the confirm surface `kk doctor` points at. Re-checks collisions against the live access.json
+ *  at confirm time (R25); declines are tombstoned by pair (R20). */
+async function confirmPendingDiscoveries(a: AuthoringAccess): Promise<void> {
+  const store = readPending()
+  const open = store.proposals.filter(pr => pr.status === 'proposed')
+  if (open.length === 0) { p.log.info('No pending discoveries awaiting confirmation.'); return }
+  p.log.info(`${open.length} pending discover${open.length === 1 ? 'y' : 'ies'} from the relay.`)
+  for (const prop of open) {
+    if (prop.kind === 'peer' || prop.kind === 'collaborator') {
+      a = await confirmDiscoveredPeer(a, prop)
+    } else if (prop.kind === 'transport') {
+      const ok = orCancel(await p.confirm({ message: `Designate ${color.cyan(`#${prop.targetId}`)} as the mesh-transport channel?`, initialValue: true }))
+      if (ok && prop.channelKey) { a = applyConfirmedProposal(a, prop, undefined); saveAuthoringAccess(a) }
+    }
+  }
+  // Drop every now-handled proposal from pending (relay re-reconciles on its next pass too).
+  const handled = new Set(open)
+  writePending({ ...store, proposals: store.proposals.filter(pr => !handled.has(pr)) })
+  p.log.success('Pending discoveries resolved.')
+}
+
 // ─── Main flows ───────────────────────────────────────────────────────────────
 
-/** Guided linear wizard for a brand-new install: bot → channel → token → ledger. */
+/** Guided first-run: bot → token → auto-configure (discover the channel/collaborators/owner-ID and
+ *  fill the gaps) → ledger. The token is saved BEFORE auto-configure so the resolver can connect and
+ *  enumerate; the manual channel flow remains the fallback when the user declines or it's offline. */
 async function firstRunWizard(): Promise<void> {
-  p.log.info("Let's set up your first bot and a channel for it to work in.")
+  p.log.info("Let's set up your first bot, then auto-configure it from what it can see.")
   let a = readAuthoringAccess()
   const key = await addBot(a)
   if (!key) { finishWithNextSteps(readAuthoringAccess()); return }
 
-  a = readAuthoringAccess()
-  const addCh = orCancel(await p.confirm({ message: 'Add a channel (project) for this bot now?', initialValue: true }))
-  if (addCh) { await addChannel(a); a = readAuthoringAccess() }
+  const addTok = orCancel(await p.confirm({ message: 'Save the bot token now? (needed to auto-discover channels & members)', initialValue: true }))
+  if (addTok) await saveBotToken(readAuthoringAccess(), key)
 
-  const addTok = orCancel(await p.confirm({ message: 'Save the bot token now?', initialValue: true }))
-  if (addTok) { await saveBotToken(readAuthoringAccess(), key) }
+  a = readAuthoringAccess()
+  if (botFullyTokened(a.bots[key]!)) {
+    const auto = orCancel(await p.confirm({ message: 'Auto-configure now? (discover the channel, collaborators, and your owner-ID — no IDs typed by hand)', initialValue: true }))
+    if (auto) { await resolveAndFill(readAuthoringAccess()); a = readAuthoringAccess() }
+    else {
+      const addCh = orCancel(await p.confirm({ message: 'Add a channel manually instead?', initialValue: true }))
+      if (addCh) { await addChannel(a); a = readAuthoringAccess() }
+    }
+  } else {
+    p.log.warn('No token saved — skipping auto-configure. Add a channel manually:')
+    const addCh = orCancel(await p.confirm({ message: 'Add a channel now?', initialValue: true }))
+    if (addCh) { await addChannel(readAuthoringAccess()) }
+  }
 
   const setLedger = orCancel(await p.confirm({ message: 'Set up the shared ledger now? (Postgres for collaboration)', initialValue: true }))
   if (setLedger) await collectLedger()
@@ -1299,14 +1563,17 @@ async function firstRunWizard(): Promise<void> {
 async function interactiveMenu(): Promise<void> {
   p.note(statusReport(readAuthoringAccess()), 'Current setup')
 
-  const TASK_ORDER = ['bot', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'api-key', 'ledger'] as const
+  const TASK_ORDER = ['resolve', 'confirm', 'bot', 'channel', 'channel-remove', 'person', 'peer', 'roster-remove', 'api-key', 'ledger'] as const
   type Task = typeof TASK_ORDER[number]
 
   let running = true
   while (running) {
+    const pendingCount = readPending().proposals.filter(pr => pr.status === 'proposed').length
     const tasks = orCancel(await p.multiselect<Task>({
       message: 'What would you like to do? (space to toggle, enter to run — nothing selected = done)',
       options: [
+        { value: 'resolve', label: 'Auto-configure a bot', hint: 'discover channels/members & fill the gaps — no IDs typed by hand' },
+        ...(pendingCount > 0 ? [{ value: 'confirm' as Task, label: `Confirm ${pendingCount} pending discover${pendingCount === 1 ? 'y' : 'ies'}`, hint: 'peers/transport the relay found, awaiting your OK' }] : []),
         { value: 'bot', label: 'Manage a bot', hint: 'identity · token · channels · agent — all in one place' },
         { value: 'channel', label: 'Add / edit a channel', hint: 'project: members + workspaces + collaborators' },
         { value: 'channel-remove', label: 'Remove a channel' },
@@ -1323,7 +1590,9 @@ async function interactiveMenu(): Promise<void> {
     const sorted = [...tasks].sort((x, y) => TASK_ORDER.indexOf(x) - TASK_ORDER.indexOf(y))
     for (const task of sorted) {
       const a = readAuthoringAccess()
-      if (task === 'bot') await manageBot(a)
+      if (task === 'resolve') await resolveAndFill(a)
+      else if (task === 'confirm') await confirmPendingDiscoveries(a)
+      else if (task === 'bot') await manageBot(a)
       else if (task === 'channel') await addChannel(a)
       else if (task === 'channel-remove') await removeChannel(a)
       else if (task === 'person') await addPerson(a, await pickRosterPlatform(a))
