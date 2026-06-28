@@ -950,6 +950,17 @@ export class AgentHost {
       ? (this.messaging.parentOfSync(m.scope) ?? m.scope)
       : m.scope
     const room = liveAgent.rooms[roomId]
+    // Inbound trace (KNOCK_KNOCK_DEBUG): the first thing to check when cross-machine
+    // coordination is silent — shows whether a peer's message (incl. a mesh beacon) even
+    // reached this bot, the room it resolved to, whether this bot serves that room, and
+    // whether it's recognized as a mesh line. Skips this bot's own posts.
+    if (process.env.KNOCK_KNOCK_DEBUG === '1' && m.authorId !== botId) {
+      this.ui.note(
+        this.key,
+        `inbound from=${m.authorId} room=${roomId} served=${!!room} mesh=${isMeshLine(m.text)} ` +
+          `text=${JSON.stringify(m.text.slice(0, 48))}`,
+      )
+    }
     if (!room) return
 
     if (m.authorId === botId) return

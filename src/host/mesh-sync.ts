@@ -77,6 +77,7 @@ export class MeshSync {
    *  `send` works) — the bot's own `agent.identity` admit then broadcasts over the mesh. */
   start(): void {
     if (this.unsub) return
+    this.dbg(`started (ownKey=${this.deps.ownKey}, rooms=[${this.deps.allRooms().join(', ')}])`)
     this.unsub = this.deps.store.subscribe(i => {
       if (i.actor !== this.deps.ownKey) return // publish only my own events (no echo)
       if (i.lifecycle !== 'applied' && i.lifecycle !== 'admitted') return
@@ -109,7 +110,14 @@ export class MeshSync {
       this.deps.log(`mesh: ingest append failed: ${err}`)
       return false
     }
+    this.dbg(`✓ ingested ${i.verb} from ${senderUserId} (actor=${i.actor})`)
     return true
+  }
+
+  /** Verbose mesh tracing, gated on KNOCK_KNOCK_DEBUG. Routed through the host UI (deps.log)
+   *  so it lands alongside the rest of the relay's output where the operator can see it. */
+  private dbg(msg: string): void {
+    if (process.env.KNOCK_KNOCK_DEBUG === '1') this.deps.log(`mesh: ${msg}`)
   }
 
   /** Does `room` contain a directory bot this relay does NOT host (a remote peer)?
@@ -137,13 +145,20 @@ export class MeshSync {
     // how two relays first discover each other — there's no remote peer to gate on yet).
     if (i.verb === 'agent.identity') {
       this.ownIdentityLine = line
-      for (const scope of this.targetScopes(i)) await this.sendLine(scope, line)
+      const scopes = this.targetScopes(i)
+      this.dbg(`→ identity beacon to [${scopes.join(', ')}]`)
+      for (const scope of scopes) await this.sendLine(scope, line)
       return
     }
     // Coordination event: only worth sending to rooms that have a remote peer. In a
     // single co-resident relay this is always empty, so nothing is posted to the channel.
     for (const scope of this.targetScopes(i)) {
-      if (this.hasRemotePeerInRoom(scope)) await this.sendLine(scope, line)
+      if (this.hasRemotePeerInRoom(scope)) {
+        this.dbg(`→ ${i.verb} to ${scope}`)
+        await this.sendLine(scope, line)
+      } else {
+        this.dbg(`skip ${i.verb} to ${scope} (no remote peer known in this room yet)`)
+      }
     }
   }
 
