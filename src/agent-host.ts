@@ -383,7 +383,7 @@ export class AgentHost {
       return
     }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    await admit(this.store, {
+    const result = await admit(this.store, {
       actor: this.key,
       role: 'agent',
       channel: 'agent-directory',
@@ -405,6 +405,14 @@ export class AgentHost {
       effect: 'pure',
       caused_by: [],
     })
+    // Broadcast the beacon over the mesh EXPLICITLY — admit is idempotent (content-addressed),
+    // so on a reconnect it returns the existing record without a store insert, and the mesh's
+    // insert-subscriber would never fire. Announcing here makes the beacon go out every connect.
+    if (this.mesh && result.kind === 'admitted') {
+      await this.mesh
+        .announceIdentity(result.interaction)
+        .catch(err => this.ui.error(this.key, `mesh announce identity: ${err}`))
+    }
   }
 
   /** This host's bot key (the access.json bot id) — used to route webhook paths. */

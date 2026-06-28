@@ -81,6 +81,12 @@ export class MeshSync {
     this.unsub = this.deps.store.subscribe(i => {
       if (i.actor !== this.deps.ownKey) return // publish only my own events (no echo)
       if (i.lifecycle !== 'applied' && i.lifecycle !== 'admitted') return
+      // Identity is announced explicitly on connect (announceIdentity), NOT here: the
+      // identity admit is content-addressed, so on reconnect it's idempotent and produces
+      // no store insert — this subscriber would never fire for it, and the beacon would
+      // never go out. Coordination events (coord.note/task.*) are new each time, so they
+      // ride the subscriber fine.
+      if (i.verb === 'agent.identity') return
       if (!MESH_VERB_ALLOWLIST.includes(i.verb)) return
       void this.publish(i)
     })
@@ -139,19 +145,26 @@ export class MeshSync {
     return room ? [room] : this.deps.allRooms()
   }
 
-  private async publish(i: Interaction): Promise<void> {
+  /** Broadcast this bot's identity beacon to every room it serves — the bootstrap that lets
+   *  two relays discover each other. Called explicitly on connect (after publishIdentity)
+   *  rather than via the store subscriber, because the identity admit is content-addressed
+   *  and idempotent: on every reconnect it produces no store insert, so the subscriber would
+   *  never fire and the beacon would never go out (cross-machine discovery silently dies after
+   *  the first run). Unconditional — there's no remote peer to gate on until this lands. */
+  async announceIdentity(i: Interaction): Promise<void> {
+    if (i.verb !== 'agent.identity') return
     const line = encodeMeshEvent(i)
-    // Identity beacon: cache for the heartbeat and broadcast unconditionally (this is
-    // how two relays first discover each other — there's no remote peer to gate on yet).
-    if (i.verb === 'agent.identity') {
-      this.ownIdentityLine = line
-      const scopes = this.targetScopes(i)
-      this.dbg(`→ identity beacon to [${scopes.join(', ')}]`)
-      for (const scope of scopes) await this.sendLine(scope, line)
-      return
-    }
-    // Coordination event: only worth sending to rooms that have a remote peer. In a
-    // single co-resident relay this is always empty, so nothing is posted to the channel.
+    this.ownIdentityLine = line
+    const scopes = this.deps.allRooms()
+    this.dbg(`→ identity beacon to [${scopes.join(', ')}] (announce)`)
+    for (const scope of scopes) await this.sendLine(scope, line)
+  }
+
+  private async publish(i: Interaction): Promise<void> {
+    // Identity beacons are announced explicitly (announceIdentity); only coordination events
+    // reach here, and only worth sending to rooms that have a remote peer. In a single
+    // co-resident relay that set is always empty, so nothing is posted to the channel.
+    const line = encodeMeshEvent(i)
     for (const scope of this.targetScopes(i)) {
       if (this.hasRemotePeerInRoom(scope)) {
         this.dbg(`→ ${i.verb} to ${scope}`)

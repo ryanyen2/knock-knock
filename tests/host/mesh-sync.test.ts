@@ -3,7 +3,10 @@
  * with ⟦kk-mesh⟧ base64". Co-resident siblings share one ledger, so coordination events
  * must NOT be broadcast to the channel; only a genuine REMOTE peer (a directory bot this
  * relay does not host) makes mesh gossip worthwhile. Identity beacons are the exception:
- * they go out unconditionally so two relays can discover each other.
+ * they go out unconditionally — but via `announceIdentity` (an explicit per-connect call),
+ * NOT the store subscriber, because the identity admit is content-addressed and idempotent,
+ * so a reconnect produces no insert and the subscriber would never fire (the beacon would
+ * silently never go out after the first run).
  */
 
 import { test, expect } from 'bun:test'
@@ -65,15 +68,22 @@ async function harness(coResident: string[]) {
   return { store, engine, sent, mesh }
 }
 
+/** Admit an identity AND announce it over the mesh, mirroring what AgentHost.publishIdentity
+ *  now does on connect (admit → announceIdentity). */
+async function publishIdentity(store: SqliteStore, mesh: MeshSync, key: string, userId: string) {
+  const r = await admit(store, identity(key, userId))
+  if (r.kind === 'admitted') await mesh.announceIdentity(r.interaction)
+}
+
 test('co-resident only: identity beacons go out, but coordination events are NOT broadcast', async () => {
-  const { store, sent } = await harness(['cc', 'd-bot']) // both siblings, no remote peer
-  await admit(store, identity('cc', 'U_cc'))
+  const { store, sent, mesh } = await harness(['cc', 'd-bot']) // both siblings, no remote peer
+  await publishIdentity(store, mesh, 'cc', 'U_cc')
   await admit(store, identity('d-bot', 'U_db')) // sibling identity lands in the directory
   await flush()
   await admit(store, coordNote('cc')) // cc takes a message
   await flush()
 
-  // cc's own identity beacon was sent (bootstrap); d-bot's was not (cc only publishes its own).
+  // cc's own identity beacon was sent (bootstrap); d-bot's was not (cc only announces its own).
   const lines = sent.filter(s => isMeshLine(s.text))
   expect(lines.length).toBe(1)
   // The lone coordination event produced NO channel post — the flood is gone.
@@ -82,8 +92,8 @@ test('co-resident only: identity beacons go out, but coordination events are NOT
 })
 
 test('remote peer present: coordination events ARE broadcast', async () => {
-  const { store, sent } = await harness(['cc']) // cc is the only co-resident; eve is remote
-  await admit(store, identity('cc', 'U_cc'))
+  const { store, sent, mesh } = await harness(['cc']) // cc is the only co-resident; eve is remote
+  await publishIdentity(store, mesh, 'cc', 'U_cc')
   await admit(store, identity('eve', 'U_ev')) // a peer this relay does NOT host
   await flush()
   await admit(store, coordNote('cc'))
@@ -91,5 +101,24 @@ test('remote peer present: coordination events ARE broadcast', async () => {
 
   // The identity beacon AND the coordination event both go out (a real peer needs them).
   expect(sent.filter(s => isMeshLine(s.text)).length).toBeGreaterThanOrEqual(2)
+  store.close()
+})
+
+test('identity beacon is announced on every connect, even when the admit is idempotent', async () => {
+  // Regression: the beacon used to ride the store subscriber, so a reconnect (idempotent,
+  // content-addressed admit → no insert) emitted nothing and cross-machine discovery died.
+  const { store, sent, mesh } = await harness(['cc'])
+  await admit(store, identity('cc', 'U_cc')) // first admit inserts, but the subscriber must NOT broadcast
+  await flush()
+  expect(sent.filter(s => isMeshLine(s.text)).length).toBe(0)
+
+  const r1 = await admit(store, identity('cc', 'U_cc')) // idempotent (already present)
+  expect(r1.kind).toBe('admitted')
+  if (r1.kind === 'admitted') await mesh.announceIdentity(r1.interaction)
+  expect(sent.filter(s => isMeshLine(s.text)).length).toBe(1) // announce sent it despite the no-op admit
+
+  const r2 = await admit(store, identity('cc', 'U_cc')) // reconnect: still idempotent
+  if (r2.kind === 'admitted') await mesh.announceIdentity(r2.interaction)
+  expect(sent.filter(s => isMeshLine(s.text)).length).toBe(2) // and again on the next connect
   store.close()
 })
