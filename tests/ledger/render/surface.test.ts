@@ -15,6 +15,7 @@ import {
   parseTodos,
   renderWorkbench,
   workbenchEntries,
+  botActiveInScope,
   renderResolvedConfig,
   renderContextList,
   type WorkbenchEntry,
@@ -169,6 +170,15 @@ test('workbenchEntries: derives status from each agent\'s latest turn', () => {
 
   // no turns in the channel → no entries
   expect(workbenchEntries(new Map(), 'c1', () => undefined)).toEqual([])
+})
+
+test('botActiveInScope: true only for a bot that authored a turn in the scope', () => {
+  // Drives actor-owned surfaces: an idle co-resident sibling (no turn here) must read false,
+  // so it never posts the surface for a task it isn't part of.
+  const turns: TurnFoldState = new Map([['p1', turn({ channel: 'c1', agentKey: 'bot101' })]])
+  expect(botActiveInScope(turns, 'c1', 'bot101')).toBe(true) // worked here
+  expect(botActiveInScope(turns, 'c1', 'bot002')).toBe(false) // idle sibling
+  expect(botActiveInScope(turns, 'other', 'bot101')).toBe(false) // different scope
 })
 
 test('renderContextList: numbers entries and shows the empty state', () => {

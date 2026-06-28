@@ -1,9 +1,10 @@
-// Workbench — the single per-scope status surface, posted inline (not pinned) and edited
-// in place as work runs. Combines the shared coordination snapshot (WHO is here + the task
-// DAG) with each active agent's live activity log, both read from the shared folds. ONE bot
-// maintains it — the deterministically elected scribe (electScribe) — so N co-resident /
-// cross-machine bots don't each post their own copy; the role fails over for free if the
-// scribe leaves. Replaces the old per-turn workbench + the separately-pinned Billboard.
+// Workbench — the per-scope status surface, posted inline (not pinned) and edited in place
+// as work runs. Combines the shared coordination snapshot (WHO is here + the task DAG) with
+// each active agent's live activity log, both read from the shared folds. ACTOR-OWNED: only
+// a bot that has actually worked in a scope posts that scope's surface, so an idle co-resident
+// sibling never becomes the visible owner. Typically that's one surface per participating
+// machine; the coordination block rides along on each. Replaces the old per-turn workbench +
+// the separately-pinned Billboard.
 
 import type { HostContext } from './context.ts'
 import type { ChannelId } from '../ledger/interaction.ts'
@@ -20,8 +21,8 @@ import {
   type CoordBoardFoldState,
 } from '../ledger/concepts/coordination-board.ts'
 import { TASK_DAG_FOLD, tasksFor, type TaskDagFoldState } from '../ledger/concepts/task-dag.ts'
-import { renderWorkbench, workbenchEntries } from '../ledger/render/surface.ts'
-import { renderBillboard, electScribe } from '../lib.ts'
+import { renderWorkbench, workbenchEntries, botActiveInScope } from '../ledger/render/surface.ts'
+import { renderBillboard } from '../lib.ts'
 
 /** Max one edit per scope per this window (platform rate limit). */
 const THROTTLE_MS = 1500
@@ -51,12 +52,11 @@ export class Workbench {
   }
 
   /** Request a refresh of a scope's status surface; throttled per THROTTLE_MS, with a
-   *  dirty bit so a request mid-render isn't lost. A no-op unless this bot is the elected
-   *  scribe for the scope's room (so exactly one bot owns the surface). */
+   *  dirty bit so a request mid-render isn't lost. renderNow further gates on whether THIS
+   *  bot has actually worked in the scope (actor-owned), so idle siblings never post. */
   refresh(scopeId: ChannelId): void {
     const roomId = this.ctx.roomForScope(scopeId)
     if (this.stopped || !roomId) return
-    if (!this.isScribe(roomId)) return // exactly one bot maintains the surface
     if (this.rendering.has(scopeId)) {
       this.dirty.add(scopeId)
       return
@@ -69,23 +69,6 @@ export class Workbench {
       void this.renderTick(scopeId, roomId)
     }, wait)
     this.timers.set(scopeId, timer)
-  }
-
-  /** Am I the deterministically-elected scribe among the directory bots serving this room?
-   *  Every relay computes the same answer; electScribe promotes the next bot automatically
-   *  if the scribe leaves. Falls back to TRUE when the directory fold is unregistered/empty
-   *  (a lone bot owns its own surface). */
-  private isScribe(roomId: ChannelId): boolean {
-    let present: string[]
-    try {
-      present = directoryFor(this.ctx.engine.get<AgentDirectoryFoldState>(AGENT_DIRECTORY_FOLD))
-        .filter(id => id.platform === this.ctx.messaging.platform && id.rooms.includes(roomId))
-        .map(id => id.agentKey)
-    } catch {
-      return true // directory fold not registered — lone bot owns its surface
-    }
-    if (!present.includes(this.ctx.key)) present.push(this.ctx.key) // include myself
-    return electScribe(present) === this.ctx.key
   }
 
   /** One render pass with a per-scope in-flight guard so concurrent edits can't race. */
@@ -112,6 +95,11 @@ export class Workbench {
     let text: string
     try {
       const turns = this.ctx.engine.get<TurnFoldState>(TURN_FOLD)
+
+      // Actor-owned: post only if THIS bot has worked in the scope, so an idle co-resident
+      // sibling (sharing this fold) never becomes the visible surface owner. Each participating
+      // bot maintains its own surface (typically one per machine).
+      if (!botActiveInScope(turns, scopeId, this.ctx.key)) return
 
       // Coordination block (best-effort; '' when its folds are absent or there's nothing yet).
       let coord = ''

@@ -149,6 +149,16 @@ function stateLine(e: WorkbenchEntry): string {
   }
 }
 
+/** Has `agentKey` worked in `channelId` (does the Turn fold hold a turn it authored there)?
+ *  Drives actor-owned surfaces: a bot posts a scope's status surface only when this is true,
+ *  so an idle co-resident sibling sharing the fold never becomes the visible owner. */
+export function botActiveInScope(turns: TurnFoldState, channelId: string, agentKey: string): boolean {
+  for (const t of turns.values()) {
+    if (t.channel === channelId && t.agentKey === agentKey) return true
+  }
+  return false
+}
+
 /** Derive a workbench entry per agent that has worked in a channel, from the Turn fold. */
 export function workbenchEntries(
   turns: TurnFoldState,
