@@ -1933,3 +1933,111 @@ test('projectToRuntime ignores trust anchors (inertness)', () => {
   }
   expect(JSON.stringify(projectToRuntime(withTrust))).toBe(JSON.stringify(projectToRuntime(base)))
 })
+
+// ─── Gap-resolver core (U5) ───────────────────────────────────────────────────
+import { resolveGaps } from '../src/lib.ts'
+import type { DiscoverySnapshot, Need, NeedKind } from '../src/lib.ts'
+
+const snap = (over: Partial<DiscoverySnapshot> = {}): DiscoverySnapshot => ({
+  platform: 'discord',
+  selfId: 'U_self',
+  selfLabel: 'cc',
+  channels: { kind: 'results', items: [{ id: 'C1', label: 'general' }] },
+  members: { kind: 'results', items: [{ id: 'U_me', label: 'owner' }, { id: 'U_2', label: 'bob' }] },
+  directoryPeers: [],
+  directoryAvailable: true,
+  transportConfigured: false,
+  capabilities: { selfId: true, channelEnumeration: true, memberEnumeration: true, channelCreation: true },
+  ...over,
+})
+
+const kinds = (needs: Need[]): NeedKind[] => needs.map(n => n.kind)
+const byKind = (needs: Need[], k: NeedKind): Need | undefined => needs.find(n => n.kind === k)
+
+test('U5/F1: greenfield (token only) yields self-ID, channel, collaborators, owner-ID in order', () => {
+  const authoring: AuthoringAccess = { bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } }, channels: {}, roster: { people: {}, peers: {} } }
+  const needs = resolveGaps({ authoring, botKey: 'cc', snapshot: snap() })
+  expect(kinds(needs)).toEqual(['self-id', 'channel-binding', 'collaborators', 'owner-id'])
+  expect(byKind(needs, 'self-id')!.rung).toBe('auto-derive')
+  expect(byKind(needs, 'channel-binding')!.rung).toBe('pick')
+  expect(byKind(needs, 'collaborators')!.rung).toBe('pick')
+  expect(byKind(needs, 'owner-id')!.rung).toBe('pick')
+})
+
+test('U5/F2: with self-ID (cached) and owner-ID on disk, only channel-binding + collaborators remain', () => {
+  const authoring: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'cc' } },
+    channels: {},
+    roster: { people: {}, peers: {} },
+    me: { discord: 'U_me' },
+  }
+  expect(kinds(resolveGaps({ authoring, botKey: 'cc', snapshot: snap() }))).toEqual(['channel-binding', 'collaborators'])
+})
+
+test('U5/R5: self-ID is always auto-derive, never pick/manual', () => {
+  const authoring: AuthoringAccess = { bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } }, channels: {}, roster: { people: {}, peers: {} } }
+  // even on a member-incapable platform, self-id stays auto-derive
+  const needs = resolveGaps({ authoring, botKey: 'cc', snapshot: snap({ capabilities: { selfId: true, channelEnumeration: false, memberEnumeration: false, channelCreation: false }, channels: { kind: 'unsupported' }, members: { kind: 'unsupported' } }) })
+  expect(byKind(needs, 'self-id')!.rung).toBe('auto-derive')
+})
+
+test('U5/R14/R21: a degraded member outcome falls collaborators + owner-ID through to manual with a reason', () => {
+  const authoring: AuthoringAccess = { bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'cc' } }, channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [] } }, roster: { people: {}, peers: {} } }
+  const needs = resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap({ members: { kind: 'degraded', reason: 'intent not granted' } }) })
+  const collab = byKind(needs, 'collaborators')!
+  expect(collab.rung).toBe('manual')
+  expect(collab.reason).toBe('intent not granted')
+  const owner = byKind(needs, 'owner-id')!
+  expect(owner.rung).toBe('manual')
+  expect(owner.reason).toContain('nonce') // owner-id manual = guided nonce capture
+})
+
+test('U5: empty-but-capable members fall through to manual (not a pick-list of nobody)', () => {
+  const authoring: AuthoringAccess = { bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'cc' } }, channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [] } }, roster: { people: {}, peers: {} }, me: { discord: 'U_me' } }
+  const needs = resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap({ members: { kind: 'results', items: [] } }) })
+  expect(byKind(needs, 'collaborators')!.rung).toBe('manual')
+})
+
+test('U5: a token that did not resolve self-ID short-circuits to a single token need', () => {
+  const authoring: AuthoringAccess = { bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } }, channels: {}, roster: { people: {}, peers: {} } }
+  const needs = resolveGaps({ authoring, botKey: 'cc', snapshot: snap({ selfId: undefined }) })
+  expect(kinds(needs)).toEqual(['token'])
+})
+
+test('U5: a fully-configured (bot, channel) returns zero needs', () => {
+  const authoring: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'cc' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [{ kind: 'human', id: 'alice' }] } },
+    roster: { people: { alice: { platform: 'discord', userId: 'U_alice' } }, peers: {} },
+    me: { discord: 'U_me' },
+  }
+  expect(resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap() })).toEqual([])
+})
+
+test('U5/R18: transport is a need only when a cross-machine peer exists and none is configured', () => {
+  const authoring: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'cc' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [{ kind: 'human', id: 'alice' }] } },
+    roster: { people: { alice: { platform: 'discord', userId: 'U_alice' } }, peers: {} },
+    me: { discord: 'U_me' },
+  }
+  // create-capable platform → offer to create (pick)
+  const withPeer = resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap(), crossMachinePeer: true })
+  expect(byKind(withPeer, 'transport')!.rung).toBe('pick')
+  // already configured → no transport need
+  const configured = resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap({ transportConfigured: true }), crossMachinePeer: true })
+  expect(byKind(configured, 'transport')).toBeUndefined()
+  // no peer → no transport need
+  expect(byKind(resolveGaps({ authoring, botKey: 'cc', channelKey: 'discord:C1', snapshot: snap() }), 'transport')).toBeUndefined()
+})
+
+test('U5/R19: transport on a non-creation platform guides designation (manual)', () => {
+  const authoring: AuthoringAccess = {
+    bots: { tg: { platform: 'telegram', tokenEnv: 'T', runtime: 'claude-sdk', displayName: 'tg' } },
+    channels: { 'telegram:G1': { platform: 'telegram', channelId: 'G1', members: [{ bot: 'tg', workspace: '/w' }], collaborators: [{ kind: 'human', id: 'alice' }] } },
+    roster: { people: { alice: { platform: 'telegram', userId: 'U_alice' } }, peers: {} },
+    me: { telegram: 'U_me' },
+  }
+  const needs = resolveGaps({ authoring, botKey: 'tg', channelKey: 'telegram:G1', snapshot: snap({ platform: 'telegram', capabilities: { selfId: true, channelEnumeration: false, memberEnumeration: false, channelCreation: false } }), crossMachinePeer: true })
+  expect(byKind(needs, 'transport')!.rung).toBe('manual')
+})
