@@ -23,7 +23,7 @@ import { Synchronizer } from './ledger/sync.ts'
 import { bootstrap } from './ledger/bootstrap.ts'
 import { loopGuardFold } from './ledger/concepts/loop-guard.ts'
 import { channelFold } from './ledger/concepts/channel.ts'
-import { turnFold, TURN_FOLD, findTurnForInteraction, type TurnFoldState } from './ledger/concepts/turn.ts'
+import { turnFold } from './ledger/concepts/turn.ts'
 import { approvalFold } from './ledger/concepts/approval.ts'
 import { knowledgeFold } from './ledger/artifacts/knowledge.ts'
 import { classifyOnToolRequest } from './ledger/synchronizations/classify-on-tool-request.ts'
@@ -659,17 +659,12 @@ const PILL_VERBS = new Set([
 store.subscribe(i => {
   if (i.lifecycle !== 'admitted' && i.lifecycle !== 'applied') return
   if (!PILL_VERBS.has(i.verb)) return
-  // The workbench belongs to the turn's agent (i.actor) — route to its own host so a
-  // co-resident sibling doesn't post another bot's workbench (the "@cc → d-bot answers" bug).
-  const host = selectActorHost(hosts, i.actor, h => !!h.getAgentForChannel(i.channel))
-  if (!host) return
-  let promptHash: string | undefined
-  try {
-    promptHash = findTurnForInteraction(engine.get<TurnFoldState>(TURN_FOLD), i)
-  } catch {
-    promptHash = undefined
+  // The status surface is per-scope and owned by the elected scribe, so notify every
+  // co-resident host serving the channel (they share one fold); non-scribe hosts no-op at
+  // the gate. Routing only to the actor host would leave the scribe stale when a sibling acts.
+  for (const host of hosts) {
+    if (host.getAgentForChannel(i.channel)) host.updateWorkbench(i.channel)
   }
-  if (promptHash) host.updateWorkbench(i.channel, promptHash)
 })
 
 // Connect each host's messaging adapter — messages start flowing into the pipeline.

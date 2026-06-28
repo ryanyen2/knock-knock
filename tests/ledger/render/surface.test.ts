@@ -15,7 +15,6 @@ import {
   parseTodos,
   renderWorkbench,
   workbenchEntries,
-  workbenchEntryForTurn,
   renderResolvedConfig,
   renderContextList,
   type WorkbenchEntry,
@@ -145,31 +144,31 @@ test('renderResolvedConfig: labels each value thread vs room; suppressed at top 
   expect(flat).not.toContain('(thread)')
 })
 
-// ─── workbenchEntryForTurn (per-turn board) ───────────────────────────────────
+// ─── workbenchEntries: per-agent status ───────────────────────────────────────
 
-test('workbenchEntryForTurn: derives status from a single turn', () => {
+test('workbenchEntries: derives status from each agent\'s latest turn', () => {
   const working: TurnFoldState = new Map([['p1', turn({})]])
-  expect(workbenchEntryForTurn(working, 'p1', () => 'fix the bug')?.status).toBe('working')
+  expect(workbenchEntries(working, 'c1', () => 'fix the bug')[0]?.status).toBe('working')
 
   const done: TurnFoldState = new Map([
     ['p1', turn({ reply: { hash: 'r', text: 'done', ts: 'x' }, endedAt: 'x' })],
   ])
-  expect(workbenchEntryForTurn(done, 'p1', () => 'fix the bug')?.status).toBe('done')
+  expect(workbenchEntries(done, 'c1', () => 'fix the bug')[0]?.status).toBe('done')
 
   const failed: TurnFoldState = new Map([
     ['p1', turn({ endedAt: 'x', toolCalls: [{ hash: 't', name: 'Bash', inputJson: '{}', status: 'failed' }] })],
   ])
-  expect(workbenchEntryForTurn(failed, 'p1', () => 'x')?.status).toBe('failed')
+  expect(workbenchEntries(failed, 'c1', () => 'x')[0]?.status).toBe('failed')
 
-  // a DENIED tool call (permission gate fired) is a distinct status path and also
-  // marks the turn failed — exercised separately from 'failed'.
+  // a DENIED tool call (permission gate fired) is a distinct status path and also marks
+  // the turn failed — exercised separately from 'failed'.
   const denied: TurnFoldState = new Map([
     ['p1', turn({ endedAt: 'x', toolCalls: [{ hash: 't', name: 'Edit', inputJson: '{}', status: 'denied' }] })],
   ])
-  expect(workbenchEntryForTurn(denied, 'p1', () => 'x')?.status).toBe('failed')
+  expect(workbenchEntries(denied, 'c1', () => 'x')[0]?.status).toBe('failed')
 
-  // unknown turn → undefined
-  expect(workbenchEntryForTurn(new Map(), 'nope', () => undefined)).toBeUndefined()
+  // no turns in the channel → no entries
+  expect(workbenchEntries(new Map(), 'c1', () => undefined)).toEqual([])
 })
 
 test('renderContextList: numbers entries and shows the empty state', () => {

@@ -104,7 +104,6 @@ import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
 import { MeshSync } from './host/mesh-sync.ts'
-import { Billboard } from './host/billboard.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
@@ -197,8 +196,6 @@ export class AgentHost {
   /** Per-scope set of related-context blocks already injected (once-only). */
   private readonly relatedDelivered = new Map<ChannelId, Set<string>>()
   private readonly workbench: Workbench
-  /** Pinned shared coordination billboard (mesh mode; maintained by the elected scribe). */
-  private readonly billboard: Billboard
   private storeUnsub?: () => void
   /** No-Postgres cross-machine transport (publish/ingest coordination over the
    *  messaging channel). Constructed on connect only when mesh is enabled. */
@@ -258,7 +255,6 @@ export class AgentHost {
       clearChoicePrompt: (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
     }
     this.workbench = new Workbench(ctx)
-    this.billboard = new Billboard(ctx)
     this.conflictUI = new ConflictUI(ctx)
     this.watchControl = new WatchControl(ctx, this.approvals)
     this.sessionSharing = new SessionSharing(ctx, (action, scopeId, summary) =>
@@ -305,12 +301,12 @@ export class AgentHost {
       // file.received is admitted in the same wave, BEFORE the turn is prompted;
       // buffering here lets the very turn the file rode in on see it.
       if (i.verb === 'file.received') this.bufferIngestedFile(i)
-      // Mesh: a coordination change (presence/designation or a task op) updates the
-      // shared billboard. The Billboard self-gates to the elected scribe, so only one
-      // bot actually edits the pin. (agent.identity carries no real scope — the next
-      // coord/task event refreshes the roster.)
+      // Mesh: a coordination change (presence/designation or a task op) updates the shared
+      // status surface. The Workbench self-gates to the elected scribe, so only one bot
+      // edits it. (agent.identity carries no real scope — the next coord/task event
+      // refreshes the roster.)
       if (this.meshEnabled && (i.verb === 'coord.note' || i.verb.startsWith('task.'))) {
-        this.billboard.refresh(i.channel)
+        this.workbench.refresh(i.channel)
       }
     })
   }
@@ -448,7 +444,6 @@ export class AgentHost {
     this.storeUnsub?.()
     this.mesh?.stop()
     this.workbench.stop()
-    this.billboard.stop()
     await this.messaging.disconnect()
   }
 
@@ -728,9 +723,9 @@ export class AgentHost {
     return this.messaging.capabilities().maxMessageLength
   }
 
-  /** Relay subscriber → refresh a turn's Workbench message (throttled). */
-  updateWorkbench(scopeId: ChannelId, promptHash: Hash): void {
-    this.workbench.updateForTurn(scopeId, promptHash)
+  /** Relay subscriber → refresh a scope's status surface (throttled, scribe-gated). */
+  updateWorkbench(scopeId: ChannelId): void {
+    this.workbench.refresh(scopeId)
   }
 
   /** Owner reacted 🛑 — abort the in-flight turn via its AbortController. No-op if

@@ -166,15 +166,6 @@ export function workbenchEntries(
   return entries
 }
 
-/** A single turn's workbench entry, by its promptHash. Undefined when not yet in the fold. */
-export function workbenchEntryForTurn(
-  turns: TurnFoldState,
-  promptHash: string,
-  promptText: (inboundHash: string | undefined) => string | undefined,
-): WorkbenchEntry | undefined {
-  const t = turns.get(promptHash)
-  return t ? entryFromTurn(t, promptText) : undefined
-}
 
 /** Build a workbench entry from one TurnState. */
 function entryFromTurn(
