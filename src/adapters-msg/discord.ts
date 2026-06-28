@@ -417,4 +417,33 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
       return undefined
     }
   }
+
+  /** Page back the most recent messages in a channel, OLDEST-first — the source the mesh
+   *  reads on reconnect to recover coordination lines it missed while offline. Deliberately
+   *  NOT on the MessagingAdapter interface (the host duck-types it), to keep that interface
+   *  thin. Discord caps `messages.fetch` at 100/call, so we page with a `before` cursor up to
+   *  `limit`; the API returns newest-first, so the accumulated batch is reversed to honor the
+   *  mesh's oldest-first contract (`createdAt` rides in-band in each line, so no timestamp). */
+  async fetchRecent(scope: ScopeId, limit: number): Promise<{ authorId: string; text: string }[]> {
+    const ch = await this.client.channels.fetch(scope).catch(() => null)
+    if (!ch || !ch.isTextBased()) return []
+    const api = ch as {
+      messages: { fetch: (opts: { limit: number; before?: string }) => Promise<Map<string, Message>> }
+    }
+    const collected: Message[] = []
+    let before: string | undefined
+    while (collected.length < limit) {
+      const pageSize = Math.min(100, limit - collected.length)
+      const page = await api.messages
+        .fetch({ limit: pageSize, ...(before ? { before } : {}) })
+        .catch(() => null)
+      if (!page || page.size === 0) break
+      const arr = [...page.values()] // newest-first within the page
+      collected.push(...arr)
+      before = arr[arr.length - 1]?.id // oldest id in this page → cursor for the next, older page
+      if (page.size < pageSize) break // a short page means we've reached the start of history
+    }
+    // `collected` is newest-first overall; the mesh contract is oldest-first.
+    return collected.reverse().map(m => ({ authorId: m.author.id, text: m.content }))
+  }
 }
