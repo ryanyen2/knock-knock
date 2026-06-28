@@ -39,6 +39,7 @@ import {
   resolveReactionScope,
   resolveProfileForActor,
   resolveRoomProfile,
+  threadNameFromPrompt,
   matchesMentionPattern,
   wrapChannelRole,
   wrapChannelGoal,
@@ -497,6 +498,11 @@ export class AgentHost {
     }
   }
 
+  /** Record the task scope a top-level message spawned, FIFO-bounded. */
+  private rememberTaskScope(messageId: string, scope: ChannelId): void {
+    boundedMapSet(this.taskScopeByMessage, messageId, scope, 1000)
+  }
+
   /** Make an absolute edit path workspace-relative. Undefined when the scope is
    *  unserved or the file escapes the workspace — only in-workspace edits become
    *  versionable artifacts (artifact id stays stable across machines). */
@@ -927,6 +933,12 @@ export class AgentHost {
 
   // ─── Inbound (skinny) ─────────────────────────────────────────────────────
 
+  /** Get or create the single task thread for a top-level message (race-tolerant). Undefined
+   *  if a thread can't be created, so the caller falls back to the channel. */
+  private async ensureTaskThread(m: IncomingMessage): Promise<ChannelId | undefined> {
+    return this.messaging.startThread(m.ref, threadNameFromPrompt(m.text))
+  }
+
   private async handleInbound(m: IncomingMessage): Promise<void> {
     const access = this.getAccess()
     const liveAgent = access.agents[this.key] ?? this.agent
@@ -1119,12 +1131,22 @@ export class AgentHost {
       return
     }
 
-    // Tasks run inline in the message's own scope — we never spawn a task thread (that
-    // scattered the conversation into a thread hanging off every @mention). A genuine
-    // platform thread reply (a human typing inside a pre-existing thread) keeps its thread
-    // scope; everything else runs in the channel.
-    const scopeId: ChannelId = m.scope
+    // Resolve the task scope. A thread message stays in its thread; a top-level @mention
+    // spawns (or reuses) ONE task thread so all of this task's coordination + replies land
+    // under the request instead of in the channel; a top-level non-mention stays at the
+    // channel. startThread is idempotent (existing thread reused) and deterministic across
+    // bots/machines, so co-resident + cross-machine bots all converge on the same thread.
+    let scopeId: ChannelId
+    if (m.isThread) {
+      scopeId = m.scope
+    } else if (mentioned) {
+      scopeId = (await this.ensureTaskThread(m)) ?? m.scope
+    } else {
+      scopeId = m.scope
+    }
     this.scopeToRoom.set(scopeId, roomId)
+    // So a 🛑/🔁 reaction on the original message resolves to the thread it spawned.
+    if (scopeId !== m.scope) this.rememberTaskScope(m.ref.id, scopeId)
 
     // Admit channel.message — all handleInbound does. URL-free descriptors persist
     // so the ingest sync knows files rode along; the real handles stay in-process.

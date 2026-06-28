@@ -1534,11 +1534,20 @@ export function electScribe(present: ReadonlyArray<string>): string | undefined 
   return electWinner(present, 'scribe')
 }
 
-/** Render the shared "billboard" — a single pinned, human-readable snapshot of the
- *  multi-agent coordination for a scope (the no-Postgres mesh's visible payoff). One
- *  elected scribe maintains it (see electScribe). Shows WHO is here + what each is
- *  doing (presence) and the task DAG with ○ planned / ◐ in-progress / ✓ done. Pure —
- *  returns '' when there's nothing to show, so the scribe can skip an empty pin. */
+/** Derive a thread name from a top-level message: strip @mentions, cap at 80 chars. */
+export function threadNameFromPrompt(text: string): string {
+  // Strip user (`<@id>`/`<@!id>`), role (`<@&id>`), and channel (`<#id>`) mention markup —
+  // a bot addressed by its managed role would otherwise leave `<@&123…>` in the title.
+  const stripped = text.replace(/<(@[!&]?|#)\d+>/g, '').replace(/\s+/g, ' ').trim()
+  const trimmed = stripped.slice(0, 80) || 'task'
+  return trimmed.length < stripped.length ? `${trimmed}…` : trimmed
+}
+
+/** Render the shared "billboard" — a single human-readable snapshot of the multi-agent
+ *  coordination for a scope (the no-Postgres mesh's visible payoff). One elected scribe
+ *  maintains it (see electScribe). Shows WHO is here + what each is doing (presence) and
+ *  the task DAG with ○ planned / ◐ in-progress / ✓ done. Pure — returns '' when there's
+ *  nothing to show, so the scribe can skip an empty surface. */
 export function renderBillboard(
   roster: ReadonlyArray<{ agentKey: string; label?: string }>,
   presence: ReadonlyArray<{ agentKey: string; status?: string; label?: string }>,
