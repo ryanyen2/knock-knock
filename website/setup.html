@@ -27,6 +27,7 @@
   <symbol id="i-users" viewBox="0 0 24 24"><path d="M16 20.5v-1.5a4 4 0 0 0-4-4H6.5a4 4 0 0 0-4 4v1.5"/><circle cx="9.2" cy="7.8" r="3.6"/><path d="M21.5 20.5v-1.5a4 4 0 0 0-3-3.8"/><path d="M16.6 4.3a3.6 3.6 0 0 1 0 7"/></symbol>
   <symbol id="i-list" viewBox="0 0 24 24"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12"/><path d="M18 6 6 18"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M14 4h6v6"/><path d="M20 4 10 14"/><path d="M19 14v5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 4 19V7a1.5 1.5 0 0 1 1.5-1.5H10"/></symbol>
 </defs></svg>
 
 <!-- ───────────  NAV  ─────────── -->
@@ -157,6 +158,9 @@
     <div class="ppanel" data-panel="discord">
       <div class="ppanel-h"><h3>Discord</h3><span class="tag ready">full · live</span></div>
       <p>Prerequisites: a Discord server you can manage, and <b>Developer Mode</b> on (Settings → Advanced → Developer Mode) so you can copy IDs.</p>
+      <div class="ppanel-quick">
+        <a class="quick-link" href="https://discord.com/developers/applications" target="_blank" rel="noopener">Discord Developer Portal <svg class="ic ic-ext"><use href="#i-ext"/></svg></a>
+      </div>
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the application and bot</h4><p>Go to <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">discord.com/developers/applications</a> → <b>New Application</b> → name it. Open the <b>Bot</b> tab → <b>Reset Token</b> → copy it. It's shown only once. This is your <code>DISCORD_BOT_TOKEN</code>.</p></div></li>
         <li class="gstep"><div><h4>Enable the message-content intent</h4><p><b>Bot → Privileged Gateway Intents → enable MESSAGE CONTENT INTENT.</b> The only privileged toggle you need. Without it the bot connects but reads empty message text.</p></div></li>
@@ -171,12 +175,51 @@
     <!-- SLACK -->
     <div class="ppanel" data-panel="slack" hidden>
       <div class="ppanel-h"><h3>Slack</h3><span class="tag ready">full · live</span></div>
-      <p>Full fidelity over <b>Socket Mode</b> — an outbound WebSocket, no public server. Needs <b>two</b> tokens. (Inbound files work; outbound upload is pending.)</p>
+      <p>Full fidelity over <b>Socket Mode</b> — an outbound WebSocket, no public server. Needs <b>two</b> tokens. (Inbound files work; outbound upload is pending.) <b>Fast path:</b> create the app from the manifest below — no clicking scopes one by one — then mint the two tokens.</p>
+      <div class="ppanel-quick">
+        <a class="quick-link" href="https://api.slack.com/apps" target="_blank" rel="noopener">Slack API · Your Apps <svg class="ic ic-ext"><use href="#i-ext"/></svg></a>
+      </div>
       <ul class="gsteps">
-        <li class="gstep"><div><h4>Create the app from scratch &amp; enable Socket Mode</h4><p>Create a Slack app for your workspace, then <b>Socket Mode → on</b> — this generates the App-Level Token <code>SLACK_APP_TOKEN</code> (<code>xapp-…</code>, scope <code>connections:write</code>).</p></div></li>
-        <li class="gstep"><div><h4>Subscribe to events &amp; turn on interactivity</h4><p><b>Event Subscriptions → on</b>, subscribe to bot events:</p><div class="perm-chips"><span>message.channels</span><span>message.groups</span><span>message.im</span><span>message.mpim</span><span>app_mention</span><span>reaction_added</span></div><p style="margin-top:10px"><b>Interactivity &amp; Shortcuts → on</b> (so Block Kit buttons fire).</p></div></li>
-        <li class="gstep"><div><h4>Add bot token scopes, then install</h4><p>OAuth &amp; Permissions → Bot Token Scopes:</p><div class="perm-chips"><span>app_mentions:read</span><span>channels:history</span><span>groups:history</span><span>im:history</span><span>mpim:history</span><span>chat:write</span><span>reactions:read</span><span>reactions:write</span><span>pins:write</span><span>files:read</span><span>files:write</span></div><p style="margin-top:10px"><b>Install to Workspace</b> (this yields <code>SLACK_BOT_TOKEN</code>, <code>xoxb-…</code>), then <code>/invite</code> the bot App to each channel.</p></div></li>
-        <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — channel name → About → Channel ID (<code>C0123ABCD</code>). <b>Owner id</b> — your avatar → Profile → ⋯ → Copy member ID (<code>U0123ABCD</code>).</p></div></li>
+        <li class="gstep"><div><h4>Create the app from this manifest <span class="step-fast">skip the clicking</span></h4><p>On the page above: <b>Create New App → From an app manifest</b> → pick your workspace → paste the YAML below → <b>Create</b>. One paste sets <b>every scope, event, interactivity, and Socket Mode</b> — no adding them one chip at a time.</p>
+          <div class="code" data-copy><pre><code>display_information:
+  name: knock-knock
+features:
+  bot_user:
+    display_name: knock-knock
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - chat:write
+      - reactions:read
+      - reactions:write
+      - pins:write
+      - files:read
+      - files:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+      - reaction_added
+  interactivity:
+    is_enabled: true
+  socket_mode_enabled: true
+  org_deploy_enabled: false
+  token_rotation_enabled: false</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
+          <p style="margin-top:10px">Rename it later by editing <code>name</code> / <code>display_name</code> — knock-knock fetches whatever the bot is called on connect, so the manifest name isn't binding.</p></div></li>
+        <li class="gstep"><div><h4>Generate the two tokens, then install</h4><p>The manifest can't mint tokens — do these two by hand:</p>
+          <p style="margin-top:8px"><b>1 · App-Level Token</b> — <b>Basic Information → App-Level Tokens → Generate</b>, add scope <code>connections:write</code>. This is <code>SLACK_APP_TOKEN</code> (<code>xapp-…</code>).</p>
+          <p style="margin-top:6px"><b>2 · Bot token</b> — <b>OAuth &amp; Permissions → Install to Workspace</b>. This yields <code>SLACK_BOT_TOKEN</code> (<code>xoxb-…</code>). Then <code>/invite</code> the bot App to each channel.</p></div></li>
+        <li class="gstep"><div><h4>Collect the id and your owner id</h4><p><b>Channel id</b> — channel name → View Channel Details → Copy Channel ID at the bottom (<code>C0123ABCD</code>). <b>Owner id</b> — your avatar → Profile → ⋯ → Copy member ID (<code>U0123ABCD</code>).</p></div></li>
       </ul>
       <p class="body"><b>Then:</b> run <code>knock-knock setup</code>, choose <code>manage a bot</code> -> <code>add a new bot</code> -> choose <b>Slack</b>; <code>Add to a channel</code> -> paste the channel id; then <code>save/update token</code> -> paste <b>both</b> tokens (<code>SLACK_BOT_TOKEN</code> + <code>SLACK_APP_TOKEN</code>, stored as the bot's app-token secret). 
         <!-- Gotcha: <b>re-install after adding scopes</b>, and both tokens must be saved or connect fails fast. -->
@@ -187,6 +230,9 @@
     <div class="ppanel" data-panel="telegram" hidden>
       <div class="ppanel-h"><h3>Telegram</h3><span class="tag exp">near-parity · live</span></div>
       <p>Live over <code>getUpdates</code> long-poll (no public server). One token, minor degrades (whitelist reactions, cold-DM).</p>
+      <div class="ppanel-quick">
+        <a class="quick-link" href="https://t.me/BotFather" target="_blank" rel="noopener">Open @BotFather <svg class="ic ic-ext"><use href="#i-ext"/></svg></a>
+      </div>
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the bot via BotFather</h4><p>DM <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → <code>/newbot</code> → copy the token (<code>&lt;id&gt;:&lt;secret&gt;</code>). This is your <code>TELEGRAM_BOT_TOKEN</code>. No extra secret.</p></div></li>
         <li class="gstep"><div><h4>Disable Group Privacy &amp; make it admin</h4><p><b>BotFather → /mybots → Bot Settings → Group Privacy → Turn off</b> (else the bot sees only @mentions and looks "deaf"). Make the bot a <b>group admin</b> to receive reactions. Forum topics (the thread analogue) need a <b>supergroup with Topics enabled</b>.</p></div></li>
@@ -199,8 +245,11 @@
     <div class="ppanel" data-panel="github" hidden>
       <div class="ppanel-h"><h3>GitHub</h3><span class="tag exp">async · degraded</span></div>
       <p>Async transport (~60 s) over Notifications polling — best for PR-cadence coding and agent-to-agent-over-issues, not live chat. The repo is the room; an issue / PR is the task scope (automatic).</p>
+      <div class="ppanel-quick">
+        <a class="quick-link" href="https://github.com/settings/tokens" target="_blank" rel="noopener">GitHub · Personal access tokens <svg class="ic ic-ext"><use href="#i-ext"/></svg></a>
+      </div>
       <ul class="gsteps">
-        <li class="gstep"><div><h4>Make a machine-user &amp; a PAT</h4><p>Create a <b>dedicated machine-user account</b> to act as the bot, then a Personal Access Token at github.com/settings/tokens. Scopes: classic <code>repo</code> + <code>notifications</code>, or fine-grained Issues R/W + Pull requests R/W + Contents R/W + Metadata R. This is your <code>GITHUB_BOT_TOKEN</code>. No extra secret.</p></div></li>
+        <li class="gstep"><div><h4>Make a machine-user &amp; a PAT</h4><p>Create a <b>dedicated machine-user account</b> to act as the bot, then a Personal Access Token at <a href="https://github.com/settings/tokens" target="_blank" rel="noopener">github.com/settings/tokens</a>. Scopes: classic <code>repo</code> + <code>notifications</code>, or fine-grained Issues R/W + Pull requests R/W + Contents R/W + Metadata R. This is your <code>GITHUB_BOT_TOKEN</code>. No extra secret.</p></div></li>
         <li class="gstep"><div><h4>Add the machine-user to the repo</h4><p>The machine-user must be a <b>collaborator / org member</b> of the repo so @mentions notify it and it can comment.</p></div></li>
         <li class="gstep"><div><h4>The id and your owner id</h4><p><b>Channel id</b> is the repo — <code>owner/repo</code> (each task scope <code>owner/repo#issue</code> is derived automatically). <b>Owner id</b> is your GitHub login.</p></div></li>
       </ul>
@@ -211,6 +260,9 @@
     <div class="ppanel" data-panel="notion" hidden>
       <div class="ppanel-h"><h3>Notion</h3><span class="tag exp">async · heavily degraded</span></div>
       <p>Async over comment/page polling (~seconds, no reactions/buttons/DM/edit/inline files). Honest verdict: <b>often better used as an MCP tool than a chat transport</b>.</p>
+      <div class="ppanel-quick">
+        <a class="quick-link" href="https://app.notion.com/developers/connections" target="_blank" rel="noopener">Notion Integrations <svg class="ic ic-ext"><use href="#i-ext"/></svg></a>
+      </div>
       <ul class="gsteps">
         <li class="gstep"><div><h4>Create the integration</h4><p>At <a href="https://app.notion.com/developers/connections" target="_blank" rel="noopener">notion.com/developers/connections</a> create a connection with access token and capabilities of <b>Read content</b>, <b>Insert content</b>, <b>Read comments</b>, <b>Insert comments</b>, <b>Read user information</b>. It yields the secret <code>NOTION_TOKEN</code> (<code>ntn_…</code>). No extra secret.</p></div></li>
         <li class="gstep"><div><h4>Share each page/database with it (might be automatically by Notion)</h4><p>Open the page or database → <b>••• → Connections → manage connections → add your integration</b>. <b>Without sharing, the integration sees nothing</b> — the token alone grants no access. This is the single most common failure.</p></div></li>
