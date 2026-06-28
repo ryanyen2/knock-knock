@@ -2041,3 +2041,70 @@ test('U5/R19: transport on a non-creation platform guides designation (manual)',
   const needs = resolveGaps({ authoring, botKey: 'tg', channelKey: 'telegram:G1', snapshot: snap({ platform: 'telegram', capabilities: { selfId: true, channelEnumeration: false, memberEnumeration: false, channelCreation: false } }), crossMachinePeer: true })
   expect(byKind(needs, 'transport')!.rung).toBe('manual')
 })
+
+// ─── Trust classification + collision detection (U6) ──────────────────────────
+import { classifyTrust, detectCollision, confirmedIdentitiesFor } from '../src/lib.ts'
+import type { TrustedPair, ConfirmedIdentities } from '../src/lib.ts'
+
+test('U6/AE2: a co-resident agent-key classifies co-resident (auto-adopt, no prompt)', () => {
+  const c = classifyTrust('cc', 'U_self', new Set(['cc', 'sibling']), [])
+  expect(c.trust).toBe('co-resident')
+  expect(c.claimedUnverified).toBe(false)
+})
+
+test('U6/AE1: a remote pair not on the trusted list is gated, claimed/unverified', () => {
+  const c = classifyTrust('remoteKey', 'U_remote', new Set(['cc']), [])
+  expect(c.trust).toBe('gated')
+  expect(c.claimedUnverified).toBe(true)
+  expect(c.keyChangedWarning).toBeUndefined()
+})
+
+test('U6/R10: an exact trusted (key,userId) pair classifies trusted-remote', () => {
+  const trusted: TrustedPair[] = [{ agentKey: 'remoteKey', userId: 'U_remote', trustedAt: 't' }]
+  expect(classifyTrust('remoteKey', 'U_remote', new Set(['cc']), trusted).trust).toBe('trusted-remote')
+})
+
+test('U6/R24: a trusted key publishing a NEW userId drops to gated with a key-changed warning', () => {
+  const trusted: TrustedPair[] = [{ agentKey: 'remoteKey', userId: 'U_old', trustedAt: 't' }]
+  const c = classifyTrust('remoteKey', 'U_new', new Set(['cc']), trusted)
+  expect(c.trust).toBe('gated')
+  expect(c.keyChangedWarning).toBe(true)
+})
+
+test('U6/R11: a beacon whose key resembles a local one but is NOT hosted is gated, never co-resident', () => {
+  // coResidentKeys is the locally-hosted set; a beacon claiming "cc" while we host only "cc-real"
+  // must not be co-resident (no beacon inference).
+  expect(classifyTrust('cc', 'U_x', new Set(['cc-real']), []).trust).toBe('gated')
+})
+
+test('U6/R25/AE7: a beacon userId equal to owner / human / different-key peer is a named collision', () => {
+  const confirmed: ConfirmedIdentities = {
+    ownerUserId: 'U_owner',
+    humanUserIds: ['U_alice'],
+    peers: [{ userId: 'U_peer', agentKey: 'keyA' }],
+  }
+  expect(detectCollision({ agentKey: 'kX', userId: 'U_owner' }, confirmed)).toEqual({ kind: 'owner', userId: 'U_owner' })
+  expect(detectCollision({ agentKey: 'kX', userId: 'U_alice' }, confirmed)).toEqual({ kind: 'human', userId: 'U_alice' })
+  expect(detectCollision({ agentKey: 'keyB', userId: 'U_peer' }, confirmed)).toEqual({ kind: 'peer', userId: 'U_peer', existingAgentKey: 'keyA' })
+  // same (userId, agentKey) as an existing confirmed peer → NOT a collision (it's the same peer)
+  expect(detectCollision({ agentKey: 'keyA', userId: 'U_peer' }, confirmed)).toBeUndefined()
+  // a brand-new userId collides with nothing
+  expect(detectCollision({ agentKey: 'kX', userId: 'U_fresh' }, confirmed)).toBeUndefined()
+})
+
+test('U6: confirmedIdentitiesFor reads owner + humans + agent-key-bound peers for a platform', () => {
+  const a: AuthoringAccess = {
+    bots: {},
+    channels: {},
+    me: { discord: 'U_owner', slack: 'U_slack_owner' },
+    roster: {
+      people: { alice: { platform: 'discord', userId: 'U_alice' }, bob: { platform: 'slack', userId: 'U_bob' } },
+      peers: { p1: { platform: 'discord', userId: 'U_peer', blurb: 'b', agentKey: 'keyA' } },
+    },
+  }
+  expect(confirmedIdentitiesFor(a, 'discord')).toEqual({
+    ownerUserId: 'U_owner',
+    humanUserIds: ['U_alice'],
+    peers: [{ userId: 'U_peer', agentKey: 'keyA' }],
+  })
+})

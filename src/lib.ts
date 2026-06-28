@@ -104,7 +104,17 @@ export type Bot = {
 /** A human collaborator in the roster (entered once, referenced from channels). */
 export type Person = { platform: Platform; userId: string; label?: string }
 /** A peer bot (someone else's) in the roster — present for discovery, not run here. */
-export type Peer = { platform: Platform; userId: string; blurb: string; label?: string }
+export type Peer = {
+  platform: Platform
+  userId: string
+  blurb: string
+  label?: string
+  /** The agent-key this peer published under, when confirmed from a directory beacon. Persisted so
+   *  trust binds to the (agentKey, userId) PAIR, not the userId alone (R24) — a later beacon under
+   *  the same key but a different userId is then a key-change, not a silent match. Absent for
+   *  hand-entered roster peers. */
+  agentKey?: string
+}
 
 /** A roster reference attached to a channel. */
 export type Collaborator =
@@ -689,6 +699,94 @@ export function resolveGaps(input: ResolveInput): Need[] {
   }
 
   return needs
+}
+
+// ─── Trust classification + identity-collision detection (pure; KTD4) ─────────
+// Beacons are unsigned and plaintext-broadcast, so agent-key AND user-id are both
+// attacker-choosable. Co-resident is decided ONLY by local hosting (never inferred from a
+// beacon that resembles a local key); same-owner-cross-machine is reached ONLY by a confirmed
+// (agent-key, user-id) pair. Everything else, and any ambiguity, is confirm-gated.
+
+/** How a discovered identity is trusted: a locally-hosted sibling (auto-adopt, no prompt), a
+ *  remote pair the owner marked trusted (auto-adopt), or gated (confirm required). */
+export type TrustClass = 'co-resident' | 'trusted-remote' | 'gated'
+
+export type TrustClassification = {
+  trust: TrustClass
+  /** A trusted agent-key now claims a DIFFERENT userId than the recorded pair → dropped to gated
+   *  with this warning (R24): the key may have been taken over. */
+  keyChangedWarning?: boolean
+  /** Render the identity as claimed/unverified (R12) — true for everything gated. */
+  claimedUnverified: boolean
+}
+
+/** Classify a discovered (agentKey, userId). Co-resident is membership in the locally-hosted set
+ *  ONLY (KTD4); trusted-remote is an exact pair match; a trusted key with a new userId is gated +
+ *  warned; all else is gated, claimed/unverified. Pure. */
+export function classifyTrust(
+  agentKey: string,
+  userId: string,
+  coResidentKeys: ReadonlySet<string>,
+  trustedPairs: ReadonlyArray<TrustedPair>,
+): TrustClassification {
+  if (coResidentKeys.has(agentKey)) return { trust: 'co-resident', claimedUnverified: false }
+  if (isTrustedPair(trustedPairs, agentKey, userId)) return { trust: 'trusted-remote', claimedUnverified: false }
+  const keyTrustedUnderOtherUser = trustedPairs.some(t => t.agentKey === agentKey && t.userId !== userId)
+  return {
+    trust: 'gated',
+    claimedUnverified: true,
+    ...(keyTrustedUnderOtherUser ? { keyChangedWarning: true } : {}),
+  }
+}
+
+/** The confirmed identities a discovered beacon could collide with (R25). The caller builds this
+ *  from authoring + the directory; confirmed peers carry their agent-key so a same-userId /
+ *  different-key beacon is caught. */
+export type ConfirmedIdentities = {
+  ownerUserId?: string
+  humanUserIds: string[]
+  peers: Array<{ userId: string; agentKey?: string }>
+}
+
+/** A named identity collision (R25), defaulting to declined at confirm time. */
+export type Collision =
+  | { kind: 'owner'; userId: string }
+  | { kind: 'human'; userId: string }
+  | { kind: 'peer'; userId: string; existingAgentKey?: string }
+
+/** Flag a discovered beacon whose userId equals the confirmed owner, a confirmed human, or a
+ *  confirmed peer under a DIFFERENT agent-key — surfaced as a named conflict rather than an
+ *  ordinary claimed/unverified proposal. Returns undefined when there is no collision. Pure. */
+export function detectCollision(
+  beacon: { agentKey: string; userId: string },
+  confirmed: ConfirmedIdentities,
+): Collision | undefined {
+  if (confirmed.ownerUserId && beacon.userId === confirmed.ownerUserId) {
+    return { kind: 'owner', userId: beacon.userId }
+  }
+  if (confirmed.humanUserIds.includes(beacon.userId)) {
+    return { kind: 'human', userId: beacon.userId }
+  }
+  const peer = confirmed.peers.find(p => p.userId === beacon.userId && p.agentKey !== beacon.agentKey)
+  if (peer) {
+    return { kind: 'peer', userId: beacon.userId, ...(peer.agentKey ? { existingAgentKey: peer.agentKey } : {}) }
+  }
+  return undefined
+}
+
+/** Build the confirmed-identity set for one platform from authoring config — owner, confirmed
+ *  humans, and confirmed roster peers (with their bound agent-key). Pure convenience for the
+ *  confirm flow (U8) and doctor's integrity checks (U10). */
+export function confirmedIdentitiesFor(a: AuthoringAccess, platform: Platform): ConfirmedIdentities {
+  return {
+    ...(a.me?.[platform] ? { ownerUserId: a.me[platform] } : {}),
+    humanUserIds: Object.values(a.roster.people)
+      .filter(p => p.platform === platform)
+      .map(p => p.userId),
+    peers: Object.values(a.roster.peers)
+      .filter(p => p.platform === platform)
+      .map(p => ({ userId: p.userId, ...(p.agentKey ? { agentKey: p.agentKey } : {}) })),
+  }
 }
 
 // ─── Policy classification for adapters without native pattern matching ───────
