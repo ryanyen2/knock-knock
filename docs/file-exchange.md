@@ -69,9 +69,45 @@ Your `!share` *is* the consent — there's no second prompt. The one thing it
 **cannot** do is share a credential: the secret floor refuses `!share .env` (or a
 symlink pointing at one) no matter what.
 
-> **Agent-initiated sharing** (the agent deciding to share a file via a
-> `share_file` tool, with an Allow/Deny consent card) is a planned follow-up. In
-> v1 the owner curates what leaves the machine.
+---
+
+## Outbound: the agent's `share_file` tool
+
+On the **claude-sdk** runtime, the agent has a `share_file` tool, so it can share
+a workspace file itself when you ask it to ("send me the README") instead of
+pasting the contents as a message. It runs the same pipeline as `!share`:
+
+1. **Resolve inside the workspace** (containment + symlink-escape guard).
+2. **Secret floor** — refuse a credential path *or* content, non-bypassable.
+3. **Classify `FileShare`** against the room profile:
+   - `deny` (strict / secret floor) → refused, nothing sent;
+   - `ask` (the default) → your bot posts an **Allow/Deny** card and waits for
+     *you* (the owner) to approve before anything leaves;
+   - `allow` (bypass) → sent without a prompt.
+4. **Send** the file as an attachment and record `file.shared`.
+
+The agent is a *proposer*: it can offer to share, but on the default `ask` preset
+nothing is uploaded until you approve — same consent model as the watch tool.
+
+### Handing a file to a peer agent
+
+`share_file` takes an optional `message`. To hand a file to another agent, the
+agent includes that peer's `<@botId>` in the message so the **file and the
+mention ride one message** — e.g. MayaBot finishes editing `solver.py`, calls
+`share_file("solver.py", "<@BenchBot> updated solver.py — run the benchmark")`,
+its owner approves, and the upload lands addressed to BenchBot. BenchBot ingests
+the attachment (its inbox), reads it, and runs the benchmark. This single-message
+shape matters: a peer bot **stands down on an un-addressed message**, so a file
+posted without the mention would never be picked up.
+
+### Limits
+
+- **claude-sdk only.** Like the watch tool, `share_file` is an in-process tool;
+  ACP runtimes (codex, gemini, opencode, claude-acp) don't get it.
+- **Outbound-capable platforms only.** The tool is offered only where the
+  platform can attach files (Discord today). On a platform without outbound
+  files (Slack, until its upload flow lands) the tool tells the agent to paste
+  the contents inline instead of posting a "can't attach" notice.
 
 ---
 
@@ -105,8 +141,9 @@ file-specific defenses.
   authed downloads) is designed-for but deferred. iMessage has no file API.
 - **Symlink containment** is enforced on the share path (the real path is
   resolved and re-checked). Ingest writes into `inbox/` under the workspace.
-- **Audio/video, inline multimodal prompt blocks, and the agent-initiated
-  `share_file` tool are deferred** (see the plan).
+- **Audio/video and inline multimodal prompt blocks are deferred** (see the
+  plan). The agent-initiated `share_file` tool has shipped (claude-sdk runtime,
+  outbound-capable platforms) — see above.
 
 ---
 

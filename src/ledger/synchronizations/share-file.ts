@@ -42,6 +42,11 @@ export function shareFile(deps: ShareFileDeps): Synchronization {
       const args = i.patch.intent.args as { relpath?: string; requestedBy?: string } | undefined
       const relpath = args?.relpath
       if (!relpath) return
+      // Agent-initiated shares are host-orchestrated end-to-end (resolve + secret scan +
+      // classify + owner consent + send, in AgentHost.shareFileFromAgent). The sync only
+      // serves owner `!share`; skipping agent requests avoids a double-send and ensures the
+      // consent gate isn't bypassed by the sync's owner-is-consent shortcut.
+      if (args?.requestedBy === 'agent') return
       const platform = i.patch.intent.channel
 
       const resolved = await deps.resolveFile(i.channel, relpath)

@@ -60,6 +60,13 @@ export type WatchToolHandlers = {
   list: () => Promise<string>
 }
 
+/** Channel/agent-bound callback the host injects into a runtime exposing a "share_file"
+ *  tool. Plain function only (no SDK type crosses this seam); the share is secret-floored
+ *  and FileShare-classified by the host inside `share` (ask-tier held for owner consent). */
+export type ShareToolHandlers = {
+  share: (relpath: string, message?: string) => Promise<{ ok: boolean; message: string }>
+}
+
 export interface AgentAdapter {
   /** Map allow/ask/deny onto the runtime's native mechanism. deny = hard floor. */
   applyPolicy(profile: PermissionProfile): void

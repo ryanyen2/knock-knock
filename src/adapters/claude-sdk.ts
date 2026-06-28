@@ -20,10 +20,12 @@ import type {
   TurnOptions,
   Verdict,
   WatchToolHandlers,
+  ShareToolHandlers,
 } from '../agent-adapter.ts'
 import { pickAnthropicEnv, toThinkingConfig } from '../lib.ts'
 import { makeWatchMcpServer, WATCH_TOOL_NAMES } from './watch-mcp.ts'
 import { makeNotionMcpServer, NOTION_TOOL_NAMES, NOTION_MCP_SERVER } from './notion-mcp.ts'
+import { makeShareMcpServer, SHARE_TOOL_NAMES, SHARE_MCP_SERVER } from './share-mcp.ts'
 
 /** Optional page-scoped Notion read/write tools for a Notion-platform bot. */
 export type NotionToolConfig = { token: string; pageId: string }
@@ -52,15 +54,24 @@ export class ClaudeSdkAdapter implements AgentAdapter {
   private readonly alwaysAllow: string[]
   private readonly env = resolveSdkEnv()
 
-  constructor(private readonly cwd: string, watchTools?: WatchToolHandlers, notion?: NotionToolConfig) {
-    // In-process MCP servers: the watch tool (arm/disarm) and, for a Notion bot, the
-    // page-scoped read/write tools. Both stay deny-floored / classified by the host;
-    // their tool names are auto-allowed so the agent isn't prompted to use its own seam.
+  constructor(
+    private readonly cwd: string,
+    watchTools?: WatchToolHandlers,
+    notion?: NotionToolConfig,
+    shareTools?: ShareToolHandlers,
+  ) {
+    // In-process MCP servers: the watch tool (arm/disarm), the share_file tool, and, for a
+    // Notion bot, the page-scoped read/write tools. All stay deny-floored / classified by
+    // the host; their tool names are auto-allowed so the agent isn't prompted to use its own seam.
     const servers: Record<string, McpServerConfig> = {}
     const allow: string[] = []
     if (watchTools) {
       servers['knock-knock'] = makeWatchMcpServer(watchTools)
       allow.push(...WATCH_TOOL_NAMES)
+    }
+    if (shareTools) {
+      servers[SHARE_MCP_SERVER] = makeShareMcpServer(shareTools)
+      allow.push(...SHARE_TOOL_NAMES)
     }
     if (notion) {
       servers[NOTION_MCP_SERVER] = makeNotionMcpServer(notion.token, notion.pageId)

@@ -110,6 +110,16 @@ test('ask collapses to allow for an owner-initiated share', async () => {
   expect(sent.length).toBe(1)
 })
 
+test('an agent-initiated request is skipped — host owns that path (no double-send)', async () => {
+  const { sync, ctx, admitted, sent, notes } = harness({})
+  const agentReq = request('report.pdf')
+  agentReq.patch.intent.args.requestedBy = 'agent'
+  await sync.fire(agentReq, ctx as any)
+  expect(sent.length).toBe(0)
+  expect(admitted.length).toBe(0)
+  expect(notes.length).toBe(0)
+})
+
 test('an unresolvable path is noted, nothing sent', async () => {
   const { sync, ctx, sent, notes } = harness({
     resolveFile: async () => ({ error: 'path is outside the workspace' }),

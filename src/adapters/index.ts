@@ -4,7 +4,7 @@
 import type { AgentAdapter } from '../agent-adapter.ts'
 import { ClaudeSdkAdapter } from './claude-sdk.ts'
 import { AcpAdapter, type AcpLaunch } from './acp.ts'
-import type { WatchToolHandlers } from '../agent-adapter.ts'
+import type { WatchToolHandlers, ShareToolHandlers } from '../agent-adapter.ts'
 
 /** Built-in ACP launch presets, keyed by an agent's `runtime`. */
 const ACP_PRESETS: Record<string, AcpLaunch> = {
@@ -26,6 +26,9 @@ export function makeAdapter(
   opts: {
     workspace: string
     watchTools?: WatchToolHandlers
+    /** In-process share_file tool (claude-sdk only). Lets the agent share a workspace
+     *  file back to the channel, secret-floored + consent-gated by the host. ACP ignores it. */
+    shareTools?: ShareToolHandlers
     /** Page-scoped Notion read/write tools (claude-sdk only). Set for a Notion bot so
      *  the agent can write INTO the page, not just comment. ACP runtimes ignore it. */
     notion?: { token: string; pageId: string }
@@ -41,5 +44,5 @@ export function makeAdapter(
   const preset = ACP_PRESETS[runtime]
   if (preset) return new AcpAdapter(preset, opts.workspace)
 
-  return new ClaudeSdkAdapter(opts.workspace, opts.watchTools, opts.notion)
+  return new ClaudeSdkAdapter(opts.workspace, opts.watchTools, opts.notion, opts.shareTools)
 }

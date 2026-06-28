@@ -165,11 +165,11 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       mentions: 'native',
       maxMessageLength: MAX_LEN,
       // Slack's per-file ceiling is workspace-tier dependent; design for the cap.
-      // Inbound files are handled (toAttachments + downloadAttachment). Outbound
-      // is honest-false until the 3-step files.getUploadURLExternal flow is wired —
-      // with outbound:true the host would silently drop the file AND skip the
-      // outboundFileNotice fallback. Flip to true once upload lands.
-      files: { inbound: true, outbound: false, maxBytes: 1024 * 1024 * 1024 },
+      // Inbound: toAttachments + downloadAttachment. Outbound: files.uploadV2 (the SDK
+      // wrapper over getUploadURLExternal → upload → completeUploadExternal); the file
+      // rides with `initial_comment`, so a handoff caption + its <@peer> mention land on
+      // the one file_share message a peer bot will pick up.
+      files: { inbound: true, outbound: true, maxBytes: 1024 * 1024 * 1024 },
     }
   }
 
@@ -410,6 +410,9 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   async send(scope: ScopeId, text: string, opts?: SendOpts): Promise<MessageRef | undefined> {
     if (!this.web) return undefined
     const { channel, threadTs } = this.splitScope(scope)
+    if (opts?.files && opts.files.length > 0) {
+      return this.sendWithFiles(scope, channel, threadTs, text, opts.files)
+    }
     try {
       const res = await this.web.chat.postMessage({
         channel,
@@ -419,6 +422,39 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       const ts = res.ts as string | undefined
       // Reuse the same thread scope for the ref so follow-up react/edit resolve.
       return ts ? { id: ts, scope } : undefined
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Upload one or more files to a scope via files.uploadV2, with `text` as the
+   *  initial_comment so a caption (and any <@peer> handoff mention) rides on the
+   *  file_share message. Returns a best-effort ref (the shared message ts when Slack
+   *  reports it, else the file id) — truthy signals success to the host. */
+  private async sendWithFiles(
+    scope: ScopeId,
+    channel: string,
+    threadTs: string | undefined,
+    text: string,
+    files: NonNullable<SendOpts['files']>,
+  ): Promise<MessageRef | undefined> {
+    if (!this.web) return undefined
+    try {
+      const file_uploads = files.map(f => ({
+        filename: f.name,
+        ...(f.data instanceof Uint8Array ? { file: Buffer.from(f.data) } : { file: f.data.path }),
+      }))
+      const comment = text?.trim() ? toSlackMrkdwn(text) : undefined
+      const res = await this.web.files.uploadV2({
+        channel_id: channel,
+        ...(threadTs ? { thread_ts: threadTs } : {}),
+        ...(comment ? { initial_comment: comment } : {}),
+        file_uploads,
+      })
+      // uploadV2 nests results: res.files[].files[]. Pull the first file's id as the ref.
+      const uploaded = (res as any)?.files?.[0]?.files?.[0]
+      const id = (uploaded?.id as string | undefined) ?? `file:${file_uploads[0]?.filename ?? ''}`
+      return { id, scope }
     } catch {
       return undefined
     }

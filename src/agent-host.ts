@@ -65,6 +65,7 @@ import {
   type RecapSource,
   formatAttachedFilesBlock,
   parseShareCommand,
+  looksLikeSecret,
   classifyTool,
   applyModeToProfile,
   toThinkingConfig,
@@ -742,19 +743,120 @@ export class AgentHost {
   }
 
   /** Send a file out to a scope; degrades to a text notice where the platform can't
-   *  attach files. Returns whether it was handled. */
-  async sendFileToScope(scope: ChannelId, name: string, bytes: Uint8Array): Promise<boolean> {
+   *  attach files. `caption` rides as the message text (default `shared <name>`); an
+   *  agent handoff uses it to address a peer (`<@botId> here's the file`) so the file +
+   *  mention land on ONE message — the only shape a peer bot will ingest (it stands down
+   *  on un-addressed peer posts). Returns whether it was handled. */
+  async sendFileToScope(scope: ChannelId, name: string, bytes: Uint8Array, caption?: string): Promise<boolean> {
     const caps = this.messaging.capabilities()
     if (!caps.files?.outbound) {
       const notice = outboundFileNotice([{ name }], caps)
       if (notice) await this.messaging.send(scope, notice).catch(() => {})
       return true
     }
+    const text = caption?.trim() ? caption : `shared \`${name}\``
     const ref = await this.messaging
-      .send(scope, `shared \`${name}\``, { files: [{ name, data: bytes }] })
+      .send(scope, text, { files: [{ name, data: bytes }] })
       .catch(() => undefined)
     if (ref) this.noteBotMsg(ref.id)
     return !!ref
+  }
+
+  /** The `share_file` MCP tool, bound to a scope. The agent is a proposer: an `ask`-tier
+   *  share is held for owner consent; the secret floor and `deny` are non-bypassable. */
+  shareToolsFor(scope: ChannelId): {
+    share: (relpath: string, message?: string) => Promise<{ ok: boolean; message: string }>
+  } {
+    return { share: (relpath, message) => this.shareFileFromAgent(scope, relpath, message) }
+  }
+
+  /** Agent-initiated outbound share: resolve + secret-scan + FileShare-classify a workspace
+   *  file, hold an `ask`-tier share for owner Allow/Deny, then send it. Mirrors the watch
+   *  tool's proposer flow (see WatchControl). Owner `!share` stays the self-consent path.
+   *  `message` is the caption posted with the file — for a peer handoff it carries the
+   *  target's `<@botId>` so the file + mention ride one message (peer bots ingest only
+   *  messages that address them). */
+  async shareFileFromAgent(
+    scope: ChannelId,
+    relpath: string,
+    message?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    if (!this.roomForScope(scope)) return { ok: false, message: 'No room serves this channel.' }
+
+    // Platforms that can't attach files: tell the agent so it pastes inline rather than
+    // posting a useless "attachment omitted" notice behind a consent prompt.
+    if (!this.messaging.capabilities().files?.outbound) {
+      return { ok: false, message: `This platform can't attach files — share the contents inline as text instead.` }
+    }
+
+    const resolved = await this.resolveShareFile(scope, relpath)
+    if ('error' in resolved) return { ok: false, message: `Can't share "${relpath}": ${resolved.error}.` }
+    const { name, bytes } = resolved
+
+    // Secret floor (non-bypassable): path + content head.
+    const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 8192))
+    if (looksLikeSecret(relpath, head)) {
+      return { ok: false, message: `Refused to share "${relpath}" — it looks like it contains credentials.` }
+    }
+
+    const verdict = this.classifyShareFor(scope, relpath)
+    if (verdict === 'deny') {
+      return { ok: false, message: `Not allowed to share "${relpath}" (blocked by this room's permissions).` }
+    }
+
+    // Record the agent's request (the share-file sync skips requestedBy:'agent', so this
+    // path is host-owned end-to-end); its hash anchors the owner's verdict for an ask.
+    const anchor = await this.admitShareRequested(scope, relpath)
+    if (verdict === 'ask') {
+      await this.approvals
+        .postDiscord({ channelId: scope, toolRequestedHash: anchor, toolName: `share \`${name}\``, input: { path: relpath } })
+        .catch(e => this.ui.error(this.key, `share approval post: ${e}`))
+      const v = await awaitVerdict(this.store, anchor, this.approvalTimeoutFor(scope))
+      if (v.behavior !== 'allow') return { ok: false, message: `Share of "${name}" was not approved — ${v.message ?? 'denied'}.` }
+    }
+
+    const sent = await this.sendFileToScope(scope, name, bytes, message)
+    if (!sent) return { ok: false, message: `Couldn't send "${name}" to the channel.` }
+    await this.admitShareCompleted(scope, relpath, name, anchor)
+    return { ok: true, message: `Shared \`${name}\` to the channel.` }
+  }
+
+  /** Admit a `file.shared requested` for an agent-initiated share; returns its hash so an
+   *  ask-tier share can anchor the owner's verdict on it. The share-file sync ignores
+   *  `requestedBy:'agent'`, leaving this path host-orchestrated. */
+  private async admitShareRequested(scope: ChannelId, relpath: string): Promise<Hash> {
+    const prior = await this.store.latestInChannel(scope)
+    const requested = await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: scope,
+      target: { artifactId: discordArtifact(scope), anchor: { kind: 'none' } },
+      verb: 'file.shared',
+      patch: {
+        kind: 'external',
+        intent: { channel: this.messaging.platform, op: 'requested', args: { relpath, requestedBy: 'agent' } },
+      },
+      effect: 'external',
+      caused_by: prior ? [prior.hash] : [],
+    })
+    return requested.interaction.hash
+  }
+
+  /** Record a completed agent share, mirroring the share-file sync's completed admission. */
+  private async admitShareCompleted(scope: ChannelId, relpath: string, name: string, causedBy: Hash): Promise<void> {
+    await admit(this.store, {
+      actor: this.key,
+      role: 'agent',
+      channel: scope,
+      target: { artifactId: discordArtifact(scope), anchor: { kind: 'none' } },
+      verb: 'file.shared',
+      patch: {
+        kind: 'external',
+        intent: { channel: this.messaging.platform, op: 'completed', args: { relpath, name } },
+      },
+      effect: 'external',
+      caused_by: [causedBy],
+    })
   }
 
   /** Where on disk does this vers: artifact live? Undefined when unserved. */
@@ -1733,9 +1835,14 @@ export class AgentHost {
     // the token is the bot's transport token, resolved from its tokenEnv.
     const notionToken =
       liveAgent.platform === 'notion' ? process.env[liveAgent.tokenEnv] : undefined
+    // share_file is an in-process SDK tool (like watches); only offer it where the
+    // runtime self-arms watches AND the platform can attach files outbound.
+    const canShareFiles =
+      runtimeSelfArmsWatches(runtime) && !!this.messaging.capabilities().files?.outbound
     const adapter = makeAdapter(runtime, {
       workspace,
       watchTools: this.watchControl.toolsFor(channelId),
+      ...(canShareFiles ? { shareTools: this.shareToolsFor(channelId) } : {}),
       ...(notionToken ? { notion: { token: notionToken, pageId: channelId } } : {}),
     })
     const ctx: PreambleContext = {
@@ -1750,6 +1857,7 @@ export class AgentHost {
         this.roomWithPeers(this.roomForScope(channelId) ?? channelId, room),
       ),
       canWatch: runtimeSelfArmsWatches(runtime),
+      canShareFiles,
       ...(notionToken
         ? {
             platformNote:
