@@ -8,7 +8,13 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
-import { resolveLedgerConfig, responderElection, addressedAgentKeys, selectActorHost } from './lib.ts'
+import {
+  resolveLedgerConfig,
+  responderElection,
+  addressedAgentKeys,
+  selectActorHost,
+  declaresPeerCollaborators,
+} from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import type { RelayUI } from './console-ui.ts'
@@ -184,6 +190,18 @@ const meshEnabled = ledgerConfig.backend === 'sqlite' && process.env.KNOCK_KNOCK
 if (meshEnabled) {
   process.stderr.write(
     'relay: mesh = ON (no-Postgres cross-machine coordination over the messaging channel)\n',
+  )
+} else if (ledgerConfig.backend === 'sqlite' && declaresPeerCollaborators(access.agents)) {
+  // SQLite + mesh off, yet peer-bot collaborators (another machine's bots) are configured.
+  // Co-resident bots still coordinate via the shared ledger, but there is NO cross-machine
+  // transport: a peer's messages are heard only in channels where it's manually rostered, and
+  // the shared directory/board never converges across machines. That looks exactly like "the
+  // other machine's bot just doesn't respond" — so say it out loud instead of failing silently.
+  process.stderr.write(
+    'relay: mesh = OFF but peer-bot collaborators are configured — cross-machine coordination is disabled.\n' +
+      '  A collaborator\'s bot is heard only in channels where it is manually rostered, and the shared\n' +
+      '  directory/board never converges across machines. To enable cross-machine coordination, set\n' +
+      '  KNOCK_KNOCK_MESH=1 on every machine (SQLite backend), or switch the backend to Postgres.\n',
   )
 }
 const ledger = new Ledger(store)

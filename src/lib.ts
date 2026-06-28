@@ -347,6 +347,16 @@ export function isDirectoryBot(identities: ReadonlyArray<AgentIdentity>, userId:
   return identities.some(id => id.userId === userId)
 }
 
+/** Does the config declare any peer-bot collaborator — another machine's bot rostered into a
+ *  room's `participants`? Used at startup to decide whether a missing cross-machine transport
+ *  (SQLite + mesh off) is worth warning about: a single-machine relay has no peers and stays
+ *  quiet. Pure. */
+export function declaresPeerCollaborators(agents: Record<string, AgentConfig>): boolean {
+  return Object.values(agents).some(a =>
+    Object.values(a.rooms).some(r => Object.keys(r.participants).length > 0),
+  )
+}
+
 // ─── Policy classification for adapters without native pattern matching ───────
 // Maps an ACP permission request onto the room's allow/ask/deny profile using
 // Claude Code-style "Tool(arg)" patterns. Precedence: deny > ask > allow; unmatched

@@ -24,6 +24,7 @@ import {
   threadNameFromPrompt,
   matchesMentionPattern,
   guildSenderAllowed,
+  declaresPeerCollaborators,
   githubAssociationTrusted,
   senderKind,
   isShareSessionCommand,
@@ -80,6 +81,7 @@ import {
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
+  type AgentConfig,
   type AuthoringAccess,
   type AddressSignals,
   type ResponderSelf,
@@ -556,6 +558,22 @@ test('guildSenderAllowed: owner allowed, self denied, peer/human allowed, strang
   expect(guildSenderAllowed(ROOM, 'PEER1', 'SELF', 'OWNER')).toBe(true)
   expect(guildSenderAllowed(ROOM, 'HUMAN1', 'SELF', 'OWNER')).toBe(true)
   expect(guildSenderAllowed(ROOM, 'STRANGER', 'SELF', 'OWNER')).toBe(false)
+})
+
+test('declaresPeerCollaborators: true only when a room rosters a peer bot', () => {
+  const agent = (rooms: Record<string, RoomConfig>): AgentConfig => ({
+    ownerUserId: 'OWNER',
+    blurb: '',
+    runtime: 'claude-sdk',
+    workspace: '/tmp',
+    tokenEnv: 'TOK',
+    rooms,
+  })
+  const noPeers = { a: agent({ R1: { requireMention: true, participants: {}, humans: ['H1'] } }) }
+  const withPeer = { a: agent({ R1: { requireMention: true, participants: { PEER1: { blurb: '' } }, humans: [] } }) }
+  expect(declaresPeerCollaborators(noPeers)).toBe(false) // single-machine relay → stay quiet
+  expect(declaresPeerCollaborators(withPeer)).toBe(true) // a rostered peer bot → cross-machine intent
+  expect(declaresPeerCollaborators({})).toBe(false)
 })
 
 test('githubAssociationTrusted: OWNER/MEMBER/COLLABORATOR trusted, rest not', () => {
