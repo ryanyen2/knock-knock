@@ -202,13 +202,14 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
   // caller infers `unsupported`. A present method NEVER returns `unsupported`; a runtime
   // platform rejection (e.g. revoked guild-members intent) degrades with a reason.
 
-  /** Enumerate text-capable channels across the guilds this bot can see. */
+  /** Enumerate the bot's text CHANNELS (not threads) across the guilds it can see. Threads are
+   *  sub-scopes of a channel, not a project boundary, so they're excluded from the channel pick. */
   async listChannels(): Promise<EnumerationOutcome> {
     try {
       const items: DiscoveredEntity[] = []
       for (const guild of this.client.guilds.cache.values()) {
         for (const ch of guild.channels.cache.values()) {
-          if (ch.isTextBased() && ch.name) items.push({ id: ch.id, label: ch.name })
+          if (ch.isTextBased() && !ch.isThread() && ch.name) items.push({ id: ch.id, label: ch.name })
         }
       }
       return { kind: 'results', items }
@@ -217,21 +218,23 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
     }
   }
 
-  /** Enumerate non-bot members of a channel's guild (privileged GuildMembers intent). */
+  /** Enumerate non-bot members of a channel's guild. Needs the privileged Guild Members intent;
+   *  without it `members.fetch()` would HANG waiting for chunks, so it's bounded by `time` and a
+   *  timeout/rejection degrades to the nonce/manual rung (R21). */
   async listMembers(channelId: string): Promise<EnumerationOutcome> {
     try {
       const ch =
         this.client.channels.cache.get(channelId) ?? (await this.client.channels.fetch(channelId))
       const guild = (ch as { guild?: import('discord.js').Guild } | null)?.guild
       if (!guild) return { kind: 'degraded', reason: 'channel is not in a guild' }
-      const members = await guild.members.fetch()
+      const members = await guild.members.fetch({ time: 7_000 })
       const items: DiscoveredEntity[] = []
       for (const m of members.values()) {
         if (!m.user.bot) items.push({ id: m.id, label: m.user.username })
       }
       return { kind: 'results', items }
     } catch {
-      return { kind: 'degraded', reason: 'Discord guild-members intent not granted' }
+      return { kind: 'degraded', reason: 'member list unavailable — enable the Server Members Intent in the Discord developer portal, or use nonce capture' }
     }
   }
 

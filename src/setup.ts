@@ -1320,7 +1320,7 @@ async function ensureChannelMembership(a: AuthoringAccess, botKey: string, platf
 /** Owner-ID nonce capture (R22): print a single-use phrase, listen on the live channel for a
  *  message whose text matches it within a short window, and return the raw immutable userId of the
  *  single matching sender. 2+ matches abort (re-issue); none → undefined (caller falls to manual). */
-async function captureOwnerViaNonce(adapter: MessagingAdapter, channelId: string, windowMs = 60_000): Promise<string | undefined> {
+async function captureOwnerViaNonce(adapter: MessagingAdapter, channelId: string, windowMs = 120_000): Promise<string | undefined> {
   const nonce = makeNonce()
   const seen: Array<{ userId: string; text: string }> = []
   adapter.onMessage(m => {
@@ -1328,16 +1328,24 @@ async function captureOwnerViaNonce(adapter: MessagingAdapter, channelId: string
   })
   p.log.message(
     `In ${color.cyan(`#${channelId}`)}, send EXACTLY this phrase from your own account:\n\n   ${color.bgBlack(color.white(` ${nonce} `))}\n\n` +
-      color.dim('(this is how we capture your owner user-id without you copying any opaque platform id)'),
+      color.dim('(captures your owner user-id with no opaque id to copy — proceeds the moment you send it)'),
   )
   const s = p.spinner()
-  s.start('Waiting for your message…')
-  await new Promise(resolve => setTimeout(resolve, windowMs))
+  s.start('Waiting for your message… (Ctrl-C to skip)')
+  // Poll so we proceed the INSTANT a match arrives, rather than blocking the whole window.
+  const deadline = Date.now() + windowMs
+  while (Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 1_000))
+    const result = nonceMatch(seen, nonce)
+    if (result.kind === 'matched') { s.stop('Captured your message.'); return result.userId }
+    if (result.kind === 'multiple') {
+      s.stop('Aborted.')
+      p.log.warn('More than one message matched the phrase — aborting capture. Re-run to get a fresh phrase.')
+      return undefined
+    }
+  }
   s.stop('Capture window closed.')
-  const result = nonceMatch(seen, nonce)
-  if (result.kind === 'matched') return result.userId
-  if (result.kind === 'multiple') p.log.warn('More than one message matched the phrase — aborting capture. Re-run to get a fresh phrase.')
-  else p.log.warn('No message matched the phrase in time.')
+  p.log.warn('No message matched the phrase in time.')
   return undefined
 }
 
@@ -1416,7 +1424,12 @@ async function resolveAndFill(a: AuthoringAccess): Promise<void> {
     a = readAuthoringAccess()
 
     // Re-assemble with the chosen channel so member enumeration + directory peers are in scope.
+    // Bounded by the assembler's timeout, so a platform that can't list members (e.g. Discord
+    // without the Server Members Intent) degrades to nonce capture instead of hanging.
+    const disco = p.spinner()
+    disco.start('Discovering members…')
     const snapshot = await assembleSnapshot({ platform, adapter, channelId, transportConfigured: Object.values(a.channels).some(c => c.platform === platform && c.meshTransport) })
+    disco.stop(snapshot.members.kind === 'results' ? `Found ${snapshot.members.items.length} member(s).` : 'Member list unavailable — will use guided capture.')
     const crossMachinePeer = snapshot.directoryPeers.length > 0
     const needs: Need[] = resolveGaps({ authoring: a, botKey, channelKey: ck, snapshot, crossMachinePeer })
 
