@@ -35,6 +35,8 @@ import type {
   MessagingAdapter,
   Capabilities,
   DiscoveryCapabilities,
+  DiscoveredEntity,
+  EnumerationOutcome,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -200,6 +202,30 @@ export class NotionMessagingAdapter implements MessagingAdapter {
       maxMessageLength: MAX_LEN,
       // File exchange deferred for v1 (Notion has a multi-step file-upload API).
       files: { inbound: false, outbound: false, maxBytes: 0 },
+    }
+  }
+
+  // ─── discovery enumeration (duck-typed, three-valued) ──────────────────────────
+  // OFF the MessagingAdapter interface (like Discord's fetchRecent): the gap-resolver
+  // duck-types this. Only member enumeration is supported (no page list, no page creation
+  // as transport — see discoveryCapabilities), so only listMembers is present; its absence
+  // for the others ⇒ the caller infers `unsupported`. A permission error degrades.
+
+  /** Enumerate workspace people (the `channelId` is unused — Notion lists users
+   *  workspace-wide, not per-page). Bot users are filtered out (`type === 'person'`). */
+  async listMembers(_channelId: string): Promise<EnumerationOutcome> {
+    if (!this.notion) return { kind: 'degraded', reason: 'not connected' }
+    try {
+      const res = (await this.notion.users.list({})) as {
+        results?: Array<{ id?: string; type?: string; name?: string | null }>
+      }
+      const items: DiscoveredEntity[] = []
+      for (const u of res.results ?? []) {
+        if (u.type === 'person' && u.id) items.push({ id: u.id, label: u.name ?? u.id })
+      }
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'cannot list Notion users (integration lacks access)' }
     }
   }
 

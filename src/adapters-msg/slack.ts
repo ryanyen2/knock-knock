@@ -26,6 +26,8 @@ import type {
   MessagingAdapter,
   Capabilities,
   DiscoveryCapabilities,
+  DiscoveredEntity,
+  EnumerationOutcome,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -168,6 +170,55 @@ export class SlackMessagingAdapter implements MessagingAdapter {
       // with outbound:true the host would silently drop the file AND skip the
       // outboundFileNotice fallback. Flip to true once upload lands.
       files: { inbound: true, outbound: false, maxBytes: 1024 * 1024 * 1024 },
+    }
+  }
+
+  // ─── discovery enumeration (duck-typed, three-valued) ──────────────────────────
+  // OFF the MessagingAdapter interface (like fetchRecent): the gap-resolver duck-types
+  // these. Present only where DiscoveryCapabilities says so. A present method never
+  // returns `unsupported`; a Slack rejection (missing_scope, not_in_channel, no web
+  // client before connect) degrades with a reason.
+
+  /** Enumerate the public + private channels this bot can see. */
+  async listChannels(): Promise<EnumerationOutcome> {
+    if (!this.web) return { kind: 'degraded', reason: 'not connected' }
+    try {
+      const res = await this.web.conversations.list({
+        types: 'public_channel,private_channel',
+        limit: 200,
+      })
+      const items: DiscoveredEntity[] = (res.channels ?? []).map(c => ({
+        id: c.id ?? '',
+        label: c.name ?? c.id ?? '',
+      }))
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'cannot list Slack channels (missing scope?)' }
+    }
+  }
+
+  /** Enumerate a channel's member user ids (label = id; no per-member users.info). */
+  async listMembers(channelId: string): Promise<EnumerationOutcome> {
+    if (!this.web) return { kind: 'degraded', reason: 'not connected' }
+    try {
+      const res = await this.web.conversations.members({ channel: channelId, limit: 200 })
+      const items: DiscoveredEntity[] = (res.members ?? []).map(id => ({ id, label: id }))
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'cannot list channel members (missing scope / not in channel)' }
+    }
+  }
+
+  /** Create a transport channel. */
+  async createChannel(name: string): Promise<EnumerationOutcome> {
+    if (!this.web) return { kind: 'degraded', reason: 'not connected' }
+    try {
+      const res = await this.web.conversations.create({ name })
+      const ch = res.channel as { id?: string; name?: string } | undefined
+      if (!ch?.id) return { kind: 'degraded', reason: 'channel created but no id returned' }
+      return { kind: 'results', items: [{ id: ch.id, label: ch.name ?? name }] }
+    } catch {
+      return { kind: 'degraded', reason: 'cannot create Slack channel (missing scope?)' }
     }
   }
 

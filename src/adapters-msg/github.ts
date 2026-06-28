@@ -32,6 +32,8 @@ import type {
   MessagingAdapter,
   Capabilities,
   DiscoveryCapabilities,
+  DiscoveredEntity,
+  EnumerationOutcome,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -218,6 +220,29 @@ export class GitHubMessagingAdapter implements MessagingAdapter {
       maxMessageLength: MAX_LEN,
       // File exchange deferred for v1 (no inbound download, no outbound upload).
       files: { inbound: false, outbound: false, maxBytes: 0 },
+    }
+  }
+
+  // ─── discovery enumeration (duck-typed, three-valued) ──────────────────────
+  // OFF the MessagingAdapter interface (like Discord's fetchRecent): the gap-resolver
+  // duck-types this. Only member enumeration is supported (no channel list, no channel
+  // creation — see discoveryCapabilities), so only listMembers is present; its absence
+  // for the other two ⇒ the caller infers `unsupported`. A 403 / lack-of-access degrades.
+
+  /** Enumerate a repo's collaborators. `channelId` is the room id `"owner/repo"`. */
+  async listMembers(channelId: string): Promise<EnumerationOutcome> {
+    const oc = this.octokit
+    if (!oc) return { kind: 'degraded', reason: 'not connected' }
+    const slash = channelId.indexOf('/')
+    const owner = slash > 0 ? channelId.slice(0, slash) : ''
+    const repo = slash > 0 ? channelId.slice(slash + 1) : ''
+    if (!owner || !repo) return { kind: 'degraded', reason: 'channel id is not "owner/repo"' }
+    try {
+      const res = await oc.repos.listCollaborators({ owner, repo })
+      const items: DiscoveredEntity[] = res.data.map(c => ({ id: c.login, label: c.login }))
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'cannot list repo collaborators (token lacks access)' }
     }
   }
 

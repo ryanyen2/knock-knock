@@ -21,6 +21,8 @@ import type {
   MessagingAdapter,
   Capabilities,
   DiscoveryCapabilities,
+  DiscoveredEntity,
+  EnumerationOutcome,
   IncomingMessage,
   IncomingAction,
   IncomingReaction,
@@ -191,6 +193,57 @@ export class DiscordMessagingAdapter implements MessagingAdapter {
       maxMessageLength: MAX_LEN,
       // 10 MiB is Discord's default per-file floor; we design for the floor.
       files: { inbound: true, outbound: true, maxBytes: 10 * 1024 * 1024 },
+    }
+  }
+
+  // ─── discovery enumeration (duck-typed, three-valued) ──────────────────────────
+  // Deliberately OFF the MessagingAdapter interface (like fetchRecent): the gap-resolver
+  // duck-types these. Present only where DiscoveryCapabilities says so — absence ⇒ the
+  // caller infers `unsupported`. A present method NEVER returns `unsupported`; a runtime
+  // platform rejection (e.g. revoked guild-members intent) degrades with a reason.
+
+  /** Enumerate text-capable channels across the guilds this bot can see. */
+  async listChannels(): Promise<EnumerationOutcome> {
+    try {
+      const items: DiscoveredEntity[] = []
+      for (const guild of this.client.guilds.cache.values()) {
+        for (const ch of guild.channels.cache.values()) {
+          if (ch.isTextBased() && ch.name) items.push({ id: ch.id, label: ch.name })
+        }
+      }
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'could not list Discord channels' }
+    }
+  }
+
+  /** Enumerate non-bot members of a channel's guild (privileged GuildMembers intent). */
+  async listMembers(channelId: string): Promise<EnumerationOutcome> {
+    try {
+      const ch =
+        this.client.channels.cache.get(channelId) ?? (await this.client.channels.fetch(channelId))
+      const guild = (ch as { guild?: import('discord.js').Guild } | null)?.guild
+      if (!guild) return { kind: 'degraded', reason: 'channel is not in a guild' }
+      const members = await guild.members.fetch()
+      const items: DiscoveredEntity[] = []
+      for (const m of members.values()) {
+        if (!m.user.bot) items.push({ id: m.id, label: m.user.username })
+      }
+      return { kind: 'results', items }
+    } catch {
+      return { kind: 'degraded', reason: 'Discord guild-members intent not granted' }
+    }
+  }
+
+  /** Create a transport channel in the first guild this bot is in. */
+  async createChannel(name: string): Promise<EnumerationOutcome> {
+    try {
+      const guild = this.client.guilds.cache.values().next().value
+      if (!guild) return { kind: 'degraded', reason: 'bot is not in any guild' }
+      const ch = await guild.channels.create({ name })
+      return { kind: 'results', items: [{ id: ch.id, label: ch.name }] }
+    } catch {
+      return { kind: 'degraded', reason: 'could not create Discord channel' }
     }
   }
 
