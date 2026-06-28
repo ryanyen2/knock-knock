@@ -86,15 +86,21 @@ async function cachedEnum(key: string, run: () => Promise<EnumerationOutcome>): 
 export async function assembleSnapshot(sources: AssembleSources): Promise<DiscoverySnapshot> {
   const { platform, adapter, directory, channelId } = sources
   const capabilities = adapter?.discoveryCapabilities() ?? NO_DISCOVERY
+  // Enumeration results are BOT-specific (each bot sees only the channels/members it has access
+  // to — a different bot on the same platform sees a different list, or is degraded where it isn't
+  // a member), so the cache MUST key on the connected bot's self-id, not just the platform.
+  // Otherwise a second same-platform bot within the TTL reuses the first bot's list (e.g. doctor
+  // looping bots reports a false membership pass/fail).
+  const selfKey = adapter?.botUserId ?? '?'
 
   const channels: EnumerationOutcome =
     capabilities.channelEnumeration && adapter?.listChannels
-      ? await cachedEnum(`${platform}::channels`, () => adapter.listChannels!())
+      ? await cachedEnum(`${platform}:${selfKey}:channels`, () => adapter.listChannels!())
       : { kind: 'unsupported' }
 
   const members: EnumerationOutcome =
     channelId && capabilities.memberEnumeration && adapter?.listMembers
-      ? await cachedEnum(`${platform}:${channelId}:members`, () => adapter.listMembers!(channelId))
+      ? await cachedEnum(`${platform}:${selfKey}:${channelId}:members`, () => adapter.listMembers!(channelId))
       : { kind: 'unsupported' }
 
   const directoryPeers = directory ? directory.filter(d => d.platform === platform) : []
