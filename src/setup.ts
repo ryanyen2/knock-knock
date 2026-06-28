@@ -1361,10 +1361,13 @@ async function confirmDiscoveredPeer(a: AuthoringAccess, prop: Proposal): Promis
     if (t) addTombstone(t) // a decline is durable: don't re-surface this pair on cosmetic churn
     return a
   }
-  const id = slugify(prop.claimed.label || prop.targetId, new Set(Object.keys(a.roster.peers)))
+  // Slug against the roster map this kind actually writes into (peers vs people), so the
+  // uniqueness check can't collide with the wrong map.
+  const taken = new Set(Object.keys(prop.kind === 'collaborator' ? a.roster.people : a.roster.peers))
+  const id = slugify(prop.claimed.label || prop.targetId, taken)
   const next = applyConfirmedProposal(a, prop, id)
   saveAuthoringAccess(next)
-  p.log.success(`Confirmed peer ${color.cyan(prop.claimed.label ?? prop.targetId)}.`)
+  p.log.success(`Confirmed ${prop.kind === 'collaborator' ? 'collaborator' : 'peer'} ${color.cyan(prop.claimed.label ?? prop.targetId)}.`)
   return next
 }
 
@@ -1531,9 +1534,14 @@ async function confirmPendingDiscoveries(a: AuthoringAccess): Promise<void> {
       }
     }
   }
-  // Drop every now-handled proposal from pending (relay re-reconciles on its next pass too).
-  const handled = new Set(open)
-  writePending({ ...store, proposals: store.proposals.filter(pr => !handled.has(pr)) })
+  // Drop only the proposals we just handled, matching by identity (kind+targetId+channelKey) — and
+  // RE-READ pending first, so any proposal the relay appended while the owner was answering prompts
+  // is preserved rather than clobbered (the relay is the sole writer, but this terminal write must
+  // not lose its concurrent appends). The relay also re-reconciles on its next pass.
+  const handledKey = (pr: Proposal): string => `${pr.kind} ${pr.targetId} ${pr.channelKey ?? ''}`
+  const handled = new Set(open.map(handledKey))
+  const fresh = readPending()
+  writePending({ ...fresh, proposals: fresh.proposals.filter(pr => !handled.has(handledKey(pr))) })
   p.log.success('Pending discoveries resolved.')
 }
 

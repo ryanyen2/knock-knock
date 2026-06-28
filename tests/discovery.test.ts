@@ -5,7 +5,9 @@
  */
 
 import { test, expect, beforeEach } from 'bun:test'
-import { assembleSnapshot, clearSnapshotCache, connectDiscoveryAdapter } from '../src/discovery.ts'
+import { assembleSnapshot, clearSnapshotCache, connectDiscoveryAdapter, itemsOf } from '../src/discovery.ts'
+
+const itemsOfCh = (o: EnumerationOutcome): string[] => itemsOf(o).map(i => i.id)
 import type { DiscoveryAdapter } from '../src/discovery.ts'
 import type { DiscoveryCapabilities, EnumerationOutcome } from '../src/messaging-adapter.ts'
 import type { AgentIdentity, Bot } from '../src/lib.ts'
@@ -81,6 +83,17 @@ test('the same sources produce the same snapshot regardless of caller (drift-pre
   const a = await assembleSnapshot({ platform: 'discord', adapter: mk(), channelId: 'C1', directory: [ident()] })
   const b = await assembleSnapshot({ platform: 'discord', adapter: mk(), channelId: 'C1', directory: [ident()] })
   expect(JSON.stringify(a)).toBe(JSON.stringify(b))
+})
+
+test('enumeration cache is keyed per-bot: two same-platform adapters get their OWN channel lists', async () => {
+  // listChannels is bot-specific — each bot sees only the channels it can access. The cache must
+  // not let a second same-platform bot reuse the first bot's list within the TTL (doctor regression).
+  const a = fakeAdapter({ botUserId: 'U_a', listChannels: async () => ({ kind: 'results', items: [{ id: 'A', label: 'guildA' }] }) })
+  const b = fakeAdapter({ botUserId: 'U_b', listChannels: async () => ({ kind: 'results', items: [{ id: 'B', label: 'guildB' }] }) })
+  const snapA = await assembleSnapshot({ platform: 'discord', adapter: a })
+  const snapB = await assembleSnapshot({ platform: 'discord', adapter: b })
+  expect(itemsOfCh(snapA.channels)).toEqual(['A'])
+  expect(itemsOfCh(snapB.channels)).toEqual(['B']) // NOT 'A' from a stale platform-only cache key
 })
 
 test('connectDiscoveryAdapter returns undefined when the token env is unset', async () => {
