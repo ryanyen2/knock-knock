@@ -2092,6 +2092,59 @@ test('U6/R25/AE7: a beacon userId equal to owner / human / different-key peer is
   expect(detectCollision({ agentKey: 'kX', userId: 'U_fresh' }, confirmed)).toBeUndefined()
 })
 
+// ─── Allowlist narrowing: roster display vs sender gate (U7) ──────────────────
+import { coResidentPeerParticipants } from '../src/lib.ts'
+import type { AgentIdentity as AID, RoomConfig as RC } from '../src/lib.ts'
+
+// Mirror the host's two compositions: roster = ALL directory peers merged in; gate = only
+// co-resident directory peers merged in. Static roster participants always win on collision.
+const rosterRoom = (room: RC, ids: AID[], self: string, roomId: string, platform: string): RC => {
+  const peers = peerDirectoryParticipants(ids, self, roomId, platform)
+  return { ...room, participants: { ...peers, ...room.participants } }
+}
+const gateRoom = (room: RC, ids: AID[], self: string, roomId: string, platform: string, coRes: Set<string>): RC => {
+  const peers = coResidentPeerParticipants(ids, self, roomId, platform, coRes)
+  return { ...room, participants: { ...peers, ...room.participants } }
+}
+
+const baseRoom = (over: Partial<RC> = {}): RC => ({ requireMention: false, participants: {}, humans: [], ...over })
+
+test('U7/AE1/R23: an unconfirmed REMOTE peer is addressable in the roster but NOT admitted as a sender', () => {
+  const dir: AID[] = [{ agentKey: 'remoteKey', platform: 'discord', userId: 'U_remote', rooms: ['C1'], blurb: 'remote bot' }]
+  const coRes = new Set(['cc']) // this machine hosts only "cc"
+  const roster = rosterRoom(baseRoom(), dir, 'cc', 'C1', 'discord')
+  const gate = gateRoom(baseRoom(), dir, 'cc', 'C1', 'discord', coRes)
+  expect('U_remote' in roster.participants).toBe(true) // addressable
+  expect('U_remote' in gate.participants).toBe(false) // not in the gate
+  expect(guildSenderAllowed(gate, 'U_remote', 'U_self', 'U_owner')).toBe(false) // not heard
+})
+
+test('U7: a CO-RESIDENT peer is both addressable and admitted (no regression to local behavior)', () => {
+  const dir: AID[] = [{ agentKey: 'sibling', platform: 'discord', userId: 'U_sib', rooms: ['C1'], blurb: 'sibling' }]
+  const coRes = new Set(['cc', 'sibling'])
+  const roster = rosterRoom(baseRoom(), dir, 'cc', 'C1', 'discord')
+  const gate = gateRoom(baseRoom(), dir, 'cc', 'C1', 'discord', coRes)
+  expect('U_sib' in roster.participants).toBe(true)
+  expect('U_sib' in gate.participants).toBe(true)
+  expect(guildSenderAllowed(gate, 'U_sib', 'U_self', 'U_owner')).toBe(true)
+})
+
+test('U7/R20: once a remote peer is confirmed into the static roster, the gate admits it (live)', () => {
+  const dir: AID[] = [{ agentKey: 'remoteKey', platform: 'discord', userId: 'U_remote', rooms: ['C1'], blurb: 'remote' }]
+  const coRes = new Set(['cc'])
+  // Simulate confirmation: the peer now appears in the room's static participants (from access.json).
+  const confirmed = baseRoom({ participants: { U_remote: { blurb: 'remote' } } })
+  const gate = gateRoom(confirmed, dir, 'cc', 'C1', 'discord', coRes)
+  expect(guildSenderAllowed(gate, 'U_remote', 'U_self', 'U_owner')).toBe(true)
+})
+
+test('U7: owner and confirmed humans are unaffected by the narrowing', () => {
+  const gate = gateRoom(baseRoom({ humans: ['U_alice'] }), [], 'cc', 'C1', 'discord', new Set(['cc']))
+  expect(guildSenderAllowed(gate, 'U_owner', 'U_self', 'U_owner')).toBe(true) // owner always
+  expect(guildSenderAllowed(gate, 'U_alice', 'U_self', 'U_owner')).toBe(true) // confirmed human
+  expect(guildSenderAllowed(gate, 'U_stranger', 'U_self', 'U_owner')).toBe(false)
+})
+
 test('U6: confirmedIdentitiesFor reads owner + humans + agent-key-bound peers for a platform', () => {
   const a: AuthoringAccess = {
     bots: {},

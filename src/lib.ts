@@ -392,14 +392,16 @@ export function buildRosterLinesForRoom(room: RoomConfig | undefined): string {
 
 // ─── Peer directory (auto-discovery across the multi-bot mesh) ────────────────
 // Bots publish their platform identity to the shared ledger on connect; every relay
-// folds a directory. These pure helpers turn that directory into the per-room peers a
-// bot can address (roster) and is allowed to hear (allowlist) — covering co-resident
-// AND cross-machine bots, with no manual roster. `participants` gates engagement +
-// addressing only; tool permissions stay owner-curated.
+// folds a directory. These pure helpers turn that directory into the per-room peers a bot can
+// address (the ROSTER — every discovered peer) versus the ones it is allowed to HEAR (the GATE
+// allowlist — confirmed roster + co-resident siblings only). The two were one set before R23/KTD7;
+// they are split now so an unconfirmed remote peer is addressable but not auto-heard until the
+// owner confirms it. Tool permissions stay owner-curated regardless.
 
-/** Peer bots (other than self) that serve `roomId` on this `platform`, shaped as
- *  RoomParticipant entries keyed by their platform userId — ready to merge into a
- *  room's `participants`. Pure. */
+/** Peer bots (other than self) that serve `roomId` on this `platform`, shaped as RoomParticipant
+ *  entries keyed by platform userId — the ROSTER set (every discovered peer, co-resident AND
+ *  cross-machine) for addressing/recap/status. NOT the sender gate (use
+ *  `coResidentPeerParticipants` for that). Pure. */
 export function peerDirectoryParticipants(
   identities: ReadonlyArray<AgentIdentity>,
   selfKey: string,
@@ -409,6 +411,29 @@ export function peerDirectoryParticipants(
   const out: Record<string, RoomParticipant> = {}
   for (const id of identities) {
     if (id.agentKey === selfKey) continue
+    if (id.platform !== platform) continue
+    if (!id.rooms.includes(roomId)) continue
+    if (!id.userId) continue
+    out[id.userId] = { blurb: id.blurb ?? '', ...(id.label ? { name: id.label } : {}) }
+  }
+  return out
+}
+
+/** The CO-RESIDENT subset of `peerDirectoryParticipants` — peers whose agent-key this machine
+ *  hosts (`coResidentKeys`). Only these directory-derived peers are merged into the sender GATE
+ *  (auto-heard, preserving the local "heard automatically" behavior, R23); a remote/unconfirmed
+ *  peer is left out of the gate until the owner confirms it into the static roster. Pure. */
+export function coResidentPeerParticipants(
+  identities: ReadonlyArray<AgentIdentity>,
+  selfKey: string,
+  roomId: string,
+  platform: string,
+  coResidentKeys: ReadonlySet<string>,
+): Record<string, RoomParticipant> {
+  const out: Record<string, RoomParticipant> = {}
+  for (const id of identities) {
+    if (id.agentKey === selfKey) continue
+    if (!coResidentKeys.has(id.agentKey)) continue
     if (id.platform !== platform) continue
     if (!id.rooms.includes(roomId)) continue
     if (!id.userId) continue

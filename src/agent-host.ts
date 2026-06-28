@@ -50,6 +50,7 @@ import {
   selectThreadRecap,
   wrapThreadRecap,
   peerDirectoryParticipants,
+  coResidentPeerParticipants,
   isDirectoryBot,
   actorDisplayName,
   addressedAgentKeys,
@@ -1054,11 +1055,11 @@ export class AgentHost {
     }
 
     const ownerId = liveAgent.ownerUserId
-    // Auto-discovered peer bots (from the shared directory) merged into the room's
-    // participants so they're both heard (allowlist) and addressable (roster) — covers
-    // co-resident siblings AND cross-machine collaborators with no manual roster entry.
-    const gateRoom = this.roomWithPeers(roomId, room)
-    // Sender allowlist (owner + roster + discovered peers). On the open GitHub surface,
+    // Sender GATE room: confirmed roster + CO-RESIDENT discovered peers only. A remote/unconfirmed
+    // directory peer is addressable (see the roster preamble's roomWithPeers) but NOT auto-heard
+    // until the owner confirms it — the KTD7 narrowing of the old "merge every peer into the gate."
+    const gateRoom = this.gateRoomFor(roomId, room)
+    // Sender allowlist (owner + roster + co-resident peers). On the open GitHub surface,
     // also admit a trusted repo author (OWNER/MEMBER/COLLABORATOR) so a repo's real
     // collaborators work without being re-listed — the deny floor + ask-first still bound them.
     const trustedByPlatform =
@@ -1489,17 +1490,33 @@ export class AgentHost {
     return actorDisplayName(this.directoryIdentities(), actorId)
   }
 
-  /** Peer bots (others) that serve `roomId` on this platform, as participant entries to
-   *  merge into the room's `participants` — so they're both addressable (roster) and
-   *  heard (allowlist). */
+  /** ALL peer bots (others) that serve `roomId` on this platform — the ROSTER/display set, so
+   *  every discovered peer is addressable (recap labels, status echoes, the agent's roster). This
+   *  is NOT the sender gate: a remote/unconfirmed peer appears here but is not auto-heard (R23). */
   private peerParticipantsFor(roomId: ChannelId): Record<string, RoomParticipant> {
     return peerDirectoryParticipants(this.directoryIdentities(), this.key, roomId, this.platform)
   }
 
-  /** The room config with auto-discovered peer bots merged into `participants` (static
-   *  roster collaborators still win on a userId collision). */
+  /** The room config with EVERY discovered peer merged into `participants` — for the roster/display
+   *  surfaces only (preamble, recap). Static roster collaborators still win on a userId collision. */
   private roomWithPeers(roomId: ChannelId, room: RoomConfig): RoomConfig {
     const peers = this.peerParticipantsFor(roomId)
+    if (Object.keys(peers).length === 0) return room
+    return { ...room, participants: { ...peers, ...room.participants } }
+  }
+
+  /** The room config for the sender GATE: confirmed roster participants/humans plus only the
+   *  CO-RESIDENT discovered peers (agent-keys this machine hosts). A remote/unconfirmed directory
+   *  peer is deliberately excluded — it is addressable via `roomWithPeers` but not admitted as a
+   *  sender until the owner confirms it into the static roster (R8/R9/R23, the KTD7 narrowing). */
+  private gateRoomFor(roomId: ChannelId, room: RoomConfig): RoomConfig {
+    const peers = coResidentPeerParticipants(
+      this.directoryIdentities(),
+      this.key,
+      roomId,
+      this.platform,
+      this.coResidentKeys(),
+    )
     if (Object.keys(peers).length === 0) return room
     return { ...room, participants: { ...peers, ...room.participants } }
   }
