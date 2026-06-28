@@ -228,12 +228,14 @@ one machine already share a notebook — they need no mesh, and turning it on ju
 them shout coordination notes at each other through the chat channel for no reason. So
 the mesh stays quiet unless it can actually see a bot from *another* relay to talk to.
 
-So there's a second way that needs **no shared database at all** (turn it on with
-`KNOCK_KNOCK_MESH=1`). The trick: the chat channel you're *already both in* is the
-shared notebook. When a bot writes a coordination note — "I'm taking this", "task B is
-done" — it posts a tiny tagged line to the channel; every other bot reads it and writes
-it into its own local notebook. Same notes, same order, same conclusions — just carried
-over chat instead of a database.
+So there's a second way that needs **no shared database at all**. It turns on by itself:
+the moment you add a **peer bot** (another machine's bot) as a collaborator in a channel,
+the relay enables the mesh automatically — no env var to remember. (You can still force it
+with `KNOCK_KNOCK_MESH=1`, or force it off with `KNOCK_KNOCK_MESH=0`.) The trick: the chat
+channel you're *already both in* is the shared notebook. When a bot writes a coordination
+note — "I'm taking this", "task B is done" — it posts a tiny tagged line to the channel;
+every other bot reads it and writes it into its own local notebook. Same notes, same order,
+same conclusions — just carried over chat instead of a database.
 
 And instead of "grab a ticket" (which needs a database to be the single source of
 truth), the bots use **the same dice roll**: from the list of bots that could answer
@@ -253,10 +255,16 @@ two bots might both answer once, until everyone's seen everyone — it settles i
 ### Keeping the tagged lines out of your human channels
 
 By default those tiny tagged lines (`⟦kk-mesh⟧…`) post to the human channel the bots
-share — fine when it's quiet, but a busy room fills with base64. To hide them, give the
-bots a **dedicated transport channel**: a real channel both relays join, marked
-`meshTransport: true`. The mesh then posts *all* its lines (discovery beacons and
-coordination notes alike) there instead of the human rooms. The transport channel is
+share — fine when it's quiet, but a busy room fills with base64. The biggest source is the
+**discovery beacon**: each bot announces itself on every connect/reconnect, and that one is
+sent *unconditionally* (it's how two machines find each other in the first place, so it
+can't wait until a peer is already known). Coordination notes are quieter — they only go out
+when a real remote peer is present — but the beacons alone are enough to clutter a room.
+
+The fix, and the single biggest lever for a clean channel, is a **dedicated transport
+channel**: a real channel both relays join, marked `meshTransport: true`. The mesh then posts
+*all* its lines (discovery beacons and coordination notes alike) there instead of the human
+rooms — so your human channels see zero `⟦kk-mesh⟧`. The transport channel is
 still tracked — its lines are read and ingested — but it never carries chat or tasks: a
 human typing in it gets no reply, and it's never elected to answer.
 

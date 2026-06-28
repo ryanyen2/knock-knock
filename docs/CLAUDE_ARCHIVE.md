@@ -586,7 +586,7 @@ the token value itself lives in `.env`.
 | `KNOCK_KNOCK_STATE_DIR` | no | Override the state directory (default `~/.knock-knock`) |
 | `KNOCK_KNOCK_LEDGER_URL` | no | Postgres connection string; **overrides** the setup-managed `settings.json` ledger choice. Neither set → SQLite. Prefer choosing the backend in `bun setup.ts`. |
 | `KNOCK_KNOCK_LEDGER_FILE` | no | Override the SQLite ledger path (default `<state-dir>/ledger.sqlite`) |
-| `KNOCK_KNOCK_MESH` | no | Set to `1` to enable no-Postgres cross-machine coordination over the messaging channel (deterministic election; SQLite only — ignored on Postgres). See "No-Postgres mesh" above. |
+| `KNOCK_KNOCK_MESH` | no | No-Postgres cross-machine coordination over the messaging channel (deterministic election; SQLite only — ignored on Postgres). Auto-enables when a peer-bot collaborator is configured; `1` forces on, `0` forces off. See "No-Postgres mesh" above. |
 | `KNOCK_KNOCK_ACP_COMMAND` | when `runtime=acp` | Spawn command for the ACP subprocess |
 | `KNOCK_KNOCK_ACP_ARGS` | no | Space-separated args for `KNOCK_KNOCK_ACP_COMMAND` |
 | `KNOCK_KNOCK_DEBUG` | no | Set to `1` to log every SDK stream event and ACP permission decision |

@@ -186,10 +186,18 @@ if (bootResult.hasExistingData) {
 // explicitly enabled, bots coordinate over the shared messaging channel via deterministic
 // election (no atomic lock, no NOTIFY). Never on Postgres — its atomic claim + NOTIFY are
 // strictly better. See docs/how-coordination-works.md.
-const meshEnabled = ledgerConfig.backend === 'sqlite' && process.env.KNOCK_KNOCK_MESH === '1'
+// Mesh auto-enables on SQLite the moment a peer-bot collaborator (another machine's bot) is
+// configured — that's the cross-machine intent, so the user shouldn't have to remember an env
+// var. KNOCK_KNOCK_MESH stays an explicit override: `1` forces it on (e.g. before any peer is
+// rostered), `0` forces it off. Never on Postgres (its atomic claim + NOTIFY are strictly better).
+const meshEnv = process.env.KNOCK_KNOCK_MESH
+const hasPeers = declaresPeerCollaborators(access.agents)
+const meshEnabled =
+  ledgerConfig.backend === 'sqlite' && meshEnv !== '0' && (meshEnv === '1' || hasPeers)
 if (meshEnabled) {
+  const why = meshEnv === '1' ? 'KNOCK_KNOCK_MESH=1' : 'peer-bot collaborators configured'
   process.stderr.write(
-    'relay: mesh = ON (no-Postgres cross-machine coordination over the messaging channel)\n',
+    `relay: mesh = ON (${why}) — no-Postgres cross-machine coordination over the messaging channel\n`,
   )
   const hasTransportChannel = Object.values(access.agents).some(a =>
     Object.values(a.rooms).some(r => r.meshTransport),
@@ -202,17 +210,14 @@ if (meshEnabled) {
         '  and add the SAME channel on every machine. See docs/how-coordination-works.md.\n',
     )
   }
-} else if (ledgerConfig.backend === 'sqlite' && declaresPeerCollaborators(access.agents)) {
-  // SQLite + mesh off, yet peer-bot collaborators (another machine's bots) are configured.
-  // Co-resident bots still coordinate via the shared ledger, but there is NO cross-machine
-  // transport: a peer's messages are heard only in channels where it's manually rostered, and
-  // the shared directory/board never converges across machines. That looks exactly like "the
-  // other machine's bot just doesn't respond" — so say it out loud instead of failing silently.
+} else if (ledgerConfig.backend === 'sqlite' && hasPeers && meshEnv === '0') {
+  // Peer bots are configured (cross-machine intent) but mesh was explicitly turned off. A peer's
+  // messages are then heard only where it's manually rostered, and the shared directory/board
+  // never converges across machines — which looks exactly like "the other machine's bot just
+  // doesn't respond." Say it out loud rather than failing silently.
   process.stderr.write(
-    'relay: mesh = OFF but peer-bot collaborators are configured — cross-machine coordination is disabled.\n' +
-      '  A collaborator\'s bot is heard only in channels where it is manually rostered, and the shared\n' +
-      '  directory/board never converges across machines. To enable cross-machine coordination, set\n' +
-      '  KNOCK_KNOCK_MESH=1 on every machine (SQLite backend), or switch the backend to Postgres.\n',
+    'relay: KNOCK_KNOCK_MESH=0 but peer-bot collaborators are configured — cross-machine coordination is OFF.\n' +
+      '  Unset KNOCK_KNOCK_MESH (mesh auto-enables on SQLite when peers are configured), or switch to Postgres.\n',
   )
 }
 const ledger = new Ledger(store)

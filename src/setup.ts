@@ -579,7 +579,7 @@ async function addPerson(a: AuthoringAccess, platform: Platform): Promise<string
 }
 
 /** Add a peer bot to the roster. Returns the new roster id. */
-async function addPeer(a: AuthoringAccess, platform: Platform): Promise<string | null> {
+async function addPeer(a: AuthoringAccess, platform: Platform, offerTransport = false): Promise<string | null> {
   const spec = PLATFORMS[platform]
   const label = orCancel(await p.text({ message: 'Name / label for this peer bot', placeholder: 'deploy-bot' })).trim()
   const userId = orCancel(await p.text({
@@ -593,6 +593,28 @@ async function addPeer(a: AuthoringAccess, platform: Platform): Promise<string |
   a.roster.peers[id] = peer
   saveAuthoringAccess(a)
   p.log.success(`Added peer ${color.cyan(label || userId)} to the roster`)
+
+  // A peer bot is another machine's bot — that's cross-machine intent. Tell the user what makes
+  // the two machines actually coordinate, so they don't hit "the other bot just never responds."
+  const hasTransport = Object.values(a.channels).some(c => c.meshTransport)
+  p.log.info(
+    'This is a cross-machine peer. Once you add it as a collaborator in a channel, the mesh turns\n' +
+      'on automatically (SQLite backend) — no env var needed — so the two machines share a directory\n' +
+      'and take turns without conflict. Both machines must run knock-knock with this peer configured.\n' +
+      (hasTransport
+        ? 'You already have a dedicated transport channel, so coordination traffic stays out of human rooms.'
+        : 'Tip: add a dedicated transport channel so the coordination traffic (⟦kk-mesh⟧ lines) stays\n' +
+          'out of your human rooms — otherwise it posts there.'),
+  )
+  // From the top-level roster menu we can offer to set one up right now; inline (mid channel
+  // setup) we don't, to avoid a re-entrant channel flow.
+  if (offerTransport && !hasTransport) {
+    const make = orCancel(await p.confirm({
+      message: 'Set up a dedicated mesh-transport channel now?',
+      initialValue: true,
+    }))
+    if (make) await addChannel(a)
+  }
   return id
 }
 
@@ -1305,7 +1327,7 @@ async function interactiveMenu(): Promise<void> {
       else if (task === 'channel') await addChannel(a)
       else if (task === 'channel-remove') await removeChannel(a)
       else if (task === 'person') await addPerson(a, await pickRosterPlatform(a))
-      else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a))
+      else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a), true)
       else if (task === 'roster-remove') await removeRosterEntry(a)
       else if (task === 'api-key') await saveCodingAgentKey(a)
       else if (task === 'ledger') await collectLedger()
