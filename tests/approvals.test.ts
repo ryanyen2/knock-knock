@@ -29,16 +29,17 @@ function harness() {
   return { approvals, sends, dmCalls: () => dmCalls }
 }
 
-test('postDiscord: posts in the channel with mentionOnly the approver, never DMs', async () => {
+test('postDiscord: posts in the channel pinging the approver, never DMs', async () => {
   const h = harness()
   await h.approvals.postDiscord({ channelId: 'C1', toolRequestedHash: HASH, toolName: 'Bash', input: { cmd: 'ls' } })
   expect(h.dmCalls()).toBe(0)
   expect(h.sends).toHaveLength(1)
   expect(h.sends[0]!.scope).toBe('C1')
-  expect(h.sends[0]!.opts).toMatchObject({ mentionOnly: 'U_owner' })
+  // mentionUser pings the approver; mentionOnly whitelists only them (so a <@id> in the preview can't re-trigger a peer).
+  expect(h.sends[0]!.opts).toMatchObject({ mentionUser: 'U_owner', mentionOnly: 'U_owner' })
 })
 
-test('resolve: a non-approver is rejected and no verdict is emitted', async () => {
+test('resolve: a non-approver is warned and no verdict is emitted', async () => {
   const h = harness()
   await h.approvals.postDiscord({ channelId: 'C1', toolRequestedHash: HASH, toolName: 'Bash', input: {} })
 
@@ -52,8 +53,12 @@ test('resolve: a non-approver is rejected and no verdict is emitted', async () =
     respond: async text => {
       responded = text
     },
-    update: async () => {},
+    update: async () => {
+      throw new Error('non-approver must not update the prompt')
+    },
   }
   await h.approvals.resolve(action)
-  expect(responded).toBe('Not authorized.')
+  expect(responded).toContain('owner')
+  // No verdict admitted: a non-approver click only sends a warning (one send: the prompt itself).
+  expect(h.sends).toHaveLength(1)
 })

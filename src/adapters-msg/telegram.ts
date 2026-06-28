@@ -200,14 +200,25 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     const bot = this.bot
     if (!bot) return undefined
     const { chatId, threadId } = splitScope(scope)
+    const { text: body, entities } = this.bodyWithMention(text, opts)
+    const base = {
+      ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
+      ...this.replyMarkup(opts),
+    }
     try {
-      const sent = await bot.api.sendMessage(chatId, this.bodyText(text, opts), {
-        ...(threadId !== undefined ? { message_thread_id: threadId } : {}),
-        ...this.replyMarkup(opts),
-      })
+      const sent = await bot.api.sendMessage(chatId, body, entities ? { ...base, entities } : base)
       return { id: String(sent.message_id), scope }
     } catch {
-      return undefined
+      // A mention entity Telegram won't resolve (e.g. a user it can't see) would otherwise
+      // sink the whole prompt — and an approvals send that returns undefined auto-DENIES the
+      // tool. Retry once without the ping so the prompt still posts; the owner sees it in-channel.
+      if (!entities) return undefined
+      try {
+        const sent = await bot.api.sendMessage(chatId, body, base)
+        return { id: String(sent.message_id), scope }
+      } catch {
+        return undefined
+      }
     }
   }
 
@@ -503,6 +514,23 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
     // echoed mentions stay live and re-ping the named bots, the cross-machine cascade).
     const full = opts?.suppressMentions ? defangMentions(unwrapped) : unwrapped
     return full.length > MAX_LEN ? full.slice(0, MAX_LEN - 1) + '…' : full
+  }
+
+  /** Body text plus an optional `text_mention` entity that pings `opts.mentionUser`. Telegram
+   *  has no `<@id>` markup and we send without parse_mode, so a `text_mention` entity is how a
+   *  numeric id gets pinged without needing a @username. The label is prepended at offset 0. */
+  private bodyWithMention(
+    text: string,
+    opts?: SendOpts,
+  ): { text: string; entities?: { type: 'text_mention'; offset: number; length: number; user: { id: number; is_bot: boolean; first_name: string } }[] } {
+    const body = this.bodyText(text, opts)
+    const id = opts?.mentionUser ? Number(opts.mentionUser) : NaN
+    if (!opts?.mentionUser || !Number.isFinite(id)) return { text: body }
+    const label = 'owner'
+    return {
+      text: `${label} ${body}`,
+      entities: [{ type: 'text_mention', offset: 0, length: label.length, user: { id, is_bot: false, first_name: label } }],
+    }
   }
 
   /** Build an inline-keyboard reply_markup from neutral choices, registering each
