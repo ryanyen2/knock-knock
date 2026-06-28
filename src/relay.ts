@@ -196,9 +196,10 @@ if (meshEnabled) {
   )
   if (!hasTransportChannel) {
     process.stderr.write(
-      'relay: no mesh-transport channel configured — ⟦kk-mesh⟧ lines post to the human channels\n' +
-        '  (gated by remote-peer presence). To keep them out of view, mark a shared channel both\n' +
-        "  relays join with meshTransport: true. See docs/how-coordination-works.md.\n",
+      'relay: no mesh-transport channel configured — ⟦kk-mesh⟧ lines (incl. discovery beacons)\n' +
+        '  post to the human channels. To keep them out of view, add a dedicated transport channel:\n' +
+        "  run `knock-knock setup` → Add channel → answer yes to \"dedicated mesh-transport channel\",\n" +
+        '  and add the SAME channel on every machine. See docs/how-coordination-works.md.\n',
     )
   }
 } else if (ledgerConfig.backend === 'sqlite' && declaresPeerCollaborators(access.agents)) {

@@ -261,10 +261,10 @@ still tracked — its lines are read and ingested — but it never carries chat 
 human typing in it gets no reply, and it's never elected to answer.
 
 It must be a real channel with the **same platform channel id on every machine** (the
-bots post and read by that id), and every relay must mark it `meshTransport: true`. First
-cut is to hand-edit the channel entry in your config; a `knock-knock setup` toggle is a
-fast-follow. Leave the flag off and behavior is exactly as described above — transport
-rides the human channel, gated by remote-peer presence.
+bots post and read by that id), and every relay must mark it `meshTransport: true`. Set it
+up via `knock-knock setup` → **Add channel** → answer yes to "dedicated mesh-transport
+channel" (or hand-edit the channel entry in your config). Leave the flag off and behavior is
+exactly as described above — transport rides the human channel, gated by remote-peer presence.
 
 ### Each relay only keeps the channels it actually serves
 
