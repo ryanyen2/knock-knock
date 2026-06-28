@@ -82,6 +82,12 @@ export type TaskSchedulerOpts = {
   /** Mesh mode only: deterministic pull-claim election (no shared lock). */
   election?: MeshTaskElection
   now?: () => number
+  /** Mesh mode only: true while a relay is replaying channel history on reconnect. The
+   *  scheduler must NOT fire per-insert against the half-built board a replay produces — a
+   *  fresh peer's large task age is exactly the failover slot the ladder hands the claim to,
+   *  so it would claim+drive a task whose terminal event is later in the replay window. The
+   *  host runs ONE settle pass (reconcile) on the converged ledger once replay completes. */
+  suppressed?: () => boolean
 }
 
 type Admit = (p: ProposedInteraction) => Promise<AdmissionResult | undefined>
@@ -260,6 +266,10 @@ export function taskScheduler(opts: TaskSchedulerOpts): Synchronization {
       (i.lifecycle === 'admitted' || i.lifecycle === 'applied') &&
       (i.verb === 'task.created' || i.verb === 'task.completed' || i.verb === 'task.bid'),
     fire: async (i, ctx) => {
+      // Suppress per-insert scheduling during a reconnect replay — the board is half-built,
+      // so claiming/driving now risks resurrecting a task whose terminal event hasn't been
+      // ingested yet. The host settles once on the converged ledger after replay (reconcile).
+      if (opts.suppressed?.()) return
       await scheduleScope({ store: ctx.store, engine: ctx.engine, admit: ctx.admit, opts, scope: i.channel })
     },
   }

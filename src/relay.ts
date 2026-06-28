@@ -8,7 +8,13 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import { STATE_DIR, readAccessFile, readSettings } from './state.ts'
-import { resolveLedgerConfig, responderElection, addressedAgentKeys, selectActorHost } from './lib.ts'
+import {
+  resolveLedgerConfig,
+  responderElection,
+  addressedAgentKeys,
+  selectActorHost,
+  declaresPeerCollaborators,
+} from './lib.ts'
 import { AgentHost } from './agent-host.ts'
 import { ConsoleUI } from './console-ui.ts'
 import type { RelayUI } from './console-ui.ts'
@@ -180,10 +186,38 @@ if (bootResult.hasExistingData) {
 // explicitly enabled, bots coordinate over the shared messaging channel via deterministic
 // election (no atomic lock, no NOTIFY). Never on Postgres — its atomic claim + NOTIFY are
 // strictly better. See docs/how-coordination-works.md.
-const meshEnabled = ledgerConfig.backend === 'sqlite' && process.env.KNOCK_KNOCK_MESH === '1'
+// Mesh auto-enables on SQLite the moment a peer-bot collaborator (another machine's bot) is
+// configured — that's the cross-machine intent, so the user shouldn't have to remember an env
+// var. KNOCK_KNOCK_MESH stays an explicit override: `1` forces it on (e.g. before any peer is
+// rostered), `0` forces it off. Never on Postgres (its atomic claim + NOTIFY are strictly better).
+const meshEnv = process.env.KNOCK_KNOCK_MESH
+const hasPeers = declaresPeerCollaborators(access.agents)
+const meshEnabled =
+  ledgerConfig.backend === 'sqlite' && meshEnv !== '0' && (meshEnv === '1' || hasPeers)
 if (meshEnabled) {
+  const why = meshEnv === '1' ? 'KNOCK_KNOCK_MESH=1' : 'peer-bot collaborators configured'
   process.stderr.write(
-    'relay: mesh = ON (no-Postgres cross-machine coordination over the messaging channel)\n',
+    `relay: mesh = ON (${why}) — no-Postgres cross-machine coordination over the messaging channel\n`,
+  )
+  const hasTransportChannel = Object.values(access.agents).some(a =>
+    Object.values(a.rooms).some(r => r.meshTransport),
+  )
+  if (!hasTransportChannel) {
+    process.stderr.write(
+      'relay: no mesh-transport channel configured — ⟦kk-mesh⟧ lines (incl. discovery beacons)\n' +
+        '  post to the human channels. To keep them out of view, add a dedicated transport channel:\n' +
+        "  run `knock-knock setup` → Add channel → answer yes to \"dedicated mesh-transport channel\",\n" +
+        '  and add the SAME channel on every machine. See docs/how-coordination-works.md.\n',
+    )
+  }
+} else if (ledgerConfig.backend === 'sqlite' && hasPeers && meshEnv === '0') {
+  // Peer bots are configured (cross-machine intent) but mesh was explicitly turned off. A peer's
+  // messages are then heard only where it's manually rostered, and the shared directory/board
+  // never converges across machines — which looks exactly like "the other machine's bot just
+  // doesn't respond." Say it out loud rather than failing silently.
+  process.stderr.write(
+    'relay: KNOCK_KNOCK_MESH=0 but peer-bot collaborators are configured — cross-machine coordination is OFF.\n' +
+      '  Unset KNOCK_KNOCK_MESH (mesh auto-enables on SQLite when peers are configured), or switch to Postgres.\n',
   )
 }
 const ledger = new Ledger(store)
@@ -460,6 +494,10 @@ const schedulerOpts: TaskSchedulerOpts = {
               .map(id => id.agentKey)
           },
         },
+        // Hold off per-insert scheduling while ANY host replays channel history on reconnect:
+        // each replayed task.* insert would otherwise fire the scheduler against a half-built
+        // board. The settle pass below runs once the last host finishes.
+        suppressed: () => hosts.some(h => h.isReplaying),
       }
     : {}),
 }
@@ -482,6 +520,16 @@ synchronizer.register(
 )
 synchronizer.register(
   postOnReply({
+    // Name the attribution author by directory label, NOT a raw id — a raw platform id in
+    // the "traced from …" subtext gets re-parsed into a live mention (Slack @Uxxx → <@Uxxx>)
+    // and re-triggers the named bot, an endless peer-to-peer ack loop. A label is plain text.
+    resolveActorName: actorId => {
+      for (const h of hosts) {
+        const name = h.displayNameForActor(actorId)
+        if (name !== actorId) return name
+      }
+      return actorId
+    },
     discordSend: async (channelId, text, agentKey) => {
       // Post via the replying agent's own host, not the first sibling serving the room —
       // otherwise the wrong bot posts the reply (the "@cc → d-bot answers" bug).
@@ -606,6 +654,10 @@ synchronizer.start()
 // (the watches §7 lesson: failover can't rely on an event). A no-op when idle.
 const TASK_RECONCILE_MS = 15_000
 const reconcileTasks = async () => {
+  // Skip while any host is replaying channel history on reconnect — scheduling must wait for
+  // the converged ledger. Doubles as the post-replay settle: a host calls this after its
+  // replay (its own flag cleared), and it runs once the LAST host finishes, on the full set.
+  if (hosts.some(h => h.isReplaying)) return
   let state: TaskDagFoldState
   try {
     state = engine.get<TaskDagFoldState>(TASK_DAG_FOLD)
@@ -672,6 +724,10 @@ for (let n = 0; n < hosts.length; n++) {
   const entry = bootEntries[n]!
   const host = hosts[n]!
   const token = process.env[access.agents[entry.key]!.tokenEnv] ?? ''
+  // After a host finishes replaying channel history on reconnect, settle the task board once
+  // on the converged ledger (no-op while any host still replays — so it lands once, on the
+  // full set). Mesh-only; non-mesh hosts never set replaying, so this never fires for them.
+  host.onReplaySettle = reconcileTasks
   void host.start(token).catch(err => {
     ui.error(entry.key, `login failed: ${err}`)
   })

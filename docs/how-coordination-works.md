@@ -228,12 +228,14 @@ one machine already share a notebook — they need no mesh, and turning it on ju
 them shout coordination notes at each other through the chat channel for no reason. So
 the mesh stays quiet unless it can actually see a bot from *another* relay to talk to.
 
-So there's a second way that needs **no shared database at all** (turn it on with
-`KNOCK_KNOCK_MESH=1`). The trick: the chat channel you're *already both in* is the
-shared notebook. When a bot writes a coordination note — "I'm taking this", "task B is
-done" — it posts a tiny tagged line to the channel; every other bot reads it and writes
-it into its own local notebook. Same notes, same order, same conclusions — just carried
-over chat instead of a database.
+So there's a second way that needs **no shared database at all**. It turns on by itself:
+the moment you add a **peer bot** (another machine's bot) as a collaborator in a channel,
+the relay enables the mesh automatically — no env var to remember. (You can still force it
+with `KNOCK_KNOCK_MESH=1`, or force it off with `KNOCK_KNOCK_MESH=0`.) The trick: the chat
+channel you're *already both in* is the shared notebook. When a bot writes a coordination
+note — "I'm taking this", "task B is done" — it posts a tiny tagged line to the channel;
+every other bot reads it and writes it into its own local notebook. Same notes, same order,
+same conclusions — just carried over chat instead of a database.
 
 And instead of "grab a ticket" (which needs a database to be the single source of
 truth), the bots use **the same dice roll**: from the list of bots that could answer
@@ -249,6 +251,68 @@ their own owner-set permissions. It works best on Discord/Slack/Telegram (instan
 reactions); GitHub and Notion are slower (they poll) so it degrades to a simpler
 one-bot-answers mode. And right after a teammate first joins there's a brief moment where
 two bots might both answer once, until everyone's seen everyone — it settles itself.
+
+### Keeping the tagged lines out of your human channels
+
+By default those tiny tagged lines (`⟦kk-mesh⟧…`) post to the human channel the bots
+share — fine when it's quiet, but a busy room fills with base64. The biggest source is the
+**discovery beacon**: each bot announces itself on every connect/reconnect, and that one is
+sent *unconditionally* (it's how two machines find each other in the first place, so it
+can't wait until a peer is already known). Coordination notes are quieter — they only go out
+when a real remote peer is present — but the beacons alone are enough to clutter a room.
+
+The fix, and the single biggest lever for a clean channel, is a **dedicated transport
+channel**: a real channel both relays join, marked `meshTransport: true`. The mesh then posts
+*all* its lines (discovery beacons and coordination notes alike) there instead of the human
+rooms — so your human channels see zero `⟦kk-mesh⟧`. The transport channel is
+still tracked — its lines are read and ingested — but it never carries chat or tasks: a
+human typing in it gets no reply, and it's never elected to answer.
+
+It must be a real channel with the **same platform channel id on every machine** (the
+bots post and read by that id), and every relay must mark it `meshTransport: true`. Set it
+up via `knock-knock setup` → **Add channel** → answer yes to "dedicated mesh-transport
+channel" (or hand-edit the channel entry in your config). Leave the flag off and behavior is
+exactly as described above — transport rides the human channel, gated by remote-peer presence.
+
+### Each relay only keeps the channels it actually serves
+
+A dedicated transport channel can carry lines for *several* projects at once — relay A
+works on project H1 and H2, relay B only on H1, and both share the one transport channel.
+When a line arrives, a relay now checks whether it serves that line's channel before
+folding it in: a note for H2 arriving at relay B (which doesn't serve H2) is **dropped on
+the spot**, so B's notebook never fills with another project's coordination. Discovery
+beacons (how bots find each other) are the one exception — those are always kept, because
+that's how a relay learns a peer exists in the first place. (This is also why reading the
+channel back on reconnect — below — is safe: a relay can replay a busy shared channel
+without inheriting projects it has no business tracking.)
+
+### Catching up on what you missed while you were away
+
+The chat channel the bots share is itself a durable log — the platform keeps the messages
+even while a bot is offline. So when a relay reconnects, it reads the recent history of its
+channels back and re-ingests any coordination lines it missed while it was down. Because
+the notebook is content-addressed, replaying a line a relay already has is a harmless no-op,
+and lines it missed simply fill in — the two relays' notebooks converge again with no new
+message sent. Identity beacons are replayed first so the coordination lines that depend on
+them (a note is only trusted once its author is known) aren't dropped.
+
+This window is bounded (the most recent couple hundred lines). If a relay was offline long
+enough that the gap is larger than the window — or the platform aged the messages out — the
+relay logs a loud warning that the replay *may not* have covered everything, rather than
+quietly pretending it caught up.
+
+For those rarer gaps that outlast the window, a relay can ask for exactly the pieces it's
+missing: when it notices an entry that refers to one it doesn't have, it posts a small
+"I'm missing these" request on the transport channel. The **bot that wrote** each missing
+piece re-posts it (its own identity first, so the piece can be trusted) — only the original
+author can, because a piece is trusted by the account that posted it, and no one else can
+stand in for that account. Relays also occasionally post a short summary of what they have so
+a lagging relay can notice a gap on its own. This back-and-forth only happens on a configured
+transport channel — never in a human room — and a relay only ever serves up entries for
+projects the asker already works on, so one project can't fish for another's history. An
+author holds back if it sees its piece already went out, so a request gets about one reply,
+not a pile-up. (If the author is itself offline, its pieces wait until it returns — trusting
+a relayed copy would need signed entries, which this design leaves for later.)
 
 When you *do* have a shared Postgres, knock-knock uses that instead — it's strictly
 better (a real shared source of truth). The no-server mode is for when you'd rather not

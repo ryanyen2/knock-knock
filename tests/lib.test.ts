@@ -24,6 +24,7 @@ import {
   threadNameFromPrompt,
   matchesMentionPattern,
   guildSenderAllowed,
+  declaresPeerCollaborators,
   githubAssociationTrusted,
   senderKind,
   isShareSessionCommand,
@@ -80,6 +81,7 @@ import {
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
+  type AgentConfig,
   type AuthoringAccess,
   type AddressSignals,
   type ResponderSelf,
@@ -296,6 +298,20 @@ test('projectToRuntime: a per-channel runtime override is carried onto the room 
   expect(rt.agents.rev!.runtime).toBe('claude-sdk') // bot default unchanged
   expect(rt.agents.rev!.rooms.A!.runtime).toBe('codex') // per-channel override
   expect(rt.agents.rev!.rooms.B!.runtime).toBeUndefined() // falls back to the bot default
+})
+
+test('projectToRuntime: meshTransport on a channel folds onto every member room; absent ⇒ key absent', () => {
+  const a: AuthoringAccess = {
+    bots: { rev: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {
+      'discord:X': { platform: 'discord', channelId: 'X', members: [{ bot: 'rev', workspace: '/x' }], collaborators: [], meshTransport: true },
+      'discord:H': { platform: 'discord', channelId: 'H', members: [{ bot: 'rev', workspace: '/h' }], collaborators: [] },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  const rt = projectToRuntime(a)
+  expect(rt.agents.rev!.rooms.X!.meshTransport).toBe(true) // transport channel folds through
+  expect('meshTransport' in rt.agents.rev!.rooms.H!).toBe(false) // absent ⇒ key absent
 })
 
 test('channelKey: namespaces a channel id by platform', () => {
@@ -556,6 +572,22 @@ test('guildSenderAllowed: owner allowed, self denied, peer/human allowed, strang
   expect(guildSenderAllowed(ROOM, 'PEER1', 'SELF', 'OWNER')).toBe(true)
   expect(guildSenderAllowed(ROOM, 'HUMAN1', 'SELF', 'OWNER')).toBe(true)
   expect(guildSenderAllowed(ROOM, 'STRANGER', 'SELF', 'OWNER')).toBe(false)
+})
+
+test('declaresPeerCollaborators: true only when a room rosters a peer bot', () => {
+  const agent = (rooms: Record<string, RoomConfig>): AgentConfig => ({
+    ownerUserId: 'OWNER',
+    blurb: '',
+    runtime: 'claude-sdk',
+    workspace: '/tmp',
+    tokenEnv: 'TOK',
+    rooms,
+  })
+  const noPeers = { a: agent({ R1: { requireMention: true, participants: {}, humans: ['H1'] } }) }
+  const withPeer = { a: agent({ R1: { requireMention: true, participants: { PEER1: { blurb: '' } }, humans: [] } }) }
+  expect(declaresPeerCollaborators(noPeers)).toBe(false) // single-machine relay → stay quiet
+  expect(declaresPeerCollaborators(withPeer)).toBe(true) // a rostered peer bot → cross-machine intent
+  expect(declaresPeerCollaborators({})).toBe(false)
 })
 
 test('githubAssociationTrusted: OWNER/MEMBER/COLLABORATOR trusted, rest not', () => {
@@ -1384,7 +1416,7 @@ test('wrapThreadRecap: empty in, empty out; non-empty framed as context not inst
 
 // ─── Peer directory (multi-bot mesh visibility) ──────────────────────────────
 
-import { peerDirectoryParticipants, isDirectoryBot, type AgentIdentity } from '../src/lib.ts'
+import { peerDirectoryParticipants, isDirectoryBot, actorDisplayName, type AgentIdentity } from '../src/lib.ts'
 
 const ident = (over: Partial<AgentIdentity>): AgentIdentity => ({
   agentKey: 'cc', platform: 'discord', userId: 'U_CC', rooms: ['chan1'], ...over,
@@ -1419,6 +1451,18 @@ test('isDirectoryBot: true only for a known directory userId', () => {
   const dir = [ident({ userId: 'U_CC' })]
   expect(isDirectoryBot(dir, 'U_CC')).toBe(true)
   expect(isDirectoryBot(dir, 'U_HUMAN')).toBe(false)
+})
+
+test('actorDisplayName: resolves a peer id to its non-pinging label, falls back to the raw id', () => {
+  const dir = [ident({ agentKey: 'assistant', userId: 'U0B7JR6UBML', label: 'knock-knock', handle: 'kk' })]
+  // A platform id resolves to the label — plain text, so it never re-parses into a live @mention.
+  expect(actorDisplayName(dir, 'U0B7JR6UBML')).toBe('knock-knock')
+  // Matches by agentKey too.
+  expect(actorDisplayName(dir, 'assistant')).toBe('knock-knock')
+  // Unknown id (e.g. a human not in the directory) → returned verbatim.
+  expect(actorDisplayName(dir, 'U_HUMAN')).toBe('U_HUMAN')
+  // No label → handle.
+  expect(actorDisplayName([ident({ userId: 'U_X', label: undefined, handle: 'h' })], 'U_X')).toBe('h')
 })
 
 // ─── Selecting collaboration / allocation policy from chat (!config) ──────────

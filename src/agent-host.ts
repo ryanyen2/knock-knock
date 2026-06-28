@@ -51,11 +51,14 @@ import {
   wrapThreadRecap,
   peerDirectoryParticipants,
   isDirectoryBot,
+  actorDisplayName,
   addressedAgentKeys,
   standDownForDirected,
   peerBotStandsDownAtChannel,
   botEngagedInScope,
   isMeshLine,
+  isWantLine,
+  isFrontierLine,
   extractKeywords,
   type RetrievalCandidate,
   type RecapSource,
@@ -105,7 +108,7 @@ import { WatchControl } from './host/watch-control.ts'
 import { SessionSharing } from './host/session-sharing.ts'
 import { ChannelConfigControl } from './host/channel-config.ts'
 import { ContextControl } from './host/context-control.ts'
-import { MeshSync } from './host/mesh-sync.ts'
+import { MeshSync, type FetchRecent } from './host/mesh-sync.ts'
 import { CONFIG_FOLD, configFor, resolveConfigFor, type ConfigFoldState } from './ledger/concepts/config.ts'
 import { COORD_BOARD_FOLD, boardFor, type CoordBoardFoldState } from './ledger/concepts/coordination-board.ts'
 import { CHANNEL_FOLD, type ChannelFoldState } from './ledger/concepts/channel.ts'
@@ -166,6 +169,18 @@ export class AgentHost {
   /** Called the first time an idle host admits an inbound message (it wakes). The relay
    *  uses this to allocate a TUI pane / promote the bot. Set by the relay; no-op otherwise. */
   onWake?: (key: string) => void
+  /** Run one task-scheduler settle pass over the converged ledger AFTER reconnect replay.
+   *  Set by the relay to its `reconcileTasks` (which skips while any host `isReplaying`), so
+   *  the board is scheduled once on the settled set instead of per replayed insert. No-op
+   *  otherwise. */
+  onReplaySettle?: () => Promise<void>
+  /** True while this host is replaying channel history on reconnect. The relay's task
+   *  scheduler suppresses per-insert + timer scheduling for the duration so a half-built
+   *  board can't spuriously claim/drive tasks mid-replay (plan Critical detail 3). */
+  private replaying = false
+  get isReplaying(): boolean {
+    return this.replaying
+  }
   private readonly sessions = new Map<ChannelId, Session>()
   private readonly inboundRate = new Map<string, number[]>()
   private readonly recentBotMsgIds = new Set<string>()
@@ -343,6 +358,9 @@ export class AgentHost {
     // Start the mesh transport BEFORE publishing identity, so this bot's own
     // `agent.identity` admit is broadcast over the mesh and peers' directories converge.
     if (this.meshEnabled && !this.mesh) {
+      // Reconnect-replay source: duck-typed off the adapter (Discord/Slack export it), kept
+      // off the MessagingAdapter interface for thinness. Absent ⇒ replay is a no-op.
+      const fr = (this.messaging as { fetchRecent?: FetchRecent }).fetchRecent
       this.mesh = new MeshSync({
         store: this.store,
         ownKey: this.key,
@@ -350,6 +368,8 @@ export class AgentHost {
         coResidentKeys: () => this.coResidentKeys(),
         resolveRoom: scope => this.roomForScope(scope),
         allRooms: () => Object.keys((this.getAccess().agents[this.key] ?? this.agent).rooms),
+        transportScope: () => this.meshTransportRoom(),
+        ...(fr ? { fetchRecent: fr.bind(this.messaging) } : {}),
         send: (scope, text) => this.messaging.send(scope, text),
         noteBotMsg: id => this.noteBotMsg(id),
         log: msg => this.ui.note(this.key, msg),
@@ -357,6 +377,21 @@ export class AgentHost {
       this.mesh.start()
     }
     await this.publishIdentity().catch(err => this.ui.error(this.key, `publish identity: ${err}`))
+    // Recover the offline gap: read the channel(s) back and re-ingest missed coordination.
+    // Scheduling is suppressed for the duration (replaying flag, honored by the relay's task
+    // scheduler), then a single settle pass runs on the converged ledger — so a fresh peer
+    // with a large task age can't claim a task whose terminal event is later in the window.
+    if (this.mesh) {
+      this.replaying = true
+      try {
+        await this.mesh.reconcileOnConnect()
+      } catch (err) {
+        this.ui.error(this.key, `mesh reconcile on connect: ${err}`)
+      } finally {
+        this.replaying = false
+      }
+      await this.onReplaySettle?.().catch(err => this.ui.error(this.key, `mesh replay settle: ${err}`))
+    }
   }
 
   /** Enable the no-Postgres cross-machine mesh transport for this host. Set by the
@@ -383,7 +418,7 @@ export class AgentHost {
       return
     }
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
-    await admit(this.store, {
+    const result = await admit(this.store, {
       actor: this.key,
       role: 'agent',
       channel: 'agent-directory',
@@ -405,6 +440,14 @@ export class AgentHost {
       effect: 'pure',
       caused_by: [],
     })
+    // Broadcast the beacon over the mesh EXPLICITLY — admit is idempotent (content-addressed),
+    // so on a reconnect it returns the existing record without a store insert, and the mesh's
+    // insert-subscriber would never fire. Announcing here makes the beacon go out every connect.
+    if (this.mesh && result.kind === 'admitted') {
+      await this.mesh
+        .announceIdentity(result.interaction)
+        .catch(err => this.ui.error(this.key, `mesh announce identity: ${err}`))
+    }
   }
 
   /** This host's bot key (the access.json bot id) — used to route webhook paths. */
@@ -465,6 +508,16 @@ export class AgentHost {
     return roomId
   }
 
+  /** The room this bot serves that is marked as the dedicated mesh-transport channel, or
+   *  undefined when none is configured. The mesh posts ALL ⟦kk-mesh⟧ lines here, and both
+   *  receive guards treat it as transport-only (never a chat/task turn). Undefined ⇒ the
+   *  legacy behavior: transport rides the human rooms. */
+  private meshTransportRoom(): string | undefined {
+    const rooms = (this.getAccess().agents[this.key] ?? this.agent).rooms
+    for (const [id, cfg] of Object.entries(rooms)) if (cfg.meshTransport) return id
+    return undefined
+  }
+
   /** Async cache-warming variant of `roomForScope`: on a cold-cache miss (e.g. a
    *  synced conflict card for an unseen thread) pay the async parentOf probe once,
    *  then declare unserved. Keeps the hot sync path untouched. */
@@ -489,6 +542,9 @@ export class AgentHost {
   getAgentForChannel(scopeId: ChannelId): { agentKey: string; loopGuardOpts: LoopGuardOpts } | undefined {
     const roomId = this.roomForScope(scopeId)
     if (!roomId) return undefined
+    // The transport channel is never elected to drive a turn (reply-claim, post-on-reply,
+    // workbench, …) — it carries mesh lines only.
+    if (roomId === this.meshTransportRoom()) return undefined
     const cfg = this.channelConfigFor(scopeId)
     return {
       agentKey: this.key,
@@ -950,6 +1006,17 @@ export class AgentHost {
       ? (this.messaging.parentOfSync(m.scope) ?? m.scope)
       : m.scope
     const room = liveAgent.rooms[roomId]
+    // Inbound trace (KNOCK_KNOCK_DEBUG): the first thing to check when cross-machine
+    // coordination is silent — shows whether a peer's message (incl. a mesh beacon) even
+    // reached this bot, the room it resolved to, whether this bot serves that room, and
+    // whether it's recognized as a mesh line. Skips this bot's own posts.
+    if (process.env.KNOCK_KNOCK_DEBUG === '1' && m.authorId !== botId) {
+      this.ui.note(
+        this.key,
+        `inbound from=${m.authorId} room=${roomId} served=${!!room} mesh=${isMeshLine(m.text)} ` +
+          `text=${JSON.stringify(m.text.slice(0, 48))}`,
+      )
+    }
     if (!room) return
 
     if (m.authorId === botId) return
@@ -962,6 +1029,19 @@ export class AgentHost {
       await this.mesh.ingest(m.text, m.authorId)
       return
     }
+
+    // Phase 2 anti-entropy control lines (⟦kk-want⟧ / ⟦kk-frontier⟧) — backfill negotiation,
+    // never a chat turn. Only meaningful on a configured transport channel (handleControl
+    // no-ops otherwise). Like ingest above, returns before any engagement gating.
+    if (this.mesh && (isWantLine(m.text) || isFrontierLine(m.text))) {
+      await this.mesh.handleControl(m.text, m.authorId)
+      return
+    }
+
+    // The dedicated transport channel carries mesh lines ONLY (ingested just above). Any
+    // other message here — a human typing in it — dies before allowlist/mention/admit, so
+    // the transport channel never drives a turn.
+    if (roomId === this.meshTransportRoom()) return
 
     // Dedup net: drop a duplicate DELIVERY of the same message (Slack's double
     // event, poll/webhook retries, offset overlap) before it can spawn a 2nd turn.
@@ -1400,6 +1480,13 @@ export class AgentHost {
     } catch {
       return []
     }
+  }
+
+  /** Display name for an actor id (platform userId or agentKey) from this host's directory —
+   *  label/handle, else the raw id. Used by post-on-reply's attribution so the "traced from"
+   *  subtext names a peer without a live @mention that would re-trigger it. */
+  displayNameForActor(actorId: string): string {
+    return actorDisplayName(this.directoryIdentities(), actorId)
   }
 
   /** Peer bots (others) that serve `roomId` on this platform, as participant entries to

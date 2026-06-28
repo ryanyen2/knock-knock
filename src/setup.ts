@@ -579,7 +579,7 @@ async function addPerson(a: AuthoringAccess, platform: Platform): Promise<string
 }
 
 /** Add a peer bot to the roster. Returns the new roster id. */
-async function addPeer(a: AuthoringAccess, platform: Platform): Promise<string | null> {
+async function addPeer(a: AuthoringAccess, platform: Platform, offerTransport = false): Promise<string | null> {
   const spec = PLATFORMS[platform]
   const label = orCancel(await p.text({ message: 'Name / label for this peer bot', placeholder: 'deploy-bot' })).trim()
   const userId = orCancel(await p.text({
@@ -593,6 +593,28 @@ async function addPeer(a: AuthoringAccess, platform: Platform): Promise<string |
   a.roster.peers[id] = peer
   saveAuthoringAccess(a)
   p.log.success(`Added peer ${color.cyan(label || userId)} to the roster`)
+
+  // A peer bot is another machine's bot — that's cross-machine intent. Tell the user what makes
+  // the two machines actually coordinate, so they don't hit "the other bot just never responds."
+  const hasTransport = Object.values(a.channels).some(c => c.meshTransport)
+  p.log.info(
+    'This is a cross-machine peer. Once you add it as a collaborator in a channel, the mesh turns\n' +
+      'on automatically (SQLite backend) — no env var needed — so the two machines share a directory\n' +
+      'and take turns without conflict. Both machines must run knock-knock with this peer configured.\n' +
+      (hasTransport
+        ? 'You already have a dedicated transport channel, so coordination traffic stays out of human rooms.'
+        : 'Tip: add a dedicated transport channel so the coordination traffic (⟦kk-mesh⟧ lines) stays\n' +
+          'out of your human rooms — otherwise it posts there.'),
+  )
+  // From the top-level roster menu we can offer to set one up right now; inline (mid channel
+  // setup) we don't, to avoid a re-entrant channel flow.
+  if (offerTransport && !hasTransport) {
+    const make = orCancel(await p.confirm({
+      message: 'Set up a dedicated mesh-transport channel now?',
+      initialValue: true,
+    }))
+    if (make) await addChannel(a)
+  }
   return id
 }
 
@@ -665,6 +687,23 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
   const ch: Channel = existing ?? { platform, channelId, members: [], collaborators: [] }
   if (label) ch.label = label
 
+  // Dedicated mesh-transport channel: carries ONLY ⟦kk-mesh⟧ coordination lines, never human
+  // chat. Marking a channel here is what keeps the base64 coordination traffic out of your human
+  // rooms — without one, the mesh falls back to posting those lines (incl. discovery beacons) to
+  // the human channels. Use a NEW empty channel, and add the SAME channel on every machine.
+  p.log.message(
+    color.dim(
+      'A transport channel hides ⟦kk-mesh⟧ traffic from human rooms. Use a brand-new, empty\n' +
+        'channel (it will never carry chat or tasks), and add the SAME channel id on every machine.',
+    ),
+  )
+  const isTransport = orCancel(await p.confirm({
+    message: 'Is this a dedicated mesh-transport channel (cross-machine coordination only)?',
+    initialValue: ch.meshTransport ?? false,
+  }))
+  if (isTransport) ch.meshTransport = true
+  else delete ch.meshTransport
+
   // Members: which of my bots (on this platform) work here, each with a workspace + preset.
   const eligible = botKeys.filter(k => a.bots[k]!.platform === platform)
   const memberKeys = orCancel(await p.multiselect({
@@ -707,24 +746,37 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
   }
   ch.members = members
 
-  // The preset governs outbound sharing via FileShare; the credential floor can be
-  // neither read nor shared under any preset (deny floor, not disableable here).
-  if (members.length > 0) {
-    p.log.info(
-      'File sharing: outbound shares follow FileShare (ask by default); credential files (.env, keys) can never be read or shared, regardless of preset.',
-    )
+  // A transport channel carries no human chat — collaborators and @mention gating don't apply,
+  // so skip those prompts. Everything else (members, workspaces) is the same.
+  if (!isTransport) {
+    // The preset governs outbound sharing via FileShare; the credential floor can be
+    // neither read nor shared under any preset (deny floor, not disableable here).
+    if (members.length > 0) {
+      p.log.info(
+        'File sharing: outbound shares follow FileShare (ask by default); credential files (.env, keys) can never be read or shared, regardless of preset.',
+      )
+    }
+
+    await pickCollaborators(a, platform, ch)
+
+    ch.requireMention = orCancel(await p.confirm({
+      message: 'Require an @mention before a bot responds here?',
+      initialValue: ch.requireMention ?? true,
+    }))
   }
-
-  await pickCollaborators(a, platform, ch)
-
-  ch.requireMention = orCancel(await p.confirm({
-    message: 'Require an @mention before a bot responds here?',
-    initialValue: ch.requireMention ?? true,
-  }))
 
   a.channels[ck] = ch
   saveAuthoringAccess(a)
-  p.log.success(`Saved channel ${color.cyan(label || channelId)} ${color.dim(`· ${members.length} bot(s) · ${ch.collaborators.length} collaborator(s)`)}`)
+  if (isTransport) {
+    p.log.success(`Saved mesh-transport channel ${color.cyan(label || channelId)} ${color.dim(`· ${members.length} bot(s)`)}`)
+    p.log.info(
+      'Mesh transport set. Add this SAME channel (same id, meshTransport) on every machine, and\n' +
+        'invite each machine\'s bots to it. The relay will then post all ⟦kk-mesh⟧ lines here — your\n' +
+        'human channels stay clean. Restart the relay to apply; the startup line shows `transport=<id>`.',
+    )
+  } else {
+    p.log.success(`Saved channel ${color.cyan(label || channelId)} ${color.dim(`· ${members.length} bot(s) · ${ch.collaborators.length} collaborator(s)`)}`)
+  }
   if (spec.notes.length) p.log.info(spec.notes.join('\n'))
 }
 
@@ -822,7 +874,8 @@ function botBundleSummary(a: AuthoringAccess, key: string): string {
   for (const [, ch] of chans) {
     const m = ch.members.find(x => x.bot === key)!
     const rt = m.runtime ? color.dim(` · ${m.runtime}`) : ''
-    lines.push(`    ${color.cyan(ch.label ?? `#${ch.channelId}`)}  ${color.dim(`·${m.preset ?? DEFAULT_PRESET}·`)}  ${color.dim(m.workspace)}${rt}`)
+    const transport = ch.meshTransport ? color.dim(' · 🔗 mesh transport') : ''
+    lines.push(`    ${color.cyan(ch.label ?? `#${ch.channelId}`)}  ${color.dim(`·${m.preset ?? DEFAULT_PRESET}·`)}  ${color.dim(m.workspace)}${rt}${transport}`)
     if (ch.collaborators.length) {
       const names = ch.collaborators.map(c => {
         const r = c.kind === 'human' ? a.roster.people[c.id] : a.roster.peers[c.id]
@@ -1274,7 +1327,7 @@ async function interactiveMenu(): Promise<void> {
       else if (task === 'channel') await addChannel(a)
       else if (task === 'channel-remove') await removeChannel(a)
       else if (task === 'person') await addPerson(a, await pickRosterPlatform(a))
-      else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a))
+      else if (task === 'peer') await addPeer(a, await pickRosterPlatform(a), true)
       else if (task === 'roster-remove') await removeRosterEntry(a)
       else if (task === 'api-key') await saveCodingAgentKey(a)
       else if (task === 'ledger') await collectLedger()
