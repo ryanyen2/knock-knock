@@ -1,9 +1,10 @@
 /** Adapter factory — an agent's `runtime` becomes a live AgentAdapter.
- *  claude-sdk = in-process SDK; everything else = ACP over stdio. */
+ *  claude-sdk = in-process SDK; bob = Bob Shell CLI; everything else = ACP over stdio. */
 
 import type { AgentAdapter } from '../agent-adapter.ts'
 import { ClaudeSdkAdapter } from './claude-sdk.ts'
 import { AcpAdapter, type AcpLaunch } from './acp.ts'
+import { BobShellCliAdapter } from './bob-cli.ts'
 import type { WatchToolHandlers, ShareToolHandlers } from '../agent-adapter.ts'
 
 /** Built-in ACP launch presets, keyed by an agent's `runtime`. */
@@ -14,9 +15,11 @@ const ACP_PRESETS: Record<string, AcpLaunch> = {
   gemini: { command: 'gemini', args: ['--experimental-acp'] },
 }
 
-/** Does this runtime expose the in-process watch tool? Only the SDK adapter. */
+/** Does this runtime expose the in-process watch tool? Only the SDK adapter.
+ *  Bob is a CLI subprocess (no in-process MCP), so it self-arms no watches. */
 export function runtimeSelfArmsWatches(runtime: string): boolean {
   if (runtime === 'acp' && process.env.KNOCK_KNOCK_ACP_COMMAND) return false
+  if (runtime === 'bob') return false
   if (ACP_PRESETS[runtime]) return false
   return true
 }
@@ -43,6 +46,9 @@ export function makeAdapter(
 
   const preset = ACP_PRESETS[runtime]
   if (preset) return new AcpAdapter(preset, opts.workspace)
+
+  // IBM Bob Shell — custom CLI adapter (no ACP, no per-tool approval hook).
+  if (runtime === 'bob') return new BobShellCliAdapter(opts.workspace)
 
   return new ClaudeSdkAdapter(opts.workspace, opts.watchTools, opts.notion, opts.shareTools)
 }

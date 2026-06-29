@@ -79,3 +79,54 @@ test('U10: a clean configuration reports a single ok integrity line', () => {
   expect(checks).toHaveLength(1)
   expect(checks[0]!.ok).toBe(true)
 })
+
+// ─── Bob Shell runtime preflight ──────────────────────────────────────────────
+
+import { bobInUse, bobPreflightChecks } from '../src/doctor.ts'
+
+const access = (over: Partial<AuthoringAccess> = {}): AuthoringAccess =>
+  ({ bots: {}, channels: {}, roster: { peers: {}, humans: {} }, me: {}, ...over } as unknown as AuthoringAccess)
+
+test('bobInUse: true when a bot default runtime is bob', () => {
+  expect(bobInUse(access({ bots: { b1: { runtime: 'bob' } } as any }))).toBe(true)
+})
+
+test('bobInUse: true when a channel membership picks bob', () => {
+  const a = access({
+    bots: { b1: { runtime: 'claude-sdk' } } as any,
+    channels: { c1: { members: [{ bot: 'b1', runtime: 'bob' }] } } as any,
+  })
+  expect(bobInUse(a)).toBe(true)
+})
+
+test('bobInUse: false when no bob anywhere', () => {
+  const a = access({
+    bots: { b1: { runtime: 'claude-sdk' } } as any,
+    channels: { c1: { members: [{ bot: 'b1' }] } } as any,
+  })
+  expect(bobInUse(a)).toBe(false)
+})
+
+test('bobPreflightChecks: no lines when bob not in use', () => {
+  expect(bobPreflightChecks(false, false, false)).toEqual([])
+})
+
+test('bobPreflightChecks: both pass when bob present + key set', () => {
+  const checks = bobPreflightChecks(true, true, true)
+  expect(checks.length).toBe(2)
+  expect(checks.every(c => c.ok)).toBe(true)
+})
+
+test('bobPreflightChecks: missing key fails with an actionable fix', () => {
+  const checks = bobPreflightChecks(true, true, false)
+  const keyCheck = checks.find(c => c.label.includes('BOBSHELL_API_KEY'))!
+  expect(keyCheck.ok).toBe(false)
+  expect(keyCheck.fix).toContain('BOBSHELL_API_KEY')
+})
+
+test('bobPreflightChecks: missing binary fails with an install fix', () => {
+  const checks = bobPreflightChecks(true, false, true)
+  const pathCheck = checks.find(c => c.label.includes('bob'))!
+  expect(pathCheck.ok).toBe(false)
+  expect(pathCheck.fix).toContain('install')
+})
