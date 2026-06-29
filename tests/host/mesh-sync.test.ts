@@ -2,11 +2,13 @@
  * MeshSync publish-gating — the fix for "two co-resident bots flood the human channel
  * with ⟦kk-mesh⟧ base64". Co-resident siblings share one ledger, so coordination events
  * must NOT be broadcast to the channel; only a genuine REMOTE peer (a directory bot this
- * relay does not host) makes mesh gossip worthwhile. Identity beacons are the exception:
- * they go out unconditionally — but via `announceIdentity` (an explicit per-connect call),
- * NOT the store subscriber, because the identity admit is content-addressed and idempotent,
- * so a reconnect produces no insert and the subscriber would never fire (the beacon would
- * silently never go out after the first run).
+ * relay does not host) makes mesh gossip worthwhile. Identity beacons go out via
+ * `announceIdentity` (an explicit per-connect call) rather than the store subscriber, because
+ * the identity admit is content-addressed and idempotent, so a reconnect produces no insert and
+ * the subscriber would never fire (the beacon would silently never go out after the first run).
+ * ALL mesh traffic — beacons included — is confined to the dedicated transport channel; with no
+ * transport channel configured the relay sends NOWHERE, so ⟦kk-mesh⟧ lines never leak into a
+ * human room (cross-machine mesh is inert until setup designates a transport channel).
  */
 
 import { test, expect } from 'bun:test'
@@ -164,32 +166,45 @@ async function publishIdentity(store: SqliteStore, mesh: MeshSync, key: string, 
   if (r.kind === 'admitted') await mesh.announceIdentity(r.interaction)
 }
 
-test('co-resident only: identity beacons go out, but coordination events are NOT broadcast', async () => {
-  const { store, sent, mesh } = await harness(['cc', 'd-bot']) // both siblings, no remote peer
+test('no transport channel: nothing is broadcast — beacon and coordination are both suppressed', async () => {
+  const { store, sent, mesh } = await harness(['cc', 'd-bot']) // siblings, no transport configured
   await publishIdentity(store, mesh, 'cc', 'U_cc')
   await admit(store, identity('d-bot', 'U_db')) // sibling identity lands in the directory
   await flush()
   await admit(store, coordNote('cc')) // cc takes a message
   await flush()
 
-  // cc's own identity beacon was sent (bootstrap); d-bot's was not (cc only announces its own).
-  const lines = sent.filter(s => isMeshLine(s.text))
-  expect(lines.length).toBe(1)
-  // The lone coordination event produced NO channel post — the flood is gone.
-  expect(sent.some(s => s.text.includes('coord'))).toBe(false)
+  // Without a dedicated transport channel, mesh sends NOWHERE — ⟦kk-mesh⟧ lines never leak into a
+  // human room (the enforcement). Cross-machine coordination is inert until setup designates one.
+  expect(sent.filter(s => isMeshLine(s.text)).length).toBe(0)
   store.close()
 })
 
-test('remote peer present: coordination events ARE broadcast', async () => {
-  const { store, sent, mesh } = await harness(['cc']) // cc is the only co-resident; eve is remote
+test('transport + co-resident only: beacon posts to transport, coordination is NOT broadcast (no remote peer)', async () => {
+  const { store, sent, mesh } = await harness(['cc', 'd-bot'], TRANSPORT) // siblings share the ledger
+  await publishIdentity(store, mesh, 'cc', 'U_cc')
+  await admit(store, identity('d-bot', 'U_db'))
+  await flush()
+  await admit(store, coordNote('cc'))
+  await flush()
+
+  const lines = sent.filter(s => isMeshLine(s.text))
+  expect(lines.length).toBe(1) // cc's own bootstrap beacon, announced unconditionally to transport
+  expect(lines.every(s => s.scope === TRANSPORT)).toBe(true)
+  expect(sent.some(s => s.text.includes('coord'))).toBe(false) // no remote peer ⇒ no coordination gossip
+  store.close()
+})
+
+test('remote peer present but no transport: mesh is inert (no leak to human rooms)', async () => {
+  const { store, sent, mesh } = await harness(['cc']) // cc co-resident; eve is remote; no transport
   await publishIdentity(store, mesh, 'cc', 'U_cc')
   await admit(store, identity('eve', 'U_ev')) // a peer this relay does NOT host
   await flush()
   await admit(store, coordNote('cc'))
   await flush()
 
-  // The identity beacon AND the coordination event both go out (a real peer needs them).
-  expect(sent.filter(s => isMeshLine(s.text)).length).toBeGreaterThanOrEqual(2)
+  // A remote peer exists, but with no transport channel mesh must NOT fall back to the human room.
+  expect(sent.filter(s => isMeshLine(s.text)).length).toBe(0)
   store.close()
 })
 
@@ -226,7 +241,7 @@ test('transport bootstrap: the first beacon goes to transport with no peer known
 test('identity beacon is announced on every connect, even when the admit is idempotent', async () => {
   // Regression: the beacon used to ride the store subscriber, so a reconnect (idempotent,
   // content-addressed admit → no insert) emitted nothing and cross-machine discovery died.
-  const { store, sent, mesh } = await harness(['cc'])
+  const { store, sent, mesh } = await harness(['cc'], TRANSPORT)
   await admit(store, identity('cc', 'U_cc')) // first admit inserts, but the subscriber must NOT broadcast
   await flush()
   expect(sent.filter(s => isMeshLine(s.text)).length).toBe(0)

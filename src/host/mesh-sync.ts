@@ -289,8 +289,9 @@ export class MeshSync {
     // live reference. (The host clears its own scheduler-suppression flag separately.)
     this.inReplay = true
     try {
-      const t = this.deps.transportScope?.()
-      const scopes = t ? [t] : this.deps.allRooms()
+      // Replay only from the transport channel — mesh lines are never broadcast to human rooms, so
+      // there is nothing to recover from them. No transport ⇒ nothing to replay.
+      const scopes = this.meshScopes()
       for (const scope of scopes) {
         let fetched: { authorId: string; text: string }[]
         try {
@@ -515,15 +516,14 @@ export class MeshSync {
     )
   }
 
-  /** Where to broadcast an event so every peer sees it. The transport scope and the
-   *  event's logical `channel` are independent — ingest preserves the original channel,
-   *  so posting to the parent room (not a thread) reaches all peers reliably. */
-  private targetScopes(i: Interaction): string[] {
+  /** Where mesh lines may be posted. ALL mesh traffic rides the one dedicated transport room
+   *  (ingest restores the event's logical `channel`); when no transport channel is configured we
+   *  send NOWHERE rather than falling back to human rooms — cross-machine mesh is inert until the
+   *  owner designates a transport channel via `knock-knock setup`. This is the structural guarantee
+   *  that ⟦kk-mesh⟧ lines never leak into a normal channel. */
+  private meshScopes(): string[] {
     const t = this.deps.transportScope?.()
-    if (t) return [t] // all transport rides the one dedicated room; ingest restores i.channel
-    if (i.channel === 'agent-directory') return this.deps.allRooms()
-    const room = this.deps.resolveRoom(i.channel)
-    return room ? [room] : this.deps.allRooms()
+    return t ? [t] : []
   }
 
   /** Broadcast this bot's identity beacon to every room it serves — the bootstrap that lets
@@ -536,8 +536,11 @@ export class MeshSync {
     if (i.verb !== 'agent.identity') return
     const line = encodeMeshEvent(i)
     this.ownIdentityLine = line
-    const t = this.deps.transportScope?.()
-    const scopes = t ? [t] : this.deps.allRooms()
+    const scopes = this.meshScopes()
+    if (scopes.length === 0) {
+      this.dbg('identity beacon suppressed — no transport channel configured (run `knock-knock setup`)')
+      return
+    }
     this.dbg(`→ identity beacon to [${scopes.join(', ')}] (announce)`)
     for (const scope of scopes) await this.sendLine(scope, line)
   }
@@ -547,7 +550,7 @@ export class MeshSync {
     // reach here, and only worth sending to rooms that have a remote peer. In a single
     // co-resident relay that set is always empty, so nothing is posted to the channel.
     const line = encodeMeshEvent(i)
-    for (const scope of this.targetScopes(i)) {
+    for (const scope of this.meshScopes()) {
       if (this.hasRemotePeerInRoom(scope)) {
         this.dbg(`→ ${i.verb} to ${scope}`)
         await this.sendLine(scope, line)
@@ -561,8 +564,7 @@ export class MeshSync {
    *  rooms that have a remote peer. Silent when no remote peer is known (lone relay). */
   private async pulse(): Promise<void> {
     if (!this.ownIdentityLine) return
-    const t = this.deps.transportScope?.()
-    const rooms = t ? [t] : this.deps.allRooms()
+    const rooms = this.meshScopes()
     for (const room of rooms) {
       if (this.hasRemotePeerInRoom(room)) await this.sendLine(room, this.ownIdentityLine)
     }
