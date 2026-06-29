@@ -18,6 +18,7 @@ import {
   resolveGaps,
   detectCollision,
   confirmedIdentitiesFor,
+  unservedTransportChannels,
   type AuthoringAccess,
   type Proposal,
   type TrustAnchors,
@@ -235,6 +236,21 @@ export async function runDoctor(): Promise<boolean> {
   else if (cm === 'none') console.log(color.dim('    none (relay running, no remote peers seen)'))
   else console.log(color.dim('    discoveries available (see pending above)'))
   console.log('')
+
+  // Mesh transport: a channel flagged meshTransport that no bot serves is inert — the flag is
+  // dropped in projection and ⟦kk-mesh⟧ lines never get a runtime room (cross-machine mesh stays
+  // silent). Surface it so a half-finished transport setup doesn't look healthy.
+  const unserved = unservedTransportChannels(authoring)
+  if (unserved.length > 0) {
+    healthy = false
+    console.log(color.bold('  mesh transport'))
+    printCheck({
+      ok: false,
+      label: `${unserved.join(', ')} flagged meshTransport but no bot serves it — cross-machine mesh stays inert`,
+      fix: "add a bot to that channel's `members` and invite it on the platform (do this on every machine)",
+    })
+    console.log('')
+  }
 
   // Trust-integrity assertions (R23/R24/R25).
   console.log(color.bold('  trust integrity'))

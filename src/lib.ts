@@ -1234,23 +1234,7 @@ export function applyConfirmedProposal(a: AuthoringAccess, p: Proposal, rosterId
     }
     case 'transport':
       if (p.channelKey && next.channels[p.channelKey]) {
-        const ch = next.channels[p.channelKey]!
-        // Flagging meshTransport alone is not enough: `projectToRuntime` drops the flag for any
-        // channel the bot doesn't serve, so an unserved transport channel is inert and the mesh
-        // floods the human rooms (see `unservedTransportChannels`). Enroll every same-platform bot
-        // that isn't already a member, reusing the workspace it uses elsewhere (transport never
-        // drives a turn, so the path is cosmetic — but Membership requires one).
-        const existing = new Set(ch.members.map(m => m.bot))
-        const enrolled = Object.keys(next.bots)
-          .filter(botId => next.bots[botId]!.platform === p.platform && !existing.has(botId))
-          .map(botId => ({
-            bot: botId,
-            workspace:
-              Object.values(next.channels)
-                .flatMap(c => c.members)
-                .find(m => m.bot === botId)?.workspace ?? '',
-          }))
-        next.channels[p.channelKey] = { ...ch, meshTransport: true, members: [...ch.members, ...enrolled] }
+        next.channels[p.channelKey] = { ...next.channels[p.channelKey]!, meshTransport: true }
       }
       break
     case 'channel':

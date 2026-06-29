@@ -2258,28 +2258,6 @@ test('U8: applyConfirmedProposal(transport) flags the channel meshTransport with
   expect(a.channels['discord:C1']!.meshTransport).toBeUndefined() // input not mutated
 })
 
-test('U8: applyConfirmedProposal(transport) enrolls same-platform bots so the flag is never inert', () => {
-  const a: AuthoringAccess = {
-    bots: {
-      cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' },
-      slackbot: { platform: 'slack', tokenEnv: 'S', runtime: 'claude-sdk' },
-    },
-    channels: {
-      'discord:work': { platform: 'discord', channelId: 'work', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [] },
-      'discord:T': { platform: 'discord', channelId: 'T', members: [], collaborators: [] },
-    },
-    roster: { people: {}, peers: {} },
-  }
-  const out = applyConfirmedProposal(a, { kind: 'transport', platform: 'discord', channelKey: 'discord:T', targetId: 'T', claimed: {}, discoveredAt: 't', status: 'proposed' })
-  expect(out.channels['discord:T']!.meshTransport).toBe(true)
-  // cc (discord) is enrolled, reusing its existing workspace; the slack bot is NOT (wrong platform)
-  expect(out.channels['discord:T']!.members).toEqual([{ bot: 'cc', workspace: '/w' }])
-  // and the flag is now live: projection surfaces it into cc's rooms (no longer inert)
-  expect(projectToRuntime(out).agents.cc!.rooms.T!.meshTransport).toBe(true)
-  expect(unservedTransportChannels(out)).toEqual([])
-  expect(a.channels['discord:T']!.members).toEqual([]) // input not mutated
-})
-
 test('U8/R22: nonceMatch returns the single eligible sender; ignores non-matching; aborts on 2+', () => {
   const nonce = 'kk-amber-basil-cobalt'
   expect(nonceMatch([{ userId: 'U1', text: 'hi' }, { userId: 'U_owner', text: '  kk-amber-basil-cobalt ' }], nonce)).toEqual({ kind: 'matched', userId: 'U_owner' })

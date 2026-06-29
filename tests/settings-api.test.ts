@@ -5,7 +5,7 @@
  * sanitization, and persistence paths are all exercised end to end.
  */
 
-import { test, expect, beforeEach, afterAll } from 'bun:test'
+import { test as _test, expect, beforeEach, afterAll } from 'bun:test'
 import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -16,6 +16,22 @@ process.env.KNOCK_KNOCK_STATE_DIR = dir
 const { startSettingsServer } = await import('../src/settings-server.ts')
 const { ACCESS_FILE, SETTINGS_FILE, saveAuthoringAccess } = await import('../src/state.ts')
 import type { AuthoringAccess } from '../src/lib.ts'
+
+// SAFETY GUARD: state.ts binds ACCESS_FILE from KNOCK_KNOCK_STATE_DIR at its FIRST import, and Bun
+// shares one module instance across the run. If another suite imports state.ts before this file
+// sets the env above, ACCESS_FILE points at the real ~/.knock-knock/access.json — and this suite's
+// beforeEach rmSync + write path clobbers the operator's live config (it deleted it once). Since the
+// tests write to ACCESS_FILE, guarding beforeEach alone is not enough, so SKIP the whole suite when
+// the binding didn't land on our throwaway dir. It still runs in isolation
+// (`bun test tests/settings-api.test.ts`); the proper fix is lazy path resolution in state.ts.
+const SAFE = ACCESS_FILE.startsWith(dir)
+const test = SAFE ? _test : _test.skip
+if (!SAFE) {
+  console.warn(
+    `settings-api.test: SKIPPED — ACCESS_FILE (${ACCESS_FILE}) is not under the throwaway STATE_DIR; ` +
+      'state.ts was imported before this file set KNOCK_KNOCK_STATE_DIR. Run this suite in isolation.',
+  )
+}
 
 const TOKEN = 'test-token-abcdef'
 const srv = startSettingsServer({ token: TOKEN })
@@ -40,7 +56,7 @@ function baseConfig(): AuthoringAccess {
   }
 }
 
-beforeEach(() => { try { rmSync(ACCESS_FILE) } catch {} try { rmSync(SETTINGS_FILE) } catch {} })
+beforeEach(() => { if (!SAFE) return; try { rmSync(ACCESS_FILE) } catch {} try { rmSync(SETTINGS_FILE) } catch {} })
 
 test('GET /api/config requires a token and returns access + version', async () => {
   seed(baseConfig())
