@@ -11,6 +11,7 @@
  */
 
 import { existsSync } from 'fs'
+import { spawnSync } from 'node:child_process'
 import color from 'picocolors'
 import { readAuthoringAccess, readPending, readTrustAnchors, type PendingStore } from './state.ts'
 import { connectDiscoveryAdapter, assembleSnapshot, itemsOf } from './discovery.ts'
@@ -122,6 +123,34 @@ export function integrityChecks(authoring: AuthoringAccess, pending: PendingStor
     out.push({ ok: true, label: 'no trust-integrity issues (collisions, key divergence, impersonation)' })
   }
   return out
+}
+
+/** Does any bot or channel membership resolve to the `bob` runtime? Pure. */
+export function bobInUse(authoring: AuthoringAccess): boolean {
+  const bots = Object.values(authoring.bots) as Array<{ runtime?: string }>
+  if (bots.some(b => b.runtime === 'bob')) return true
+  for (const ch of Object.values(authoring.channels) as Array<{ members?: Array<{ runtime?: string }> }>) {
+    if ((ch.members ?? []).some(m => m.runtime === 'bob')) return true
+  }
+  return false
+}
+
+/** Preflight for the Bob Shell runtime. Empty when bob isn't in use, so non-Bob
+ *  setups never see these lines. Pure — the impure probes (PATH, env) are passed in. */
+export function bobPreflightChecks(inUse: boolean, bobOnPath: boolean, apiKeySet: boolean): DoctorCheck[] {
+  if (!inUse) return []
+  return [
+    {
+      ok: bobOnPath,
+      label: bobOnPath ? '`bob` is installed and runnable' : '`bob` not found on PATH',
+      fix: bobOnPath ? undefined : 'install IBM Bob Shell: `npm install -g bobshell` (or set KNOCK_KNOCK_BOB_COMMAND)',
+    },
+    {
+      ok: apiKeySet,
+      label: apiKeySet ? 'BOBSHELL_API_KEY is set' : 'BOBSHELL_API_KEY is not set',
+      fix: apiKeySet ? undefined : 'create a Bob API key (Inference scope) in the Bob portal, then `export BOBSHELL_API_KEY=…`',
+    },
+  ]
 }
 
 // ─── live per-channel checks + console rendering (impure) ─────────────────────
@@ -249,6 +278,20 @@ export async function runDoctor(): Promise<boolean> {
       label: `${unserved.join(', ')} flagged meshTransport but no bot serves it — cross-machine mesh stays inert`,
       fix: "add a bot to that channel's `members` and invite it on the platform (do this on every machine)",
     })
+    console.log('')
+  }
+
+  // Bob Shell runtime preflight — only when a bot is configured to use it.
+  if (bobInUse(authoring)) {
+    const bobCmd = process.env.KNOCK_KNOCK_BOB_COMMAND || 'bob'
+    const probe = spawnSync(bobCmd, ['--version'], { stdio: 'ignore', timeout: 10_000 })
+    const bobOnPath = probe.status === 0
+    const apiKeySet = !!process.env.BOBSHELL_API_KEY
+    console.log(color.bold('  bob shell runtime'))
+    for (const c of bobPreflightChecks(true, bobOnPath, apiKeySet)) {
+      printCheck(c)
+      if (!c.ok) healthy = false
+    }
     console.log('')
   }
 

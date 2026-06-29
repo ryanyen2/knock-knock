@@ -353,6 +353,7 @@ export const RUNTIMES: Array<{ value: string; label: string; hint: string }> = [
   { value: 'opencode', label: 'OpenCode', hint: 'via ACP · run opencode → /connect to configure auth' },
   { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · Google account login or GEMINI_API_KEY' },
   { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) · local login or API key' },
+  { value: 'bob', label: 'IBM Bob Shell', hint: 'install `bob` · set BOBSHELL_API_KEY · per-turn approval, sandboxed' },
   { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
 ]
 
@@ -1994,7 +1995,7 @@ export type PermissionMode = 'strict' | 'ask-per-edit' | 'auto' | 'bypass'
 /** The coding-agent runtimes a bot can drive. Single-sourced here; setup.ts attaches
  *  the human labels. Chat-switchable per scope via `!config agent` (owner-only — it
  *  selects which local binary runs with workspace access, so it is trust-adjacent). */
-export const RUNTIME_VALUES = ['claude-sdk', 'codex', 'opencode', 'gemini', 'claude-acp', 'acp'] as const
+export const RUNTIME_VALUES = ['claude-sdk', 'codex', 'opencode', 'gemini', 'claude-acp', 'bob', 'acp'] as const
 
 /** One owner edit: a partial set of keys, plus `_clear` to remove keys. */
 export type ChannelConfigDelta = Partial<ChannelConfig> & { _clear?: string[] }
@@ -2032,7 +2033,7 @@ export const CONFIG_FIELDS: readonly ConfigFieldSpec[] = [
   { chatKey: 'effort', field: 'effort', kind: 'enum', values: ['low', 'medium', 'high', 'xhigh', 'max'],
     help: '`!config effort <low|medium|high|xhigh|max>` — reasoning effort (claude-sdk only)' },
   { chatKey: 'agent', field: 'runtime', kind: 'enum', values: RUNTIME_VALUES,
-    help: '`!config agent <claude-sdk|codex|opencode|gemini|claude-acp|acp>` — coding agent for this thread (owner-only; recreates the session)' },
+    help: '`!config agent <claude-sdk|codex|opencode|gemini|claude-acp|bob|acp>` — coding agent for this thread (owner-only; recreates the session)' },
   { chatKey: 'mode', field: 'permissionPreset', kind: 'enum', values: ['strict', 'ask-per-edit', 'auto', 'bypass'],
     help: '`!config mode <strict|ask-per-edit|auto|bypass>` — permission mode for this thread (deny floor always holds)' },
   { chatKey: 'loop-max', field: 'loopMaxConsecutive', kind: 'int', min: 1, max: 50,

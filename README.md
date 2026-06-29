@@ -21,7 +21,7 @@ Works just as well for one person running several agents in one channel.
 - **`@mention` a bot to give it a task.** It opens a Discord thread, does the work there, and marks the original message 🏁 (done) or ⚠️ (failed). The channel stays a clean index of tasks.
 - **Safe actions just happen; risky ones ask.** Reading a file might be automatic. Running a command or editing code posts an **Allow / Deny** prompt that only the bot's owner can approve. A *deny* list never runs at all — not even with approval.
 
-The relay is agent-agnostic: each bot can run Claude Code, OpenCode, Codex, Gemini, or any [ACP](https://agentclientprotocol.com) agent, and one relay process can host several bots at once.
+The relay is agent-agnostic: each bot can run Claude Code, OpenCode, Codex, Gemini, [IBM Bob Shell](docs/runtime-bob-shell.md), or any [ACP](https://agentclientprotocol.com) agent, and one relay process can host several bots at once.
 
 ## What you can do from Discord
 
