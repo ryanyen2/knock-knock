@@ -2453,3 +2453,10 @@ test('sanitizeAuthoringInput preserves on-disk profile/preset and trust, ignorin
   expect(m.profile).toEqual({ allow: ['*'], ask: [], deny: [] })
   expect(out.trust).toEqual(current.trust)        // trust untouched by the wire
 })
+
+import { isUiMode } from '../src/lib.ts'
+test('isUiMode detects the --ui flag', () => {
+  expect(isUiMode(['--ui'])).toBe(true)
+  expect(isUiMode(['relay', '--daemon'])).toBe(false)
+  expect(isUiMode([])).toBe(false)
+})

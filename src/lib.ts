@@ -223,6 +223,12 @@ export function channelKey(platform: string, channelId: string): string {
   return `${platform}:${channelId}`
 }
 
+/** True when setup was invoked as `setup --ui` (open the web settings surface). Pure so it
+ *  can be tested without importing setup.ts, which runs its wizard on import. */
+export function isUiMode(argv: readonly string[]): boolean {
+  return argv.includes('--ui')
+}
+
 // ─── Field validators (shared by the terminal wizard and the settings server) ──
 // Pure string predicates: each returns undefined when valid, or a one-line error.
 // They live here (not in setup.ts) so the settings server can validate identically

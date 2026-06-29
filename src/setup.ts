@@ -7,8 +7,10 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import { randomUUID } from 'node:crypto'
 import * as p from '@clack/prompts'
 import color from 'picocolors'
+import { startSettingsServer } from './settings-server.ts'
 import {
   STATE_DIR,
   readAuthoringAccess,
@@ -42,6 +44,7 @@ import {
   notionId,
   validateAbsPath,
   removeRosterEntry as removeRosterEntryFrom,
+  isUiMode,
   PLATFORM_ID_VALIDATORS,
   PLATFORM_OWNER_VALIDATORS,
   PRESET_MODES,
@@ -1656,7 +1659,28 @@ async function pickRosterPlatform(a: AuthoringAccess): Promise<Platform> {
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
+/** Boot the localhost web settings UI and hold the process open until Ctrl-C. */
+async function runSettingsUi(): Promise<void> {
+  const token = randomUUID()
+  const handle = startSettingsServer({ token })
+  // The URL carries a one-time token, so it goes to stdout only (never argv/env/a file).
+  process.stdout.write(
+    `\n  ${color.bgCyan(color.black(' knock-knock '))} ${color.dim('settings')}\n\n` +
+      `  Open in your browser:\n\n    ${color.cyan(handle.url)}\n\n` +
+      `  ${color.dim('This URL holds a one-time access token and works only on this machine.')}\n` +
+      `  ${color.dim('Press Ctrl-C to stop.')}\n\n`,
+  )
+  await new Promise<void>(resolve => {
+    process.on('SIGINT', () => {
+      handle.stop()
+      process.stdout.write('\n  Settings server stopped.\n')
+      resolve()
+    })
+  })
+}
+
 async function main(): Promise<void> {
+  if (isUiMode(process.argv)) { await runSettingsUi(); return }
   p.intro(banner())
   const a = readAuthoringAccess()
   if (Object.keys(a.bots).length === 0) await firstRunWizard()
