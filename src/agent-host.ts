@@ -84,9 +84,10 @@ import type { Ledger } from './ledger/capture.ts'
 import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
 import { admit } from './ledger/admit.ts'
+import { hashInteraction } from './ledger/canonical.ts'
 import { awaitVerdict } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
-import { discordArtifact, type ChannelId, type Hash } from './ledger/interaction.ts'
+import { discordArtifact, type ChannelId, type Hash, type ProposedInteraction } from './ledger/interaction.ts'
 import { parseVersionableId } from './ledger/artifacts/versionable.ts'
 import { join, relative, resolve, isAbsolute, dirname, basename } from 'path'
 import { mkdirSync, writeFileSync, readFileSync, realpathSync, statSync } from 'fs'
@@ -513,8 +514,8 @@ export class AgentHost {
 
   /** The room this bot serves that is marked as the dedicated mesh-transport channel, or
    *  undefined when none is configured. The mesh posts ALL ⟦kk-mesh⟧ lines here, and both
-   *  receive guards treat it as transport-only (never a chat/task turn). Undefined ⇒ the
-   *  legacy behavior: transport rides the human rooms. */
+   *  receive guards treat it as transport-only (never a chat/task turn). Undefined ⇒ mesh is
+   *  inert (MeshSync sends nowhere — it never falls back to human rooms). */
   private meshTransportRoom(): string | undefined {
     const rooms = (this.getAccess().agents[this.key] ?? this.agent).rooms
     for (const [id, cfg] of Object.entries(rooms)) if (cfg.meshTransport) return id
@@ -1352,7 +1353,7 @@ export class AgentHost {
     const attachmentMeta = m.attachments?.length
       ? m.attachments.map(a => ({ name: a.name, sizeBytes: a.sizeBytes, contentType: a.contentType }))
       : undefined
-    const inboundResult = await admit(this.store, {
+    const inboundProposal: ProposedInteraction = {
       actor: m.authorId,
       role: kind === 'unknown' ? 'agent' : kind,
       channel: scopeId,
@@ -1378,8 +1379,24 @@ export class AgentHost {
       },
       effect: 'external',
       caused_by: prior ? [prior.hash] : [],
-    })
-    if (inboundResult.kind !== 'admitted') return
+    }
+    // The ingest-attachment sync fires SYNCHRONOUSLY inside admit's store insert and
+    // reads the real (URL-bearing) attachments from inboundByHash — so the side table
+    // must be populated BEFORE admit, keyed by the same content hash admit will derive.
+    const ackEmoji = cfg.ackReaction ?? access.ackReaction ?? '👀'
+    const inboundHash = hashInteraction(inboundProposal)
+    // FIFO-bounded: markInboundOutcome no longer deletes (a 🔁 retry re-marks the same inbound).
+    boundedMapSet(this.inboundByHash, inboundHash, {
+      ref: m.ref,
+      ackEmoji,
+      attachments: m.attachments,
+    }, 500)
+    const inboundResult = await admit(this.store, inboundProposal)
+    if (inboundResult.kind !== 'admitted') {
+      // Not admitted (rejected/conflict/duplicate beyond ours) — drop the speculative entry.
+      this.inboundByHash.delete(inboundHash)
+      return
+    }
 
     // Wake on first message (daemon/idle mode): this host just admitted a message, so all
     // the gates (allowlist, mention, rate, reply-claim/targeting) already decided it should
@@ -1391,14 +1408,8 @@ export class AgentHost {
     }
 
     // Stash messaging context so sync-driven UX can react/edit the inbound later.
+    // (The inboundByHash side table was populated before admit, above.)
     const channelLabel = m.scopeLabel ?? `#${roomId}`
-    const ackEmoji = cfg.ackReaction ?? access.ackReaction ?? '👀'
-    // FIFO-bounded: markInboundOutcome no longer deletes (a 🔁 retry re-marks the same inbound).
-    boundedMapSet(this.inboundByHash, inboundResult.interaction.hash, {
-      ref: m.ref,
-      ackEmoji,
-      attachments: m.attachments,
-    }, 500)
 
     this.ui.turnStart(this.key, {
       channel: { label: channelLabel },

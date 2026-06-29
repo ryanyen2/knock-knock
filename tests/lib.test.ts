@@ -323,6 +323,23 @@ test('projectToRuntime: meshTransport on a channel folds onto every member room;
   expect('meshTransport' in rt.agents.rev!.rooms.H!).toBe(false) // absent ⇒ key absent
 })
 
+test('projectToRuntime: a meshTransport channel with NO members yields no room (why setup must add membership)', () => {
+  // Regression: setup used to register the transport channel with members:[], so it never
+  // projected into the bot's rooms — meshTransportRoom() returned undefined and mesh had nowhere
+  // to post even when "configured." A member entry is what surfaces the room.
+  const a: AuthoringAccess = {
+    bots: { rev: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {
+      'discord:T0': { platform: 'discord', channelId: 'T0', members: [], collaborators: [], meshTransport: true },
+      'discord:T1': { platform: 'discord', channelId: 'T1', members: [{ bot: 'rev', workspace: '/t' }], collaborators: [], meshTransport: true },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  const rooms = projectToRuntime(a).agents.rev!.rooms
+  expect('T0' in rooms).toBe(false) // memberless ⇒ invisible to the runtime (the old bug)
+  expect(rooms.T1!.meshTransport).toBe(true) // membered ⇒ recognized as transport
+})
+
 test('channelKey: namespaces a channel id by platform', () => {
   expect(channelKey('discord', 'C1')).toBe('discord:C1')
   expect(channelKey('slack', 'C1')).not.toBe(channelKey('discord', 'C1'))

@@ -51,7 +51,7 @@ import {
   tombstoneForProposal,
 } from './lib.ts'
 import { assembleSnapshot, connectDiscoveryAdapter, itemsOf } from './discovery.ts'
-import type { MessagingAdapter } from './messaging-adapter.ts'
+import type { MessagingAdapter, EnumerationOutcome } from './messaging-adapter.ts'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1278,6 +1278,9 @@ function finishWithNextSteps(a: AuthoringAccess): void {
   const noChannel = Object.keys(a.bots).filter(k => !memberOf.has(k))
   if (noToken.length) tips.push(`${color.yellow('!')} Token missing for ${noToken.join(', ')} — run setup → "Manage a bot" → Save / update token`)
   if (noChannel.length) tips.push(`${color.yellow('!')} ${noChannel.join(', ')} isn't a member of any channel — add it to one`)
+  const hasPeer = Object.values(a.channels).some(c => c.collaborators.some(co => co.kind === 'peer'))
+  const hasTransport = Object.values(a.channels).some(c => c.meshTransport)
+  if (hasPeer && !hasTransport) tips.push(`${color.yellow('!')} A cross-machine peer is configured but no mesh-transport channel exists — cross-machine mesh stays inert until you add one (run "Auto-configure"; the bot creates it)`)
   const noKey = runtimeKeysInUse(a).filter(k => {
     if (isTokenSet(k.envVar)) return false
     if (RUNTIME_AUTH[k.runtime]?.optional && hasAlternateAuth(k.runtime)) return false
@@ -1468,7 +1471,7 @@ async function resolveAndFill(a: AuthoringAccess): Promise<void> {
           if (ok) { a = applyConfirmedProposal(a, { kind: 'owner', platform, targetId: ownerId, claimed: { userId: ownerId }, discoveredAt: new Date().toISOString(), status: 'confirmed' }); saveAuthoringAccess(a) }
         }
       } else if (need.kind === 'transport') {
-        await offerTransport(a, platform, adapter, need)
+        await setupTransportChannel(a, platform, botKey, adapter)
         a = readAuthoringAccess()
       }
     }
@@ -1489,34 +1492,55 @@ async function resolveAndFill(a: AuthoringAccess): Promise<void> {
   }
 }
 
-/** Offer to create (where capable) or designate a dedicated mesh-transport channel just-in-time —
- *  before any ⟦kk-mesh⟧ line would post to a human channel (R18/R19/AE5). */
-async function offerTransport(a: AuthoringAccess, platform: Platform, adapter: MessagingAdapter, need: Need): Promise<void> {
-  p.log.message(color.yellow('A cross-machine peer was discovered, but no transport channel is configured.\n') +
-    color.dim('Without one, ⟦kk-mesh⟧ coordination traffic posts to your human rooms.'))
-  const create = (adapter as { createChannel?: (n: string) => Promise<unknown> }).createChannel
-  if (need.rung === 'pick' && create) {
-    const make = orCancel(await p.confirm({ message: 'Create a dedicated transport channel now?', initialValue: true }))
+/** Remediation shown when the bot lacks permission to create a channel — so a `degraded`
+ *  createChannel outcome is actionable instead of a dead-end. */
+function transportCreateHint(platform: Platform): string {
+  if (platform === 'discord') return 'The bot needs the "Manage Channels" permission to create a channel — enable it, then re-run.'
+  if (platform === 'slack') return 'The bot needs the channels:manage scope to create a channel — add it, re-install the app, then re-run.'
+  return 'The bot cannot create a channel on this platform — designate an existing one instead.'
+}
+
+/** Register `channelId` as the dedicated mesh-transport channel with `botKey` as a member. The
+ *  membership is REQUIRED: `projectToRuntime` skips channels the bot isn't a member of, so without
+ *  it the runtime never surfaces the room — `meshTransportRoom()` returns undefined and mesh would
+ *  still have nowhere to post (and the bot can't post to a channel it never joined). Transport
+ *  channels never run turns, so the workspace is defaulted silently rather than prompted. */
+function registerTransportChannel(a: AuthoringAccess, platform: Platform, botKey: string, channelId: string): void {
+  const ck = channelKey(platform, channelId)
+  const ch: Channel = a.channels[ck] ?? { platform, channelId, members: [], collaborators: [] }
+  ch.meshTransport = true
+  if (!ch.members.some(m => m.bot === botKey)) {
+    ch.members.push({ bot: botKey, workspace: process.cwd(), preset: DEFAULT_PRESET, profile: profileFromPreset(DEFAULT_PRESET) })
+  }
+  a.channels[ck] = ch
+  saveAuthoringAccess(a)
+}
+
+/** Create (where the bot is capable) or designate a dedicated mesh-transport channel just-in-time —
+ *  before cross-machine mesh would otherwise be inert (R18/R19/AE5). Shared by the auto-configure
+ *  flow and the pending-discovery confirm surface. Registers the channel WITH the bot as a member. */
+async function setupTransportChannel(a: AuthoringAccess, platform: Platform, botKey: string, adapter: MessagingAdapter): Promise<void> {
+  p.log.message(color.yellow('A cross-machine peer is configured, but no transport channel exists.\n') +
+    color.dim('Until you set one, cross-machine mesh coordination is inert — ⟦kk-mesh⟧ traffic is NOT sent.'))
+  const create = (adapter as { createChannel?: (n: string) => Promise<EnumerationOutcome> }).createChannel?.bind(adapter)
+  let channelId: string | undefined
+  if (create) {
+    const make = orCancel(await p.confirm({ message: 'Have the bot create a dedicated transport channel now?', initialValue: true }))
     if (make) {
       const name = orCancel(await p.text({ message: 'Name for the transport channel', placeholder: 'kk-mesh', initialValue: 'kk-mesh' })).trim()
-      const res = (await create(name)) as { kind: string; items?: Array<{ id: string }>; reason?: string }
-      if (res.kind === 'results' && res.items?.[0]) {
-        const ck = channelKey(platform, res.items[0].id)
-        a.channels[ck] = a.channels[ck] ?? { platform, channelId: res.items[0].id, members: [], collaborators: [] }
-        a.channels[ck]!.meshTransport = true
-        saveAuthoringAccess(a)
-        p.log.success(`Created transport channel ${color.cyan(name)}. Add the SAME channel id on every machine, then restart the relay.`)
-        return
-      }
-      p.log.warn(`Could not create the channel${res.reason ? ` (${res.reason})` : ''} — designate one instead.`)
+      const res = await create(name)
+      if (res.kind === 'results' && res.items[0]) {
+        channelId = res.items[0].id
+      } else if (res.kind === 'degraded') {
+        p.log.warn(`Could not create the channel (${res.reason}).\n${transportCreateHint(platform)}\nDesignate an existing channel instead:`)
+      } // 'unsupported' ⇒ silently fall through to designate
     }
   }
-  const id = orCancel(await p.text({ message: 'Channel id to DESIGNATE as mesh transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
-  const ck = channelKey(platform, id)
-  a.channels[ck] = a.channels[ck] ?? { platform, channelId: id, members: [], collaborators: [] }
-  a.channels[ck]!.meshTransport = true
-  saveAuthoringAccess(a)
-  p.log.success(`Designated ${color.cyan(`#${id}`)} as mesh transport. Add the SAME channel on every machine, then restart the relay.`)
+  if (!channelId) {
+    channelId = orCancel(await p.text({ message: 'Channel id to use as mesh transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
+  }
+  registerTransportChannel(a, platform, botKey, channelId)
+  p.log.success(`Mesh transport = ${color.cyan(`#${channelId}`)}. Add the SAME channel id on every machine, then restart the relay.`)
 }
 
 /** Confirm (or decline) the proposals the relay discovered into pending.json (F4/F5 surface). This
@@ -1531,20 +1555,36 @@ async function confirmPendingDiscoveries(a: AuthoringAccess): Promise<void> {
     if (prop.kind === 'peer' || prop.kind === 'collaborator') {
       a = await confirmDiscoveredPeer(a, prop)
     } else if (prop.kind === 'transport') {
-      // A relay transport proposal carries the platform (targetId) but no channel yet — the owner
-      // designates one now, before ⟦kk-mesh⟧ traffic would post to a human room (R19/AE5).
+      // A relay transport proposal carries the platform but no channel yet. Connect a tokened bot on
+      // that platform so it can CREATE the channel (not just designate), then register it WITH the
+      // bot as a member — before cross-machine mesh would otherwise stay inert (R19/AE5).
       const platform = prop.platform
-      p.log.message(color.yellow('A cross-machine peer is configured but no transport channel exists.\n') +
-        color.dim('⟦kk-mesh⟧ coordination traffic is posting to your human rooms until you set one.'))
-      const designate = orCancel(await p.confirm({ message: 'Designate a dedicated mesh-transport channel now?', initialValue: true }))
-      if (designate) {
-        const id = orCancel(await p.text({ message: 'Channel id to use as transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
-        const ck = channelKey(platform, id)
-        a.channels[ck] = a.channels[ck] ?? { platform, channelId: id, members: [], collaborators: [] }
-        a.channels[ck]!.meshTransport = true
-        saveAuthoringAccess(a)
-        p.log.success(`Designated ${color.cyan(`#${id}`)} as mesh transport. Add the SAME channel on every machine, then restart the relay.`)
+      const tokened = Object.entries(a.bots).find(([, b]) => b.platform === platform && botFullyTokened(b))
+      if (!tokened) {
+        p.log.warn(`A transport channel is needed for ${platform}, but no tokened bot on that platform is configured — add one first.`)
+        continue
       }
+      const [botKey, bot] = tokened
+      const spin = p.spinner()
+      spin.start('Connecting so the bot can set up the transport channel…')
+      const adapter = await connectDiscoveryAdapter(bot, process.env as Record<string, string | undefined>)
+      spin.stop(adapter ? 'Connected.' : color.yellow('Could not connect — designate an existing channel instead.'))
+      try {
+        if (adapter) {
+          await setupTransportChannel(a, platform, botKey, adapter)
+        } else {
+          // Offline fallback: designate-only, but still register membership so the room is usable.
+          const designate = orCancel(await p.confirm({ message: 'Designate a dedicated mesh-transport channel now?', initialValue: true }))
+          if (designate) {
+            const id = orCancel(await p.text({ message: 'Channel id to use as transport (a new, empty channel)', validate: PLATFORMS[platform].idValidate })).trim()
+            registerTransportChannel(a, platform, botKey, id)
+            p.log.success(`Mesh transport = ${color.cyan(`#${id}`)}. Add the SAME channel id on every machine, then restart the relay.`)
+          }
+        }
+      } finally {
+        await adapter?.disconnect().catch(() => {})
+      }
+      a = readAuthoringAccess()
     }
   }
   // Drop only the proposals we just handled, matching by identity (kind+targetId+channelKey) — and

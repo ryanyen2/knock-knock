@@ -205,18 +205,25 @@ const meshEnabled =
   ledgerConfig.backend === 'sqlite' && meshEnv !== '0' && (meshEnv === '1' || hasPeers)
 if (meshEnabled) {
   const why = meshEnv === '1' ? 'KNOCK_KNOCK_MESH=1' : 'peer-bot collaborators configured'
+  // The dedicated transport channel id (if any) — mesh confines ALL ⟦kk-mesh⟧ traffic to it.
+  const transportChannelId = Object.values(access.agents)
+    .flatMap(a => Object.entries(a.rooms))
+    .find(([, r]) => r.meshTransport)?.[0]
   process.stderr.write(
-    `relay: mesh = ON (${why}) — no-Postgres cross-machine coordination over the messaging channel\n`,
+    `relay: mesh = ON (${why}) — no-Postgres cross-machine coordination over the messaging channel` +
+      `${transportChannelId ? ` (transport=${transportChannelId})` : ''}\n`,
   )
-  const hasTransportChannel = Object.values(access.agents).some(a =>
-    Object.values(a.rooms).some(r => r.meshTransport),
-  )
-  if (!hasTransportChannel) {
+  if (!transportChannelId) {
+    // No transport channel ⇒ mesh is INERT: MeshSync sends nowhere rather than leaking ⟦kk-mesh⟧
+    // lines into human rooms (see src/host/mesh-sync.ts meshScopes). Say so loudly — cross-machine
+    // coordination silently won't work until the owner designates one (the bot creates it in setup).
     process.stderr.write(
-      'relay: no mesh-transport channel configured — ⟦kk-mesh⟧ lines (incl. discovery beacons)\n' +
-        '  post to the human channels. To keep them out of view, add a dedicated transport channel:\n' +
-        "  run `knock-knock setup` → Add channel → answer yes to \"dedicated mesh-transport channel\",\n" +
-        '  and add the SAME channel on every machine. See docs/how-coordination-works.md.\n',
+      'relay: ⚠️  NO mesh-transport channel configured — cross-machine mesh is INERT.\n' +
+        '  No discovery beacons and no coordination will be sent (they are NOT posted to your human\n' +
+        '  channels). Peers cannot find or coordinate with this relay until you set one up:\n' +
+        "  run `knock-knock setup` — it will create a dedicated transport channel for you (the bot\n" +
+        '  needs Manage Channels on Discord / the channels:manage scope on Slack), then add the SAME\n' +
+        '  channel id on every machine. See docs/how-coordination-works.md.\n',
     )
   }
 } else if (ledgerConfig.backend === 'sqlite' && hasPeers && meshEnv === '0') {

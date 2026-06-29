@@ -122,6 +122,7 @@ receives empty message text — it will appear deaf.
    - Read Message History
    - Add Reactions
    - Manage Messages _(needed to pin the config card and Workbench)_
+   - Manage Channels _(needed for cross-machine setup, so the bot can create the dedicated mesh-transport channel for you)_
 4. Copy the generated URL, paste it in a browser, pick your server, and click
    **Authorize**.
 
@@ -209,8 +210,12 @@ api.slack.com/apps
    app_mentions:read   channels:history   groups:history
    im:history          mpim:history       chat:write
    reactions:read      reactions:write    pins:write
-   files:read          files:write
+   files:read          files:write        channels:manage
    ```
+
+   `channels:manage` is needed for cross-machine setup, so the bot can create the
+   dedicated mesh-transport channel for you. Omit it and setup falls back to
+   asking you to designate an existing channel.
 
 **Step 4 — Enable Event Subscriptions**
 
