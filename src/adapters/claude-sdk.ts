@@ -154,8 +154,12 @@ export class ClaudeSdkAdapter implements AgentAdapter {
             }
             const verdict = await handler({ toolName, input: toolInput })
             // On allow, echo input back as updatedInput — the documented "approve unchanged" shape.
+            // A handler may override updatedInput to inject input (AskUserQuestion answers).
             return verdict.behavior === 'allow'
-              ? { behavior: 'allow' as const, updatedInput: toolInput }
+              ? {
+                  behavior: 'allow' as const,
+                  updatedInput: (verdict.updatedInput as Record<string, unknown> | undefined) ?? toolInput,
+                }
               : { behavior: 'deny' as const, message: verdict.message }
           },
         },

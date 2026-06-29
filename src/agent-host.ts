@@ -78,6 +78,7 @@ import {
 import { Driver, type TurnMeta } from './driver.ts'
 import { makeAdapter, runtimeSelfArmsWatches } from './adapters/index.ts'
 import { Approvals } from './approvals.ts'
+import { Questions } from './host/questions.ts'
 import type { RelayUI } from './console-ui.ts'
 import type { AgentEvent, PermissionProfile } from './agent-adapter.ts'
 import type { Ledger } from './ledger/capture.ts'
@@ -85,7 +86,7 @@ import type { Store } from './ledger/store.ts'
 import type { FoldEngine } from './ledger/fold.ts'
 import { admit } from './ledger/admit.ts'
 import { hashInteraction } from './ledger/canonical.ts'
-import { awaitVerdict } from './ledger/await-verdict.ts'
+import { awaitVerdict, DEFAULT_VERDICT_TIMEOUT_MS } from './ledger/await-verdict.ts'
 import { TurnRecorder } from './ledger/turn-recorder.ts'
 import { discordArtifact, type ChannelId, type Hash, type ProposedInteraction } from './ledger/interaction.ts'
 import { parseVersionableId } from './ledger/artifacts/versionable.ts'
@@ -105,6 +106,7 @@ import {
   sessionRuntimeForAgent,
   type SessionSummary,
 } from './sessions/index.ts'
+import { importSession } from './sessions/import.ts'
 import type { HostContext } from './host/context.ts'
 import { Workbench } from './host/workbench.ts'
 import { ConflictUI } from './host/conflict-ui.ts'
@@ -165,6 +167,8 @@ type InboundSideTable = {
 export class AgentHost {
   private readonly messaging: MessagingAdapter
   private readonly approvals: Approvals
+  /** AskUserQuestion → owner-gated choice cards. */
+  private readonly questions: Questions
   /** Activation state (daemon/idle mode). Active = picked at boot (has a pane); idle =
    *  connected-and-listening but no pane/session until its first message wakes it. Defaults
    *  to active so non-daemon launches are unchanged. Coding-agent sessions are lazy either
@@ -254,6 +258,14 @@ export class AgentHost {
       },
       // Register/clear the Allow/Deny prompt so a text reply ("allow"/"1") can
       // resolve it where buttons/reactions are unavailable (GitHub, Notion).
+      (scope, messageId, choices) => this.pendingChoicePrompts.add(scope, messageId, choices),
+      (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
+    )
+
+    this.questions = new Questions(
+      this.messaging,
+      liveAgentGetter,
+      // Same text-reply fallback registry as approvals (a typed option resolves the card).
       (scope, messageId, choices) => this.pendingChoicePrompts.add(scope, messageId, choices),
       (scope, messageId) => this.pendingChoicePrompts.remove(scope, messageId),
     )
@@ -908,6 +920,67 @@ export class AgentHost {
     at.abort.abort()
   }
 
+  /** Owner `!clear`: forget this scope's session so the next message starts a fresh
+   *  conversation. Drops the persisted resume binding too, so a restart won't rebind the
+   *  old session. The headless analogue of /clear. */
+  private async handleClearSession(channelId: ChannelId, userId: string): Promise<void> {
+    if (!this.getAgentForChannel(channelId)) return
+    const ownerId = this.getOwnerForChannel(channelId)
+    if (!ownerId || userId !== ownerId) return
+    clearSessionBinding(this.key, channelId)
+    this.sessions.delete(channelId)
+    this.ui.note(this.key, `cleared session in ${channelId}`)
+    await this.messaging
+      .send(channelId, '🧹 Session cleared — the next message starts a fresh conversation.')
+      .catch(() => undefined)
+  }
+
+  /** Owner `!compact`: distill the current session into a context brief (reusing the
+   *  session-import path) and clear it, so the next turn continues from the summary
+   *  instead of full history — the headless analogue of /compact. */
+  private async handleCompactSession(channelId: ChannelId, userId: string): Promise<void> {
+    if (!this.getAgentForChannel(channelId)) return
+    const ownerId = this.getOwnerForChannel(channelId)
+    if (!ownerId || userId !== ownerId) return
+
+    const liveAgent = this.getAccess().agents[this.key] ?? this.agent
+    const roomId = this.roomForScope(channelId)
+    const room = roomId ? liveAgent.rooms[roomId] : undefined
+    const effectiveRuntime = room?.runtime ?? liveAgent.runtime
+    const sessionRuntime = sessionRuntimeForAgent(effectiveRuntime)
+    const sessionId = this.sessions.get(channelId)?.driver.currentSessionId
+    if (!sessionRuntime || !sessionId) {
+      await this.messaging
+        .send(channelId, 'Nothing to compact yet — no active session in this scope.')
+        .catch(() => undefined)
+      return
+    }
+
+    // The session id is this relay's OWN (not user input), so the workspace-membership
+    // gate is skipped — list() filters relay-driven transcripts out anyway. read() finds
+    // it by id; distill summarizes plan/decisions/files into a <shared-context> note the
+    // next fresh turn picks up.
+    const res = await importSession(this.store, {
+      runtime: sessionRuntime,
+      sessionId,
+      scopeId: channelId,
+      ownerId,
+      fallbackCwd: liveAgent.workspace,
+    })
+    if (!res.ok) {
+      await this.messaging
+        .send(channelId, `Couldn't compact this session (${res.reason}). Use !clear to start fresh instead.`)
+        .catch(() => undefined)
+      return
+    }
+    clearSessionBinding(this.key, channelId)
+    this.sessions.delete(channelId)
+    this.ui.note(this.key, `compacted session ${sessionId.slice(0, 8)} in ${channelId}`)
+    await this.messaging
+      .send(channelId, '🗜️ Session compacted — distilled the work so far; the next message continues from that summary.')
+      .catch(() => undefined)
+  }
+
   /** Owner reacted ⏪/🔁/🧷 on one of this bot's messages. Requires the reaction to
    *  be on THIS host's message (recentBotMsgIds, which also dedups across hosts) and
    *  the reactor to be the channel owner. 🔁 re-runs via retry-on-reaction; ⏪/🧷 record. */
@@ -1062,6 +1135,8 @@ export class AgentHost {
   private dispatchAction(action: IncomingAction): void {
     if (action.actionId.startsWith('appr:')) {
       this.approvals.resolve(action).catch(e => this.ui.error(this.key, `interaction error: ${e}`))
+    } else if (this.questions.handles(action)) {
+      this.questions.resolve(action).catch(e => this.ui.error(this.key, `question resolve error: ${e}`))
     } else if (this.conflictUI.handles(action)) {
       this.conflictUI.resolve(action).catch(e => this.ui.error(this.key, `conflict resolve error: ${e}`))
     } else if (this.sessionSharing.handles(action)) {
@@ -1317,6 +1392,16 @@ export class AgentHost {
     if (kind === 'owner' && control === '!stop') {
       this.scopeToRoom.set(controlScope, roomId)
       await this.handleStop(controlScope, m.authorId).catch(e => this.ui.error(this.key, `stop command: ${e}`))
+      return
+    }
+    if (kind === 'owner' && control === '!clear') {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.handleClearSession(controlScope, m.authorId).catch(e => this.ui.error(this.key, `clear command: ${e}`))
+      return
+    }
+    if (kind === 'owner' && control === '!compact') {
+      this.scopeToRoom.set(controlScope, roomId)
+      await this.handleCompactSession(controlScope, m.authorId).catch(e => this.ui.error(this.key, `compact command: ${e}`))
       return
     }
     const rewindCmd: RewindAction | undefined =
@@ -1896,6 +1981,21 @@ export class AgentHost {
         channelId,
         profile,
         async req => {
+          // AskUserQuestion isn't a permission decision: surface its options as owner-gated
+          // choice cards and feed the picked label back as the tool's input.answers (the
+          // verified headless injection path). No answer (timeout/unreachable) → deny so the
+          // turn ends rather than hanging.
+          if (req.toolName === 'AskUserQuestion') {
+            const answers = await this.questions
+              .ask(channelId, req.input, this.approvalTimeoutFor(channelId) ?? DEFAULT_VERDICT_TIMEOUT_MS)
+              .catch(err => {
+                this.ui.error(this.key, `question post: ${err}`)
+                return undefined
+              })
+            return answers
+              ? { behavior: 'allow', updatedInput: { ...(req.input as object), answers } }
+              : { behavior: 'deny', message: 'No answer was provided to the question.' }
+          }
           // Permission handler: post Discord prompt; wait on the ledger verdict.
           const session = this.sessions.get(channelId)
           const at = session?.activeTurn

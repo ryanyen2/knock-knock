@@ -12,7 +12,11 @@ export type PermissionProfile = {
   deny: string[]
 }
 
-export type Verdict = { behavior: 'allow' } | { behavior: 'deny'; message: string }
+export type Verdict =
+  /** `updatedInput`, when present, replaces the tool's input — the documented way to
+   *  inject an answer for AskUserQuestion (the picked option lands in `input.answers`). */
+  | { behavior: 'allow'; updatedInput?: unknown }
+  | { behavior: 'deny'; message: string }
 
 /** Per-turn runtime knobs from the thread config. claude-sdk honors them; ACP self-manages and ignores. Omitted field leaves the default unchanged. */
 export type TurnOptions = {
