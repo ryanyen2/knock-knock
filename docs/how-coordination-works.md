@@ -252,27 +252,27 @@ reactions); GitHub and Notion are slower (they poll) so it degrades to a simpler
 one-bot-answers mode. And right after a teammate first joins there's a brief moment where
 two bots might both answer once, until everyone's seen everyone — it settles itself.
 
-### Keeping the tagged lines out of your human channels
+### The tagged lines never touch your human channels
 
-By default those tiny tagged lines (`⟦kk-mesh⟧…`) post to the human channel the bots
-share — fine when it's quiet, but a busy room fills with base64. The biggest source is the
-**discovery beacon**: each bot announces itself on every connect/reconnect, and that one is
-sent *unconditionally* (it's how two machines find each other in the first place, so it
-can't wait until a peer is already known). Coordination notes are quieter — they only go out
-when a real remote peer is present — but the beacons alone are enough to clutter a room.
+Those tiny tagged lines (`⟦kk-mesh⟧…`) — discovery beacons and coordination notes alike —
+ride a **dedicated transport channel**, never your human rooms. A transport channel is a real
+channel every relay joins, marked `meshTransport: true`. The mesh posts *all* its lines there,
+so your human channels see zero `⟦kk-mesh⟧`. The transport channel is still tracked — its lines
+are read and ingested — but it never carries chat or tasks: a human typing in it gets no reply,
+and it's never elected to answer.
 
-The fix, and the single biggest lever for a clean channel, is a **dedicated transport
-channel**: a real channel both relays join, marked `meshTransport: true`. The mesh then posts
-*all* its lines (discovery beacons and coordination notes alike) there instead of the human
-rooms — so your human channels see zero `⟦kk-mesh⟧`. The transport channel is
-still tracked — its lines are read and ingested — but it never carries chat or tasks: a
-human typing in it gets no reply, and it's never elected to answer.
+This is enforced, not just advised: **with no transport channel configured, cross-machine mesh
+is inert** — the relay sends nowhere rather than falling back to a human room. The startup log
+says so loudly. So nothing leaks while you finish setup, but peers also can't find or coordinate
+with this relay until a transport channel exists.
 
-It must be a real channel with the **same platform channel id on every machine** (the
-bots post and read by that id), and every relay must mark it `meshTransport: true`. Set it
-up via `knock-knock setup` → **Add channel** → answer yes to "dedicated mesh-transport
-channel" (or hand-edit the channel entry in your config). Leave the flag off and behavior is
-exactly as described above — transport rides the human channel, gated by remote-peer presence.
+It must be a real channel with the **same platform channel id on every machine** (the bots post
+and read by that id), and every relay must mark it `meshTransport: true`. Run `knock-knock setup`
+when a cross-machine peer is configured: the bot **creates the channel for you** (it needs the
+*Manage Channels* permission on Discord / the `channels:manage` scope on Slack) and registers it.
+On every *other* machine, run setup and designate that **same channel id** as the transport
+channel. If the bot can't create one (missing permission/scope), setup falls back to asking you
+to designate an existing empty channel.
 
 ### Each relay only keeps the channels it actually serves
 
