@@ -54,6 +54,7 @@ import {
   FILE_INGEST_LIMITS,
   channelKey,
   projectToRuntime,
+  unservedTransportChannels,
   renameBot,
   replyClaimKey,
   driveClaimKey,
@@ -338,6 +339,25 @@ test('projectToRuntime: a meshTransport channel with NO members yields no room (
   const rooms = projectToRuntime(a).agents.rev!.rooms
   expect('T0' in rooms).toBe(false) // memberless ⇒ invisible to the runtime (the old bug)
   expect(rooms.T1!.meshTransport).toBe(true) // membered ⇒ recognized as transport
+})
+
+test('unservedTransportChannels: flags a meshTransport channel with no bot member (the flood bug)', () => {
+  const a: AuthoringAccess = {
+    bots: { rev: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: {
+      // flagged transport, but NO bot is a member → projection drops the flag, mesh floods the room
+      'discord:T': { platform: 'discord', channelId: 'T', members: [], collaborators: [], meshTransport: true },
+      'discord:H': { platform: 'discord', channelId: 'H', members: [{ bot: 'rev', workspace: '/h' }], collaborators: [] },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  expect(unservedTransportChannels(a)).toEqual(['discord:T'])
+  // a member referencing an unknown bot is still "unserved"
+  a.channels['discord:T']!.members = [{ bot: 'ghost', workspace: '/g' }]
+  expect(unservedTransportChannels(a)).toEqual(['discord:T'])
+  // once a real bot serves it, the flag is no longer inert
+  a.channels['discord:T']!.members = [{ bot: 'rev', workspace: '/t' }]
+  expect(unservedTransportChannels(a)).toEqual([])
 })
 
 test('channelKey: namespaces a channel id by platform', () => {
@@ -2238,6 +2258,28 @@ test('U8: applyConfirmedProposal(transport) flags the channel meshTransport with
   expect(a.channels['discord:C1']!.meshTransport).toBeUndefined() // input not mutated
 })
 
+test('U8: applyConfirmedProposal(transport) enrolls same-platform bots so the flag is never inert', () => {
+  const a: AuthoringAccess = {
+    bots: {
+      cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' },
+      slackbot: { platform: 'slack', tokenEnv: 'S', runtime: 'claude-sdk' },
+    },
+    channels: {
+      'discord:work': { platform: 'discord', channelId: 'work', members: [{ bot: 'cc', workspace: '/w' }], collaborators: [] },
+      'discord:T': { platform: 'discord', channelId: 'T', members: [], collaborators: [] },
+    },
+    roster: { people: {}, peers: {} },
+  }
+  const out = applyConfirmedProposal(a, { kind: 'transport', platform: 'discord', channelKey: 'discord:T', targetId: 'T', claimed: {}, discoveredAt: 't', status: 'proposed' })
+  expect(out.channels['discord:T']!.meshTransport).toBe(true)
+  // cc (discord) is enrolled, reusing its existing workspace; the slack bot is NOT (wrong platform)
+  expect(out.channels['discord:T']!.members).toEqual([{ bot: 'cc', workspace: '/w' }])
+  // and the flag is now live: projection surfaces it into cc's rooms (no longer inert)
+  expect(projectToRuntime(out).agents.cc!.rooms.T!.meshTransport).toBe(true)
+  expect(unservedTransportChannels(out)).toEqual([])
+  expect(a.channels['discord:T']!.members).toEqual([]) // input not mutated
+})
+
 test('U8/R22: nonceMatch returns the single eligible sender; ignores non-matching; aborts on 2+', () => {
   const nonce = 'kk-amber-basil-cobalt'
   expect(nonceMatch([{ userId: 'U1', text: 'hi' }, { userId: 'U_owner', text: '  kk-amber-basil-cobalt ' }], nonce)).toEqual({ kind: 'matched', userId: 'U_owner' })
@@ -2314,4 +2356,100 @@ test('U9/AE5: a confirmed cross-machine peer with no transport channel yields a 
   // once a transport channel exists, no transport proposal
   a.channels['discord:T'] = { platform: 'discord', channelId: 'T', members: [], collaborators: [], meshTransport: true }
   expect(discoveryProposals([], new Set(['cc']), a, [], 'now').some(p => p.kind === 'transport')).toBe(false)
+})
+
+// ─── Lifted validators + settings-server helpers (U1/U1b of the settings-UI plan) ──
+import {
+  required as kkRequired,
+  validateBotKey,
+  discordId,
+  notionId,
+  validateAbsPath,
+  PLATFORM_ID_VALIDATORS,
+  PLATFORM_OWNER_VALIDATORS,
+  removeRosterEntry,
+  sanitizeAuthoringInput,
+} from '../src/lib.ts'
+
+test('validators: discordId / notionId / validateBotKey / validateAbsPath / required', () => {
+  expect(discordId('184695080709324800')).toBeUndefined()
+  expect(discordId('abc')).toBeDefined()
+  expect(discordId('')).toBe('Required.')
+
+  expect(notionId('1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d')).toBeUndefined()
+  expect(notionId('1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d')).toBeUndefined() // dashes stripped
+  expect(notionId('zz')).toBeDefined()
+
+  expect(validateBotKey('claude-bot')).toBeUndefined()
+  expect(validateBotKey('Claude Bot')).toBeDefined() // spaces + caps rejected
+  expect(validateBotKey('')).toBe('Required.')
+
+  expect(validateAbsPath('/abs/path')).toBeUndefined()
+  expect(validateAbsPath('rel/path')).toBeDefined()
+
+  expect(kkRequired(' x ')).toBeUndefined()
+  expect(kkRequired('   ')).toBe('Required.')
+})
+
+test('per-platform validator maps cover every platform and reject malformed ids', () => {
+  expect(PLATFORM_ID_VALIDATORS.slack('C0123ABCD')).toBeUndefined()
+  expect(PLATFORM_ID_VALIDATORS.slack('nope')).toBeDefined()
+  expect(PLATFORM_ID_VALIDATORS.telegram('-1001234567890')).toBeUndefined()
+  expect(PLATFORM_ID_VALIDATORS.github('acme/widgets')).toBeUndefined()
+  expect(PLATFORM_ID_VALIDATORS.github('no-slash')).toBeDefined()
+  expect(PLATFORM_OWNER_VALIDATORS.slack('U0123ABCD')).toBeUndefined()
+  expect(PLATFORM_OWNER_VALIDATORS.notion('some-id')).toBeUndefined()
+  expect(PLATFORM_OWNER_VALIDATORS.notion('')).toBe('Required.')
+})
+
+test('removeRosterEntry drops the entry and scrubs it from every channel (AE3/AE6)', () => {
+  const a: AuthoringAccess = {
+    bots: {},
+    channels: {
+      'discord:C1': { platform: 'discord', channelId: 'C1', members: [], collaborators: [{ kind: 'human', id: 'alice' }, { kind: 'peer', id: 'bot2' }] },
+      'discord:C2': { platform: 'discord', channelId: 'C2', members: [], collaborators: [{ kind: 'human', id: 'alice' }] },
+    },
+    roster: { people: { alice: { platform: 'discord', userId: 'U_a' } }, peers: { bot2: { platform: 'discord', userId: 'U_b', blurb: 'b' } } },
+  }
+  const out = removeRosterEntry(a, 'human', 'alice')
+  expect(out.roster.people.alice).toBeUndefined()
+  expect(out.channels['discord:C1']!.collaborators).toEqual([{ kind: 'peer', id: 'bot2' }])
+  expect(out.channels['discord:C2']!.collaborators).toEqual([])
+  // input not mutated
+  expect(a.roster.people.alice).toBeDefined()
+})
+
+test('sanitizeAuthoringInput drops unknown fields on bots and collaborators (AE4/R17)', () => {
+  const current: AuthoringAccess = { bots: {}, channels: {}, roster: { people: {}, peers: {} } }
+  const incoming = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk', botToken: 'xoxb-leak', evil: 1 } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [], collaborators: [{ kind: 'human', id: 'a', secret: 'xoxb-leak' }] } },
+    roster: { people: {}, peers: {} },
+  }
+  const out = sanitizeAuthoringInput(incoming, current)
+  expect(out.bots.cc).toEqual({ platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' })
+  expect((out.bots.cc as Record<string, unknown>).botToken).toBeUndefined()
+  expect(out.channels['discord:C1']!.collaborators).toEqual([{ kind: 'human', id: 'a' }])
+})
+
+test('sanitizeAuthoringInput preserves on-disk profile/preset and trust, ignoring the wire (R14/R20)', () => {
+  const current: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w', preset: 'trusted', profile: { allow: ['*'], ask: [], deny: [] } as any }], collaborators: [] } },
+    roster: { people: {}, peers: {} },
+    trust: { tombstones: [{ agentKey: 'k', userId: 'u', declinedAt: 't' }], trustedPairs: [] },
+  }
+  const incoming = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' } },
+    // attacker tries to escalate permissions + tamper trust over the wire
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w2', preset: 'owner', profile: { allow: ['*'], ask: [], deny: [] } }], collaborators: [] } },
+    roster: { people: {}, peers: {} },
+    trust: { tombstones: [], trustedPairs: [{ agentKey: 'evil', userId: 'evil', trustedAt: 't' }] },
+  }
+  const out = sanitizeAuthoringInput(incoming, current)
+  const m = out.channels['discord:C1']!.members[0]!
+  expect(m.workspace).toBe('/w2')                 // editable field took the wire value
+  expect(m.preset).toBe('trusted')                // permission fields preserved from disk
+  expect(m.profile).toEqual({ allow: ['*'], ask: [], deny: [] })
+  expect(out.trust).toEqual(current.trust)        // trust untouched by the wire
 })

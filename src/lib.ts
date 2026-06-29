@@ -3,6 +3,7 @@
  * (who may send/approve, how a tool is classified) live here, unit-tested in isolation.
  */
 
+import { isAbsolute } from 'node:path'
 import type { PermissionProfile } from './agent-adapter.ts'
 import type {
   DiscoveryCapabilities,
@@ -220,6 +221,254 @@ export function defaultAuthoringAccess(): AuthoringAccess {
 /** The globally-unique key for a channel. */
 export function channelKey(platform: string, channelId: string): string {
   return `${platform}:${channelId}`
+}
+
+// ─── Field validators (shared by the terminal wizard and the settings server) ──
+// Pure string predicates: each returns undefined when valid, or a one-line error.
+// They live here (not in setup.ts) so the settings server can validate identically
+// without importing setup.ts, which runs its wizard on import.
+
+/** Required, non-blank after trim. */
+export function required(v?: string): string | undefined {
+  return (v ?? '').trim() ? undefined : 'Required.'
+}
+
+/** Build a required + regex validator. */
+export function mkValidate(re: RegExp, msg: string): (v?: string) => string | undefined {
+  return (v?: string) => {
+    const s = (v ?? '').trim()
+    if (!s) return 'Required.'
+    return re.test(s) ? undefined : msg
+  }
+}
+
+/** Bot key: lowercase letters, digits, hyphens. */
+export function validateBotKey(v?: string): string | undefined {
+  const s = (v ?? '').trim()
+  if (!s) return 'Required.'
+  if (!/^[a-z0-9-]+$/.test(s)) return 'Lowercase letters, digits, and hyphens only.'
+  return undefined
+}
+
+/** Discord user/channel id (numeric snowflakes, 17–20 digits). */
+export function discordId(v?: string): string | undefined {
+  const s = (v ?? '').trim()
+  if (!s) return 'Required.'
+  if (!/^\d{17,20}$/.test(s)) return 'Discord IDs are 17–20 digits (Developer Mode → Copy ID).'
+  return undefined
+}
+
+/** Notion id: 32 hex chars, with or without dashes. */
+export function notionId(v?: string): string | undefined {
+  const s = (v ?? '').trim().replace(/-/g, '')
+  if (!s) return 'Required.'
+  return /^[0-9a-f]{32}$/i.test(s) ? undefined : 'A Notion ID is 32 hex characters (copy the page link).'
+}
+
+/** An absolute filesystem path. */
+export function validateAbsPath(v?: string): string | undefined {
+  const s = (v ?? '').trim()
+  if (!s) return 'Required.'
+  if (!isAbsolute(s)) return 'Must be an absolute path (starting with /).'
+  return undefined
+}
+
+/** Per-platform channel/scope id validators (the single source of truth; setup's
+ *  PLATFORMS table and the settings server both reference these). */
+export const PLATFORM_ID_VALIDATORS: Record<Platform, (v?: string) => string | undefined> = {
+  discord: discordId,
+  slack: mkValidate(/^[CGD][A-Z0-9]{6,}$/i, 'Slack channel IDs look like C0123ABCD.'),
+  telegram: mkValidate(/^-?\d{5,}$/, 'Telegram chat IDs are integers (often negative).'),
+  github: mkValidate(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/repo, e.g. acme/widgets.'),
+  notion: notionId,
+}
+
+/** Per-platform owner/member id validators. */
+export const PLATFORM_OWNER_VALIDATORS: Record<Platform, (v?: string) => string | undefined> = {
+  discord: discordId,
+  slack: mkValidate(/^[UW][A-Z0-9]{6,}$/i, 'Slack member IDs look like U0123ABCD.'),
+  telegram: mkValidate(/^\d{4,}$/, 'Telegram user IDs are numeric.'),
+  github: mkValidate(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/, 'A GitHub login (letters, digits, hyphens).'),
+  notion: required,
+}
+
+// ─── Roster scrub (shared by the terminal wizard and the settings server) ──────
+
+/** Channel keys flagged `meshTransport` that NO bot serves (no member references a known bot).
+ *  Such a flag is INERT: `projectToRuntime` only carries `meshTransport` into a bot's rooms for a
+ *  channel the bot is a member of (it iterates members), so an unserved transport channel never
+ *  reaches the runtime — `meshTransportRoom()` returns undefined and the mesh falls back to posting
+ *  ⟦kk-mesh⟧ lines to the human rooms (the exact flood a dedicated channel is meant to prevent).
+ *  Pure; empty when transport is correctly served or none is flagged. */
+export function unservedTransportChannels(a: AuthoringAccess): string[] {
+  return Object.entries(a.channels)
+    .filter(([, ch]) => ch.meshTransport && !ch.members.some(m => a.bots[m.bot]))
+    .map(([ck]) => ck)
+}
+
+/** Remove a roster entry and drop it from every channel's collaborators. Pure —
+ *  returns a new AuthoringAccess (the input is not mutated). The single
+ *  implementation behind both the `setup` remove flow and the settings UI, so the
+ *  cascade can never drift between the two surfaces. */
+export function removeRosterEntry(
+  a: AuthoringAccess,
+  kind: 'human' | 'peer',
+  id: string,
+): AuthoringAccess {
+  const people = { ...a.roster.people }
+  const peers = { ...a.roster.peers }
+  if (kind === 'human') delete people[id]
+  else delete peers[id]
+  const channels: Record<string, Channel> = {}
+  for (const [ck, ch] of Object.entries(a.channels)) {
+    channels[ck] = {
+      ...ch,
+      collaborators: ch.collaborators.filter(c => !(c.kind === kind && c.id === id)),
+    }
+  }
+  return { ...a, channels, roster: { people, peers } }
+}
+
+// ─── Field-allowlist reconstruction (settings-server write path) ───────────────
+// The settings server accepts an edited config over HTTP. `parseAuthoringAccess`
+// (state.ts) only shape-checks the top level — it casts bots/roster/channels through
+// without dropping unknown keys, so an injected field (e.g. a raw token under any name)
+// would persist. `sanitizeAuthoringInput` is the only barrier: it rebuilds every object
+// from its known keys, drops everything else, and — critically — refuses to take the
+// permission-bearing membership fields (`profile`/`preset`) or `trust` from the wire,
+// preserving them from the on-disk config instead (R17/R20). Editing permissions and
+// trust stays terminal-only.
+
+const PLATFORMS_SET = new Set<Platform>(['discord', 'slack', 'telegram', 'github', 'notion'])
+const str = (v: unknown): string | undefined => (typeof v === 'string' ? v : undefined)
+const rec = (v: unknown): Record<string, unknown> =>
+  v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
+
+function cleanBot(raw: Record<string, unknown>): Bot | undefined {
+  const platform = str(raw.platform) as Platform | undefined
+  const tokenEnv = str(raw.tokenEnv)
+  const runtime = str(raw.runtime)
+  if (!platform || !PLATFORMS_SET.has(platform) || !tokenEnv || !runtime) return undefined
+  const secretEnv: Record<string, string> = {}
+  for (const [k, v] of Object.entries(rec(raw.secretEnv))) if (str(v)) secretEnv[k] = str(v)!
+  const intake = raw.intake === 'webhook' ? 'webhook' : raw.intake === 'poll' ? 'poll' : undefined
+  return {
+    platform,
+    tokenEnv,
+    runtime,
+    ...(Object.keys(secretEnv).length ? { secretEnv } : {}),
+    ...(intake ? { intake } : {}),
+    ...(str(raw.displayName) ? { displayName: str(raw.displayName) } : {}),
+    ...(str(raw.blurb) ? { blurb: str(raw.blurb) } : {}),
+  }
+}
+
+function cleanCollaborator(raw: Record<string, unknown>): Collaborator | undefined {
+  const id = str(raw.id)
+  if (!id) return undefined
+  if (raw.kind === 'human') return { kind: 'human', id }
+  if (raw.kind === 'peer') return { kind: 'peer', id }
+  return undefined
+}
+
+/** Rebuild a membership from known keys. `profile`/`preset` are NOT taken from the
+ *  wire (R20) — they are restored from the matching on-disk membership when present. */
+function cleanMembership(raw: Record<string, unknown>, prior?: Membership): Membership | undefined {
+  const bot = str(raw.bot)
+  const workspace = str(raw.workspace)
+  if (!bot || !workspace) return undefined
+  return {
+    bot,
+    workspace,
+    ...(str(raw.runtime) ? { runtime: str(raw.runtime) } : {}),
+    ...(prior?.profile ? { profile: prior.profile } : {}),
+    ...(prior?.preset ? { preset: prior.preset } : {}),
+  }
+}
+
+function cleanChannel(raw: Record<string, unknown>, prior?: Channel): Channel | undefined {
+  const platform = str(raw.platform) as Platform | undefined
+  const channelId = str(raw.channelId)
+  if (!platform || !PLATFORMS_SET.has(platform) || !channelId) return undefined
+  const priorMembers = new Map((prior?.members ?? []).map(m => [m.bot, m]))
+  const members = (Array.isArray(raw.members) ? raw.members : [])
+    .map(m => cleanMembership(rec(m), priorMembers.get(str(rec(m).bot) ?? '')))
+    .filter((m): m is Membership => !!m)
+  const collaborators = (Array.isArray(raw.collaborators) ? raw.collaborators : [])
+    .map(c => cleanCollaborator(rec(c)))
+    .filter((c): c is Collaborator => !!c)
+  return {
+    platform,
+    channelId,
+    members,
+    collaborators,
+    ...(str(raw.label) ? { label: str(raw.label) } : {}),
+    ...(str(raw.project) ? { project: str(raw.project) } : {}),
+    ...(typeof raw.requireMention === 'boolean' ? { requireMention: raw.requireMention } : {}),
+    ...(str(raw.approvalActorId) ? { approvalActorId: str(raw.approvalActorId) } : {}),
+    ...(raw.meshTransport === true ? { meshTransport: true } : {}),
+  }
+}
+
+/** Rebuild an AuthoringAccess from untrusted wire input, keeping only known fields and
+ *  preserving terminal-owned data (`trust`, membership `profile`/`preset`) from `current`. */
+export function sanitizeAuthoringInput(incoming: unknown, current: AuthoringAccess): AuthoringAccess {
+  const raw = rec(incoming)
+
+  const bots: Record<string, Bot> = {}
+  for (const [k, v] of Object.entries(rec(raw.bots))) {
+    const b = cleanBot(rec(v))
+    if (b) bots[k] = b
+  }
+
+  const channels: Record<string, Channel> = {}
+  for (const [ck, v] of Object.entries(rec(raw.channels))) {
+    const ch = cleanChannel(rec(v), current.channels[ck])
+    if (ch) channels[ck] = ch
+  }
+
+  const people: Record<string, Person> = {}
+  for (const [k, v] of Object.entries(rec(rec(raw.roster).people))) {
+    const r = rec(v)
+    const platform = str(r.platform) as Platform | undefined
+    const userId = str(r.userId)
+    if (platform && PLATFORMS_SET.has(platform) && userId) {
+      people[k] = { platform, userId, ...(str(r.label) ? { label: str(r.label) } : {}) }
+    }
+  }
+  const peers: Record<string, Peer> = {}
+  for (const [k, v] of Object.entries(rec(rec(raw.roster).peers))) {
+    const r = rec(v)
+    const platform = str(r.platform) as Platform | undefined
+    const userId = str(r.userId)
+    if (platform && PLATFORMS_SET.has(platform) && userId) {
+      peers[k] = {
+        platform,
+        userId,
+        blurb: str(r.blurb) ?? '',
+        ...(str(r.label) ? { label: str(r.label) } : {}),
+        ...(str(r.agentKey) ? { agentKey: str(r.agentKey) } : {}),
+      }
+    }
+  }
+
+  const me: Partial<Record<Platform, string>> = {}
+  for (const [k, v] of Object.entries(rec(raw.me))) {
+    if (PLATFORMS_SET.has(k as Platform) && str(v)) me[k as Platform] = str(v)!
+  }
+
+  return {
+    ...(Object.keys(me).length ? { me } : {}),
+    bots,
+    channels,
+    roster: { people, peers },
+    ...(Array.isArray(raw.mentionPatterns)
+      ? { mentionPatterns: raw.mentionPatterns.filter((x): x is string => typeof x === 'string') }
+      : {}),
+    ...(str(raw.ackReaction) ? { ackReaction: str(raw.ackReaction) } : {}),
+    // trust is terminal-owned and never set from the wire — preserve from disk (R14/R20).
+    ...(current.trust ? { trust: current.trust } : {}),
+  }
 }
 
 /** Rename a bot key in the authoring shape: move `bots[oldKey]→newKey` and rewrite
@@ -932,7 +1181,23 @@ export function applyConfirmedProposal(a: AuthoringAccess, p: Proposal, rosterId
     }
     case 'transport':
       if (p.channelKey && next.channels[p.channelKey]) {
-        next.channels[p.channelKey] = { ...next.channels[p.channelKey]!, meshTransport: true }
+        const ch = next.channels[p.channelKey]!
+        // Flagging meshTransport alone is not enough: `projectToRuntime` drops the flag for any
+        // channel the bot doesn't serve, so an unserved transport channel is inert and the mesh
+        // floods the human rooms (see `unservedTransportChannels`). Enroll every same-platform bot
+        // that isn't already a member, reusing the workspace it uses elsewhere (transport never
+        // drives a turn, so the path is cosmetic — but Membership requires one).
+        const existing = new Set(ch.members.map(m => m.bot))
+        const enrolled = Object.keys(next.bots)
+          .filter(botId => next.bots[botId]!.platform === p.platform && !existing.has(botId))
+          .map(botId => ({
+            bot: botId,
+            workspace:
+              Object.values(next.channels)
+                .flatMap(c => c.members)
+                .find(m => m.bot === botId)?.workspace ?? '',
+          }))
+        next.channels[p.channelKey] = { ...ch, meshTransport: true, members: [...ch.members, ...enrolled] }
       }
       break
     case 'channel':

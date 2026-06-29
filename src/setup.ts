@@ -6,7 +6,7 @@
 
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
-import { isAbsolute, join } from 'path'
+import { join } from 'path'
 import * as p from '@clack/prompts'
 import color from 'picocolors'
 import {
@@ -36,6 +36,14 @@ import {
   channelKey,
   expandPreset,
   renameBot,
+  required,
+  validateBotKey,
+  discordId,
+  notionId,
+  validateAbsPath,
+  removeRosterEntry as removeRosterEntryFrom,
+  PLATFORM_ID_VALIDATORS,
+  PLATFORM_OWNER_VALIDATORS,
   PRESET_MODES,
   PRESET_HINTS,
   DEFAULT_PRESET,
@@ -174,22 +182,6 @@ async function saveCodingAgentKey(a: AuthoringAccess): Promise<void> {
 // Everything platform-shaped lives here so the flows below stay platform-neutral
 // (mirrors the runtime MessagingAdapter seam). See docs/messaging-platforms-setup.md.
 
-/** Build a simple required + regex validator. */
-function mkValidate(re: RegExp, msg: string): (v?: string) => string | undefined {
-  return (v?: string) => {
-    const s = (v ?? '').trim()
-    if (!s) return 'Required.'
-    return re.test(s) ? undefined : msg
-  }
-}
-
-/** Notion ids are 32 hex chars, with or without dashes. */
-function notionId(v?: string): string | undefined {
-  const s = (v ?? '').trim().replace(/-/g, '')
-  if (!s) return 'Required.'
-  return /^[0-9a-f]{32}$/i.test(s) ? undefined : 'A Notion ID is 32 hex characters (copy the page link).'
-}
-
 /** An extra secret a platform needs beyond the primary token (e.g. Slack's app token).
  *  `optional` secrets may be left blank at save time; `whenWebhook` secrets are only
  *  collected when the bot uses `intake: 'webhook'`. */
@@ -249,10 +241,10 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     }],
     idLabel: 'Slack channel ID (channel name → About → Channel ID)',
     idPlaceholder: 'C0123ABCD',
-    idValidate: mkValidate(/^[CGD][A-Z0-9]{6,}$/i, 'Slack channel IDs look like C0123ABCD.'),
+    idValidate: PLATFORM_ID_VALIDATORS.slack,
     ownerLabel: 'Your Slack member ID (avatar → Profile → ⋯ → Copy member ID)',
     ownerPlaceholder: 'U0123ABCD',
-    ownerValidate: mkValidate(/^[UW][A-Z0-9]{6,}$/i, 'Slack member IDs look like U0123ABCD.'),
+    ownerValidate: PLATFORM_OWNER_VALIDATORS.slack,
     memberIdLabel: 'Their Slack member ID (U0123ABCD)',
     notes: [
       'Enable Socket Mode, Event Subscriptions, and Interactivity in your Slack app.',
@@ -274,10 +266,10 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
       '    https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates and read result[].message.chat.id.',
     ].join('\n'),
     idPlaceholder: '-1001234567890',
-    idValidate: mkValidate(/^-?\d{5,}$/, 'Telegram chat IDs are integers (often negative).'),
+    idValidate: PLATFORM_ID_VALIDATORS.telegram,
     ownerLabel: 'Your Telegram user ID (DM @userinfobot)',
     ownerPlaceholder: '184695080',
-    ownerValidate: mkValidate(/^\d{4,}$/, 'Telegram user IDs are numeric.'),
+    ownerValidate: PLATFORM_OWNER_VALIDATORS.telegram,
     memberIdLabel: 'Their Telegram user ID (numeric)',
     notes: [
       'BotFather → disable Group Privacy so the bot sees group messages.',
@@ -296,10 +288,10 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     }],
     idLabel: 'Repository (owner/repo)',
     idPlaceholder: 'acme/widgets',
-    idValidate: mkValidate(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Use owner/repo, e.g. acme/widgets.'),
+    idValidate: PLATFORM_ID_VALIDATORS.github,
     ownerLabel: 'Owner GitHub login (the allowed @mentioner)',
     ownerPlaceholder: 'octocat',
-    ownerValidate: mkValidate(/^[A-Za-z0-9][A-Za-z0-9-]{0,38}$/, 'A GitHub login (letters, digits, hyphens).'),
+    ownerValidate: PLATFORM_OWNER_VALIDATORS.github,
     memberIdLabel: 'Their GitHub login',
     notes: [
       'The bot account must be a collaborator/member of the repo.',
@@ -328,7 +320,7 @@ const PLATFORMS: Record<Platform, PlatformSpec> = {
     idValidate: notionId,
     ownerLabel: 'Your Notion user ID (from GET /v1/users)',
     ownerPlaceholder: '',
-    ownerValidate: (v?: string) => ((v ?? '').trim() ? undefined : 'Required.'),
+    ownerValidate: PLATFORM_OWNER_VALIDATORS.notion,
     memberIdLabel: 'Their Notion user ID',
     notes: [
       'CRITICAL: connect each page/database to the integration (Page → ••• → Connections) — or it sees nothing.',
@@ -400,32 +392,9 @@ function botFullyTokened(bot: Bot): boolean {
 }
 
 // ─── Validators ─────────────────────────────────────────────────────────────────
-
-function required(v: string | undefined): string | undefined {
-  return (v ?? '').trim() ? undefined : 'Required.'
-}
-
-function validateBotKey(v: string | undefined): string | undefined {
-  const s = (v ?? '').trim()
-  if (!s) return 'Required.'
-  if (!/^[a-z0-9-]+$/.test(s)) return 'Lowercase letters, digits, and hyphens only.'
-  return undefined
-}
-
-/** Discord user/channel id validator (numeric snowflakes). */
-function discordId(v: string | undefined): string | undefined {
-  const s = (v ?? '').trim()
-  if (!s) return 'Required.'
-  if (!/^\d{17,20}$/.test(s)) return 'Discord IDs are 17–20 digits (Developer Mode → Copy ID).'
-  return undefined
-}
-
-function validateAbsPath(v: string | undefined): string | undefined {
-  const s = (v ?? '').trim()
-  if (!s) return 'Required.'
-  if (!isAbsolute(s)) return 'Must be an absolute path (starting with /).'
-  return undefined
-}
+// The pure field validators (required, validateBotKey, discordId, notionId,
+// validateAbsPath) and the per-platform id/owner validator maps live in lib.ts so the
+// settings server can validate identically without importing this wizard module.
 
 // ─── .env helpers ─────────────────────────────────────────────────────────────
 
@@ -856,12 +825,8 @@ async function removeRosterEntry(a: AuthoringAccess): Promise<void> {
   const [kind, id] = picked.split(':') as ['human' | 'peer', string]
   const confirm = orCancel(await p.confirm({ message: `Remove ${picked}? (also drops it from every channel)`, initialValue: false }))
   if (!confirm) return
-  if (kind === 'human') delete a.roster.people[id]
-  else delete a.roster.peers[id]
-  for (const ch of Object.values(a.channels)) {
-    ch.collaborators = ch.collaborators.filter(c => !(c.kind === kind && c.id === id))
-  }
-  saveAuthoringAccess(a)
+  // Shared with the settings UI so the cascade can't drift between the two surfaces.
+  saveAuthoringAccess(removeRosterEntryFrom(a, kind, id))
   p.log.success(`Removed ${picked} from the roster`)
 }
 
