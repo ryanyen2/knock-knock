@@ -75,6 +75,53 @@ test('handleMessageEvent: a system subtype (channel_join) is dropped', () => {
   expect(seen).toHaveLength(0)
 })
 
+// ─── app_mention / message dedup (file-bearing event must win) ──────────────
+// app_mention carries no `files`; the `message`/file_share twin does. The adapter
+// defers app_mention briefly so the file-bearing message twin can preempt it.
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+test('file_share message twin preempts a file-less app_mention that arrived first', async () => {
+  const { adapter, seen } = harness()
+  // app_mention lands first — no files on this event.
+  adapter.handleMessageEvent({ channel: 'C1', ts: '10', user: 'U_h', text: '<@U_self> save this' }, true)
+  expect(seen).toHaveLength(0) // deferred, not dispatched yet
+  // The authoritative message twin (file_share) lands within the window.
+  adapter.handleMessageEvent(
+    {
+      channel: 'C1',
+      ts: '10',
+      user: 'U_h',
+      subtype: 'file_share',
+      text: '<@U_self> save this',
+      files: [{ id: 'F1', name: 'doc.pdf', url_private: 'https://x/doc.pdf', mimetype: 'application/pdf', size: 3 }],
+    },
+    false,
+  )
+  expect(seen).toHaveLength(1) // dispatched immediately by the message twin
+  expect(seen[0]!.attachments).toHaveLength(1)
+  expect(seen[0]!.attachments![0]!.name).toBe('doc.pdf')
+  expect(seen[0]!.mentionsBot).toBe(true) // text-based detection on the message twin
+  await sleep(400) // the deferred app_mention timer must NOT fire a second time
+  expect(seen).toHaveLength(1)
+})
+
+test('app_mention with no message twin dispatches as a text-only fallback', async () => {
+  const { adapter, seen } = harness()
+  adapter.handleMessageEvent({ channel: 'C1', ts: '11', user: 'U_h', text: '<@U_self> hi' }, true)
+  expect(seen).toHaveLength(0)
+  await sleep(400)
+  expect(seen).toHaveLength(1)
+  expect(seen[0]!.attachments).toBeUndefined()
+})
+
+test('a message twin arriving after the app_mention is dropped (already dispatched)', async () => {
+  const { adapter, seen } = harness()
+  adapter.handleMessageEvent({ channel: 'C1', ts: '12', user: 'U_h', subtype: 'file_share', text: 'hi', files: [{ id: 'F2', name: 'a.png', url_private: 'u', size: 1 }] }, false)
+  expect(seen).toHaveLength(1)
+  adapter.handleMessageEvent({ channel: 'C1', ts: '12', user: 'U_h', text: 'hi' }, true)
+  expect(seen).toHaveLength(1) // app_mention twin dropped — already served
+})
+
 test('capabilities: outbound files are supported', () => {
   const adapter = new SlackMessagingAdapter()
   expect(adapter.capabilities().files?.outbound).toBe(true)

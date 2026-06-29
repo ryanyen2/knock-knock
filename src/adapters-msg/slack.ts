@@ -105,6 +105,15 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   // message ts (unique per message; the two events share it). Bounded FIFO.
   private readonly seenMessageTs = new Set<string>()
 
+  // The `message` event is authoritative — only it carries `files` (app_mention
+  // never does). So a file shared with an @mention must be served from the message
+  // event, not its file-less app_mention twin. We dispatch message events at once and
+  // briefly DEFER app_mention: if the message twin lands first (or within the window)
+  // it preempts the pending mention; if no twin arrives (mention-only scope) the
+  // deferred app_mention fires as a text-only fallback. Keyed by `channel:ts`.
+  private readonly pendingMentions = new Map<string, ReturnType<typeof setTimeout>>()
+  private static readonly MENTION_COALESCE_MS = 350
+
   // ─── lifecycle ──────────────────────────────────────────────────────────────
 
   async connect(token: string, secrets?: Record<string, string>): Promise<void> {
@@ -137,6 +146,8 @@ export class SlackMessagingAdapter implements MessagingAdapter {
   }
 
   async disconnect(): Promise<void> {
+    for (const timer of this.pendingMentions.values()) clearTimeout(timer)
+    this.pendingMentions.clear()
     await this.socket?.disconnect().catch(() => {})
   }
 
@@ -283,18 +294,59 @@ export class SlackMessagingAdapter implements MessagingAdapter {
 
     const channel: string = event.channel
     const ts: string = event.ts
-
-    // Drop the duplicate: the `message` + `app_mention` pair carry the same ts.
-    // Whichever arrives first wins; mention detection below is text-based, so the
-    // surviving event still resolves the mention regardless of which one it was.
     const dedupeKey = `${channel}:${ts}`
-    if (this.seenMessageTs.has(dedupeKey)) return
+
+    // Already dispatched (by the message twin, or a prior identical event) — drop.
+    if (this.seenMessageTs.has(dedupeKey)) {
+      this.clearPendingMention(dedupeKey)
+      return
+    }
+
+    // app_mention carries no `files`, so it must NOT preempt its `message` twin (which
+    // does). Defer it briefly; a message twin landing in the window preempts it. If no
+    // twin arrives (mention-only scope), the timer dispatches it as a text-only fallback.
+    if (isMention) {
+      if (this.pendingMentions.has(dedupeKey)) return
+      const timer = setTimeout(() => {
+        this.pendingMentions.delete(dedupeKey)
+        if (this.seenMessageTs.has(dedupeKey)) return
+        this.markSeen(dedupeKey)
+        this.emitMessage(event, true)
+      }, SlackMessagingAdapter.MENTION_COALESCE_MS)
+      this.pendingMentions.set(dedupeKey, timer)
+      return
+    }
+
+    // A `message` event is authoritative: dispatch now and cancel any pending mention twin.
+    this.clearPendingMention(dedupeKey)
+    this.markSeen(dedupeKey)
+    this.emitMessage(event, false)
+  }
+
+  /** Record a ts as dispatched, bounded FIFO. */
+  private markSeen(dedupeKey: string): void {
     this.seenMessageTs.add(dedupeKey)
     if (this.seenMessageTs.size > 1000) {
       const first = this.seenMessageTs.values().next().value
       if (first) this.seenMessageTs.delete(first)
     }
+  }
 
+  /** Cancel a deferred app_mention (its message twin won, or it's been dispatched). */
+  private clearPendingMention(dedupeKey: string): void {
+    const timer = this.pendingMentions.get(dedupeKey)
+    if (timer) {
+      clearTimeout(timer)
+      this.pendingMentions.delete(dedupeKey)
+    }
+  }
+
+  /** Build an IncomingMessage from a Slack event and hand it to the seam. */
+  private emitMessage(event: any, isMention: boolean): void {
+    const h = this.onMessageHandler
+    if (!h) return
+    const channel: string = event.channel
+    const ts: string = event.ts
     const threadTs: string | undefined = event.thread_ts
     // A thread reply lives in (channel, thread_ts); the room is the bare channel.
     const isThread = Boolean(threadTs) && threadTs !== ts
