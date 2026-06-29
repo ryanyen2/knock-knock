@@ -1,11 +1,12 @@
 /**
- * settings-server.ts tests. The guard layer is a pure function, exercised here without
- * binding a port; the read/write API tests (later units) point KNOCK_KNOCK_STATE_DIR at a
- * temp dir before importing state.ts, mirroring tests/state.test.ts.
+ * settings-guard.ts tests. The guard layer is a pure function, exercised here without
+ * binding a port. It imports from settings-guard.ts (not settings-server.ts) precisely so it
+ * does NOT pull in state.ts — keeping this suite from binding KNOCK_KNOCK_STATE_DIR. The
+ * read/write API tests live in settings-api.test.ts, which sets a temp STATE_DIR first.
  */
 
 import { test, expect } from 'bun:test'
-import { guardRequest, type GuardContext } from '../src/settings-server.ts'
+import { guardRequest, type GuardContext } from '../src/settings-guard.ts'
 
 const PORT = 51234
 const ctx: GuardContext = {

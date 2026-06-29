@@ -471,6 +471,53 @@ export function sanitizeAuthoringInput(incoming: unknown, current: AuthoringAcce
   }
 }
 
+/** A field-level validation error from {@link validateAuthoringConfig}. */
+export type ConfigError = { field: string; message: string }
+
+const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** Validate a (sanitized) AuthoringAccess for referential and field integrity, the way the
+ *  terminal wizard validates each field as it is entered. Returns one entry per problem
+ *  (empty ⇒ valid). Pure — the settings server runs this before persisting and surfaces the
+ *  field names to the UI; it never echoes the offending value. */
+export function validateAuthoringConfig(a: AuthoringAccess): ConfigError[] {
+  const errs: ConfigError[] = []
+  for (const [key, bot] of Object.entries(a.bots)) {
+    const e = validateBotKey(key)
+    if (e) errs.push({ field: `bots.${key}`, message: e })
+    if (!ENV_NAME_RE.test(bot.tokenEnv)) errs.push({ field: `bots.${key}.tokenEnv`, message: 'Not a valid environment-variable name.' })
+    for (const [name, env] of Object.entries(bot.secretEnv ?? {})) {
+      if (!ENV_NAME_RE.test(env)) errs.push({ field: `bots.${key}.secretEnv.${name}`, message: 'Not a valid environment-variable name.' })
+    }
+  }
+  for (const [pl, id] of Object.entries(a.me ?? {})) {
+    const e = PLATFORM_OWNER_VALIDATORS[pl as Platform]?.(id)
+    if (e) errs.push({ field: `me.${pl}`, message: e })
+  }
+  for (const [ck, ch] of Object.entries(a.channels)) {
+    const e = PLATFORM_ID_VALIDATORS[ch.platform]?.(ch.channelId)
+    if (e) errs.push({ field: `channels.${ck}.channelId`, message: e })
+    for (const m of ch.members) {
+      if (!a.bots[m.bot]) errs.push({ field: `channels.${ck}.members`, message: `Unknown bot "${m.bot}".` })
+      const we = validateAbsPath(m.workspace)
+      if (we) errs.push({ field: `channels.${ck}.members.${m.bot}.workspace`, message: we })
+    }
+    for (const c of ch.collaborators) {
+      const exists = c.kind === 'human' ? !!a.roster.people[c.id] : !!a.roster.peers[c.id]
+      if (!exists) errs.push({ field: `channels.${ck}.collaborators`, message: `Unknown ${c.kind} "${c.id}".` })
+    }
+  }
+  for (const [id, person] of Object.entries(a.roster.people)) {
+    const e = PLATFORM_OWNER_VALIDATORS[person.platform]?.(person.userId)
+    if (e) errs.push({ field: `roster.people.${id}`, message: e })
+  }
+  for (const [id, peer] of Object.entries(a.roster.peers)) {
+    const e = PLATFORM_OWNER_VALIDATORS[peer.platform]?.(peer.userId)
+    if (e) errs.push({ field: `roster.peers.${id}`, message: e })
+  }
+  return errs
+}
+
 /** Rename a bot key in the authoring shape: move `bots[oldKey]→newKey` and rewrite
  *  every `channels[*].members[].bot` reference. Pure — returns a new AuthoringAccess
  *  (the input is not mutated). The bot's `tokenEnv` is left untouched (keeps the

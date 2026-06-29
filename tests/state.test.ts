@@ -15,6 +15,7 @@ const dir = mkdtempSync(join(tmpdir(), 'kk-state-'))
 process.env.KNOCK_KNOCK_STATE_DIR = dir
 
 const {
+  STATE_DIR,
   PENDING_FILE,
   ACCESS_FILE,
   readPending,
@@ -85,8 +86,10 @@ test('reconcilePending: drops entries now confirmed in access.json and stamps la
 test('corrupt pending.json is quarantined and treated as empty', () => {
   writeFileSync(PENDING_FILE, '{not json', { mode: 0o600 })
   expect(readPending()).toEqual({ proposals: [] })
-  // the torn file was moved aside, not left in place to crash the next read
-  expect(readdirSync(dir).some(f => f.startsWith('pending.json.corrupt-'))).toBe(true)
+  // the torn file was moved aside, not left in place to crash the next read.
+  // Read from the actually-bound STATE_DIR (not the local `dir`), so this holds regardless of
+  // which state-touching suite imported state.ts first in the shared test process.
+  expect(readdirSync(STATE_DIR).some(f => f.startsWith('pending.json.corrupt-'))).toBe(true)
 })
 
 test('trust anchors survive a save/read round-trip and are terminal-owned', () => {

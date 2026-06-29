@@ -19,63 +19,29 @@
  * binding a port; the `Bun.serve` shell stays thin (mirrors webhook-receiver.ts).
  */
 
-import { Buffer } from 'node:buffer'
-import { timingSafeEqual } from 'node:crypto'
+import { readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import type { Server } from 'bun'
+import {
+  ACCESS_FILE,
+  parseAuthoringAccess,
+  saveAuthoringAccess,
+  readSettings,
+  saveSettings,
+} from './state.ts'
+import {
+  defaultAuthoringAccess,
+  sanitizeAuthoringInput,
+  validateAuthoringConfig,
+  type AuthoringAccess,
+} from './lib.ts'
+import { guardRequest, MAX_BODY_BYTES } from './settings-guard.ts'
+import { SETTINGS_HTML } from './settings-ui.ts'
 
 export type SettingsServerHandle = {
   readonly url: string
   readonly port: number
   stop(): void
-}
-
-/** Default port when `KNOCK_KNOCK_SETTINGS_PORT` is unset and no ephemeral port is forced. */
-export const DEFAULT_SETTINGS_PORT = 8788
-/** Max accepted request body (a config file is a few KB; this is generous headroom). */
-export const MAX_BODY_BYTES = 256 * 1024
-
-export type GuardContext = {
-  allowedHosts: Set<string>
-  allowedOrigins: Set<string>
-  token: string
-}
-
-export type GuardInput = {
-  method: string
-  host: string | null
-  origin: string | null
-  authorization: string | null
-  /** Whether the request targets the JSON API (`/api/…`) vs. the static page shell. */
-  isApi: boolean
-}
-
-export type GuardResult = { ok: true } | { ok: false; status: number }
-
-/** Constant-time bearer-token check. Accepts `Authorization: Bearer <t>` or the raw token.
- *  Length is compared first so `timingSafeEqual` never throws on a mismatched-length input. */
-function tokenMatches(authorization: string | null, token: string): boolean {
-  if (!authorization) return false
-  const m = /^Bearer\s+(.+)$/i.exec(authorization)
-  const provided = (m ? m[1]! : authorization).trim()
-  const a = Buffer.from(provided)
-  const b = Buffer.from(token)
-  if (a.length !== b.length) return false
-  return timingSafeEqual(a, b)
-}
-
-/**
- * Decide whether a request is allowed, as a pure function of its headers. The static page
- * shell (`isApi: false`) is Host-checked only — it carries no secrets and the data lives
- * behind the token-gated API. Every API request needs a valid Host and token; mutating API
- * requests additionally need an allowed Origin.
- */
-export function guardRequest(g: GuardInput, ctx: GuardContext): GuardResult {
-  if (!g.host || !ctx.allowedHosts.has(g.host)) return { ok: false, status: 403 }
-  if (!g.isApi) return { ok: true }
-  if (!tokenMatches(g.authorization, ctx.token)) return { ok: false, status: 401 }
-  const mutating = g.method !== 'GET' && g.method !== 'HEAD'
-  if (mutating && (!g.origin || !ctx.allowedOrigins.has(g.origin))) return { ok: false, status: 403 }
-  return { ok: true }
 }
 
 /** Wrap a response with the standard security headers. Never sets any CORS header. */
@@ -147,6 +113,43 @@ function allowlistsFor(boundPort: number): { allowedHosts: Set<string>; allowedO
   }
 }
 
+/** Version token for the on-disk config when no file exists yet. A file appearing
+ *  underneath the editor changes the version away from this sentinel → 409. */
+const ABSENT_VERSION = 'absent'
+
+/** Read access.json once and derive both the parsed config and a content-hash version from
+ *  the SAME bytes (closes the read-side TOCTOU mtime+size would hide). ENOENT ⇒ defaults +
+ *  the absent sentinel. A corrupt/garbage file throws (the caller answers 500) rather than
+ *  silently editing defaults over a recoverable file. */
+function readConfigWithVersion(): { access: AuthoringAccess; version: string } {
+  let buf: Buffer
+  try {
+    buf = readFileSync(ACCESS_FILE)
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { access: defaultAuthoringAccess(), version: ABSENT_VERSION }
+    }
+    throw err
+  }
+  const version = createHash('sha256').update(buf).digest('hex').slice(0, 16)
+  const access = parseAuthoringAccess(JSON.parse(buf.toString('utf8')) as Record<string, unknown>)
+  return { access, version }
+}
+
+/** Read and JSON-parse a request body, enforcing the size cap. Throws `BODY_TOO_LARGE` /
+ *  `BAD_JSON` sentinels the caller maps to 413 / 400. */
+async function readJsonBody(req: Request): Promise<unknown> {
+  const declared = Number(req.headers.get('content-length') ?? '0')
+  if (declared > MAX_BODY_BYTES) throw new Error('BODY_TOO_LARGE')
+  const text = await req.text()
+  if (text.length > MAX_BODY_BYTES) throw new Error('BODY_TOO_LARGE')
+  try {
+    return JSON.parse(text)
+  } catch {
+    throw new Error('BAD_JSON')
+  }
+}
+
 async function handleRequest(
   req: Request,
   ctx: { token: string; hostname: string; boundPort: number },
@@ -167,10 +170,59 @@ async function handleRequest(
     )
     if (!guard.ok) return errorResponse(guard.status, guard.status === 401 ? 'unauthorized' : 'forbidden')
 
-    // Routes are layered in by later units; the skeleton answers health + a 404 floor.
+    if (req.method === 'GET' && url.pathname === '/') {
+      return secured(new Response(SETTINGS_HTML, { headers: { 'Content-Type': 'text/html; charset=utf-8' } }))
+    }
     if (req.method === 'GET' && url.pathname === '/api/health') return jsonResponse({ ok: true })
+    if (req.method === 'GET' && url.pathname === '/api/config') return handleReadConfig()
+    if (req.method === 'PUT' && url.pathname === '/api/config') return handleWriteConfig(req)
+    if (req.method === 'PUT' && url.pathname === '/api/ledger') return handleWriteLedger(req)
     return errorResponse(404, 'not_found')
   } catch {
     return errorResponse(500, 'internal_error')
   }
+}
+
+/** GET /api/config → the current config, ledger backend, and a content-hash version. */
+function handleReadConfig(): Response {
+  const { access, version } = readConfigWithVersion()
+  return jsonResponse({ access, ledger: readSettings().ledger ?? null, version })
+}
+
+/** PUT /api/config → sanitize, version-check (409), validate (400), persist via state.ts. */
+async function handleWriteConfig(req: Request): Promise<Response> {
+  let body: { config?: unknown; version?: unknown }
+  try {
+    body = (await readJsonBody(req)) as { config?: unknown; version?: unknown }
+  } catch (e) {
+    return errorResponse((e as Error).message === 'BODY_TOO_LARGE' ? 413 : 400, 'bad_request')
+  }
+  const { access: current, version: currentVersion } = readConfigWithVersion()
+  if (typeof body.version !== 'string' || body.version !== currentVersion) {
+    return errorResponse(409, 'conflict')
+  }
+  const next = sanitizeAuthoringInput(body.config, current)
+  const errors = validateAuthoringConfig(next)
+  if (errors.length) return jsonResponse({ error: 'validation', fields: errors }, 400)
+  saveAuthoringAccess(next)
+  return jsonResponse({ version: readConfigWithVersion().version })
+}
+
+/** PUT /api/ledger → set the ledger backend in settings.json (independent of access.json). */
+async function handleWriteLedger(req: Request): Promise<Response> {
+  let body: { backend?: unknown; url?: unknown }
+  try {
+    body = (await readJsonBody(req)) as { backend?: unknown; url?: unknown }
+  } catch (e) {
+    return errorResponse((e as Error).message === 'BODY_TOO_LARGE' ? 413 : 400, 'bad_request')
+  }
+  if (body.backend !== 'sqlite' && body.backend !== 'postgres') {
+    return jsonResponse({ error: 'validation', fields: [{ field: 'backend', message: 'Choose sqlite or postgres.' }] }, 400)
+  }
+  const url = typeof body.url === 'string' ? body.url.trim() : ''
+  if (body.backend === 'postgres' && !url) {
+    return jsonResponse({ error: 'validation', fields: [{ field: 'url', message: 'Postgres needs a connection URL.' }] }, 400)
+  }
+  saveSettings({ ...readSettings(), ledger: { backend: body.backend, ...(url ? { url } : {}) } })
+  return jsonResponse({ ok: true })
 }
