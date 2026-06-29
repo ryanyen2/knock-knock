@@ -20,10 +20,12 @@
  */
 
 import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { Server } from 'bun'
 import {
   ACCESS_FILE,
+  STATE_DIR,
   parseAuthoringAccess,
   saveAuthoringAccess,
   readSettings,
@@ -33,10 +35,30 @@ import {
   defaultAuthoringAccess,
   sanitizeAuthoringInput,
   validateAuthoringConfig,
+  resolveRoomProfile,
+  expandPreset,
+  PLATFORM_GUIDE,
+  RUNTIMES,
+  PRESET_HINTS,
+  DEFAULT_PRESET,
   type AuthoringAccess,
 } from './lib.ts'
+import type { PermissionProfile } from './agent-adapter.ts'
 import { guardRequest, MAX_BODY_BYTES } from './settings-guard.ts'
 import { SETTINGS_HTML } from './settings-ui.ts'
+
+/** A request from the web UI for the launching terminal to run a sensitive wizard flow
+ *  (entering a token, editing a channel's permissions) that the web surface deliberately
+ *  won't do itself. `bot`/`channel` are validated against the live config before dispatch. */
+export type HandoffRequest =
+  | { action: 'set-token'; bot: string }
+  | { action: 'edit-permissions'; bot: string }
+  | { action: 'start-relay' }
+
+/** Provided by setup.ts's `--ui` runner: runs the terminal flow for a handoff request and
+ *  resolves when it completes (or rejects on failure/cancel). Absent ⇒ handoff is unsupported
+ *  (e.g. the server booted outside an interactive terminal) and the API answers 503. */
+export type HandoffRunner = (req: HandoffRequest) => Promise<void>
 
 export type SettingsServerHandle = {
   readonly url: string
@@ -81,17 +103,22 @@ export function startSettingsServer(opts: {
   port?: number
   hostname?: string
   log?: (msg: string) => void
+  /** Runs terminal-side handoff flows (token entry, permission editing). Absent ⇒ /api/handoff
+   *  answers 503 (the web UI then just shows "do this in the terminal" without a button). */
+  requestHandoff?: HandoffRunner
 }): SettingsServerHandle {
   const hostname = opts.hostname ?? '127.0.0.1'
   const envPort = process.env.KNOCK_KNOCK_SETTINGS_PORT
   // Ephemeral (port 0) by default: an unguessable port is cheap defense-in-depth.
   const port = opts.port ?? (envPort ? Number(envPort) : 0)
   const log = opts.log ?? (() => {})
+  // Single-flight handoff state for THIS server instance (no module globals).
+  const handoff: HandoffState = { state: 'idle', runner: opts.requestHandoff }
 
   const server: Server<undefined> = Bun.serve({
     port,
     hostname,
-    fetch: (req) => handleRequest(req, { token: opts.token, hostname, boundPort: server.port ?? port }),
+    fetch: (req) => handleRequest(req, { token: opts.token, hostname, boundPort: server.port ?? port, handoff }),
   })
 
   const boundPort = server.port ?? port
@@ -152,7 +179,7 @@ async function readJsonBody(req: Request): Promise<unknown> {
 
 async function handleRequest(
   req: Request,
-  ctx: { token: string; hostname: string; boundPort: number },
+  ctx: { token: string; hostname: string; boundPort: number; handoff: HandoffState },
 ): Promise<Response> {
   try {
     const url = new URL(req.url)
@@ -177,16 +204,123 @@ async function handleRequest(
     if (req.method === 'GET' && url.pathname === '/api/config') return handleReadConfig()
     if (req.method === 'PUT' && url.pathname === '/api/config') return handleWriteConfig(req)
     if (req.method === 'PUT' && url.pathname === '/api/ledger') return handleWriteLedger(req)
+    if (req.method === 'GET' && url.pathname === '/api/handoff') return handleHandoffStatus(ctx.handoff)
+    if (req.method === 'POST' && url.pathname === '/api/handoff') return handleHandoffRequest(req, ctx.handoff)
     return errorResponse(404, 'not_found')
   } catch {
     return errorResponse(500, 'internal_error')
   }
 }
 
-/** GET /api/config → the current config, ledger backend, and a content-hash version. */
+/** GET /api/config → the current config plus everything the web UI needs to render without
+ *  ever holding a secret: per-platform guidance, boolean token presence, the resolved
+ *  (read-only) permission profile per channel-member, the ledger backend, and a version. */
 function handleReadConfig(): Response {
   const { access, version } = readConfigWithVersion()
-  return jsonResponse({ access, ledger: readSettings().ledger ?? null, version })
+  return jsonResponse({
+    access,
+    platforms: PLATFORM_GUIDE,
+    runtimes: RUNTIMES,
+    presets: PRESET_HINTS,
+    defaultPreset: DEFAULT_PRESET,
+    cwd: process.cwd(),
+    tokens: tokenStatus(access),
+    resolvedPermissions: resolvedPermissionsFor(access),
+    ledger: readSettings().ledger ?? null,
+    version,
+  })
+}
+
+const ENV_FILE = join(STATE_DIR, '.env')
+
+/** Names of env vars currently set (non-empty) in the state-dir `.env` OR the process env.
+ *  Returns PRESENCE ONLY — the values never leave this function (R: never expose secrets). */
+function envNamesSet(): Set<string> {
+  const set = new Set<string>()
+  try {
+    for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+      const m = line.match(/^(\w+)=(.*)$/)
+      if (m && m[2] !== '') set.add(m[1]!)
+    }
+  } catch {}
+  for (const [k, v] of Object.entries(process.env)) if (v) set.add(k)
+  return set
+}
+
+/** `{ [envVar]: boolean }` for every bot's primary token + extra secrets. Boolean only. */
+function tokenStatus(access: AuthoringAccess): Record<string, boolean> {
+  const present = envNamesSet()
+  const out: Record<string, boolean> = {}
+  for (const bot of Object.values(access.bots)) {
+    out[bot.tokenEnv] = present.has(bot.tokenEnv)
+    for (const env of Object.values(bot.secretEnv ?? {})) out[env] = present.has(env)
+  }
+  return out
+}
+
+/** The effective (read-only) allow/ask/deny per channel→bot, resolved exactly as the runtime
+ *  would (preset expansion + deny floor) so the web shows the real enforced profile. */
+function resolvedPermissionsFor(
+  access: AuthoringAccess,
+): Record<string, Record<string, { preset?: string } & PermissionProfile>> {
+  const out: Record<string, Record<string, { preset?: string } & PermissionProfile>> = {}
+  for (const [ck, ch] of Object.entries(access.channels)) {
+    const byBot: Record<string, { preset?: string } & PermissionProfile> = {}
+    for (const m of ch.members) {
+      const eff: PermissionProfile = m.profile
+        ? resolveRoomProfile(m.profile)
+        : m.preset
+          ? expandPreset(m.preset)
+          : resolveRoomProfile(undefined)
+      byBot[m.bot] = { ...(m.preset ? { preset: m.preset } : {}), allow: eff.allow, ask: eff.ask, deny: eff.deny }
+    }
+    out[ck] = byBot
+  }
+  return out
+}
+
+// ─── Handoff bridge (web asks the launching terminal to run a sensitive flow) ──────
+type HandoffState = {
+  state: 'idle' | 'running' | 'done' | 'error'
+  action?: string
+  runner?: HandoffRunner
+}
+
+/** GET /api/handoff → current single-flight state (so the page can poll for completion). */
+function handleHandoffStatus(handoff: HandoffState): Response {
+  return jsonResponse({ state: handoff.state, action: handoff.action ?? null, supported: !!handoff.runner })
+}
+
+/** POST /api/handoff → validate the request against the live config, then run it in the
+ *  terminal. No secret/permission data crosses the wire — only WHICH flow to open. */
+async function handleHandoffRequest(req: Request, handoff: HandoffState): Promise<Response> {
+  if (!handoff.runner) return errorResponse(503, 'handoff_unavailable')
+  if (handoff.state === 'running') return errorResponse(409, 'handoff_busy')
+  let body: { action?: unknown; bot?: unknown }
+  try {
+    body = (await readJsonBody(req)) as { action?: unknown; bot?: unknown }
+  } catch (e) {
+    return errorResponse((e as Error).message === 'BODY_TOO_LARGE' ? 413 : 400, 'bad_request')
+  }
+  let request: HandoffRequest
+  if (body.action === 'start-relay') {
+    request = { action: 'start-relay' }
+  } else if (body.action === 'set-token' || body.action === 'edit-permissions') {
+    const { access } = readConfigWithVersion()
+    const bot = typeof body.bot === 'string' ? body.bot : ''
+    if (!access.bots[bot]) return errorResponse(400, 'bad_request')
+    request = { action: body.action, bot }
+  } else {
+    return errorResponse(400, 'bad_request')
+  }
+  handoff.state = 'running'
+  handoff.action = request.action
+  // Run in the background; the page polls GET /api/handoff for the outcome.
+  handoff
+    .runner(request)
+    .then(() => { handoff.state = 'done' })
+    .catch(() => { handoff.state = 'error' })
+  return jsonResponse({ state: 'running', action: request.action })
 }
 
 /** PUT /api/config → sanitize, version-check (409), validate (400), persist via state.ts. */

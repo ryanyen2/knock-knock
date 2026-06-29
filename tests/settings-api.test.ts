@@ -6,7 +6,7 @@
  */
 
 import { test as _test, expect, beforeEach, afterAll } from 'bun:test'
-import { mkdtempSync, rmSync, readFileSync, existsSync } from 'fs'
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
@@ -150,4 +150,132 @@ test('GET on a missing access.json returns defaults with a stable version', asyn
   const body = await r.json()
   expect(body.access.bots).toEqual({})
   expect(body.version).toBe('absent')
+})
+
+// ─── New read-endpoint extras: platforms guide, token status, resolved permissions ───
+
+const ENV_FILE = join(dir, '.env')
+function clearEnvFile() { try { rmSync(ENV_FILE) } catch {} }
+
+test('GET /api/config includes the per-platform guide (links/howto/steps), no validators', async () => {
+  seed(baseConfig())
+  const body = await (await req('/api/config')).json()
+  expect(body.platforms.discord.tokenEnvBase).toBe('DISCORD_BOT_TOKEN')
+  expect(typeof body.platforms.discord.tokenHowto).toBe('string')
+  expect(body.platforms.discord.tokenUrl).toContain('discord.com')
+  expect(Array.isArray(body.platforms.discord.setupSteps)).toBe(true)
+  expect(body.platforms.discord.setupSteps.length).toBeGreaterThan(0)
+  // guidance is pure data — no functions survive JSON, so idValidate must be absent
+  expect(body.platforms.discord.idValidate).toBeUndefined()
+})
+
+test('GET /api/config includes runtimes, presets, the default preset, and the server cwd', async () => {
+  seed(baseConfig())
+  const body = await (await req('/api/config')).json()
+  expect(body.runtimes.some((r: { value: string }) => r.value === 'claude-sdk')).toBe(true)
+  expect(typeof body.presets['ask-per-edit']).toBe('string')
+  expect(body.defaultPreset).toBe('ask-per-edit')
+  expect(body.cwd).toBe(process.cwd())
+})
+
+test('token status is boolean-only and never leaks the value', async () => {
+  clearEnvFile()
+  writeFileSync(ENV_FILE, 'DISCORD_BOT_TOKEN=s3cr3t-sentinel-value\n', { mode: 0o600 })
+  seed(baseConfig())
+  const r = await req('/api/config')
+  const text = await r.text()
+  expect(text).not.toContain('s3cr3t-sentinel-value') // the value never crosses the wire
+  const body = JSON.parse(text)
+  expect(body.tokens.DISCORD_BOT_TOKEN).toBe(true)
+  clearEnvFile()
+})
+
+test('token status is false for an env var that is not set', async () => {
+  clearEnvFile()
+  seed({
+    bots: { z: { platform: 'discord', tokenEnv: 'KK_DEFINITELY_UNSET_TOKEN_XZ', runtime: 'claude-sdk' } },
+    channels: {}, roster: { people: {}, peers: {} },
+  })
+  const body = await (await req('/api/config')).json()
+  expect(body.tokens.KK_DEFINITELY_UNSET_TOKEN_XZ).toBe(false)
+})
+
+test('resolvedPermissions expands a member preset and re-unions the deny floor', async () => {
+  seed({
+    bots: { cc: { platform: 'discord', tokenEnv: 'DISCORD_BOT_TOKEN', runtime: 'claude-sdk' } },
+    channels: {
+      'discord:123456789012345678': {
+        platform: 'discord', channelId: '123456789012345678',
+        members: [{ bot: 'cc', workspace: '/tmp/ws', preset: 'ask-per-edit' }],
+        collaborators: [],
+      },
+    },
+    roster: { people: {}, peers: {} },
+  })
+  const body = await (await req('/api/config')).json()
+  const rp = body.resolvedPermissions['discord:123456789012345678'].cc
+  expect(rp.preset).toBe('ask-per-edit')
+  expect(Array.isArray(rp.allow)).toBe(true)
+  expect(rp.deny.length).toBeGreaterThan(0) // deny floor is always present
+})
+
+// ─── Handoff bridge ──────────────────────────────────────────────────────────
+
+test('POST /api/handoff is 503 when the server has no terminal runner', async () => {
+  seed(baseConfig())
+  const g = await (await req('/api/handoff')).json()
+  expect(g.supported).toBe(false)
+  const p = await req('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN }, body: JSON.stringify({ action: 'set-token', bot: 'cc' }) })
+  expect(p.status).toBe(503)
+})
+
+// A second server WITH a controllable runner, to exercise the running/busy/done path.
+let deferred: { res: () => void; rej: () => void } | null = null
+const srvH = startSettingsServer({ token: TOKEN, requestHandoff: () => new Promise((res, rej) => { deferred = { res, rej } }) })
+const BASE_H = 'http://127.0.0.1:' + srvH.port
+const ORIGIN_H = BASE_H
+afterAll(() => { srvH.stop() })
+function reqH(path: string, opts: RequestInit = {}): Promise<Response> {
+  opts.headers = Object.assign({ Authorization: 'Bearer ' + TOKEN }, opts.headers || {})
+  return fetch(BASE_H + path, opts)
+}
+
+test('handoff rejects an unknown action and an unknown bot with 400', async () => {
+  seed(baseConfig())
+  const bad = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'nope', bot: 'cc' }) })
+  expect(bad.status).toBe(400)
+  const unk = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'set-token', bot: 'ghost' }) })
+  expect(unk.status).toBe(400)
+})
+
+test('handoff accepts start-relay with no bot, and still rejects a bogus action', async () => {
+  seed(baseConfig())
+  deferred = null
+  const ok = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'start-relay' }) })
+  expect(ok.status).toBe(200)
+  expect((await ok.json()).action).toBe('start-relay')
+  if (deferred) (deferred as { res: () => void }).res()
+  await new Promise(r => setTimeout(r, 10))
+})
+
+test('handoff requires a token (401) and an allowed Origin (403)', async () => {
+  seed(baseConfig())
+  const noTok = await fetch(BASE_H + '/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'set-token', bot: 'cc' }) })
+  expect(noTok.status).toBe(401)
+  const foreign = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: 'http://evil.example.com' }, body: JSON.stringify({ action: 'set-token', bot: 'cc' }) })
+  expect(foreign.status).toBe(403)
+})
+
+test('handoff runs single-flight: a valid request is accepted, a second is 409 busy, then done', async () => {
+  seed(baseConfig())
+  deferred = null
+  const start = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'set-token', bot: 'cc' }) })
+  expect(start.status).toBe(200)
+  expect((await start.json()).state).toBe('running')
+  expect((await (await reqH('/api/handoff')).json()).state).toBe('running')
+  const busy = await reqH('/api/handoff', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: ORIGIN_H }, body: JSON.stringify({ action: 'edit-permissions', bot: 'cc' }) })
+  expect(busy.status).toBe(409)
+  deferred!.res() // terminal flow completes
+  await new Promise(r => setTimeout(r, 10))
+  expect((await (await reqH('/api/handoff')).json()).state).toBe('done')
 })

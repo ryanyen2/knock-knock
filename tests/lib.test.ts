@@ -80,6 +80,8 @@ import {
   peerBotStandsDownAtChannel,
   botEngagedInScope,
   selectActorHost,
+  PLATFORM_GUIDE,
+  RUNTIMES,
   type ConfigDeltaRecord,
   type WatchSpec,
   type RoomConfig,
@@ -2462,4 +2464,28 @@ test('sanitizeAuthoringInput: a wire profile/preset on a NEW membership is dropp
   const m = sanitizeAuthoringInput(incoming, current).channels['discord:C1']!.members[0]!
   expect(m.profile).toBeUndefined() // no prior on disk → permission fields cannot be granted from the wire
   expect(m.preset).toBeUndefined()
+})
+
+// ─── PLATFORM_GUIDE: shared onboarding data for the wizard + the web settings UI ───
+
+test('PLATFORM_GUIDE covers every platform with serializable guidance and no functions', () => {
+  const platforms = ['discord', 'slack', 'telegram', 'github', 'notion'] as const
+  for (const p of platforms) {
+    const g = PLATFORM_GUIDE[p]
+    expect(g.value).toBe(p)
+    expect(typeof g.tokenEnvBase).toBe('string')
+    expect(g.tokenEnvBase.length).toBeGreaterThan(0)
+    expect(typeof g.tokenHowto).toBe('string')
+    expect(typeof g.idLabel).toBe('string')
+    expect(Array.isArray(g.secrets)).toBe(true)
+    expect(Array.isArray(g.notes)).toBe(true)
+    expect(Array.isArray(g.setupSteps)).toBe(true)
+    expect(g.setupSteps.length).toBeGreaterThan(0)
+  }
+  // It must be pure data so the settings server can ship it to the browser as JSON.
+  expect(JSON.parse(JSON.stringify(PLATFORM_GUIDE)).discord.tokenEnvBase).toBe('DISCORD_BOT_TOKEN')
+  // The (function) validators live separately, keyed by the same platform names.
+  expect(typeof PLATFORM_ID_VALIDATORS.discord).toBe('function')
+  // RUNTIMES is the shared coding-agent dropdown source; claude-sdk is always present.
+  expect(RUNTIMES.some(r => r.value === 'claude-sdk')).toBe(true)
 })

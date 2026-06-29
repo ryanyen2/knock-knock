@@ -30,6 +30,7 @@ import type {
   Person,
   Peer,
   Platform,
+  PlatformGuide,
   RoomProfile,
   Proposal,
   Need,
@@ -40,11 +41,11 @@ import {
   renameBot,
   required,
   validateBotKey,
-  discordId,
-  notionId,
   validateAbsPath,
   removeRosterEntry as removeRosterEntryFrom,
   isUiMode,
+  RUNTIMES,
+  PLATFORM_GUIDE,
   PLATFORM_ID_VALIDATORS,
   PLATFORM_OWNER_VALIDATORS,
   PRESET_MODES,
@@ -75,15 +76,6 @@ try {
     if (m && process.env[m[1]!] === undefined) process.env[m[1]!] = m[2]!
   }
 } catch {}
-
-const RUNTIMES = [
-  { value: 'claude-sdk', label: 'Claude Code', hint: 'in-process SDK · no install · local login or API key' },
-  { value: 'codex', label: 'OpenAI Codex', hint: 'via ACP (npx) · ChatGPT login or OPENAI_API_KEY' },
-  { value: 'opencode', label: 'OpenCode', hint: 'via ACP · run opencode → /connect to configure auth' },
-  { value: 'gemini', label: 'Gemini CLI', hint: 'via ACP · Google account login or GEMINI_API_KEY' },
-  { value: 'claude-acp', label: 'Claude Code (ACP)', hint: 'via ACP (npx) · local login or API key' },
-  { value: 'acp', label: 'Other ACP agent', hint: 'set KNOCK_KNOCK_ACP_COMMAND yourself' },
-]
 
 /** What auth each coding agent needs beyond the bot token. Saved to ~/.knock-knock/.env,
  *  so it's available to every bot/channel using that runtime — set once, reused.
@@ -185,158 +177,19 @@ async function saveCodingAgentKey(a: AuthoringAccess): Promise<void> {
 // Everything platform-shaped lives here so the flows below stay platform-neutral
 // (mirrors the runtime MessagingAdapter seam). See docs/messaging-platforms-setup.md.
 
-/** An extra secret a platform needs beyond the primary token (e.g. Slack's app token).
- *  `optional` secrets may be left blank at save time; `whenWebhook` secrets are only
- *  collected when the bot uses `intake: 'webhook'`. */
-type SecretSpec = {
-  name: string
-  envBase: string
-  label: string
-  howto: string
-  optional?: boolean
-  whenWebhook?: boolean
-}
-
-type PlatformSpec = {
-  value: Platform
-  label: string
-  hint: string
-  tokenEnvBase: string // base env-var NAME for the primary token
-  tokenHowto: string // where to get the primary token
-  secrets: SecretSpec[] // extra secrets → bot.secretEnv (logical name → env var)
-  idLabel: string // channel/scope id prompt
-  idHowto?: string // optional multi-line "how to find this id" help, printed before the prompt
-  idPlaceholder: string
+// The guidance/copy lives in lib.ts's PLATFORM_GUIDE (shared with the web settings UI so the
+// two surfaces can't drift); here we only graft on the (function) id/owner validators.
+type PlatformSpec = PlatformGuide & {
   idValidate: (v?: string) => string | undefined
-  ownerLabel: string // owner/me id prompt
-  ownerPlaceholder: string
   ownerValidate: (v?: string) => string | undefined
-  memberIdLabel: string // roster person/peer id prompt
-  notes: string[] // post-setup reminders printed after adding a bot/channel
-  /** Poll-based platforms (github/notion) can opt into event-driven webhook intake. */
-  supportsWebhook?: boolean
-  /** Onboarding lines printed when the bot is set to `intake: 'webhook'`. */
-  webhookNotes?: string[]
 }
 
-const PLATFORMS: Record<Platform, PlatformSpec> = {
-  discord: {
-    value: 'discord', label: 'Discord', hint: 'full-fidelity · gateway WebSocket',
-    tokenEnvBase: 'DISCORD_BOT_TOKEN',
-    tokenHowto: 'discord.com/developers → your app → Bot → Reset Token',
-    secrets: [],
-    idLabel: 'Channel ID (right-click channel → Copy Channel ID)',
-    idPlaceholder: '846209781206941736',
-    idValidate: discordId,
-    ownerLabel: 'Your Discord user ID (you own these bots — approval prompts ping you)',
-    ownerPlaceholder: '184695080709324800',
-    ownerValidate: discordId,
-    memberIdLabel: 'Their Discord user ID',
-    notes: [],
-  },
-  slack: {
-    value: 'slack', label: 'Slack', hint: 'full-fidelity · Socket Mode',
-    tokenEnvBase: 'SLACK_BOT_TOKEN',
-    tokenHowto: 'api.slack.com/apps → OAuth & Permissions → Bot User OAuth Token (xoxb-)',
-    secrets: [{
-      name: 'appToken', envBase: 'SLACK_APP_TOKEN', label: 'Slack app-level token (xapp-)',
-      howto: 'api.slack.com/apps → Basic Information → App-Level Tokens → scope connections:write',
-    }],
-    idLabel: 'Slack channel ID (channel name → About → Channel ID)',
-    idPlaceholder: 'C0123ABCD',
-    idValidate: PLATFORM_ID_VALIDATORS.slack,
-    ownerLabel: 'Your Slack member ID (avatar → Profile → ⋯ → Copy member ID)',
-    ownerPlaceholder: 'U0123ABCD',
-    ownerValidate: PLATFORM_OWNER_VALIDATORS.slack,
-    memberIdLabel: 'Their Slack member ID (U0123ABCD)',
-    notes: [
-      'Enable Socket Mode, Event Subscriptions, and Interactivity in your Slack app.',
-      'Invite the bot to each channel: /invite @yourbot.',
-    ],
-  },
-  telegram: {
-    value: 'telegram', label: 'Telegram', hint: 'near-parity · long-poll',
-    tokenEnvBase: 'TELEGRAM_BOT_TOKEN',
-    tokenHowto: '@BotFather → /newbot → copy the HTTP API token',
-    secrets: [],
-    idLabel: 'Telegram chat ID (negative for groups; -100… for supergroups)',
-    idHowto: [
-      'Finding the chat ID:',
-      '  • DM / private chat: message @userinfobot — it replies with your numeric id (the chat id, positive).',
-      '  • Group / supergroup: add @RawDataBot (or @getidsbot) to the group; it posts the chat id (negative,',
-      '    supergroups start with -100). Remove it afterwards.',
-      '  • Or, after the bot has its token: send any message in the chat, then open',
-      '    https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates and read result[].message.chat.id.',
-    ].join('\n'),
-    idPlaceholder: '-1001234567890',
-    idValidate: PLATFORM_ID_VALIDATORS.telegram,
-    ownerLabel: 'Your Telegram user ID (DM @userinfobot)',
-    ownerPlaceholder: '184695080',
-    ownerValidate: PLATFORM_OWNER_VALIDATORS.telegram,
-    memberIdLabel: 'Their Telegram user ID (numeric)',
-    notes: [
-      'BotFather → disable Group Privacy so the bot sees group messages.',
-      'Make the bot a group admin for reactions; /start it yourself to receive DMs.',
-    ],
-  },
-  github: {
-    value: 'github', label: 'GitHub', hint: 'async (~60s poll, or webhook) · issues / PRs',
-    tokenEnvBase: 'GITHUB_BOT_TOKEN',
-    tokenHowto: 'github.com → Settings → Developer settings → PAT (scopes: repo, notifications) on a machine-user account',
-    secrets: [{
-      name: 'webhookSecret', envBase: 'GITHUB_WEBHOOK_SECRET',
-      label: 'GitHub webhook secret (optional — verifies X-Hub-Signature-256)',
-      howto: 'the secret you set on the App/repo webhook (or `gh webhook forward`); leave blank to skip verification',
-      optional: true, whenWebhook: true,
-    }],
-    idLabel: 'Repository (owner/repo)',
-    idPlaceholder: 'acme/widgets',
-    idValidate: PLATFORM_ID_VALIDATORS.github,
-    ownerLabel: 'Owner GitHub login (the allowed @mentioner)',
-    ownerPlaceholder: 'octocat',
-    ownerValidate: PLATFORM_OWNER_VALIDATORS.github,
-    memberIdLabel: 'Their GitHub login',
-    notes: [
-      'The bot account must be a collaborator/member of the repo.',
-      'Poll mode: ~60s latency. On public repos only OWNER/MEMBER/COLLABORATOR authors are auto-trusted.',
-    ],
-    supportsWebhook: true,
-    webhookNotes: [
-      'Webhook intake (no public URL needed): install the CLI extension `gh extension install cli/gh-webhook`,',
-      'then forward issue comments to the relay:',
-      '  gh webhook forward --repo <owner/repo> --events issue_comment --url http://localhost:8787/github/<botKey>',
-      'Set KNOCK_KNOCK_WEBHOOK_PORT if 8787 is taken. For a GitHub App webhook, front it with smee.io instead.',
-    ],
-  },
-  notion: {
-    value: 'notion', label: 'Notion', hint: 'async (~10s poll, or webhook) · page comments',
-    tokenEnvBase: 'NOTION_TOKEN',
-    tokenHowto: 'notion.so/profile/integrations → New connection → Access token (workspace-scoped, ntn_…). A user PAT or an internal-integration secret both work.',
-    secrets: [{
-      name: 'notionVerificationToken', envBase: 'NOTION_VERIFICATION_TOKEN',
-      label: 'Notion webhook verification token (optional — auto-captured on first event)',
-      howto: 'shown when you Create the subscription in the integration; leave blank to capture it from the handshake',
-      optional: true, whenWebhook: true,
-    }],
-    idLabel: 'Notion page or database ID (32 hex chars from the page link)',
-    idPlaceholder: '1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d',
-    idValidate: notionId,
-    ownerLabel: 'Your Notion user ID (from GET /v1/users)',
-    ownerPlaceholder: '',
-    ownerValidate: PLATFORM_OWNER_VALIDATORS.notion,
-    memberIdLabel: 'Their Notion user ID',
-    notes: [
-      'CRITICAL: connect each page/database to the integration (Page → ••• → Connections) — or it sees nothing.',
-      'Enable capabilities: Read/Insert content, Read/Insert comments, Read user info. Comments are edited in place.',
-    ],
-    supportsWebhook: true,
-    webhookNotes: [
-      'Webhook intake needs a public URL: run a tunnel (cloudflared/ngrok) to KNOCK_KNOCK_WEBHOOK_PORT (default 8787),',
-      'then in the integration → Webhooks → Create subscription, paste https://<tunnel>/notion/<botKey>,',
-      'pick the Comment events, and Notion will POST a verification token (auto-captured on the first request).',
-    ],
-  },
-}
+const PLATFORMS: Record<Platform, PlatformSpec> = Object.fromEntries(
+  (Object.keys(PLATFORM_GUIDE) as Platform[]).map(p => [
+    p,
+    { ...PLATFORM_GUIDE[p], idValidate: PLATFORM_ID_VALIDATORS[p], ownerValidate: PLATFORM_OWNER_VALIDATORS[p] },
+  ]),
+) as Record<Platform, PlatformSpec>
 
 /** Pick a platform (used when adding a bot). */
 async function pickPlatform(): Promise<Platform> {
@@ -1659,28 +1512,62 @@ async function pickRosterPlatform(a: AuthoringAccess): Promise<Platform> {
 
 // ─── Entry ────────────────────────────────────────────────────────────────────
 
-/** Boot the localhost web settings UI and hold the process open until Ctrl-C. */
-async function runSettingsUi(): Promise<void> {
+/** Boot the localhost web settings UI and hold the process open until Ctrl-C. The web surface
+ *  never enters tokens or edits permissions itself; when it needs one of those it hands off to
+ *  THIS terminal via `requestHandoff` — so the secret/permission is still typed here, not in the
+ *  browser, and the user never has to go hunt for `.env` / `access.json` by hand. */
+async function runSettingsUi(): Promise<{ startRelay: boolean }> {
   const token = randomUUID()
-  const handle = startSettingsServer({ token })
+  let startRelay = false
+  let done: () => void
+  const finished = new Promise<void>(resolve => { done = resolve })
+  const tag = `\n  ${color.bgCyan(color.black(' web '))} `
+  const handle = startSettingsServer({
+    token,
+    requestHandoff: async req => {
+      if (req.action === 'start-relay') {
+        // The web asked to launch the relay. Tear the settings UI down and hand this terminal to
+        // the relay (main() does the import once we return). Delay so the HTTP response flushes.
+        process.stdout.write(`${tag}requested: starting the relay — this settings page will stop.\n`)
+        startRelay = true
+        setTimeout(() => { handle.stop(); done() }, 200)
+        return
+      }
+      // Re-read on every handoff: the web may have saved edits since we booted.
+      const a = readAuthoringAccess()
+      if (req.action === 'set-token') {
+        process.stdout.write(`${tag}requested: set the token for ${color.cyan(req.bot)} — answer below.\n`)
+        await saveBotToken(a, req.bot)
+      } else {
+        process.stdout.write(`${tag}requested: edit permissions for ${color.cyan(req.bot)} — answer below.\n`)
+        await editBotChannel(a, req.bot)
+      }
+      process.stdout.write(`  ${color.dim('Done — switch back to your browser; it will refresh.')}\n\n`)
+    },
+  })
   // The URL carries a one-time token, so it goes to stdout only (never argv/env/a file).
   process.stdout.write(
     `\n  ${color.bgCyan(color.black(' knock-knock '))} ${color.dim('settings')}\n\n` +
       `  Open in your browser:\n\n    ${color.cyan(handle.url)}\n\n` +
       `  ${color.dim('This URL holds a one-time access token and works only on this machine.')}\n` +
+      `  ${color.dim('Some actions (tokens, permissions, starting the relay) will happen right here in the terminal.')}\n` +
       `  ${color.dim('Press Ctrl-C to stop.')}\n\n`,
   )
-  await new Promise<void>(resolve => {
-    process.on('SIGINT', () => {
-      handle.stop()
-      process.stdout.write('\n  Settings server stopped.\n')
-      resolve()
-    })
+  process.once('SIGINT', () => {
+    handle.stop()
+    process.stdout.write('\n  Settings server stopped.\n')
+    done()
   })
+  await finished
+  return { startRelay }
 }
 
 async function main(): Promise<void> {
-  if (isUiMode(process.argv)) { await runSettingsUi(); return }
+  if (isUiMode(process.argv)) {
+    const { startRelay } = await runSettingsUi()
+    if (startRelay) { await import('./relay.ts') }
+    return
+  }
   p.intro(banner())
   const a = readAuthoringAccess()
   if (Object.keys(a.bots).length === 0) await firstRunWizard()
