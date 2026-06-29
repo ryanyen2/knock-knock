@@ -46,6 +46,7 @@ import {
   isUiMode,
   RUNTIMES,
   PLATFORM_GUIDE,
+  pollModeSecrets,
   PLATFORM_ID_VALIDATORS,
   PLATFORM_OWNER_VALIDATORS,
   PRESET_MODES,
@@ -958,6 +959,26 @@ async function saveBotToken(a: AuthoringAccess, botKey?: string): Promise<void> 
   const token = orCancel(await p.password({ message: `Bot token for ${color.cyan(key)} (${bot.tokenEnv})`, validate: required })).trim()
   setToken(bot.tokenEnv, token)
   p.log.success(`Saved to .env as ${bot.tokenEnv} ${color.dim(`· ***${token.slice(-4)}`)}`)
+
+  // Self-heal: a bot created before secret-mapping (or via an older web build that omitted it)
+  // can lack the secretEnv entries its platform needs in poll mode — e.g. a Slack bot with no
+  // `appToken` mapping, which makes the relay fail to log in. Add the missing mappings now so the
+  // loop below prompts for them and the relay can resolve them.
+  const needed = pollModeSecrets(spec)
+  if (needed.length) {
+    const taken = envTaken(a, key)
+    taken.add(bot.tokenEnv)
+    for (const v of Object.values(bot.secretEnv ?? {})) taken.add(v)
+    let healed = false
+    for (const s of needed) {
+      if (bot.secretEnv?.[s.name]) continue
+      const env = deriveEnv(s.envBase, key, taken)
+      bot.secretEnv = { ...(bot.secretEnv ?? {}), [s.name]: env }
+      taken.add(env)
+      healed = true
+    }
+    if (healed) saveAuthoringAccess(a)
+  }
 
   // Extra secrets (e.g. Slack's app-level token), keyed by logical name in secretEnv.
   // Only those the bot actually declared in secretEnv are prompted; an `optional`

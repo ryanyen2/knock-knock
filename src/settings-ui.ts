@@ -306,6 +306,24 @@ export const SETTINGS_HTML = `<!doctype html>
   function markDirty() { S.dirty = true; syncSaveBar(); }
   function platformGuide(p) { return (S.platforms && S.platforms[p]) || null; }
 
+  // Env-var names a bot still needs set, judged by what its PLATFORM requires (not just what the
+  // bot happens to have mapped) — so a legacy/hand-edited bot missing a secret mapping still reads
+  // as "not ready" instead of silently launching a relay that can't log in.
+  function botMissing(b) {
+    var miss = [];
+    if (!(S.tokens && S.tokens[b.tokenEnv])) miss.push(b.tokenEnv);
+    var g = platformGuide(b.platform);
+    var secrets = (g && g.secrets) || [];
+    for (var i = 0; i < secrets.length; i++) {
+      var s = secrets[i];
+      if (s.whenWebhook) continue; // webhook-only secrets aren't required in poll mode
+      var env = b.secretEnv && b.secretEnv[s.name];
+      if (!env || !(S.tokens && S.tokens[env])) miss.push(env || s.envBase);
+    }
+    return miss;
+  }
+  function botReady(b) { return botMissing(b).length === 0; }
+
   // ── data load ──
   function load() {
     S.loading = true; render();
@@ -556,11 +574,19 @@ export const SETTINGS_HTML = `<!doctype html>
     main.appendChild(stats);
 
     // Start the relay straight from here — it takes over this terminal (the settings page closes).
+    // Guard it: a relay with no credentialed bot just fails to log in and leaves the page dead, so
+    // disable until at least one bot is ready and name the ones still missing tokens.
     if (botKeys.length) {
+      var notReady = botKeys.filter(function (k) { return !botReady(bots[k]); });
+      var noneReady = notReady.length === botKeys.length;
+      var relayHint = S.dirty ? "Save your changes first."
+        : noneReady ? "Set bot tokens first — no bot is ready yet."
+        : notReady.length ? "Will run, but " + notReady.join(", ") + " still need tokens."
+        : "Runs every configured bot in your terminal.";
       main.appendChild(h("div", { class: "row between", style: "margin-bottom:18px;gap:12px;flex-wrap:wrap" }, [
         h("div", { class: "row", style: "gap:10px" }, [
-          h("button", { class: "btn primary", disabled: S.dirty || !!S.handoff, onclick: function () { handoff("start-relay", null, "relay"); } }, ["▶  Start relay"]),
-          h("span", { class: "hint" }, [S.dirty ? "Save your changes first." : "Runs every configured bot in your terminal."])
+          h("button", { class: "btn primary", disabled: S.dirty || !!S.handoff || noneReady, onclick: function () { handoff("start-relay", null, "relay"); } }, ["▶  Start relay"]),
+          h("span", { class: "hint" }, [relayHint])
         ])
       ]));
     }
@@ -595,8 +621,8 @@ export const SETTINGS_HTML = `<!doctype html>
       // bots row
       var botsRow = h("div", { class: "ov-bots" });
       pb.forEach(function (k) {
-        var b = bots[k]; var set = !!(S.tokens && S.tokens[b.tokenEnv]);
-        botsRow.appendChild(h("span", { class: "ov-bot", title: set ? "token set" : "token not set" }, [
+        var b = bots[k]; var set = botReady(b);
+        botsRow.appendChild(h("span", { class: "ov-bot", title: set ? "all tokens set" : "missing: " + botMissing(b).join(", ") }, [
           avatar(b.displayName || k, true), h("span", { class: "nm" }, [k]),
           h("span", { class: "dotstat" }, [h("i", { class: set ? "on" : "off" })])
         ]));
@@ -643,7 +669,7 @@ export const SETTINGS_HTML = `<!doctype html>
     if (!keys.length) main.appendChild(emptyState("No bots yet.", "Add a bot to get started."));
     var list = h("div", { class: "list" });
     keys.forEach(function (k) {
-      var b = bots[k]; var set = !!(S.tokens && S.tokens[b.tokenEnv]);
+      var b = bots[k]; var set = botReady(b);
       list.appendChild(h("div", { class: "card", onclick: function () { S.detail = k; S.errors = {}; render(); } }, [
         h("div", { class: "row" }, [avatar(b.displayName || k), h("div", {}, [
           h("div", { class: "title" }, [k]),
@@ -665,16 +691,28 @@ export const SETTINGS_HTML = `<!doctype html>
     main.appendChild(header(key, null));
     main.appendChild(field("Platform", textInput(b.platform, function () {}, { readonly: true }), "Set when the bot is created.", null, "Which messaging platform this bot speaks. It is the bot's identity, so it cannot change after creation — make a new bot instead."));
 
-    // token status + handoff (value never shown — set / not set only)
-    var set = !!(S.tokens && S.tokens[b.tokenEnv]);
-    var statusRow = h("div", { class: "row between" }, [
-      h("span", { class: "dotstat" }, [h("i", { class: set ? "on" : "off" }), set ? "Token is set" : "Token not set"]),
-      h("button", { class: "btn sm" + (set ? "" : " primary"), disabled: !!S.handoff, onclick: function () { handoff("set-token", key, "bot"); } }, [set ? "Update in terminal" : "Set in terminal"])
-    ]);
-    main.appendChild(field("Token", h("div", {}, [
-      h("div", { class: "row", style: "gap:8px;margin-bottom:8px" }, ["Env var ", h("code", { class: "env" }, [b.tokenEnv])]),
-      statusRow
-    ]), tokenHowtoBlock(b.platform), null, "The token value lives only in your terminal's .env. Click \\"Set in terminal\\" and paste it into the prompt that appears in the terminal running setup --ui."));
+    // token + secret status + handoff (values never shown — set / not set only). Required secrets
+    // come from the platform guide, so a Slack bot's app-level token shows here even if it predates
+    // secret-mapping. One "Set in terminal" prompt collects every token this bot needs.
+    var primarySet = !!(S.tokens && S.tokens[b.tokenEnv]);
+    var ready = botReady(b);
+    var bg = platformGuide(b.platform);
+    var reqSecrets = ((bg && bg.secrets) || []).filter(function (s) { return !s.whenWebhook; });
+    function credRow(label, env, isSet, topGap) {
+      return h("div", { class: "row between", style: topGap ? "margin-top:6px" : "" }, [
+        h("span", { class: "dotstat" }, [h("i", { class: isSet ? "on" : "off" }), h("span", {}, [label + " "]), h("code", { class: "env" }, [env])]),
+        h("span", { class: "hint" }, [isSet ? "set" : "not set"])
+      ]);
+    }
+    var tokenRows = [credRow("Bot token", b.tokenEnv, primarySet, false)];
+    reqSecrets.forEach(function (s) {
+      var env = (b.secretEnv && b.secretEnv[s.name]) || s.envBase;
+      tokenRows.push(credRow(s.label, env, !!(S.tokens && S.tokens[env]), true));
+    });
+    tokenRows.push(h("div", { class: "row", style: "margin-top:10px" }, [
+      h("button", { class: "btn sm" + (ready ? "" : " primary"), disabled: !!S.handoff, onclick: function () { handoff("set-token", key, "bot"); } }, [ready ? "Update in terminal" : "Set in terminal"])
+    ]));
+    main.appendChild(field(reqSecrets.length ? "Tokens" : "Token", h("div", {}, tokenRows), tokenHowtoBlock(b.platform), null, "Token values live only in your terminal's .env. Click \\"Set in terminal\\" and paste them into the prompts that appear in the terminal running setup --ui — one flow collects every token this bot needs."));
 
     main.appendChild(field("Coding agent (runtime)", runtimeSelect(b.runtime, function (v) { b.runtime = v; markDirty(); }), "The local coding agent that drives this bot.", "bots." + key, "Which local coding agent runs this bot. Keep non-Claude agents in ask-first mode so the deny floor holds."));
     main.appendChild(field("Display name", textInput(b.displayName || "", function (v) { if (v) b.displayName = v; else delete b.displayName; markDirty(); }), "Cosmetic; usually fetched from the platform."));
@@ -709,6 +747,15 @@ export const SETTINGS_HTML = `<!doctype html>
     if (Object.keys(S.errors).length) { render(); return; }
     var bot = { platform: d.platform, tokenEnv: d.tokenEnv.trim(), runtime: (d.runtime || "claude-sdk").trim() };
     if (d.displayName) bot.displayName = d.displayName;
+    // Wire the platform's required secrets (e.g. Slack's app-level token) so the bot is born
+    // complete — the relay reads secretEnv, and "Set in terminal" prompts for each mapped secret.
+    // Webhook-only secrets are skipped (the web sets up poll-mode bots).
+    var g = platformGuide(d.platform);
+    if (g && g.secrets && g.secrets.length) {
+      var se = {};
+      for (var si = 0; si < g.secrets.length; si++) { var sec = g.secrets[si]; if (!sec.whenWebhook) se[sec.name] = sec.envBase; }
+      if (Object.keys(se).length) bot.secretEnv = se;
+    }
     S.access.bots[key] = bot;
     S.draft = null; S.detail = key; markDirty(); render();
     toast("Bot created. Save changes first, then set its token.", false);

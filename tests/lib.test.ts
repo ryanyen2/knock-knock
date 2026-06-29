@@ -81,6 +81,7 @@ import {
   botEngagedInScope,
   selectActorHost,
   PLATFORM_GUIDE,
+  pollModeSecrets,
   RUNTIMES,
   type ConfigDeltaRecord,
   type WatchSpec,
@@ -2488,4 +2489,17 @@ test('PLATFORM_GUIDE covers every platform with serializable guidance and no fun
   expect(typeof PLATFORM_ID_VALIDATORS.discord).toBe('function')
   // RUNTIMES is the shared coding-agent dropdown source; claude-sdk is always present.
   expect(RUNTIMES.some(r => r.value === 'claude-sdk')).toBe(true)
+})
+
+test('pollModeSecrets: Slack requires its app token; webhook-only secrets are excluded', () => {
+  // Slack's app-level token is mandatory in poll mode — a Slack bot is broken without it.
+  const slack = pollModeSecrets(PLATFORM_GUIDE.slack)
+  expect(slack.map(s => s.name)).toEqual(['appToken'])
+  expect(slack[0]!.envBase).toBe('SLACK_APP_TOKEN')
+  // Single-token platforms carry nothing extra.
+  expect(pollModeSecrets(PLATFORM_GUIDE.discord)).toEqual([])
+  expect(pollModeSecrets(PLATFORM_GUIDE.telegram)).toEqual([])
+  // GitHub/Notion's only secrets are webhook-scoped, so poll-mode bots need none.
+  expect(pollModeSecrets(PLATFORM_GUIDE.github)).toEqual([])
+  expect(pollModeSecrets(PLATFORM_GUIDE.notion)).toEqual([])
 })

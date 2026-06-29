@@ -336,6 +336,15 @@ export type PlatformGuide = {
   webhookNotes?: string[]
 }
 
+/** The secrets a poll-mode bot must carry, beyond its primary token — i.e. every non-webhook
+ *  secret (Slack's app-level token; nothing for Discord/Telegram; GitHub/Notion's webhook
+ *  secrets are excluded because they only matter for webhook intake). Both the terminal wizard
+ *  and the web UI wire exactly these into a new bot's `secretEnv`, and the dashboard's
+ *  readiness check consults them — so a Slack bot is never silently born without its app token. */
+export function pollModeSecrets(guide: PlatformGuide): SecretGuide[] {
+  return guide.secrets.filter(s => !s.whenWebhook)
+}
+
 /** Coding-agent runtimes a bot can be driven by. Shared by the wizard and the web UI so the
  *  dropdown can't drift; the relay branches on `value`, never the label. */
 export const RUNTIMES: Array<{ value: string; label: string; hint: string }> = [
