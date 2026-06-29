@@ -1,4 +1,4 @@
-<img src="website/assets/logo/knockknock.png" alt="knock-knock" width="120" align="right" />
+<img src="website/assets/logo/knockknock.png" alt="knock-knock" width="240" align="right" />
 
 # knock-knock
 
