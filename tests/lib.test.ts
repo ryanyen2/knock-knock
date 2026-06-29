@@ -2460,3 +2460,28 @@ test('isUiMode detects the --ui flag', () => {
   expect(isUiMode(['relay', '--daemon'])).toBe(false)
   expect(isUiMode([])).toBe(false)
 })
+
+test('sanitizeAuthoringInput: __proto__/constructor keys do not persist or pollute (security)', () => {
+  const current: AuthoringAccess = { bots: {}, channels: {}, roster: { people: {}, peers: {} } }
+  const incoming = JSON.parse('{"bots":{"cc":{"platform":"discord","tokenEnv":"T","runtime":"r","__proto__":{"polluted":true}}},"channels":{},"roster":{"people":{},"peers":{}},"__proto__":{"x":1}}')
+  const out = sanitizeAuthoringInput(incoming, current)
+  expect(out.bots.cc).toEqual({ platform: 'discord', tokenEnv: 'T', runtime: 'r' })
+  expect(({} as Record<string, unknown>).polluted).toBeUndefined() // global prototype intact
+  expect(({} as Record<string, unknown>).x).toBeUndefined()
+})
+
+test('sanitizeAuthoringInput: a wire profile/preset on a NEW membership is dropped (no escalation)', () => {
+  const current: AuthoringAccess = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'r' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [], collaborators: [] } },
+    roster: { people: {}, peers: {} },
+  }
+  const incoming = {
+    bots: { cc: { platform: 'discord', tokenEnv: 'T', runtime: 'r' } },
+    channels: { 'discord:C1': { platform: 'discord', channelId: 'C1', members: [{ bot: 'cc', workspace: '/w', preset: 'owner', profile: { allow: ['*'], ask: [], deny: [] } }], collaborators: [] } },
+    roster: { people: {}, peers: {} },
+  }
+  const m = sanitizeAuthoringInput(incoming, current).channels['discord:C1']!.members[0]!
+  expect(m.profile).toBeUndefined() // no prior on disk → permission fields cannot be granted from the wire
+  expect(m.preset).toBeUndefined()
+})
