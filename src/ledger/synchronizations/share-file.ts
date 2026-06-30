@@ -23,9 +23,11 @@ export type ShareFileDeps = {
   note?: (scope: string, text: string) => void
 }
 
-/** Decode the head of a buffer as UTF-8 for the secret content scan. */
-function decodeHead(bytes: Uint8Array, max = 8192): string {
-  return new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, max))
+/** Decode a buffer as UTF-8 for the secret content scan. Scans the WHOLE buffer (already in
+ *  memory, and share size is capped upstream) — a credential past an arbitrary head cutoff must
+ *  not slip through. */
+function decodeForSecretScan(bytes: Uint8Array): string {
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes)
 }
 
 export function shareFile(deps: ShareFileDeps): Synchronization {
@@ -57,7 +59,7 @@ export function shareFile(deps: ShareFileDeps): Synchronization {
       const { name, bytes } = resolved
 
       // Secret scan: path + content head — refuse credentials.
-      if (looksLikeSecret(relpath, decodeHead(bytes))) {
+      if (looksLikeSecret(relpath, decodeForSecretScan(bytes))) {
         deps.note?.(i.channel, `refused to share "${relpath}" — it looks like it contains credentials`)
         return
       }

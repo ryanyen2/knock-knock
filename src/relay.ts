@@ -8,12 +8,12 @@ import { readFileSync, writeFileSync, renameSync, chmodSync } from 'fs'
 import { join } from 'path'
 import { multiselect, isCancel } from '@clack/prompts'
 import {
-  STATE_DIR,
+  stateDir,
   readAccessFile,
   readSettings,
   readAuthoringAccess,
   readTrustAnchors,
-  appendPending,
+  appendPendingBatch,
   reconcilePending,
 } from './state.ts'
 import {
@@ -73,7 +73,7 @@ import {
 
 // ─── Load .env from state dir ─────────────────────────────────────────────────
 
-const ENV_FILE = join(STATE_DIR, '.env')
+const ENV_FILE = join(stateDir(), '.env')
 try {
   chmodSync(ENV_FILE, 0o600)
   for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
@@ -182,7 +182,7 @@ if (ledgerConfig.backend === 'postgres') {
     `relay: ledger = postgres (${ledgerConfig.url.replace(/:[^:@]+@/, ':***@')})\n`,
   )
 } else {
-  const ledgerPath = ledgerConfig.file ?? join(STATE_DIR, 'ledger.sqlite')
+  const ledgerPath = ledgerConfig.file ?? join(stateDir(), 'ledger.sqlite')
   store = new SqliteStore(ledgerPath)
   process.stderr.write(`relay: ledger = sqlite (${ledgerPath})\n`)
 }
@@ -295,10 +295,12 @@ for (const [key, agent] of bootSource) {
   }
 
   const host = new AgentHost(key, agent, readAccessFile, ui, ledger, store, engine)
-  // Lazy: by the time the mesh consults it (post-connect), every host exists, so the
-  // set is the relay's full roster of co-resident bots. A directory entry outside it is
-  // a genuine remote peer — the only case where mesh gossip over the channel is useful.
-  if (meshEnabled) host.enableMesh(() => new Set(hosts.map(h => h.botKey)))
+  // Lazy: by the time the gate/mesh consults it (post-connect), every host exists, so the set is
+  // the relay's full roster of co-resident bots. A directory entry outside it is a genuine remote
+  // peer. Wired for every host — the sender gate uses it whether or not mesh is on, so siblings
+  // always hear each other; mesh-transport activation is the separate, mesh-gated step below.
+  host.setCoResidentKeys(() => new Set(hosts.map(h => h.botKey)))
+  if (meshEnabled) host.enableMesh()
   // Idle iff daemon mode AND not in the picked/active set.
   if (wantDaemon && !activeKeys.has(key)) host.setIdle()
   host.onWake = onWake
@@ -711,8 +713,9 @@ if (meshEnabled) {
       const tombstones = readTrustAnchors().tombstones
       const now = new Date().toISOString()
       // Read access first, append only un-confirmed/un-tombstoned, then reconcile — so a peer
-      // confirmed during the pass is never left as a transient confirmed+proposed duplicate.
-      for (const prop of discoveryProposals(directory, coRes, authoring, tombstones, now)) appendPending(prop)
+      // confirmed during the pass is never left as a transient confirmed+proposed duplicate. One
+      // batched read+write of pending.json for the whole pass (not one per proposal).
+      appendPendingBatch(discoveryProposals(directory, coRes, authoring, tombstones, now), tombstones)
       reconcilePending(now)
     } catch (err) {
       process.stderr.write(`relay: discovery pass: ${err}\n`)

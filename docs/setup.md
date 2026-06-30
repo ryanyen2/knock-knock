@@ -398,6 +398,12 @@ dedicated guide.
 | `rm -rf` ran anyway (ACP runtime) | The agent isn't asking before tools. Put it in ask-first mode (never yolo/bypass). See [the deny-floor caveat](getting-started-agents.md). |
 | Cross-machine state not syncing | Both relays must point at the **same** Postgres (direct endpoint, not a pooled one). |
 
+> **Upgrading note — require-mention now defaults ON.** A channel with no explicit
+> `requireMention` setting now requires an `@mention` before a bot acts (previously it
+> answered un-mentioned messages). If a bot seems to have "gone quiet" after upgrading,
+> either `@mention` it, or set **require-mention → off** for that channel (channel page,
+> or `!config` in-channel) to restore the old behavior.
+
 ---
 
 ## 11. Where to go deeper

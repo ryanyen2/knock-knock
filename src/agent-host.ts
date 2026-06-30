@@ -198,6 +198,9 @@ export class AgentHost {
    *  retries) keyed by `${scope} ${messageId}`. Orthogonal to reply-claim
    *  (which dedups WHICH agent answers, not duplicate deliveries of one message). */
   private readonly seenInbound = new Set<string>()
+  /** Authors we've already logged a "discovered but unconfirmed peer — gated out" notice for,
+   *  so the hint fires once per peer instead of on every message it sends. */
+  private readonly gatedPeerNoticed = new Set<string>()
   /** Inbound side-table keyed by channel.message hash. Consumed by markInboundOutcome
    *  (ack→outcome reaction) and the file-ingest buffer. */
   private readonly inboundByHash = new Map<Hash, InboundSideTable>()
@@ -410,14 +413,20 @@ export class AgentHost {
     }
   }
 
+  /** Report every bot key hosted by this relay so the sender gate admits co-resident siblings
+   *  and the mesh can tell a sibling (reachable via the shared ledger) from a genuine remote peer.
+   *  Wired for EVERY host regardless of mesh — the gate consults it on every inbound message, so
+   *  leaving it at the `{self}` default would silently drop sibling bots when mesh is off. */
+  setCoResidentKeys(coResidentKeys: () => ReadonlySet<string>): void {
+    this.coResidentKeys = coResidentKeys
+  }
+
   /** Enable the no-Postgres cross-machine mesh transport for this host. Set by the
    *  relay when the backend is SQLite and mesh is explicitly turned on; takes effect
-   *  at connect. No-op on Postgres (the relay never calls it there). `coResidentKeys`
-   *  reports every bot key hosted by this relay so the mesh can tell a co-resident
-   *  sibling (reachable via the shared ledger) from a genuine remote peer. */
-  enableMesh(coResidentKeys?: () => ReadonlySet<string>): void {
+   *  at connect. No-op on Postgres (the relay never calls it there). Co-resident keys are
+   *  wired separately via setCoResidentKeys so the gate works with mesh off too. */
+  enableMesh(): void {
     this.meshEnabled = true
-    if (coResidentKeys) this.coResidentKeys = coResidentKeys
   }
 
   /** Publish this bot's platform identity to the shared agent directory so peers — co-resident
@@ -807,9 +816,10 @@ export class AgentHost {
     if ('error' in resolved) return { ok: false, message: `Can't share "${relpath}": ${resolved.error}.` }
     const { name, bytes } = resolved
 
-    // Secret floor (non-bypassable): path + content head.
-    const head = new TextDecoder('utf-8', { fatal: false }).decode(bytes.subarray(0, 8192))
-    if (looksLikeSecret(relpath, head)) {
+    // Secret floor (non-bypassable): path + FULL content — scanning only a head would let a
+    // credential past the cutoff slip through. The buffer is already in memory and size-capped.
+    const content = new TextDecoder('utf-8', { fatal: false }).decode(bytes)
+    if (looksLikeSecret(relpath, content)) {
       return { ok: false, message: `Refused to share "${relpath}" — it looks like it contains credentials.` }
     }
 
@@ -927,6 +937,14 @@ export class AgentHost {
     if (!this.getAgentForChannel(channelId)) return
     const ownerId = this.getOwnerForChannel(channelId)
     if (!ownerId || userId !== ownerId) return
+    // Deleting the session entry mid-turn orphans its AbortController, so a later !stop has nothing
+    // to abort. Refuse while a turn is live and point the owner at !stop first.
+    if (this.sessions.get(channelId)?.activeTurn) {
+      await this.messaging
+        .send(channelId, 'A turn is still running — use !stop first, then !clear.')
+        .catch(() => undefined)
+      return
+    }
     clearSessionBinding(this.key, channelId)
     this.sessions.delete(channelId)
     this.ui.note(this.key, `cleared session in ${channelId}`)
@@ -942,6 +960,14 @@ export class AgentHost {
     if (!this.getAgentForChannel(channelId)) return
     const ownerId = this.getOwnerForChannel(channelId)
     if (!ownerId || userId !== ownerId) return
+    // Same hazard as !clear: compact deletes the session entry at the end, which would orphan a
+    // live turn's AbortController and leave !stop unable to abort it. Refuse while a turn runs.
+    if (this.sessions.get(channelId)?.activeTurn) {
+      await this.messaging
+        .send(channelId, 'A turn is still running — use !stop first, then !compact.')
+        .catch(() => undefined)
+      return
+    }
 
     const liveAgent = this.getAccess().agents[this.key] ?? this.agent
     const roomId = this.roomForScope(channelId)
@@ -1243,7 +1269,22 @@ export class AgentHost {
     // collaborators work without being re-listed — the deny floor + ask-first still bound them.
     const trustedByPlatform =
       this.messaging.platform === 'github' && githubAssociationTrusted(m.authorAssociation)
-    if (!guildSenderAllowed(gateRoom, m.authorId, botId, ownerId) && !trustedByPlatform) return
+    if (!guildSenderAllowed(gateRoom, m.authorId, botId, ownerId) && !trustedByPlatform) {
+      // The author is addressable as a discovered peer (roomWithPeers) but not yet confirmed into
+      // the gate, so it's dropped silently. Surface that once per peer — otherwise an operator who
+      // upgraded sees an auto-discovered peer go quiet with no explanation (KTD7).
+      if (
+        !this.gatedPeerNoticed.has(m.authorId) &&
+        guildSenderAllowed(this.roomWithPeers(roomId, room), m.authorId, botId, ownerId)
+      ) {
+        this.gatedPeerNoticed.add(m.authorId)
+        this.ui.note(
+          this.key,
+          `ignoring ${m.authorId} in ${roomId}: a discovered peer not yet confirmed — run \`knock-knock confirm\` to admit it.`,
+        )
+      }
+      return
+    }
 
     // Per-channel overlay (owner `!config`): rate cap, require-mention, mention
     // patterns, ack. Room-keyed — these gate inbound BEFORE a thread exists (raw room overlay).

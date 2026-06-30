@@ -12,7 +12,7 @@ import * as p from '@clack/prompts'
 import color from 'picocolors'
 import { startSettingsServer } from './settings-server.ts'
 import {
-  STATE_DIR,
+  stateDir,
   readAuthoringAccess,
   saveAuthoringAccess,
   readSettings,
@@ -31,7 +31,6 @@ import type {
   Peer,
   Platform,
   PlatformGuide,
-  RoomProfile,
   Proposal,
   Need,
 } from './lib.ts'
@@ -68,7 +67,7 @@ import type { MessagingAdapter, EnumerationOutcome } from './messaging-adapter.t
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const ENV_FILE = join(STATE_DIR, '.env')
+const ENV_FILE = join(stateDir(), '.env')
 
 // Load the state-dir .env into process.env (without clobbering) so status reflects the relay.
 try {
@@ -267,7 +266,7 @@ function readEnvVars(): Map<string, string> {
 }
 
 function writeEnvVars(vars: Map<string, string>): void {
-  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
+  mkdirSync(stateDir(), { recursive: true, mode: 0o700 })
   const content = [...vars.entries()].map(([k, v]) => `${k}=${v}`).join('\n') + '\n'
   writeFileSync(ENV_FILE, content, { mode: 0o600 })
   try { chmodSync(ENV_FILE, 0o600) } catch {}
@@ -311,10 +310,6 @@ async function pickPreset(initial: string = DEFAULT_PRESET): Promise<string> {
   }))
 }
 
-/** Expand a preset name into the inline RoomProfile stored on a membership. */
-function profileFromPreset(name: string): RoomProfile {
-  return expandPreset(name)
-}
 
 // ─── Bots ───────────────────────────────────────────────────────────────────────
 
@@ -582,7 +577,7 @@ async function addChannel(a: AuthoringAccess): Promise<void> {
       bot: botKey,
       workspace,
       preset,
-      profile: profileFromPreset(preset),
+      profile: expandPreset(preset),
       // Store runtime only when it differs from the bot default.
       ...(runtime !== botDefault ? { runtime } : {}),
     })
@@ -814,7 +809,7 @@ async function addBotToChannel(a: AuthoringAccess, key: string): Promise<void> {
   })).trim()
   if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
   const preset = await pickPreset()
-  ch.members.push({ bot: key, workspace, preset, profile: profileFromPreset(preset) })
+  ch.members.push({ bot: key, workspace, preset, profile: expandPreset(preset) })
 
   await pickCollaborators(a, platform, ch)
   ch.requireMention = orCancel(await p.confirm({
@@ -869,7 +864,7 @@ async function editBotChannel(a: AuthoringAccess, key: string): Promise<void> {
   m.workspace = workspace
   const preset = await pickPreset(m.preset ?? DEFAULT_PRESET)
   m.preset = preset
-  m.profile = profileFromPreset(preset)
+  m.profile = expandPreset(preset)
   saveAuthoringAccess(a)
   p.log.success(`Updated ${color.cyan(key)} in ${ch.label ?? `#${ch.channelId}`}`)
 }
@@ -1109,7 +1104,7 @@ function statusReport(a: AuthoringAccess): string {
     ledgerLabel = settingsLedger?.backend === 'sqlite' ? 'local SQLite' : color.dim('local SQLite (default)')
   }
   lines.push(`${color.dim('ledger ')} ${ledgerLabel}`)
-  lines.push(color.dim(`state  ${STATE_DIR}`))
+  lines.push(color.dim(`state  ${stateDir()}`))
   return lines.join('\n')
 }
 
@@ -1155,7 +1150,7 @@ async function ensureChannelMembership(a: AuthoringAccess, botKey: string, platf
     })).trim()
     if (!existsSync(workspace)) p.log.warn(`${workspace} doesn't exist yet — create it before launching the relay.`)
     const preset = await pickPreset(DEFAULT_PRESET)
-    ch.members.push({ bot: botKey, workspace, preset, profile: profileFromPreset(preset) })
+    ch.members.push({ bot: botKey, workspace, preset, profile: expandPreset(preset) })
   }
   a.channels[ck] = ch
   saveAuthoringAccess(a)
@@ -1352,7 +1347,7 @@ function registerTransportChannel(a: AuthoringAccess, platform: Platform, botKey
   const ch: Channel = a.channels[ck] ?? { platform, channelId, members: [], collaborators: [] }
   ch.meshTransport = true
   if (!ch.members.some(m => m.bot === botKey)) {
-    ch.members.push({ bot: botKey, workspace: process.cwd(), preset: DEFAULT_PRESET, profile: profileFromPreset(DEFAULT_PRESET) })
+    ch.members.push({ bot: botKey, workspace: process.cwd(), preset: DEFAULT_PRESET, profile: expandPreset(DEFAULT_PRESET) })
   }
   a.channels[ck] = ch
   saveAuthoringAccess(a)

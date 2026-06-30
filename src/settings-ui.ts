@@ -292,8 +292,9 @@ export const SETTINGS_HTML = `<!doctype html>
     var el = document.createElement(tag);
     attrs = attrs || {};
     for (var k in attrs) {
+      // No "html"/innerHTML branch on purpose: every node is built from text/attrs/child nodes,
+      // so config or peer-supplied strings can't become markup. Don't add an innerHTML sink here.
       if (k === "class") el.className = attrs[k];
-      else if (k === "html") el.innerHTML = attrs[k];
       else if (k.indexOf("on") === 0) el.addEventListener(k.slice(2), attrs[k]);
       else if (attrs[k] === true) el.setAttribute(k, "");
       else if (attrs[k] != null && attrs[k] !== false) el.setAttribute(k, attrs[k]);

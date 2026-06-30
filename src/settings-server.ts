@@ -24,10 +24,11 @@ import { join } from 'node:path'
 import { createHash } from 'node:crypto'
 import type { Server } from 'bun'
 import {
-  ACCESS_FILE,
-  STATE_DIR,
+  accessFile,
+  stateDir,
   parseAuthoringAccess,
   saveAuthoringAccess,
+  serializeAuthoringAccess,
   readSettings,
   saveSettings,
 } from './state.ts'
@@ -148,19 +149,22 @@ const ABSENT_VERSION = 'absent'
  *  the SAME bytes (closes the read-side TOCTOU mtime+size would hide). ENOENT ⇒ defaults +
  *  the absent sentinel. A corrupt/garbage file throws (the caller answers 500) rather than
  *  silently editing defaults over a recoverable file. */
+function versionOf(bytes: string | Buffer): string {
+  return createHash('sha256').update(bytes).digest('hex').slice(0, 16)
+}
+
 function readConfigWithVersion(): { access: AuthoringAccess; version: string } {
   let buf: Buffer
   try {
-    buf = readFileSync(ACCESS_FILE)
+    buf = readFileSync(accessFile())
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       return { access: defaultAuthoringAccess(), version: ABSENT_VERSION }
     }
     throw err
   }
-  const version = createHash('sha256').update(buf).digest('hex').slice(0, 16)
   const access = parseAuthoringAccess(JSON.parse(buf.toString('utf8')) as Record<string, unknown>)
-  return { access, version }
+  return { access, version: versionOf(buf) }
 }
 
 /** Read and JSON-parse a request body, enforcing the size cap. Throws `BODY_TOO_LARGE` /
@@ -231,14 +235,13 @@ function handleReadConfig(): Response {
   })
 }
 
-const ENV_FILE = join(STATE_DIR, '.env')
-
 /** Names of env vars currently set (non-empty) in the state-dir `.env` OR the process env.
- *  Returns PRESENCE ONLY — the values never leave this function (R: never expose secrets). */
+ *  Returns PRESENCE ONLY — the values never leave this function (R: never expose secrets).
+ *  Read fresh each call so a token the user just added shows as present immediately. */
 function envNamesSet(): Set<string> {
   const set = new Set<string>()
   try {
-    for (const line of readFileSync(ENV_FILE, 'utf8').split('\n')) {
+    for (const line of readFileSync(join(stateDir(), '.env'), 'utf8').split('\n')) {
       const m = line.match(/^(\w+)=(.*)$/)
       if (m && m[2] !== '') set.add(m[1]!)
     }
@@ -283,12 +286,18 @@ function resolvedPermissionsFor(
 type HandoffState = {
   state: 'idle' | 'running' | 'done' | 'error'
   action?: string
+  error?: string
   runner?: HandoffRunner
 }
 
 /** GET /api/handoff → current single-flight state (so the page can poll for completion). */
 function handleHandoffStatus(handoff: HandoffState): Response {
-  return jsonResponse({ state: handoff.state, action: handoff.action ?? null, supported: !!handoff.runner })
+  return jsonResponse({
+    state: handoff.state,
+    action: handoff.action ?? null,
+    error: handoff.error ?? null,
+    supported: !!handoff.runner,
+  })
 }
 
 /** POST /api/handoff → validate the request against the live config, then run it in the
@@ -315,11 +324,13 @@ async function handleHandoffRequest(req: Request, handoff: HandoffState): Promis
   }
   handoff.state = 'running'
   handoff.action = request.action
-  // Run in the background; the page polls GET /api/handoff for the outcome.
+  delete handoff.error
+  // Run in the background; the page polls GET /api/handoff for the outcome. Capture the
+  // rejection reason so the page can show why a handoff failed instead of a bare "error".
   handoff
     .runner(request)
     .then(() => { handoff.state = 'done' })
-    .catch(() => { handoff.state = 'error' })
+    .catch(e => { handoff.state = 'error'; handoff.error = String((e as Error)?.message ?? e) })
   return jsonResponse({ state: 'running', action: request.action })
 }
 
@@ -339,7 +350,9 @@ async function handleWriteConfig(req: Request): Promise<Response> {
   const errors = validateAuthoringConfig(next)
   if (errors.length) return jsonResponse({ error: 'validation', fields: errors }, 400)
   saveAuthoringAccess(next)
-  return jsonResponse({ version: readConfigWithVersion().version })
+  // Version is the content hash of the bytes we just wrote — identical to what a re-read would
+  // produce, so we skip the second disk read.
+  return jsonResponse({ version: versionOf(serializeAuthoringAccess(next)) })
 }
 
 /** PUT /api/ledger → set the ledger backend in settings.json (independent of access.json). */

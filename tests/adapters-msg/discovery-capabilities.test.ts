@@ -23,19 +23,21 @@ const EXPECTED: Record<Platform, DiscoveryCapabilities> = {
 for (const [platform, expected] of Object.entries(EXPECTED) as [Platform, DiscoveryCapabilities][]) {
   test(`${platform}: discovery descriptor matches the origin matrix (pure read, no connect)`, () => {
     const adapter = makeMessagingAdapter(platform)
-    expect(adapter.discoveryCapabilities()).toEqual(expected)
+    // The method is optional on the interface (minimal adapters may omit it), but every real
+    // adapter implements it — that's exactly what this test asserts.
+    expect(adapter.discoveryCapabilities!()).toEqual(expected)
   })
 }
 
 test('self-ID is declared on every platform (never prompted)', () => {
   for (const platform of Object.keys(EXPECTED) as Platform[]) {
-    expect(makeMessagingAdapter(platform).discoveryCapabilities().selfId).toBe(true)
+    expect(makeMessagingAdapter(platform).discoveryCapabilities!().selfId).toBe(true)
   }
 })
 
 test('channel creation is declared only where a channel can be auto-created (Discord/Slack)', () => {
   const creators = (Object.keys(EXPECTED) as Platform[]).filter(
-    p => makeMessagingAdapter(p).discoveryCapabilities().channelCreation,
+    p => makeMessagingAdapter(p).discoveryCapabilities!().channelCreation,
   )
   expect(creators.sort()).toEqual(['discord', 'slack'])
 })

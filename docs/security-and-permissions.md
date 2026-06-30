@@ -322,6 +322,22 @@ Choose it in `bun setup.ts → "Choose ledger backend"`. Permissions and tokens 
 
 ---
 
+## Known limitation: cross-machine mesh beacons are unsigned (pre-Phase-3)
+
+Cross-machine discovery beacons (`agent.identity`) are authenticated by **provenance**
+only — the relay verifies the `(agentKey, userId)` pair against the directory, but a
+peer's *self-asserted* fields (claimed rooms, handle, role ids) are taken at face value.
+A malicious authenticated peer can therefore publish a beacon claiming a victim's room and
+skew cross-machine **responder election / addressing** for that room. The blast radius is
+bounded — discovery is **propose-only**, trust binds to confirmed `(agentKey, userId)`
+pairs, identity collisions default to *declined*, and an unconfirmed remote peer is
+addressable but **never admitted as a sender** until you `knock-knock confirm` it — but the
+addressable roster can be **poisoned** until the owner confirms. Signed beacons (Phase 3)
+close this; until then, treat the addressable roster on a busy shared channel as advisory
+and confirm peers explicitly.
+
+---
+
 **See also:** [Getting started with agents](getting-started-agents.md) (per-runtime
 ask-first config, cross-machine setup) · [Reactions, conflict resolution & version
 control](reactions-and-versioning.md) · [the ledger model](knock-knock-ledger-model.md).
