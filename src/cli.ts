@@ -6,7 +6,7 @@
 
 import { existsSync } from 'fs'
 import pkg from '../package.json'
-import { ACCESS_FILE } from './state.ts'
+import { accessFile } from './state.ts'
 
 const USAGE = `knock-knock ${pkg.version} — your agents, their agents, one channel
 
@@ -54,7 +54,7 @@ async function dispatch(): Promise<void> {
 
   // No subcommand or bare flag → relay when configured, else setup; unknown subcommand errors.
   if (!cmd || cmd.startsWith('-')) {
-    await import(existsSync(ACCESS_FILE) ? './relay.ts' : './setup.ts')
+    await import(existsSync(accessFile()) ? './relay.ts' : './setup.ts')
     return
   }
   process.stderr.write(`knock-knock: unknown command "${cmd}".\n\n${USAGE}\n`)

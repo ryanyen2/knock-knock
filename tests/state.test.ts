@@ -10,14 +10,15 @@ import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 
-// Point STATE_DIR at a throwaway dir BEFORE importing state.ts (it reads the env at module load).
+// Point STATE_DIR at a throwaway dir so nothing touches the developer's real ~/.knock-knock.
+// state.ts now resolves paths lazily (reads the env on each call), so import order no longer matters.
 const dir = mkdtempSync(join(tmpdir(), 'kk-state-'))
 process.env.KNOCK_KNOCK_STATE_DIR = dir
 
 const {
-  STATE_DIR,
-  PENDING_FILE,
-  ACCESS_FILE,
+  stateDir,
+  pendingFile,
+  accessFile,
   readPending,
   appendPending,
   reconcilePending,
@@ -41,7 +42,8 @@ const prop = (over: Partial<Proposal> = {}): Proposal => ({
 })
 
 beforeEach(() => {
-  for (const f of [PENDING_FILE, ACCESS_FILE]) if (existsSync(f)) rmSync(f)
+  process.env.KNOCK_KNOCK_STATE_DIR = dir // re-pin: a sibling suite shares this global env
+  for (const f of [pendingFile(), accessFile()]) if (existsSync(f)) rmSync(f)
 })
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }))
@@ -84,12 +86,10 @@ test('reconcilePending: drops entries now confirmed in access.json and stamps la
 })
 
 test('corrupt pending.json is quarantined and treated as empty', () => {
-  writeFileSync(PENDING_FILE, '{not json', { mode: 0o600 })
+  writeFileSync(pendingFile(), '{not json', { mode: 0o600 })
   expect(readPending()).toEqual({ proposals: [] })
   // the torn file was moved aside, not left in place to crash the next read.
-  // Read from the actually-bound STATE_DIR (not the local `dir`), so this holds regardless of
-  // which state-touching suite imported state.ts first in the shared test process.
-  expect(readdirSync(STATE_DIR).some(f => f.startsWith('pending.json.corrupt-'))).toBe(true)
+  expect(readdirSync(stateDir()).some(f => f.startsWith('pending.json.corrupt-'))).toBe(true)
 })
 
 test('trust anchors survive a save/read round-trip and are terminal-owned', () => {
@@ -108,13 +108,13 @@ test('U9: a relay discovery pass (append + reconcile) records proposals without 
   const a = defaultAuthoringAccess()
   a.bots.cc = { platform: 'discord', tokenEnv: 'T', runtime: 'claude-sdk' }
   saveAuthoringAccess(a)
-  const accessBefore = require('fs').readFileSync(ACCESS_FILE, 'utf8')
+  const accessBefore = require('fs').readFileSync(accessFile(), 'utf8')
 
   appendPending(prop({ kind: 'peer', targetId: 'U_remote', claimed: { agentKey: 'rk', userId: 'U_remote' } }))
   reconcilePending('2026-06-28T00:00:00.000Z')
   expect(readPending().proposals.map(p => p.targetId)).toEqual(['U_remote'])
   // access.json is byte-for-byte unchanged — the relay is not its writer.
-  expect(require('fs').readFileSync(ACCESS_FILE, 'utf8')).toBe(accessBefore)
+  expect(require('fs').readFileSync(accessFile(), 'utf8')).toBe(accessBefore)
 
   // Once the owner confirms the peer into the roster, the next reconcile drops it.
   const a2 = readAuthoringAccess()
@@ -126,7 +126,7 @@ test('U9: a relay discovery pass (append + reconcile) records proposals without 
 
 test('parseAuthoringAccess preserves trust across a raw read (not stripped)', () => {
   writeFileSync(
-    ACCESS_FILE,
+    accessFile(),
     JSON.stringify({ bots: {}, channels: {}, roster: { people: {}, peers: {} }, trust: { tombstones: [{ agentKey: 'k', userId: 'u', declinedAt: 't' }], trustedPairs: [] } }),
     { mode: 0o600 },
   )

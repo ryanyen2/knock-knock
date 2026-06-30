@@ -222,8 +222,9 @@ export interface MessagingAdapter {
   capabilities(): Capabilities
   /** Static discovery-capability claim for the gap-resolver's fill ladder. Readable
    *  WITHOUT connecting (a pure declaration, like `capabilities()`); the resolver uses it
-   *  to pick a need's fill rung before any network call. */
-  discoveryCapabilities(): DiscoveryCapabilities
+   *  to pick a need's fill rung before any network call. Optional so a minimal or third-party
+   *  adapter without it degrades to NO_DISCOVERY in the assembler instead of failing to compile. */
+  discoveryCapabilities?(): DiscoveryCapabilities
 
   // ─── inbound (host registers handlers; adapter normalizes platform events) ──
   onMessage(handler: (m: IncomingMessage) => void): void

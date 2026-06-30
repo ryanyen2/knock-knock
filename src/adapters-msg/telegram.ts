@@ -220,9 +220,11 @@ export class TelegramMessagingAdapter implements MessagingAdapter {
       // A mention entity Telegram won't resolve (e.g. a user it can't see) would otherwise
       // sink the whole prompt — and an approvals send that returns undefined auto-DENIES the
       // tool. Retry once without the ping so the prompt still posts; the owner sees it in-channel.
+      // Send the UN-prefixed body: `body` carries the "owner " prefix that anchors the dropped
+      // text_mention entity, which without the entity is just dead literal text.
       if (!entities) return undefined
       try {
-        const sent = await bot.api.sendMessage(chatId, body, base)
+        const sent = await bot.api.sendMessage(chatId, this.bodyText(text, opts), base)
         return { id: String(sent.message_id), scope }
       } catch {
         return undefined

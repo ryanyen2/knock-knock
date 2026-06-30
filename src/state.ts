@@ -26,23 +26,44 @@ import type { PermissionProfile } from './agent-adapter.ts'
 
 export type { PermissionProfile, RoomProfile }
 
-export const STATE_DIR =
-  process.env.KNOCK_KNOCK_STATE_DIR ?? join(homedir(), '.knock-knock')
-export const ACCESS_FILE = join(STATE_DIR, 'access.json')
-export const SETTINGS_FILE = join(STATE_DIR, 'settings.json')
+// Paths resolve lazily (read the env on each call) rather than at module load. Bun shares one
+// module instance across a test run, so a frozen module-level binding would lock onto whichever
+// suite imported state.ts first — which is exactly why the settings-api suite used to self-skip.
+export function stateDir(): string {
+  return process.env.KNOCK_KNOCK_STATE_DIR ?? join(homedir(), '.knock-knock')
+}
+export function accessFile(): string {
+  return join(stateDir(), 'access.json')
+}
+export function settingsFile(): string {
+  return join(stateDir(), 'settings.json')
+}
 /** Relay-owned discovery proposals + scan heartbeat. Sibling of access.json, never folded
  *  into the runtime Access (see KTD3). */
-export const PENDING_FILE = join(STATE_DIR, 'pending.json')
+export function pendingFile(): string {
+  return join(stateDir(), 'pending.json')
+}
+
+// Per-write unique temp suffix so two concurrent writers (e.g. the relay's trust-write racing
+// the settings UI's save) never share a `.tmp` and tear each other's file; the rename itself is
+// atomic, so a reader sees either the old or the new file, never a partial one.
+let writeSeq = 0
+function atomicWrite(target: string, data: string): void {
+  mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
+  const tmp = `${target}.${process.pid}.${writeSeq++}.tmp`
+  writeFileSync(tmp, data, { mode: 0o600 })
+  renameSync(tmp, target)
+}
 
 /** Read access.json as the agent-keyed runtime `Access`. Missing → defaults; corrupt → moved aside, then defaults. */
 export function readAccessFile(): Access {
   try {
-    const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
+    const parsed = JSON.parse(readFileSync(accessFile(), 'utf8')) as Record<string, unknown>
     return projectToRuntime(parseAuthoringAccess(parsed))
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultAccess()
     try {
-      renameSync(ACCESS_FILE, `${ACCESS_FILE}.corrupt-${Date.now()}`)
+      renameSync(accessFile(), `${accessFile()}.corrupt-${Date.now()}`)
     } catch {}
     process.stderr.write('knock-knock: access.json is corrupt, moved aside. Starting fresh.\n')
     return defaultAccess()
@@ -97,19 +118,23 @@ function parseTrustAnchors(raw: Record<string, unknown>): TrustAnchors {
 /** Read access.json as the channel-centric authoring shape (what setup.ts edits). */
 export function readAuthoringAccess(): AuthoringAccess {
   try {
-    const parsed = JSON.parse(readFileSync(ACCESS_FILE, 'utf8')) as Record<string, unknown>
+    const parsed = JSON.parse(readFileSync(accessFile(), 'utf8')) as Record<string, unknown>
     return parseAuthoringAccess(parsed)
   } catch {
     return defaultAuthoringAccess()
   }
 }
 
+/** The exact on-disk byte representation of an authoring config. Exposed so callers that just
+ *  wrote it can derive the content-hash version without a second read (the file and this string
+ *  are byte-identical). */
+export function serializeAuthoringAccess(a: AuthoringAccess): string {
+  return JSON.stringify(a, null, 2) + '\n'
+}
+
 /** Persist the channel-centric authoring config (atomic, 0600). */
 export function saveAuthoringAccess(a: AuthoringAccess): void {
-  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-  const tmp = ACCESS_FILE + '.tmp'
-  writeFileSync(tmp, JSON.stringify(a, null, 2) + '\n', { mode: 0o600 })
-  renameSync(tmp, ACCESS_FILE)
+  atomicWrite(accessFile(), serializeAuthoringAccess(a))
 }
 
 // ─── Terminal-owned trust anchors (decline tombstones + trusted pairs) ─────────
@@ -175,12 +200,12 @@ function parsePending(raw: Record<string, unknown>): PendingStore {
  *  `doctor` read never sees a torn file). */
 export function readPending(): PendingStore {
   try {
-    const parsed = JSON.parse(readFileSync(PENDING_FILE, 'utf8')) as Record<string, unknown>
+    const parsed = JSON.parse(readFileSync(pendingFile(), 'utf8')) as Record<string, unknown>
     return parsePending(parsed)
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return emptyPending()
     try {
-      renameSync(PENDING_FILE, `${PENDING_FILE}.corrupt-${Date.now()}`)
+      renameSync(pendingFile(), `${pendingFile()}.corrupt-${Date.now()}`)
     } catch {}
     process.stderr.write('knock-knock: pending.json is corrupt, moved aside. Starting fresh.\n')
     return emptyPending()
@@ -190,22 +215,26 @@ export function readPending(): PendingStore {
 /** Persist the pending store (atomic 0600 temp-rename — same discipline as access.json).
  *  The relay is the only writer. */
 export function writePending(s: PendingStore): void {
-  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-  const tmp = PENDING_FILE + '.tmp'
-  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 })
-  renameSync(tmp, PENDING_FILE)
+  atomicWrite(pendingFile(), JSON.stringify(s, null, 2) + '\n')
 }
 
 /** Append a discovered proposal to pending.json, honoring terminal-owned tombstones and the
  *  per-agentKey cap (claimed strings are sanitized on store). Reads access.json for the live
  *  tombstone set so a declined pair is never re-proposed. Returns the new store. Relay-only. */
 export function appendPending(proposal: Proposal): PendingStore {
+  return appendPendingBatch([proposal], readTrustAnchors().tombstones)
+}
+
+/** Append many discovered proposals in ONE read+write of pending.json (vs once per proposal).
+ *  Tombstones are passed in so a discovery pass that already read them doesn't re-read access.json
+ *  per proposal. Relay-only. */
+export function appendPendingBatch(proposals: Proposal[], tombstones: Tombstone[]): PendingStore {
   const store = readPending()
-  const tombstones = readTrustAnchors().tombstones
-  const proposals = addProposal(store.proposals, proposal, tombstones)
-  const next: PendingStore = { ...store, proposals }
-  writePending(next)
-  return next
+  let next = store.proposals
+  for (const p of proposals) next = addProposal(next, p, tombstones)
+  const result: PendingStore = { ...store, proposals: next }
+  writePending(result)
+  return result
 }
 
 /** Drop pending proposals now confirmed in access.json and stamp the scan heartbeat. Relay-only. */
@@ -244,7 +273,7 @@ export function parseSettings(raw: string): KnockSettings {
 export function readSettings(): KnockSettings {
   let raw: string
   try {
-    raw = readFileSync(SETTINGS_FILE, 'utf8')
+    raw = readFileSync(settingsFile(), 'utf8')
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return defaultSettings()
     return defaultSettings()
@@ -253,7 +282,7 @@ export function readSettings(): KnockSettings {
     return parseSettings(raw)
   } catch {
     try {
-      renameSync(SETTINGS_FILE, `${SETTINGS_FILE}.corrupt-${Date.now()}`)
+      renameSync(settingsFile(), `${settingsFile()}.corrupt-${Date.now()}`)
     } catch {}
     process.stderr.write('knock-knock: settings.json is corrupt, moved aside. Using defaults.\n')
     return defaultSettings()
@@ -261,10 +290,7 @@ export function readSettings(): KnockSettings {
 }
 
 export function saveSettings(s: KnockSettings): void {
-  mkdirSync(STATE_DIR, { recursive: true, mode: 0o700 })
-  const tmp = SETTINGS_FILE + '.tmp'
-  writeFileSync(tmp, JSON.stringify(s, null, 2) + '\n', { mode: 0o600 })
-  renameSync(tmp, SETTINGS_FILE)
+  atomicWrite(settingsFile(), JSON.stringify(s, null, 2) + '\n')
 }
 
 // ─── Resume bindings ─────────────────────────────────────────────────────────
@@ -275,7 +301,7 @@ export type SessionBinding = { runtime: string; sessionId: string; workspace?: s
 
 /** rooms/<agentKey>/<channelId>.session.json */
 export function sessionBindingPath(agentKey: string, channelId: string): string {
-  return join(STATE_DIR, 'rooms', agentKey, `${channelId}.session.json`)
+  return join(stateDir(), 'rooms', agentKey, `${channelId}.session.json`)
 }
 
 /** Read a channel's resume binding, or undefined if none / unreadable. */
@@ -297,11 +323,7 @@ export function readSessionBinding(agentKey: string, channelId: string): Session
 
 /** Persist a channel's resume binding (atomic write). */
 export function writeSessionBinding(agentKey: string, channelId: string, binding: SessionBinding): void {
-  const path = sessionBindingPath(agentKey, channelId)
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
-  const tmp = path + '.tmp'
-  writeFileSync(tmp, JSON.stringify(binding, null, 2) + '\n', { mode: 0o600 })
-  renameSync(tmp, path)
+  atomicWrite(sessionBindingPath(agentKey, channelId), JSON.stringify(binding, null, 2) + '\n')
 }
 
 /** Remove a channel's resume binding, if any. */

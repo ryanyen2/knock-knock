@@ -24,7 +24,7 @@ export type { DiscoverySnapshot } from './lib.ts'
 export type DiscoveryAdapter = {
   readonly botUserId?: string | undefined
   readonly botLabel?: string | undefined
-  discoveryCapabilities(): DiscoveryCapabilities
+  discoveryCapabilities?(): DiscoveryCapabilities
   listChannels?(): Promise<EnumerationOutcome>
   listMembers?(channelId: string): Promise<EnumerationOutcome>
   createChannel?(name: string): Promise<EnumerationOutcome>
@@ -100,7 +100,7 @@ async function cachedEnum(key: string, run: () => Promise<EnumerationOutcome>): 
  *  three-valued outcome distinguishes empty from forbidden. Pure of decisions — it only gathers. */
 export async function assembleSnapshot(sources: AssembleSources): Promise<DiscoverySnapshot> {
   const { platform, adapter, directory, channelId } = sources
-  const capabilities = adapter?.discoveryCapabilities() ?? NO_DISCOVERY
+  const capabilities = adapter?.discoveryCapabilities?.() ?? NO_DISCOVERY
   // Enumeration results are BOT-specific (each bot sees only the channels/members it has access
   // to — a different bot on the same platform sees a different list, or is degraded where it isn't
   // a member), so the cache MUST key on the connected bot's self-id, not just the platform.
@@ -153,9 +153,7 @@ export async function connectDiscoveryAdapter(
     await adapter.connect(token, secrets)
     return adapter
   } catch {
-    try {
-      await adapter.disconnect()
-    } catch {}
+    await adapter.disconnect().catch(() => {})
     return undefined
   }
 }
