@@ -8,9 +8,11 @@
  * One self-contained document: no framework, no external fonts/CDN (so the per-run token can't
  * leak via a third-party request), system font stack, a monochrome black/white palette, and a
  * light-default theme with a manual light/dark toggle persisted in localStorage. The inline
- * <script> reads the token from the URL once, strips it from the address bar, and talks to the
- * token-gated JSON API. It deliberately uses no backticks or ${...} so it never collides with
- * this outer template literal.
+ * <script> reads the token from the URL once, stashes it in sessionStorage (so a reload or a
+ * reopened tab keeps working instead of 401-ing), strips it from the address bar, and talks to
+ * the token-gated JSON API. sessionStorage is same-origin and cleared when the tab closes, so it
+ * is no more exposed than the in-memory variable was — just durable across reloads. It
+ * deliberately uses no backticks or ${...} so it never collides with this outer template literal.
  *
  * What the web surface will NOT do (by design — see settings-server.ts / lib.ts R17/R20):
  *   • enter token VALUES (only shows set / not-set) and • edit permissions.
@@ -256,9 +258,14 @@ export const SETTINGS_HTML = `<!doctype html>
   // ── Theme: light by default; honor the saved choice; never auto-dark (R: user asked for light). ──
   try { var saved = localStorage.getItem("kk-theme"); if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved); } catch (e) {}
 
-  // ── Token: read once from the URL, hold in memory, strip from the address bar. ──
+  // ── Token: take it from the URL when present (a fresh link), else fall back to the one this
+  // tab stashed earlier — so a reload or reopened tab keeps working. Then strip it from the bar. ──
   var params = new URLSearchParams(location.search);
   var TOKEN = params.get("token") || "";
+  try {
+    if (TOKEN) sessionStorage.setItem("kk-token", TOKEN);
+    else TOKEN = sessionStorage.getItem("kk-token") || "";
+  } catch (e) {}
   if (location.search) history.replaceState(null, "", location.pathname);
 
   var GROUPS = [
@@ -324,10 +331,15 @@ export const SETTINGS_HTML = `<!doctype html>
   }
   function botReady(b) { return botMissing(b).length === 0; }
 
+  // Shown whenever the API rejects our token (stale link, or a new setup run minted a fresh
+  // one). The only fix is the new URL the terminal printed, so say exactly that.
+  var STALE_LINK_MSG = "This link is no longer valid — the access token expired or a newer one was issued. Switch to the terminal running knock-knock setup and open the fresh link it printed.";
+
   // ── data load ──
   function load() {
     S.loading = true; render();
     api("/api/config").then(function (r) {
+      if (r.status === 401) throw new Error(STALE_LINK_MSG);
       if (!r.ok) throw new Error("HTTP " + r.status);
       return r.json();
     }).then(function (data) {
@@ -358,6 +370,9 @@ export const SETTINGS_HTML = `<!doctype html>
       if (res.status === 200) {
         S.version = res.body.version; S.dirty = false; S.conflict = false;
         toast("Settings saved.", false); load();
+      } else if (res.status === 401) {
+        // Token went stale — keep the edits in memory and surface the recovery path full-screen.
+        S.error = STALE_LINK_MSG; render();
       } else if (res.status === 409) {
         S.conflict = true; syncSaveBar(); render();
       } else if (res.status === 400 && res.body.fields) {
@@ -792,15 +807,20 @@ export const SETTINGS_HTML = `<!doctype html>
   }
   function startAddChannel() {
     var platform = Object.values(S.access.bots)[0] ? Object.values(S.access.bots)[0].platform : "discord";
-    S.draft = { kind: "channel", platform: platform, channelId: "", label: "" };
+    S.draft = { kind: "channel", platform: platform, channelId: "", label: "", owner: ownerFor(platform) };
     S.errors = {}; render();
   }
+  // The owner id is shared per platform (access.me[platform]) — your id, pinged for approvals.
+  // Reuse what a prior setup already recorded so we only ask when it's genuinely unknown.
+  function ownerFor(platform) { return (S.access.me && S.access.me[platform]) || ""; }
   function createChannelForm(main) {
     var d = S.draft; var g = platformGuide(d.platform);
     main.appendChild(backBtn());
     main.appendChild(header("New channel", "Pick the platform and paste the channel ID before creating."));
-    main.appendChild(field("Platform", selectInput(d.platform, PLATFORM_KEYS, function (v) { d.platform = v; S.errors = {}; render(); }, function (p) { var gg = platformGuide(p); return gg ? gg.label : p; }), g ? g.hint : null, null, "Which platform this channel lives on. Bots can only be added if they speak the same platform."));
+    main.appendChild(field("Platform", selectInput(d.platform, PLATFORM_KEYS, function (v) { d.platform = v; d.owner = ownerFor(v); S.errors = {}; render(); }, function (p) { var gg = platformGuide(p); return gg ? gg.label : p; }), g ? g.hint : null, null, "Which platform this channel lives on. Bots can only be added if they speak the same platform."));
     main.appendChild(field(g ? g.idLabel : "Channel ID", textInput(d.channelId, function (v) { d.channelId = v; S.errors = {}; }, { placeholder: g ? g.idPlaceholder : "" }), g && g.idHowto ? h("div", { class: "howto" }, [g.idHowto]) : "The platform's channel/scope identifier.", "draft.channelId", "The channel/scope id from the platform. This becomes part of the channel's identity and can't change later."));
+    // Owner id is shared per platform. If a prior setup already set it, this is prefilled and you can leave it; otherwise it's required so approval pings reach you.
+    main.appendChild(field(g ? g.ownerLabel : "Your user ID (owner)", textInput(d.owner, function (v) { d.owner = v; S.errors = {}; }, { placeholder: g ? g.ownerPlaceholder : "" }), ownerFor(d.platform) ? "Shared by every bot on " + d.platform + " — already set; edit to change it everywhere." : "Your id on " + d.platform + ". Approval prompts ping this id; shared by every bot on the platform.", "draft.owner", "Your own user id on this platform — the human the bots ask for approval. Set once per platform and reused."));
     main.appendChild(field("Label", textInput(d.label, function (v) { d.label = v; }), "Friendly project name for this channel (optional)."));
     main.appendChild(h("div", { class: "row", style: "margin-top:6px" }, [
       h("button", { class: "btn primary", onclick: commitChannel }, ["Create channel"]),
@@ -815,7 +835,12 @@ export const SETTINGS_HTML = `<!doctype html>
       var ck = d.platform + ":" + id;
       if (S.access.channels[ck]) S.errors["draft.channelId"] = "That channel already exists.";
     }
+    // Owner id must be known so approval prompts have someone to ping. Required only when no
+    // prior setup recorded one for this platform; format is validated server-side on save.
+    var owner = (d.owner || "").trim();
+    if (!owner && !ownerFor(d.platform)) S.errors["draft.owner"] = "Required — approval prompts ping this id.";
     if (Object.keys(S.errors).length) { render(); return; }
+    if (owner) S.access.me = Object.assign({}, S.access.me, (function () { var o = {}; o[d.platform] = owner; return o; })());
     var key = d.platform + ":" + id;
     var ch = { platform: d.platform, channelId: id, members: [], collaborators: [] };
     if (d.label) ch.label = d.label.trim();
@@ -829,6 +854,8 @@ export const SETTINGS_HTML = `<!doctype html>
     main.appendChild(header(ch.label || ch.channelId, null));
     main.appendChild(field("Platform", textInput(ch.platform, function () {}, { readonly: true }), "Set when the channel is created.", null, "The channel's platform — fixed at creation."));
     main.appendChild(field("Channel ID", textInput(ch.channelId, function () {}, { readonly: true }), "Identity; create a new channel to change it.", "channels." + ck + ".channelId"));
+    var og = platformGuide(ch.platform);
+    main.appendChild(field(og ? og.ownerLabel : "Your user ID (owner)", textInput(ownerFor(ch.platform), function (v) { var t = (v || "").trim(); if (t) S.access.me = Object.assign({}, S.access.me, (function () { var o = {}; o[ch.platform] = t; return o; })()); else if (S.access.me) delete S.access.me[ch.platform]; markDirty(); }, { placeholder: og ? og.ownerPlaceholder : "" }), "Shared by every bot on " + ch.platform + " — the human pinged for approvals.", "me." + ch.platform, "Your own user id on this platform. Set once per platform and reused by every bot here."));
     main.appendChild(field("Label", textInput(ch.label || "", function (v) { if (v) ch.label = v; else delete ch.label; markDirty(); }), "Friendly project name."));
     main.appendChild(field("", toggle("Require @mention before the bot engages", ch.requireMention !== false, function (on) { ch.requireMention = on; markDirty(); })));
     main.appendChild(field("", toggle("Dedicated mesh-transport channel (no chat or tasks)", !!ch.meshTransport, function (on) { if (on) ch.meshTransport = true; else delete ch.meshTransport; markDirty(); })));

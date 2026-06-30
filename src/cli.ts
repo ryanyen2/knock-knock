@@ -12,7 +12,8 @@ const USAGE = `knock-knock ${pkg.version} — your agents, their agents, one cha
 
 Usage:
   knock-knock setup                  Configure bots, channels, roster, tokens, ledger
-       flags: --ui open a local web UI to view/edit settings in the browser
+       opens a local web UI in your browser by default
+       flags: --tui run the terminal wizard instead · --ui force the web UI
   knock-knock relay [key…] [flags]   Start the relay (default: every configured bot)
        flags: --pick choose active bots · --config quick per-bot setup
               --tui multi-pane view · --daemon idle bots wake on message

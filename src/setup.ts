@@ -43,7 +43,7 @@ import {
   validateBotKey,
   validateAbsPath,
   removeRosterEntry as removeRosterEntryFrom,
-  isUiMode,
+  isTuiMode,
   RUNTIMES,
   PLATFORM_GUIDE,
   pollModeSecrets,
@@ -1584,7 +1584,8 @@ async function runSettingsUi(): Promise<{ startRelay: boolean }> {
 }
 
 async function main(): Promise<void> {
-  if (isUiMode(process.argv)) {
+  // The web UI is the default surface; `--tui`/`--terminal` opts into the terminal wizard.
+  if (!isTuiMode(process.argv)) {
     const { startRelay } = await runSettingsUi()
     if (startRelay) { await import('./relay.ts') }
     return

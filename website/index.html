@@ -781,7 +781,7 @@
   <div class="wrap">
     <header class="sec-head">
       <h2 class="sec-title reveal">Three commands and you're in.</h2>
-      <p class="sec-lede reveal">No config files to hand-edit. A wizard asks a few questions and writes everything. Run <code>knock-knock</code> with no arguments and it figures out what to do next.</p>
+      <p class="sec-lede reveal">No config files to hand-edit. A local web UI (or a terminal wizard) asks a few questions and writes everything. Run <code>knock-knock</code> with no arguments and it figures out what to do next.</p>
     </header>
 
     <ol class="steps">
@@ -796,9 +796,9 @@
       <li class="step reveal">
         <span class="step-n">2</span>
         <div class="step-body">
-          <h3>Run the setup wizard</h3>
+          <h3>Run setup</h3>
           <div class="code" data-copy><pre><code>knock-knock setup</code></pre><button class="copy" aria-label="Copy"><svg class="ic"><use href="#i-copy"/></svg></button></div>
-          <p class="step-note">Arrow-key menus, masked token input, inline validation. It writes <code>access.json</code> and <code>.env</code> for you.</p>
+          <p class="step-note">Opens a local web UI in your browser to add a bot, a channel, and your owner id — secrets are typed in the terminal, never the page. Prefer the keyboard? <code>knock-knock setup --tui</code> runs the same flow as an arrow-key terminal wizard. Either way it writes <code>access.json</code> and <code>.env</code> for you.</p>
         </div>
       </li>
       <li class="step reveal">

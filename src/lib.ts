@@ -229,6 +229,12 @@ export function isUiMode(argv: readonly string[]): boolean {
   return argv.includes('--ui')
 }
 
+/** True when setup was asked for the terminal wizard (`setup --tui`/`--terminal`). The web UI
+ *  is the default now, so this is the explicit opt-out. Pure (testable without setup.ts). */
+export function isTuiMode(argv: readonly string[]): boolean {
+  return argv.includes('--tui') || argv.includes('--terminal')
+}
+
 // ─── Field validators (shared by the terminal wizard and the settings server) ──
 // Pure string predicates: each returns undefined when valid, or a one-line error.
 // They live here (not in setup.ts) so the settings server can validate identically

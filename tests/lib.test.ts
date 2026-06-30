@@ -2435,11 +2435,17 @@ test('sanitizeAuthoringInput preserves on-disk profile/preset and trust, ignorin
   expect(out.trust).toEqual(current.trust)        // trust untouched by the wire
 })
 
-import { isUiMode } from '../src/lib.ts'
+import { isUiMode, isTuiMode } from '../src/lib.ts'
 test('isUiMode detects the --ui flag', () => {
   expect(isUiMode(['--ui'])).toBe(true)
   expect(isUiMode(['relay', '--daemon'])).toBe(false)
   expect(isUiMode([])).toBe(false)
+})
+test('isTuiMode detects the terminal-wizard opt-out flags', () => {
+  expect(isTuiMode(['--tui'])).toBe(true)
+  expect(isTuiMode(['--terminal'])).toBe(true)
+  expect(isTuiMode(['--ui'])).toBe(false)
+  expect(isTuiMode([])).toBe(false)
 })
 
 test('sanitizeAuthoringInput: __proto__/constructor keys do not persist or pollute (security)', () => {

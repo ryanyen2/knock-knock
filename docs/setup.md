@@ -118,21 +118,27 @@ answers.
 > page, `npm install -g knock-knock` (needs Bun), or from source
 > (`git clone https://github.com/ryanyen2/knock-knock && cd knock-knock && bun install`).
 
-> **Step 2 — Run the setup wizard**
+> **Step 2 — Run setup**
 > ```bash
-> knock-knock setup
+> knock-knock setup          # opens a local web UI in your browser
+> knock-knock setup --tui    # same flow, as an arrow-key terminal wizard
 > ```
-> On first run it walks you through one bot and a channel for it to work in,
-> with arrow-key menus and masked token input: **bot (platform → optional default
-> coding agent) → channel (paste id → pick member bots → set each
-> bot's workspace + permission preset → add collaborators from your roster) → bot
-> token → ledger backend.** Your owner id is asked once per platform; the bot's
-> name is fetched from the platform on connect, never typed. The coding agent is
-> just a **default** — you can skip it (Claude Code is used), set it per channel,
-> switch it live in chat with `!config agent`, or override it at launch with
-> `--config`. It writes `access.json` and `.env` for you. (You'll need a Discord
-> bot token and a couple of IDs first — [step 4](#4-connect-your-chat-platform)
-> shows exactly how to get them.)
+> By default `setup` opens a **local web UI** (localhost-only, gated by a one-time
+> token in the URL) where you add a bot, add a channel it works in, set your owner
+> id, and pick the ledger backend. The page never holds a secret: typing a token,
+> editing permissions, and starting the relay **hand off to the terminal** that
+> launched it, and only presence (set / not-set) is shown for tokens. Prefer the
+> keyboard? `knock-knock setup --tui` runs the same flow as a terminal wizard with
+> masked token input: **bot (platform → optional default coding agent) → channel
+> (paste id → set owner id → pick member bots → set each bot's workspace +
+> permission preset → add collaborators from your roster) → bot token → ledger
+> backend.** Either way, your owner id is asked once per platform; the bot's name
+> is fetched from the platform on connect, never typed. The coding agent is just a
+> **default** — you can skip it (Claude Code is used), set it per channel, switch it
+> live in chat with `!config agent`, or override it at launch with `--config`. It
+> writes `access.json` and `.env` for you. (You'll need a Discord bot token and a
+> couple of IDs first — [step 4](#4-connect-your-chat-platform) shows exactly how
+> to get them.)
 
 > **Step 3 — Start the relay**
 > ```bash
@@ -155,14 +161,15 @@ answers.
 >   didn't pick **idle** (listening, spun down) until their first message wakes
 >   them. See [idle-wake.md](idle-wake.md).
 
-After the first bot exists, re-running `knock-knock setup` opens a **status
-dashboard + action menu** instead of the wizard — a compact map of your bots,
-channels, and roster. The main action is **"Manage a bot"**: pick a bot and edit
-everything about it in one place — rename its key, set the owner id, save its
-token, add/remove it from channels (with each channel's workspace, preset, and
-collaborators), and set its default coding agent / blurb. The other
-actions add/edit a channel directly, manage the roster, save a coding-agent API
-key, or choose the ledger backend.
+Re-running `knock-knock setup` always reopens the **web UI** — a dashboard of your
+bots, channels, and roster you can edit directly, with the same terminal handoff
+for tokens and permissions. With `--tui`, the second run instead opens a **status
+dashboard + action menu** in the terminal. The main action is **"Manage a bot"**:
+pick a bot and edit everything about it in one place — rename its key, set the
+owner id, save its token, add/remove it from channels (with each channel's
+workspace, preset, and collaborators), and set its default coding agent / blurb.
+The other actions add/edit a channel directly, manage the roster, save a
+coding-agent API key, or choose the ledger backend.
 
 If you want to feel the flow before creating a real bot, skip ahead to
 [step 7](#7-say-hello-then-verify) to see what a first conversation looks like.
@@ -382,12 +389,12 @@ dedicated guide.
 
 | Symptom | Fix |
 |---------|-----|
-| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup → "Manage a bot" → Save / update token` and check `.env`. |
+| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup`, open the bot, and **Set / update token** (the value is collected in the terminal), then check `.env`. |
 | Bot is silent | On Discord, MESSAGE CONTENT INTENT is off, the bot isn't in the channel, or the channel requires an `@mention` and you didn't mention it. |
 | Empty message text (Discord) | MESSAGE CONTENT INTENT not enabled. |
 | Bot not in the "who's listening where" table at startup | Its `tokenEnv` isn't set in `.env`, or it isn't a **member** of any channel. Re-run setup, save its token, and add it to a channel. |
 | Two of your bots flagged on the same channel | Legal but ambiguous — an `@mention` routes to the named bot, and a thread continuation stays with the bot that owns it. Give each a distinct role or drop one from the channel. |
-| No approval prompt appears | The owner id (`me`) for that platform isn't set, or the channel's `approvalActorId` override is wrong. Re-run `knock-knock setup`. |
+| No approval prompt appears | The owner id (`me`) for that platform isn't set, or the channel's `approvalActorId` override is wrong. Re-run `knock-knock setup` and set the **owner id** when adding a channel (or on the channel's page). |
 | `rm -rf` ran anyway (ACP runtime) | The agent isn't asking before tools. Put it in ask-first mode (never yolo/bypass). See [the deny-floor caveat](getting-started-agents.md). |
 | Cross-machine state not syncing | Both relays must point at the **same** Postgres (direct endpoint, not a pooled one). |
 

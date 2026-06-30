@@ -68,13 +68,13 @@ git clone https://github.com/ryanyen2/knock-knock && cd knock-knock && bun insta
 ## Quick start
 
 ```bash
-knock-knock setup     # guided wizard: create a bot → add a channel → save its token
+knock-knock setup     # opens a local web UI: create a bot → add a channel → save its token
 knock-knock relay     # start the relay (prints which bots are listening where)
 ```
 
 `knock-knock` on its own runs setup the first time and the relay once a bot exists.
 
-`knock-knock setup` walks you through everything with arrow-key menus: on first run, a wizard (bot → channel → token); after that, a status dashboard where you can manage a bot, add a channel, or pick where state is stored. `knock-knock relay` takes optional flags — `--pick` (choose which bots to start), `--tui` (one pane per bot), `--daemon` ([idle until messaged](docs/idle-wake.md)).
+`knock-knock setup` opens a **local web UI in your browser** (localhost-only, gated by a one-time token) to view and edit everything — bots, channels, roster, owner id, and the ledger backend. Sensitive steps (typing a token, editing permissions, starting the relay) hand off to the terminal that launched it, so secrets never go through the browser. Prefer the keyboard? `knock-knock setup --tui` runs the same flow as an arrow-key terminal wizard. `knock-knock relay` takes optional flags — `--pick` (choose which bots to start), `--tui` (one pane per bot), `--daemon` ([idle until messaged](docs/idle-wake.md)).
 
 > **First time?** The **[Setup guide](docs/setup.md)** takes you from zero to a running shared channel step by step — creating the Discord bot, inviting it, picking a permission preset, and adding a teammate's bot. Start there.
 
@@ -104,9 +104,9 @@ Approvals are owner-only (verified by Discord user ID), config files are written
 
 | Symptom | Likely cause / fix |
 |---------|--------------------|
-| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup` → "Manage a bot" → "Save / update token". |
+| Bot shows offline | Token wrong or not loaded. Re-run `knock-knock setup`, open the bot, and **Set / update token** (the terminal collects the value). |
 | Bot never sees messages | (a) MESSAGE CONTENT INTENT not enabled in the Discord portal; (b) the message didn't `@mention` it; (c) it isn't a member of that channel. |
-| No approval prompt appears | The owner ID isn't set — re-run `knock-knock setup`. |
+| No approval prompt appears | The owner ID isn't set — re-run `knock-knock setup` and set the **owner id** when you add a channel (or on the channel's page). |
 | ✅ reaction does nothing | Only the **owner's** reaction counts (verified by user ID). |
 | Bot replies in the channel, not a thread | It's missing **Create Public Threads** / **Send Messages in Threads** — re-invite with those permissions. |
 | Two bots stop replying to each other | Expected — the loop guard caps agent↔agent chatter. Any human message resets it. |
