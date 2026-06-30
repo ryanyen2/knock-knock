@@ -3,9 +3,9 @@
  * The relay and driver never see the SDK; they see the AgentAdapter interface.
  */
 
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { query } from '@anthropic-ai/claude-agent-sdk'
 import type {
   SDKSystemMessage,
@@ -46,6 +46,35 @@ function resolveSdkEnv(): Record<string, string | undefined> {
   return { ...process.env, ...fromSettings }
 }
 
+/** True when running inside a `bun build --compile` standalone binary (the
+ *  Homebrew/install.sh artifact). There the SDK's own require.resolve can't
+ *  reach its optional native CLI package — it lives outside the $bunfs image —
+ *  so we must hand it an explicit executable. Mirrors the $bunfs/~BUN check in
+ *  @anthropic-ai/claude-agent-sdk/extract. */
+function isCompiledBinary(): boolean {
+  return import.meta.url.includes('$bunfs') || import.meta.url.includes('~BUN')
+}
+
+/** Locate an installed Claude Code CLI for the SDK to spawn as
+ *  pathToClaudeCodeExecutable: an explicit override, then PATH, then the
+ *  official local-install path. Only consulted in the compiled binary; in dev
+ *  (`bun relay`) the SDK resolves its own bundled CLI from node_modules. */
+function resolveClaudeExecutable(): string | undefined {
+  const exe = process.platform === 'win32' ? 'claude.exe' : 'claude'
+
+  const override = process.env.KNOCK_KNOCK_CLAUDE_EXECUTABLE
+  if (override) return existsSync(override) ? override : undefined
+
+  for (const dir of (process.env.PATH ?? '').split(delimiter)) {
+    if (!dir) continue
+    const candidate = join(dir, exe)
+    if (existsSync(candidate)) return candidate
+  }
+
+  const local = join(homedir(), '.claude', 'local', exe)
+  return existsSync(local) ? local : undefined
+}
+
 export class ClaudeSdkAdapter implements AgentAdapter {
   private profile: PermissionProfile = { allow: [], ask: [], deny: [] }
   private permHandler?: (req: { toolName: string; input: unknown }) => Promise<Verdict>
@@ -53,6 +82,9 @@ export class ClaudeSdkAdapter implements AgentAdapter {
   private readonly mcpServers?: Record<string, McpServerConfig>
   private readonly alwaysAllow: string[]
   private readonly env = resolveSdkEnv()
+  // In dev the SDK resolves its bundled CLI; the compiled binary can't, so we
+  // point it at an installed `claude`. undefined => let the SDK self-resolve.
+  private readonly claudeExecutable = isCompiledBinary() ? resolveClaudeExecutable() : undefined
 
   constructor(
     private readonly cwd: string,
@@ -79,6 +111,13 @@ export class ClaudeSdkAdapter implements AgentAdapter {
     }
     if (Object.keys(servers).length > 0) this.mcpServers = servers
     this.alwaysAllow = allow
+
+    if (isCompiledBinary() && !this.claudeExecutable) {
+      process.stderr.write(
+        'claude-sdk: no Claude Code CLI found on PATH (or ~/.claude/local). ' +
+          'Install Claude Code, or set KNOCK_KNOCK_CLAUDE_EXECUTABLE to its path.\n',
+      )
+    }
   }
 
   applyPolicy(profile: PermissionProfile): void {
@@ -139,6 +178,8 @@ export class ClaudeSdkAdapter implements AgentAdapter {
           abortController,
           // Inject gateway/auth env — isolation mode doesn't read global settings.json.
           env: this.env,
+          // Compiled binary can't require.resolve the SDK's native CLI; spawn an installed one.
+          ...(this.claudeExecutable ? { pathToClaudeCodeExecutable: this.claudeExecutable } : {}),
           ...turnOptionFields,
           allowedTools: [...this.profile.allow, ...this.alwaysAllow],
           // deny is the hard floor — must reach the SDK here, not via canUseTool alone.
