@@ -146,7 +146,10 @@ a { color: inherit; text-decoration: none; }
 .nav-links { display: flex; gap: 26px; margin: 0 auto; }
 .nav-links a { font-size: 14px; color: var(--muted); transition: color .15s; }
 .nav-links a:hover, .nav-links a[aria-current="true"] { color: var(--ink); }
-.nav-cta { margin-left: auto; }
+.nav-actions { margin-left: auto; display: flex; align-items: center; gap: 16px; }
+.nav-gh { display: inline-flex; align-items: center; gap: 7px; font-size: 14px; color: var(--muted); transition: color .15s; }
+.nav-gh:hover { color: var(--ink); }
+.nav-gh img { display: block; }
 
 /* ─────────────  HERO (centered, parallax visual)  ───────────── */
 .hero { padding: 0 0 clamp(56px, 8dvh, 96px); overflow: hidden; }
