@@ -81,26 +81,33 @@ try {
  *  so it's available to every bot/channel using that runtime — set once, reused.
  *  `optional: true` means the envVar is one of several valid auth methods — existing
  *  login or gateway credentials also work and are detected before asking. */
+// `hint` describes the alternative auth (a noun phrase) for runtimes with an envVar,
+// or the setup instruction for runtimes that have none. An API key is never required:
+// every runtime here can authenticate with its own login instead.
 const RUNTIME_AUTH: Record<string, { envVar?: string; hint: string; optional?: boolean }> = {
   'claude-sdk': {
     envVar: 'ANTHROPIC_API_KEY',
-    hint: 'optional — existing `claude` login or LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL) also work',
+    hint: 'your existing `claude` login or an LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL)',
     optional: true,
   },
   'claude-acp': {
     envVar: 'ANTHROPIC_API_KEY',
-    hint: 'optional — existing `claude` login or LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL) also work',
+    hint: 'your existing `claude` login or an LLM gateway (ANTHROPIC_AUTH_TOKEN + ANTHROPIC_BASE_URL)',
     optional: true,
   },
-  codex: { envVar: 'OPENAI_API_KEY', hint: 'or run the agent once to log in with ChatGPT' },
+  codex: { envVar: 'OPENAI_API_KEY', hint: 'your ChatGPT login (run codex once to sign in)', optional: true },
   gemini: {
     envVar: 'GEMINI_API_KEY',
-    hint: 'optional — Google account login also works; run `gemini` once to sign in',
+    hint: 'your Google account login (run `gemini` once to sign in)',
     optional: true,
   },
   opencode: { hint: 'run opencode → /connect to set up auth (stored in ~/.local/share/opencode/auth.json)' },
   acp: { hint: 'auth is handled by your KNOCK_KNOCK_ACP_COMMAND agent' },
 }
+
+/** Friendly label for a runtime value (e.g. `claude-sdk` → `Claude Code`), so prompts
+ *  never show the raw internal id. Falls back to the value for unknown runtimes. */
+const RUNTIME_LABEL: Record<string, string> = Object.fromEntries(RUNTIMES.map(r => [r.value, r.label]))
 
 /** Detect non-envVar auth already configured for optional runtimes.
  *  Returns a human-readable description of the auth found, or null when none detected. */
@@ -132,18 +139,20 @@ function hasAlternateAuth(runtime: string): string | null {
 async function ensureRuntimeAuth(runtime: string, force = false): Promise<void> {
   const auth = RUNTIME_AUTH[runtime]
   if (!auth) return
-  if (!auth.envVar) { p.log.info(`${runtime}: ${auth.hint}.`); return }
+  const label = RUNTIME_LABEL[runtime] ?? runtime
+  if (!auth.envVar) { p.log.info(`${label}: ${auth.hint}.`); return }
   if (isTokenSet(auth.envVar) && !force) { p.log.success(`${auth.envVar} already set ${color.dim('✓')}`); return }
   // For optional runtimes, check for alternate auth before prompting.
   if (!force && auth.optional) {
     const alt = hasAlternateAuth(runtime)
     if (alt) { p.log.success(alt); return }
   }
+  // An API key is optional — login works too — so default to "no" and frame it as a choice.
   const save = force || orCancel(await p.confirm({
-    message: `${runtime} needs ${auth.envVar} (${auth.hint}). Save it to .env now?`,
-    initialValue: true,
+    message: `${label} can use ${auth.hint}. Save ${auth.envVar} to .env instead?`,
+    initialValue: false,
   }))
-  if (!save) { p.log.info(`Set ${auth.envVar} before starting the relay (${auth.hint}).`); return }
+  if (!save) { p.log.info(`No ${auth.envVar} saved — ${label} will use ${auth.hint}. Add one to .env later if you prefer an API key.`); return }
   const val = orCancel(await p.password({ message: auth.envVar, validate: required })).trim()
   setToken(auth.envVar, val)
   p.log.success(`Saved ${auth.envVar} to .env ${color.dim(`· ***${val.slice(-4)}`)}`)
@@ -701,7 +710,7 @@ function botBundleSummary(a: AuthoringAccess, key: string): string {
   const owner = a.me?.[bot.platform] ?? color.red('(owner id not set)')
   lines.push(`${color.cyan(key)}  ${color.dim(bot.platform)}  ${tok}`)
   lines.push(`  ${color.dim('owner')}    ${owner}`)
-  lines.push(`  ${color.dim('agent')}    ${bot.runtime} ${color.dim('(default · switchable per-channel & in chat)')}`)
+  lines.push(`  ${color.dim('agent')}    ${RUNTIME_LABEL[bot.runtime] ?? bot.runtime} ${color.dim('(default · switchable per-channel & in chat)')}`)
   if (bot.blurb) lines.push(`  ${color.dim('blurb')}    ${bot.blurb}`)
   const chans = botChannels(a, key)
   lines.push(`  ${color.dim('channels')} ${chans.length === 0 ? color.dim('(none — add one below)') : ''}`)
